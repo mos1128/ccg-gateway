@@ -20,7 +20,7 @@ class Provider(Base):
     created_at = Column(Integer, nullable=False)
     updated_at = Column(Integer, nullable=False)
 
-    model_maps = relationship("ProviderModelMap", back_populates="provider", cascade="all, delete-orphan")
+    model_maps = relationship("ProviderModelMap", back_populates="provider", cascade="all, delete-orphan", order_by="ProviderModelMap.id")
 
     __table_args__ = (
         UniqueConstraint("cli_type", "name", name="uq_cli_provider_name"),

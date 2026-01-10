@@ -7,6 +7,7 @@ import time
 import logging
 import asyncio
 import fnmatch
+import re
 from typing import Optional, AsyncIterator, Tuple
 from urllib.parse import quote
 
@@ -100,6 +101,29 @@ class ProxyService:
         except (json.JSONDecodeError, UnicodeDecodeError):
             return body, None
 
+    def _apply_gemini_url_model_mapping(self, provider: Provider, path: str) -> Tuple[str, Optional[str]]:
+        """Apply model mapping to Gemini URL path. Returns (new_path, original_model).
+
+        Gemini URL format: /v1beta/models/{model}:{action}
+        """
+        if not provider.model_maps:
+            return path, None
+
+        # Match Gemini model path pattern
+        match = re.match(r'^(v1beta/models/)([^:]+)(:.+)$', path)
+        if not match:
+            return path, None
+
+        prefix, model_name, action = match.groups()
+        original_model = model_name
+
+        for mm in provider.model_maps:
+            if mm.enabled and fnmatch.fnmatch(model_name.lower(), mm.source_model.lower()):
+                new_path = f"{prefix}{mm.target_model}{action}"
+                return new_path, original_model
+
+        return path, None
+
     async def forward_request(self, request: Request, path: str) -> Response:
         """Forward request to upstream provider."""
         start_time = time.time()
@@ -138,6 +162,15 @@ class ProxyService:
         timeouts = await self._get_timeout_settings()
         debug_log = await self._get_debug_log()
 
+        # Save original path for logging
+        client_path = path
+
+        # Apply model mapping based on CLI type
+        original_model = None
+        if cli_type == "gemini":
+            # Gemini: model is in URL path
+            path, original_model = self._apply_gemini_url_model_mapping(provider, path)
+
         # Build upstream URL
         upstream_url = f"{provider.base_url.rstrip('/')}/{path}"
         if request.url.query:
@@ -163,19 +196,23 @@ class ProxyService:
         body = await request.body()
         body_str = body.decode("utf-8", errors="replace")
 
-        # Apply model mapping
-        forward_body, original_model = self._apply_model_mapping(provider, body)
+        # Apply model mapping for non-Gemini (body-based)
+        forward_body = body
+        if cli_type != "gemini":
+            forward_body, body_original_model = self._apply_model_mapping(provider, body)
+            if body_original_model:
+                original_model = body_original_model
         forward_body_str = forward_body.decode("utf-8", errors="replace")
 
         # Check if streaming
-        is_stream = self._is_streaming_request(body)
+        is_stream = self._is_streaming_request(body, path, cli_type)
 
         # Build log context
         log_ctx = {
             "cli_type": cli_type,
             "provider_name": provider.name,
             "client_method": request.method,
-            "client_path": path + (f"?{request.url.query}" if request.url.query else ""),
+            "client_path": client_path + (f"?{request.url.query}" if request.url.query else ""),
             "client_headers": _safe_headers(client_headers),
             "client_body": body_str,
             "forward_url": upstream_url,
@@ -192,7 +229,7 @@ class ProxyService:
                 f"[DEBUG] === CLIENT REQUEST ===\n"
                 f"  Client IP: {client_ip}\n"
                 f"  Method: {request.method}\n"
-                f"  Path: {path}\n"
+                f"  Path: {client_path}\n"
                 f"  Query: {request.url.query}\n"
                 f"  Headers: {json.dumps(_safe_headers(dict(request.headers)), indent=2, ensure_ascii=False)}\n"
                 f"  Body: {_truncate_body(body)}\n"
@@ -478,8 +515,12 @@ class ProxyService:
         logger.debug(f"Unknown user-agent, defaulting to claude_code: {user_agent}")
         return "claude_code"
 
-    def _is_streaming_request(self, body: bytes) -> bool:
+    def _is_streaming_request(self, body: bytes, path: str, cli_type: str) -> bool:
         """Check if request is for streaming."""
+        # Gemini: streaming is determined by URL path, not body
+        if cli_type == "gemini":
+            return ":streamGenerateContent" in path
+
         try:
             data = json.loads(body)
             return data.get("stream", False)
