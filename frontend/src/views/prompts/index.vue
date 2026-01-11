@@ -10,7 +10,7 @@
     <el-card>
       <el-table :data="promptList" stripe style="width: 100%">
         <el-table-column prop="name" label="名称" min-width="200" />
-        <el-table-column label="ClaudeCode" width="100">
+        <el-table-column label="ClaudeCode" width="130">
           <template #default="{ row }">
             <el-switch
               :model-value="row.cli_flags?.claude_code"
@@ -18,7 +18,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="Codex" width="100">
+        <el-table-column label="Codex" width="130">
           <template #default="{ row }">
             <el-switch
               :model-value="row.cli_flags?.codex"
@@ -26,7 +26,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="Gemini" width="100">
+        <el-table-column label="Gemini" width="130">
           <template #default="{ row }">
             <el-switch
               :model-value="row.cli_flags?.gemini"
