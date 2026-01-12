@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
 import time
+import json
 
 from app.models.models import GatewaySettings, TimeoutSettings, CliSettings, Provider
 from app.schemas.schemas import (
@@ -109,6 +110,27 @@ class SettingsService:
         await self.db.commit()
 
     async def update_cli_settings(self, cli_type: str, data: CliSettingsUpdate):
+        # 验证配置格式
+        if data.default_json_config is not None and data.default_json_config.strip():
+            config = data.default_json_config.strip()
+
+            # 对于 claude_code 和 gemini，验证 JSON 格式
+            if cli_type in ('claude_code', 'gemini'):
+                try:
+                    json.loads(config)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"JSON 格式错误: {str(e)}")
+
+            # 对于 codex，验证 TOML 格式
+            elif cli_type == 'codex':
+                try:
+                    import tomli
+                    tomli.loads(config)
+                except ImportError:
+                    pass  # tomli 未安装，跳过验证
+                except Exception as e:
+                    raise ValueError(f"TOML 格式错误: {str(e)}")
+
         now = int(time.time())
         result = await self.db.execute(
             select(CliSettings).where(CliSettings.cli_type == cli_type)

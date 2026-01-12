@@ -351,13 +351,9 @@ def sync_claude_settings(base_url: str, api_key: str, default_json_config: str, 
             if default_json_config and default_json_config.strip():
                 try:
                     custom_config = json.loads(default_json_config)
-                    for key, value in custom_config.items():
-                        if key == "env" and isinstance(value, dict):
-                            data["env"].update(value)
-                        else:
-                            data[key] = value
-                except json.JSONDecodeError:
-                    pass
+                    _deep_merge(data, custom_config)
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Claude Code 自定义配置解析失败（非有效 JSON）: {e}")
         else:
             # 禁用时移除配置
             if "env" in data:
@@ -532,8 +528,8 @@ def sync_gemini_settings(base_url: str, api_key: str, default_json_config: str, 
                 try:
                     custom_config = json.loads(default_json_config)
                     _deep_merge(data, custom_config)
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Gemini CLI 自定义配置解析失败（非有效 JSON）: {e}")
 
             with open(settings_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)

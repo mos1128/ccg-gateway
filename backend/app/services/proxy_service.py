@@ -476,10 +476,17 @@ class ProxyService:
                 except:
                     pass
 
+            # 过滤 hop-by-hop 头和 content-encoding（httpx 已自动解压）
+            resp_headers = {
+                k: v for k, v in response.headers.items()
+                if k.lower() not in FILTERED_HEADERS and k.lower() != "content-encoding"
+            }
+            resp_headers["X-CCG-Provider"] = quote(provider.name, safe="")
+
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers),
+                headers=resp_headers,
                 media_type=response.headers.get("content-type")
             )
 

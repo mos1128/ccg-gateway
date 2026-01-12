@@ -45,8 +45,11 @@ async def get_cli_settings(cli_type: CliType, db: AsyncSession = Depends(get_db)
 @router.put("/cli/{cli_type}")
 async def update_cli_settings(cli_type: CliType, data: CliSettingsUpdate, db: AsyncSession = Depends(get_db)):
     service = SettingsService(db)
-    await service.update_cli_settings(cli_type.value, data)
-    return {"message": "CLI settings updated"}
+    try:
+        await service.update_cli_settings(cli_type.value, data)
+        return {"message": "CLI settings updated"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/status", response_model=SystemStatusResponse)
