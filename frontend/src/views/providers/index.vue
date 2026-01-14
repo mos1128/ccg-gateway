@@ -131,7 +131,10 @@ import type { Provider, ModelMap, CliType } from '@/types/models'
 
 const providerStore = useProviderStore()
 
-const activeCliType = ref<CliType>('claude_code')
+const activeCliType = computed({
+  get: () => providerStore.currentCliType as CliType,
+  set: (val) => providerStore.setCliType(val)
+})
 const showAddDialog = ref(false)
 const editingProvider = ref<Provider | null>(null)
 
@@ -189,7 +192,6 @@ function removeModelMap(index: number) {
 }
 
 function handleCliTypeChange(cliType: string) {
-  providerStore.setCliType(cliType)
   providerStore.fetchProviders(cliType)
 }
 
@@ -276,7 +278,7 @@ async function handleCommand(command: string, provider: Provider) {
 }
 
 onMounted(() => {
-  providerStore.fetchProviders(activeCliType.value)
+  providerStore.fetchProviders()
 })
 </script>
 
