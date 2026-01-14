@@ -19,6 +19,10 @@
           <el-icon><Connection /></el-icon>
           <span>服务商管理</span>
         </el-menu-item>
+        <el-menu-item index="/sessions">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>会话管理</span>
+        </el-menu-item>
         <el-menu-item index="/logs">
           <el-icon><Tickets /></el-icon>
           <span>日志管理</span>
@@ -69,6 +73,7 @@ const pageTitle = computed(() => {
   const titles: Record<string, string> = {
     '/': '仪表盘',
     '/providers': '服务商管理',
+    '/sessions': '会话管理',
     '/logs': '日志管理',
     '/config': '全局配置',
     '/mcp': 'MCP 管理',

@@ -19,6 +19,11 @@ const router = createRouter({
           component: () => import('@/views/providers/index.vue')
         },
         {
+          path: 'sessions',
+          name: 'Sessions',
+          component: () => import('@/views/sessions/index.vue')
+        },
+        {
           path: 'config',
           name: 'Config',
           component: () => import('@/views/config/index.vue')
