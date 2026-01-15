@@ -78,51 +78,54 @@ class ProxyService:
         self.stats_service = StatsService(db)
         self.log_service = LogService(db)
 
-    def _apply_model_mapping(self, provider: Provider, body: bytes) -> Tuple[bytes, Optional[str]]:
-        """Apply model mapping to request body. Returns (new_body, original_model).
+    def _apply_model_mapping(self, provider: Provider, body: bytes) -> Tuple[bytes, Optional[str], Optional[str]]:
+        """Apply model mapping to request body. Returns (new_body, original_model, final_model).
 
         Supports wildcard matching with * (case-insensitive).
         """
-        if not provider.model_maps:
-            return body, None
+        if not body:
+            return body, None, None
 
         try:
             data = json.loads(body)
             if "model" not in data:
-                return body, None
+                return body, None, None
 
             original_model = data["model"]
+
+            if not provider.model_maps:
+                return body, None, original_model
+
             for mm in provider.model_maps:
                 if mm.enabled and fnmatch.fnmatch(original_model.lower(), mm.source_model.lower()):
                     data["model"] = mm.target_model
-                    return json.dumps(data, ensure_ascii=False).encode("utf-8"), original_model
+                    return json.dumps(data, ensure_ascii=False).encode("utf-8"), original_model, mm.target_model
 
-            return body, None
+            return body, None, original_model
         except (json.JSONDecodeError, UnicodeDecodeError):
-            return body, None
+            return body, None, None
 
-    def _apply_gemini_url_model_mapping(self, provider: Provider, path: str) -> Tuple[str, Optional[str]]:
-        """Apply model mapping to Gemini URL path. Returns (new_path, original_model).
+    def _apply_gemini_url_model_mapping(self, provider: Provider, path: str) -> Tuple[str, Optional[str], Optional[str]]:
+        """Apply model mapping to Gemini URL path. Returns (new_path, original_model, final_model).
 
         Gemini URL format: /v1beta/models/{model}:{action}
         """
-        if not provider.model_maps:
-            return path, None
-
         # Match Gemini model path pattern
         match = re.match(r'^(v1beta/models/)([^:]+)(:.+)$', path)
         if not match:
-            return path, None
+            return path, None, None
 
         prefix, model_name, action = match.groups()
-        original_model = model_name
+
+        if not provider.model_maps:
+            return path, None, model_name
 
         for mm in provider.model_maps:
             if mm.enabled and fnmatch.fnmatch(model_name.lower(), mm.source_model.lower()):
                 new_path = f"{prefix}{mm.target_model}{action}"
-                return new_path, original_model
+                return new_path, model_name, mm.target_model
 
-        return path, None
+        return path, None, model_name
 
     async def forward_request(self, request: Request, path: str) -> Response:
         """Forward request to upstream provider."""
@@ -168,9 +171,10 @@ class ProxyService:
 
         # Apply model mapping based on CLI type
         original_model = None
+        final_model = None
         if cli_type == "gemini":
             # Gemini: model is in URL path
-            path, original_model = self._apply_gemini_url_model_mapping(provider, path)
+            path, original_model, final_model = self._apply_gemini_url_model_mapping(provider, path)
 
         # Build upstream URL
         upstream_url = f"{provider.base_url.rstrip('/')}/{path}"
@@ -200,9 +204,11 @@ class ProxyService:
         # Apply model mapping for non-Gemini (body-based)
         forward_body = body
         if cli_type != "gemini":
-            forward_body, body_original_model = self._apply_model_mapping(provider, body)
+            forward_body, body_original_model, body_final_model = self._apply_model_mapping(provider, body)
             if body_original_model:
                 original_model = body_original_model
+            if body_final_model:
+                final_model = body_final_model
         forward_body_str = forward_body.decode("utf-8", errors="replace")
 
         # Check if streaming
@@ -220,6 +226,7 @@ class ProxyService:
             "forward_headers": _safe_headers(headers),
             "forward_body": forward_body_str,
             "created_at": int(start_time),
+            "model_id": final_model,
         }
 
         # Debug log: client request + forwarding request

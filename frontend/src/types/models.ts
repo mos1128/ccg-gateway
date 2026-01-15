@@ -173,6 +173,7 @@ export interface RequestLogListItem {
   created_at: number
   cli_type: string
   provider_name: string
+  model_id: string | null
   success: boolean
   status_code: number | null
   elapsed_ms: number

@@ -219,6 +219,7 @@ class RequestLogListItem(BaseModel):
     created_at: int
     cli_type: str
     provider_name: str
+    model_id: Optional[str]
     success: bool
     status_code: Optional[int]
     elapsed_ms: int
@@ -234,6 +235,7 @@ class RequestLogDetail(BaseModel):
     created_at: int
     cli_type: str
     provider_name: str
+    model_id: Optional[str]
     success: bool
     status_code: Optional[int]
     elapsed_ms: int

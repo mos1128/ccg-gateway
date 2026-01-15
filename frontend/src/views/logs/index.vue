@@ -56,6 +56,7 @@
             </el-table-column>
             <el-table-column prop="cli_type" label="CLI" width="130" />
             <el-table-column prop="provider_name" label="服务商" width="150" show-overflow-tooltip />
+            <el-table-column prop="model_id" label="模型" width="220" show-overflow-tooltip />
             <el-table-column label="状态" width="80">
               <template #default="{ row }">
                 <el-tag :type="row.success ? 'success' : 'danger'" size="small">
@@ -169,6 +170,7 @@
           <el-descriptions-item label="耗时">{{ requestDetail.elapsed_ms }}ms</el-descriptions-item>
           <el-descriptions-item label="CLI类型">{{ requestDetail.cli_type }}</el-descriptions-item>
           <el-descriptions-item label="服务商">{{ requestDetail.provider_name }}</el-descriptions-item>
+          <el-descriptions-item label="模型">{{ requestDetail.model_id || '-' }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="requestDetail.success ? 'success' : 'danger'" size="small">
               {{ requestDetail.success ? '成功' : '失败' }}
@@ -191,10 +193,22 @@
             </template>
             <div class="url-line">{{ getFullClientUrl() }}</div>
             <el-collapse>
-              <el-collapse-item title="Headers">
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>Headers</span>
+                    <el-button :icon="CopyDocument" size="small" text @click.stop="handleCopy(requestDetail.client_headers)" />
+                  </div>
+                </template>
                 <pre class="code-block">{{ formatJson(requestDetail.client_headers) }}</pre>
               </el-collapse-item>
-              <el-collapse-item title="Body">
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>Body</span>
+                    <el-button :icon="CopyDocument" size="small" text @click.stop="handleCopy(requestDetail.client_body)" />
+                  </div>
+                </template>
                 <pre class="code-block">{{ formatJson(requestDetail.client_body) }}</pre>
               </el-collapse-item>
             </el-collapse>
@@ -210,10 +224,22 @@
             </template>
             <div class="url-line">{{ requestDetail.forward_url }}</div>
             <el-collapse>
-              <el-collapse-item title="Headers">
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>Headers</span>
+                    <el-button :icon="CopyDocument" size="small" text @click.stop="handleCopy(requestDetail.forward_headers)" />
+                  </div>
+                </template>
                 <pre class="code-block">{{ formatJson(requestDetail.forward_headers) }}</pre>
               </el-collapse-item>
-              <el-collapse-item title="Body">
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>Body</span>
+                    <el-button :icon="CopyDocument" size="small" text @click.stop="handleCopy(requestDetail.forward_body)" />
+                  </div>
+                </template>
                 <pre class="code-block">{{ formatJson(requestDetail.forward_body) }}</pre>
               </el-collapse-item>
             </el-collapse>
@@ -230,10 +256,22 @@
               </div>
             </template>
             <el-collapse>
-              <el-collapse-item title="Headers">
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>Headers</span>
+                    <el-button :icon="CopyDocument" size="small" text @click.stop="handleCopy(requestDetail.provider_headers)" />
+                  </div>
+                </template>
                 <pre class="code-block">{{ formatJson(requestDetail.provider_headers) }}</pre>
               </el-collapse-item>
-              <el-collapse-item title="Body">
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>Body</span>
+                    <el-button :icon="CopyDocument" size="small" text @click.stop="handleCopy(requestDetail.provider_body)" />
+                  </div>
+                </template>
                 <pre class="code-block">{{ formatJson(requestDetail.provider_body) }}</pre>
               </el-collapse-item>
             </el-collapse>
@@ -250,10 +288,22 @@
               </div>
             </template>
             <el-collapse>
-              <el-collapse-item title="Headers">
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>Headers</span>
+                    <el-button :icon="CopyDocument" size="small" text @click.stop="handleCopy(requestDetail.response_headers)" />
+                  </div>
+                </template>
                 <pre class="code-block">{{ formatJson(requestDetail.response_headers) }}</pre>
               </el-collapse-item>
-              <el-collapse-item title="Body">
+              <el-collapse-item>
+                <template #title>
+                  <div class="collapse-title">
+                    <span>Body</span>
+                    <el-button :icon="CopyDocument" size="small" text @click.stop="handleCopy(requestDetail.response_body)" />
+                  </div>
+                </template>
                 <pre class="code-block">{{ formatJson(requestDetail.response_body) }}</pre>
               </el-collapse-item>
             </el-collapse>
@@ -272,6 +322,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { CopyDocument } from '@element-plus/icons-vue'
 import { logsApi } from '@/api/logs'
 import { providersApi } from '@/api/providers'
 import type { RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
@@ -446,6 +497,16 @@ function getFullClientUrl(): string {
   return `http://localhost:7788/${path.startsWith('/') ? path.slice(1) : path}`
 }
 
+async function handleCopy(content: string | null) {
+  if (!content) return
+  try {
+    await navigator.clipboard.writeText(formatJson(content))
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
 watch(activeTab, (tab) => {
   if (tab === 'request') fetchRequestLogs()
   else fetchSystemLogs()
@@ -533,5 +594,12 @@ onMounted(() => {
   max-height: 200px;
   overflow-y: auto;
   margin: 0;
+}
+.collapse-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 8px;
 }
 </style>

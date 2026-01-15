@@ -152,6 +152,7 @@ class RequestLog(Base):
     created_at = Column(Integer, nullable=False)
     cli_type = Column(String(20), nullable=False)
     provider_name = Column(String(100), nullable=False)
+    model_id = Column(String(50), nullable=True)
     success = Column(Integer, nullable=False, default=1)
     status_code = Column(Integer, nullable=True)
     elapsed_ms = Column(Integer, nullable=False, default=0)
