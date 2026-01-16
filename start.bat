@@ -49,13 +49,10 @@ echo ========================================
 echo   Services Started
 echo ========================================
 echo.
-echo   Backend API:  http://127.0.0.1:%GATEWAY_PORT%
-echo   Frontend UI:  http://127.0.0.1:%UI_PORT%
-echo.
 echo   Press any key to open browser...
 pause >nul
 
-start http://127.0.0.1:%UI_PORT%
+start http://localhost:%UI_PORT%
 
 echo.
 echo   To stop services, run stop.bat
