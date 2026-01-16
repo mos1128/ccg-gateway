@@ -1,5 +1,7 @@
+import os
+import sys
 import threading
-from PIL import Image, ImageDraw
+from PIL import Image
 import pystray
 
 
@@ -20,13 +22,9 @@ class TrayIcon:
         if self.icon:
             self.icon.update_menu()
 
-    def _create_icon_image(self):
-        size = 64
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        draw.ellipse([4, 4, size - 4, size - 4], fill="#4A90D9")
-        draw.text((size // 2 - 12, size // 2 - 10), "CCG", fill="white")
-        return img
+    def _load_icon_image(self):
+        icon_path = os.path.join(sys._MEIPASS, "desktop", "icon.ico")
+        return Image.open(icon_path)
 
     def _toggle_close_behavior(self):
         self._minimize_on_close = not self._minimize_on_close
@@ -46,7 +44,7 @@ class TrayIcon:
     def run(self):
         self.icon = pystray.Icon(
             "ccg-gateway",
-            self._create_icon_image(),
+            self._load_icon_image(),
             "CCG Gateway",
             menu=self._build_menu(),
         )

@@ -8,6 +8,7 @@ block_cipher = None
 project_root = os.path.dirname(SPECPATH)
 backend_path = os.path.join(project_root, 'backend')
 frontend_dist = os.path.join(project_root, 'frontend', 'dist')
+icon_path = os.path.join(project_root, 'desktop', 'icon.ico')
 
 a = Analysis(
     [os.path.join(project_root, 'desktop', 'main.py')],
@@ -15,6 +16,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (frontend_dist, 'frontend/dist'),
+        (icon_path, 'desktop'),
     ],
     hiddenimports=[
         'uvicorn',
@@ -69,6 +71,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=icon_path,
 )
 
 coll = COLLECT(
