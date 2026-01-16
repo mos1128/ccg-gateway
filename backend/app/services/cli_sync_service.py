@@ -3,6 +3,22 @@ import json
 from pathlib import Path
 import logging
 
+# Python 3.11+ has tomllib in stdlib, fallback to tomli
+try:
+    import tomllib as tomli
+except ImportError:
+    try:
+        import tomli
+    except ImportError:
+        tomli = None
+
+try:
+    import tomli_w
+except ImportError:
+    tomli_w = None
+
+TOMLI_AVAILABLE = tomli is not None and tomli_w is not None
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,10 +95,7 @@ def sync_mcp_to_codex(mcp_name: str, config_json: str, enabled: bool) -> bool:
         logger.debug("Codex 未安装，跳过 MCP 同步")
         return True
 
-    try:
-        import tomli
-        import tomli_w
-    except ImportError:
+    if not TOMLI_AVAILABLE:
         logger.warning("tomli/tomli_w 未安装，跳过 Codex MCP 同步")
         return False
 
@@ -395,10 +408,7 @@ def sync_codex_settings(base_url: str, api_key: str, default_toml_config: str, e
         logger.debug("Codex 未安装，跳过配置同步")
         return True
 
-    try:
-        import tomli
-        import tomli_w
-    except ImportError:
+    if not TOMLI_AVAILABLE:
         logger.warning("tomli/tomli_w 未安装，跳过 Codex 配置同步")
         return False
 

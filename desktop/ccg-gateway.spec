@@ -39,7 +39,6 @@ a = Analysis(
         'webview',
         'pystray',
         'PIL',
-        'tomli',
         'tomli_w',
     ],
     hookspath=[],

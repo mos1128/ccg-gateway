@@ -4,6 +4,18 @@ from typing import Optional
 import time
 import json
 
+# Python 3.11+ has tomllib in stdlib, fallback to tomli
+try:
+    import tomllib as tomli
+    TOMLI_AVAILABLE = True
+except ImportError:
+    try:
+        import tomli
+        TOMLI_AVAILABLE = True
+    except ImportError:
+        tomli = None
+        TOMLI_AVAILABLE = False
+
 from app.models.models import GatewaySettings, TimeoutSettings, CliSettings, Provider
 from app.schemas.schemas import (
     AllSettingsResponse, GatewaySettingsResponse, TimeoutSettingsResponse,
@@ -123,13 +135,11 @@ class SettingsService:
 
             # 对于 codex，验证 TOML 格式
             elif cli_type == 'codex':
-                try:
-                    import tomli
-                    tomli.loads(config)
-                except ImportError:
-                    pass  # tomli 未安装，跳过验证
-                except Exception as e:
-                    raise ValueError(f"TOML 格式错误: {str(e)}")
+                if TOMLI_AVAILABLE:
+                    try:
+                        tomli.loads(config)
+                    except Exception as e:
+                        raise ValueError(f"TOML 格式错误: {str(e)}")
 
         now = int(time.time())
         result = await self.db.execute(
