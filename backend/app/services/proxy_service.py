@@ -21,13 +21,6 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 
-def _mask_key(key: str) -> str:
-    """Mask API key for safe logging."""
-    if len(key) <= 12:
-        return "***"
-    return f"{key[:6]}***{key[-4:]}"
-
-
 def _truncate_body(body: bytes, max_len: int = 2000) -> str:
     """Truncate body for logging."""
     try:
@@ -38,17 +31,6 @@ def _truncate_body(body: bytes, max_len: int = 2000) -> str:
     except:
         return f"[binary data, {len(body)} bytes]"
 
-
-def _safe_headers(headers: dict) -> dict:
-    """Mask sensitive headers for logging."""
-    safe = {}
-    sensitive_headers = {"authorization", "x-goog-api-key"}
-    for k, v in headers.items():
-        if k.lower() in sensitive_headers:
-            safe[k] = _mask_key(v) if v else ""
-        else:
-            safe[k] = v
-    return safe
 
 # Headers to filter out when forwarding
 FILTERED_HEADERS = {
@@ -147,7 +129,7 @@ class ProxyService:
                     provider_name="[NO_PROVIDER]",
                     client_method=request.method,
                     client_path=path + (f"?{request.url.query}" if request.url.query else ""),
-                    client_headers=_safe_headers(client_headers),
+                    client_headers=client_headers,
                     client_body=body.decode("utf-8", errors="replace"),
                     forward_url="",
                     forward_headers={},
@@ -220,10 +202,10 @@ class ProxyService:
             "provider_name": provider.name,
             "client_method": request.method,
             "client_path": client_path + (f"?{request.url.query}" if request.url.query else ""),
-            "client_headers": _safe_headers(client_headers),
+            "client_headers": client_headers,
             "client_body": body_str,
             "forward_url": upstream_url,
-            "forward_headers": _safe_headers(headers),
+            "forward_headers": headers,
             "forward_body": forward_body_str,
             "created_at": int(start_time),
             "model_id": final_model,
@@ -240,12 +222,12 @@ class ProxyService:
                 f"  Method: {request.method}\n"
                 f"  Path: {client_path}\n"
                 f"  Query: {request.url.query}\n"
-                f"  Headers: {json.dumps(_safe_headers(dict(request.headers)), indent=2, ensure_ascii=False)}\n"
+                f"  Headers: {json.dumps(dict(request.headers), indent=2, ensure_ascii=False)}\n"
                 f"  Body: {_truncate_body(body)}\n"
                 f"[DEBUG] === FORWARD REQUEST ===\n"
                 f"  Provider: {provider.name}{model_info}\n"
                 f"  Upstream URL: {upstream_url}\n"
-                f"  Headers: {json.dumps(_safe_headers(headers), indent=2, ensure_ascii=False)}\n"
+                f"  Headers: {json.dumps(headers, indent=2, ensure_ascii=False)}\n"
                 f"  Body: {_truncate_body(forward_body)}\n"
                 f"  Stream: {is_stream}\n"
                 f"{'='*60}"
