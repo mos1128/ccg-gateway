@@ -69,7 +69,8 @@ async def health_check():
     return {"status": "ok"}
 
 
-# Desktop mode: serve frontend static files (must be before proxy_router)
+# Desktop mode: serve frontend static files
+# Development mode: frontend_dist is None, use Vite dev server (pnpm dev) for hot reload
 if frontend_dist:
     app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
 
@@ -83,6 +84,6 @@ if frontend_dist:
         if file_path.is_file():
             return FileResponse(file_path)
         return FileResponse(frontend_dist / "index.html")
-else:
-    # Only include proxy router when not in desktop mode (or no frontend dist)
-    app.include_router(proxy_router)
+
+# Always include proxy router for CLI forwarding
+app.include_router(proxy_router)

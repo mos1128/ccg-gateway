@@ -27,7 +27,7 @@ def activate_existing_instance(port: int) -> bool:
     try:
         resp = requests.post(f"http://127.0.0.1:{port}/admin/v1/window/show", timeout=3)
         return resp.status_code == 200
-    except:
+    except Exception:
         return False
 
 
@@ -80,12 +80,12 @@ class App:
         threading.Thread(target=_exit, daemon=True).start()
         try:
             self.tray.stop()
-        except:
+        except Exception:
             pass
         try:
             if self.window:
                 self.window.destroy()
-        except:
+        except Exception:
             pass
 
     def run(self):

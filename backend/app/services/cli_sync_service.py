@@ -50,8 +50,8 @@ def sync_mcp_to_claude(mcp_name: str, config_json: str, enabled: bool) -> bool:
     """同步 MCP 到 Claude Code 配置"""
     mcp_path = get_claude_mcp_path()
 
-    # 如果目录不存在，跳过（用户未安装 Claude Code）
-    if not mcp_path.parent.exists() and not mcp_path.exists():
+    # 如果主目录不存在，跳过（用户未安装 Claude Code）
+    if not mcp_path.parent.exists():
         logger.debug("Claude Code 未安装，跳过 MCP 同步")
         return True
 

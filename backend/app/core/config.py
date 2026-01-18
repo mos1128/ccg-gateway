@@ -21,16 +21,18 @@ def get_env_file() -> Path:
 
 
 def get_frontend_dist() -> Path | None:
+    """
+    获取前端静态文件目录路径
+
+    桌面模式（打包后）：返回临时目录中的前端文件路径
+    开发模式：返回 None（前端应使用 Vite 开发服务器，支持热更新）
+    """
     if IS_PACKAGED:
+        # 桌面模式：提供静态文件服务
         meipass = getattr(sys, '_MEIPASS', None)
         if meipass:
-            dist = Path(meipass) / "frontend" / "dist"
-            if dist.exists():
-                return dist
-    else:
-        dist = get_base_dir() / "frontend" / "dist"
-        if dist.exists():
-            return dist
+            return Path(meipass) / "frontend" / "dist"
+    # 开发模式：不提供静态文件服务，前端使用 Vite 开发服务器
     return None
 
 
