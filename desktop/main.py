@@ -103,6 +103,7 @@ class App:
             width=1200,
             height=800,
             maximized=True,
+            text_select=True,
         )
         self.window.events.closing += self.on_closing
 
