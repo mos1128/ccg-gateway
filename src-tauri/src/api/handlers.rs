@@ -9,6 +9,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::{mpsc, Mutex};
 use flate2::read::GzDecoder;
 use std::io::Read;
 
@@ -23,7 +24,7 @@ use crate::db::models::{
 };
 use crate::services::proxy::{
     apply_body_model_mapping, apply_url_model_mapping, detect_cli_type,
-    filter_headers, is_streaming, parse_streaming_token_usage, parse_token_usage, set_auth_header,
+    filter_headers, is_streaming, parse_token_usage, set_auth_header,
     CliType, TimeoutConfig, TokenUsage,
 };
 use crate::services::routing::select_provider;
@@ -411,60 +412,65 @@ async fn handle_streaming_request(
     builder = builder.header("X-CCG-Provider", provider_name);
 
     // Create streaming body
-    let state_clone = state.clone();
-    let provider_name_clone = provider_name.to_string();
-    let model_id_clone = model_id.map(|s| s.to_string());
-    let client_method_clone = client_method.to_string();
-    let client_path_clone = client_path.to_string();
-    let provider_id_clone = provider_id;
     let is_success = status.is_success();
 
+    // 使用共享状态收集chunks，确保即使stream被提前终止也能记录日志
+    // 优化：只存储原始chunks，后台任务再解析（避免重复解析）
+    let collected_chunks = Arc::new(Mutex::new(Vec::<Bytes>::new()));
+    let collected_chunks_for_stream = collected_chunks.clone();
+    
+    // 创建channel用于通知stream结束
+    let (stream_end_tx, mut stream_end_rx) = mpsc::channel::<()>(1);
+
     let stream = async_stream::stream! {
-        let mut usage = TokenUsage::default();
         let mut byte_stream = response.bytes_stream();
         let idle_timeout = timeouts.idle_timeout;
-        let mut collected_body = Vec::new();
+        let mut chunk_count = 0usize;
+        let mut total_bytes = 0usize;
 
         loop {
             match tokio::time::timeout(idle_timeout, byte_stream.next()).await {
                 Ok(Some(Ok(chunk))) => {
-                    // Parse SSE data for token usage
-                    let chunk_str = String::from_utf8_lossy(&chunk);
-                    for line in chunk_str.lines() {
-                        if line.starts_with("data:") {
-                            parse_streaming_token_usage(line, cli_type, &mut usage);
-                        }
+                    chunk_count += 1;
+                    let chunk_size = chunk.len();
+                    total_bytes += chunk_size;
+                    
+                    // 只收集chunk到共享状态（快速操作，减少锁持有时间）
+                    // 限制总大小避免内存占用过大
+                    if total_bytes <= 100 * 1024 {
+                        let mut chunks = collected_chunks_for_stream.lock().await;
+                        chunks.push(chunk.clone());
+                        drop(chunks);  // 立即释放锁
                     }
-                    // Collect body for logging (limit size)
-                    if collected_body.len() < 100 * 1024 {
-                        collected_body.extend_from_slice(&chunk);
-                    }
+                    
+                    tracing::debug!(
+                        "[{}] Chunk #{}: size={} bytes, total={} bytes",
+                        cli_type, chunk_count, chunk_size, total_bytes
+                    );
+                    
                     yield Ok::<Bytes, std::io::Error>(chunk);
                 }
                 Ok(Some(Err(e))) => {
-                    tracing::error!(error = %e, "Stream error");
-                    // Try to parse usage from collected data before error
-                    if usage.input_tokens == 0 && usage.output_tokens == 0 && !collected_body.is_empty() {
-                        parse_token_usage(&collected_body, cli_type, &mut usage);
-                    }
+                    tracing::error!(
+                        "[{}] Stream error after {} chunks, {} bytes: {}",
+                        cli_type, chunk_count, total_bytes, e
+                    );
                     break;
                 }
                 Ok(None) => {
-                    // Stream completed
-                    // Re-parse usage from complete response if tokens are still 0
-                    // (handles cases where JSON was split across chunks)
-                    if usage.input_tokens == 0 && usage.output_tokens == 0 && !collected_body.is_empty() {
-                        parse_token_usage(&collected_body, cli_type, &mut usage);
-                    }
+                    // Stream completed normally
+                    tracing::info!(
+                        "[{}] Stream completed normally: {} chunks, {} bytes",
+                        cli_type, chunk_count, total_bytes
+                    );
                     break;
                 }
                 Err(_) => {
                     // Idle timeout
-                    tracing::warn!("Stream idle timeout");
-                    // Try to parse usage from collected data before timeout
-                    if usage.input_tokens == 0 && usage.output_tokens == 0 && !collected_body.is_empty() {
-                        parse_token_usage(&collected_body, cli_type, &mut usage);
-                    }
+                    tracing::warn!(
+                        "[{}] Stream idle timeout after {} chunks, {} bytes",
+                        cli_type, chunk_count, total_bytes
+                    );
                     // Send SSE error event
                     let error_event = "event: error\ndata: {\"error\": \"Stream idle timeout\"}\n\n".to_string();
                     yield Ok::<Bytes, std::io::Error>(Bytes::from(error_event));
@@ -473,55 +479,119 @@ async fn handle_streaming_request(
             }
         }
 
-        // Update log info with response body (decompress if needed)
-        let content_encoding = resp_headers.get("content-encoding")
-            .and_then(|v| v.to_str().ok());
-        let decompressed_body = maybe_decompress(&collected_body, content_encoding);
-        log_info.provider_body = Some(truncate_body(&decompressed_body));
-        log_info.response_body = log_info.provider_body.clone();
+        // Stream loop正常结束（无论是completed、error还是timeout）
+        tracing::debug!("[{}] Stream loop ended naturally", cli_type);
+        
+        // 通知后台任务stream已结束
+        let _ = stream_end_tx.send(()).await;
+    };
 
-        // Record stats after stream completes
+    // Spawn后台任务记录日志 - 等待stream结束通知或超时
+    let log_state = state.clone();
+    let log_provider_name = provider_name.to_string();
+    let log_model_id = model_id.map(|s| s.to_string());
+    let log_client_method = client_method.to_string();
+    let log_client_path = client_path.to_string();
+    let log_provider_id = provider_id;
+    let log_status = status;
+    let log_resp_headers = resp_headers.clone();
+    let log_is_success = is_success;
+    
+    tokio::spawn(async move {
+        // 等待stream结束通知（已验证可靠，无需超时兜底）
+        let _ = stream_end_rx.recv().await;
+        tracing::debug!("[{}] Received stream end notification", cli_type);
+        
+        // 读取收集的chunks
+        let chunks = collected_chunks.lock().await.clone();
+        drop(collected_chunks);  // 立即释放Arc引用
+        
+        // 一次性解析（避免重复解析，提升性能）
+        let full_body: Vec<u8> = chunks.iter().flat_map(|c| c.iter()).copied().collect();
+        let chunk_count = chunks.len();
+        
+        tracing::info!(
+            "[{}] Processing stream log: {} chunks, {} bytes",
+            cli_type, chunk_count, full_body.len()
+        );
+        
+        // 解析token usage
+        let mut usage = TokenUsage::default();
+        if !full_body.is_empty() {
+            // SSE 格式需要逐行解析，不能直接解析整个body
+            // 注意：流式响应可能有多个usage更新，应该使用最后一个值
+            let body_str = String::from_utf8_lossy(&full_body);
+            for line in body_str.lines() {
+                if line.starts_with("data:") {
+                    // 提取 data: 后面的 JSON
+                    let data = line.strip_prefix("data:").unwrap_or("").trim();
+                    if data == "[DONE]" || data.is_empty() {
+                        continue;
+                    }
+                    // 解析这一行的 JSON（如果有usage，会覆盖旧值）
+                    parse_token_usage(data.as_bytes(), cli_type, &mut usage);
+                    // 继续遍历所有行，使用最后一个值
+                }
+            }
+        }
+        
+        tracing::debug!(
+            "[{}] Parsed tokens: input={}, output={}",
+            cli_type, usage.input_tokens, usage.output_tokens
+        );
+        
+        // Update log info with response body
+        let content_encoding = log_resp_headers.get("content-encoding")
+            .and_then(|v| v.to_str().ok());
+        let decompressed_body = maybe_decompress(&full_body, content_encoding);
+        let mut final_log_info = log_info;
+        final_log_info.provider_body = Some(truncate_body(&decompressed_body));
+        final_log_info.response_body = final_log_info.provider_body.clone();
+        
+        // Record stats
         let elapsed = start_time.elapsed().as_millis() as i64;
-        if is_success {
-            if let Ok(had_failures) = provider_service::record_success(&state_clone.db, provider_id_clone).await {
+        if log_is_success {
+            if let Ok(had_failures) = provider_service::record_success(&log_state.db, log_provider_id).await {
                 if had_failures {
                     let _ = stats_service::record_system_log(
-                        &state_clone.log_db,
+                        &log_state.log_db,
                         "info",
                         "provider_recovered",
-                        &format!("Provider {} recovered successfully", provider_name_clone),
-                        Some(&provider_name_clone),
+                        &format!("Provider {} recovered successfully", log_provider_name),
+                        Some(&log_provider_name),
                         None,
                     ).await;
                 }
             }
-        } else if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&state_clone.db, provider_id_clone).await {
+        } else if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&log_state.db, log_provider_id).await {
             if was_blacklisted {
                 let _ = stats_service::record_system_log(
-                    &state_clone.log_db,
+                    &log_state.log_db,
                     "warn",
                     "provider_blacklisted",
                     &format!("Provider {} blacklisted due to consecutive failures", prov_name),
                     Some(&prov_name),
-                    log_info.error_message.as_deref(),
+                    final_log_info.error_message.as_deref(),
                 ).await;
             }
         }
-
+        
         record_request_stats(
-            &state_clone,
+            &log_state,
             cli_type,
-            &provider_name_clone,
-            model_id_clone.as_deref(),
-            Some(status.as_u16()),
+            &log_provider_name,
+            log_model_id.as_deref(),
+            Some(log_status.as_u16()),
             elapsed,
             usage.input_tokens,
             usage.output_tokens,
-            &client_method_clone,
-            &client_path_clone,
-            Some(log_info),
+            &log_client_method,
+            &log_client_path,
+            Some(final_log_info),
         ).await;
-    };
+        
+        tracing::info!("[{}] Delayed log recording completed", cli_type);
+    });
 
     Ok(builder
         .body(Body::from_stream(stream))
