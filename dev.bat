@@ -29,19 +29,15 @@ echo [Starting] Launching Tauri development environment...
 echo [INFO] First run may take longer to compile dependencies
 echo [INFO] Frontend will start automatically (http://localhost:7786)
 echo.
-cd src-tauri
 set RUST_LOG=info,ccg_gateway=debug,ccg_gateway_lib=debug
-cargo tauri dev
+tauri dev
 
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Tauri development environment failed to start
-    cd ..
     pause
     exit /b 1
 )
-
-cd ..
 echo.
 echo ========================================
 echo   Development environment exited

@@ -57,9 +57,9 @@ jobs:
       - name: Install Tauri CLI
         run: pnpm add -g @tauri-apps/cli@latest
       
-      - name: Install frontend dependencies
-        run: pnpm --dir frontend install
-      
+      # Note: Tauri 2.0 自动根据 frontendDist 配置推断 frontend 目录，并从该目录执行 beforeBuildCommand。
+      # 因此 tauri.conf.json 应该直接使用 "pnpm install && pnpm build"，而不是 "pnpm --dir frontend ..."，
+      # 否则会导致路径错误 (frontend/frontend)。
       - name: Build Tauri App (Windows)
         if: matrix.platform == 'windows-latest'
         run: tauri build --no-bundle
