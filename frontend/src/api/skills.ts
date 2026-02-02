@@ -35,18 +35,22 @@ export const skillsApi = {
     await invoke('remove_skill_repo', { owner, name })
   },
 
-  toggleRepo: async (owner: string, name: string, enabled: boolean): Promise<void> => {
-    await invoke('toggle_skill_repo', { owner, name, enabled })
+  updateRepo: async (oldOwner: string, oldName: string, newUrl: string, newBranch: string): Promise<SkillRepo> => {
+    return await invoke<SkillRepo>('update_skill_repo', { oldOwner, oldName, newUrl, newBranch })
   },
 
   // ==================== Skill 发现 ====================
-  discoverAvailable: async (): Promise<DiscoverableSkill[]> => {
-    return await invoke<DiscoverableSkill[]>('discover_available_skills')
+  discoverRepoSkills: async (owner: string, name: string, branch: string): Promise<DiscoverableSkill[]> => {
+    return await invoke<DiscoverableSkill[]>('discover_repo_skills', { owner, name, branch })
+  },
+
+  refreshRepoSkills: async (owner: string, name: string, branch: string): Promise<DiscoverableSkill[]> => {
+    return await invoke<DiscoverableSkill[]>('refresh_repo_skills', { owner, name, branch })
   },
 
   // ==================== Skill 安装/卸载 ====================
-  install: async (skill: DiscoverableSkill): Promise<InstalledSkill> => {
-    const result = await invoke<InstalledSkillBackend>('install_skill', { skill })
+  install: async (skill: DiscoverableSkill, reinstall: boolean = false): Promise<InstalledSkill> => {
+    const result = await invoke<InstalledSkillBackend>('install_skill', { skill, reinstall })
     return transformInstalledSkill(result)
   },
 

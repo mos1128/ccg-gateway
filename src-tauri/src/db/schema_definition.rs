@@ -73,7 +73,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 4,
+            version: 5,
             tables: Self::define_main_tables(),
         }
     }
@@ -81,7 +81,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 4,
+            version: 5,
             tables: Self::define_log_tables(),
         }
     }
@@ -481,12 +481,6 @@ impl DatabaseSchema {
                         data_type: "TEXT".to_string(),
                         nullable: false,
                         default_value: Some("'main'".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "enabled".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("1".to_string()),
                     },
                 ],
                 primary_key: vec!["owner".to_string(), "name".to_string()],

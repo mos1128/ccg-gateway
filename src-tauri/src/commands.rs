@@ -8,7 +8,7 @@ use crate::db::models::{
     DailyStats, ProviderStatsRow, ProviderStatsResponse,
     McpConfig, McpCliFlag, McpResponse, McpCreate, McpUpdate,
     PromptPreset, PromptCliFlag, PromptResponse, PromptCreate, PromptUpdate,
-    SkillRepo, SkillRepoResponse, SkillRepoCreate,
+    SkillRepo, SkillRepoCreate,
     SkillConfig, SkillCliFlag, DiscoverableSkill, InstalledSkillResponse,
     WebdavSettings, WebdavSettingsUpdate, WebdavBackup,
     ProjectInfo, SessionInfo, PaginatedProjects, PaginatedSessions, SessionMessage,
@@ -3604,6 +3604,53 @@ fn get_ssot_dir() -> std::path::PathBuf {
     dir
 }
 
+// 获取 Skill 仓库缓存目录 (ccg-gateway 数据目录下的 skill_repo/)
+fn get_skill_cache_dir() -> std::path::PathBuf {
+    let dir = get_data_dir().join("skill_repo");
+    std::fs::create_dir_all(&dir).ok();
+    dir
+}
+
+// 获取缓存的仓库 ZIP 文件路径
+fn get_cached_repo_zip(owner: &str, name: &str, branch: &str) -> std::path::PathBuf {
+    get_skill_cache_dir().join(format!("{}_{}__{}.zip", owner, name, branch))
+}
+
+// 读取缓存的 ZIP 文件（如果存在）
+fn read_cached_zip(owner: &str, name: &str, branch: &str) -> Option<Vec<u8>> {
+    let path = get_cached_repo_zip(owner, name, branch);
+    if path.exists() {
+        std::fs::read(&path).ok()
+    } else {
+        None
+    }
+}
+
+// 保存 ZIP 到缓存
+fn save_zip_to_cache(owner: &str, name: &str, branch: &str, bytes: &[u8]) -> Result<()> {
+    let path = get_cached_repo_zip(owner, name, branch);
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    tracing::info!("Saved repo ZIP to cache: {}", path.display());
+    Ok(())
+}
+
+// 删除缓存的仓库 ZIP
+fn delete_cached_repo_zip(owner: &str, name: &str) {
+    let cache_dir = get_skill_cache_dir();
+    // 删除所有该仓库的缓存（不同分支）
+    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+        let prefix = format!("{}_{}_", owner, name);
+        for entry in entries.flatten() {
+            if let Some(filename) = entry.file_name().to_str() {
+                if filename.starts_with(&prefix) && filename.ends_with(".zip") {
+                    let _ = std::fs::remove_file(entry.path());
+                    tracing::info!("Deleted cached ZIP: {}", filename);
+                }
+            }
+        }
+    }
+}
+
 // 获取 CLI 的 skills 目录
 fn get_skill_cli_dir(cli_type: &str) -> Option<std::path::PathBuf> {
     let home = dirs::home_dir()?;
@@ -3707,31 +3754,105 @@ fn remove_skill_from_all_cli(directory: &str) -> Result<()> {
 
 // ==================== 仓库管理命令 ====================
 
+// 解析 GitHub 仓库 URL，返回 (owner, name)
+// 支持格式:
+//   https://github.com/owner/name
+//   https://github.com/owner/name.git
+//   github.com/owner/name
+//   owner/name
+fn parse_github_url(url: &str) -> Result<(String, String)> {
+    let url = url.trim();
+    
+    // 移除 .git 后缀
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    
+    // 尝试解析不同格式
+    let parts: Vec<&str> = if url.contains("github.com") {
+        // https://github.com/owner/name 或 github.com/owner/name
+        url.split("github.com/")
+            .last()
+            .unwrap_or("")
+            .split('/')
+            .collect()
+    } else if url.contains('/') {
+        // owner/name 格式
+        url.split('/').collect()
+    } else {
+        return Err("Invalid GitHub URL format".to_string());
+    };
+    
+    if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+        Ok((parts[0].to_string(), parts[1].to_string()))
+    } else {
+        Err("Invalid GitHub URL: cannot extract owner/name".to_string())
+    }
+}
+
 #[tauri::command]
-pub async fn get_skill_repos(db: State<'_, SqlitePool>) -> Result<Vec<SkillRepoResponse>> {
+pub async fn get_skill_repos(db: State<'_, SqlitePool>) -> Result<Vec<SkillRepo>> {
     let repos = sqlx::query_as::<_, SkillRepo>("SELECT * FROM skill_repos ORDER BY owner, name")
         .fetch_all(db.inner())
         .await
         .map_err(|e| e.to_string())?;
-    Ok(repos.into_iter().map(|r| r.into()).collect())
+    Ok(repos)
 }
 
 #[tauri::command]
-pub async fn add_skill_repo(db: State<'_, SqlitePool>, input: SkillRepoCreate) -> Result<SkillRepoResponse> {
-    let branch = input.branch.unwrap_or_else(|| "main".to_string());
-    sqlx::query("INSERT OR REPLACE INTO skill_repos (owner, name, branch, enabled) VALUES (?, ?, ?, 1)")
-        .bind(&input.owner)
-        .bind(&input.name)
-        .bind(&branch)
+pub async fn add_skill_repo(db: State<'_, SqlitePool>, input: SkillRepoCreate) -> Result<SkillRepo> {
+    // 解析 URL 获取 owner/name
+    let (owner, name) = parse_github_url(&input.url)?;
+    let user_branch = input.branch.unwrap_or_else(|| "main".to_string());
+    
+    // 检测实际分支
+    let client = reqwest::Client::new();
+    let actual_branch = detect_repo_branch(&client, &owner, &name, &user_branch).await?;
+    
+    // 如果用户指定的分支不存在，返回错误提示
+    if actual_branch != user_branch {
+        return Err(format!(
+            "分支 '{}' 不存在，该仓库使用的是 '{}' 分支",
+            user_branch, actual_branch
+        ));
+    }
+    
+    sqlx::query("INSERT OR REPLACE INTO skill_repos (owner, name, branch) VALUES (?, ?, ?)")
+        .bind(&owner)
+        .bind(&name)
+        .bind(&actual_branch)
         .execute(db.inner())
         .await
         .map_err(|e| e.to_string())?;
-    Ok(SkillRepoResponse {
-        owner: input.owner,
-        name: input.name,
-        branch,
-        enabled: true,
+    Ok(SkillRepo {
+        owner,
+        name,
+        branch: actual_branch,
     })
+}
+
+// 检测仓库实际分支
+async fn detect_repo_branch(
+    client: &reqwest::Client,
+    owner: &str,
+    name: &str,
+    preferred_branch: &str,
+) -> Result<String> {
+    // 尝试的分支顺序
+    let branches = if preferred_branch.is_empty() {
+        vec!["main", "master"]
+    } else {
+        vec![preferred_branch, "main", "master"]
+    };
+    
+    for br in branches {
+        let url = format!("https://github.com/{}/{}/archive/refs/heads/{}.zip", owner, name, br);
+        match client.head(&url).send().await {
+            Ok(response) if response.status().is_success() => {
+                return Ok(br.to_string());
+            }
+            _ => continue,
+        }
+    }
+    Err(format!("无法访问仓库 {}/{}，请检查仓库地址是否正确", owner, name))
 }
 
 #[tauri::command]
@@ -3742,77 +3863,136 @@ pub async fn remove_skill_repo(db: State<'_, SqlitePool>, owner: String, name: S
         .execute(db.inner())
         .await
         .map_err(|e| e.to_string())?;
+    
+    // 删除缓存的仓库 ZIP
+    delete_cached_repo_zip(&owner, &name);
+    
     Ok(())
 }
 
 #[tauri::command]
-pub async fn toggle_skill_repo(db: State<'_, SqlitePool>, owner: String, name: String, enabled: bool) -> Result<()> {
-    sqlx::query("UPDATE skill_repos SET enabled = ? WHERE owner = ? AND name = ?")
-        .bind(enabled as i64)
-        .bind(&owner)
-        .bind(&name)
+pub async fn update_skill_repo(
+    db: State<'_, SqlitePool>,
+    old_owner: String,
+    old_name: String,
+    new_url: String,
+    new_branch: String,
+) -> Result<SkillRepo> {
+    // 解析新 URL
+    let (new_owner, new_name) = parse_github_url(&new_url)?;
+    let user_branch = if new_branch.is_empty() { "main".to_string() } else { new_branch };
+    
+    // 检测实际分支
+    let client = reqwest::Client::new();
+    let actual_branch = detect_repo_branch(&client, &new_owner, &new_name, &user_branch).await?;
+    
+    // 如果用户指定的分支不存在，返回错误提示
+    if actual_branch != user_branch {
+        return Err(format!(
+            "分支 '{}' 不存在，该仓库使用的是 '{}' 分支",
+            user_branch, actual_branch
+        ));
+    }
+    
+    // 检查旧记录是否存在
+    let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM skill_repos WHERE owner = ? AND name = ?")
+        .bind(&old_owner)
+        .bind(&old_name)
+        .fetch_one(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if exists == 0 {
+        return Err("Repo not found".to_string());
+    }
+
+    // 删除旧记录
+    sqlx::query("DELETE FROM skill_repos WHERE owner = ? AND name = ?")
+        .bind(&old_owner)
+        .bind(&old_name)
         .execute(db.inner())
         .await
         .map_err(|e| e.to_string())?;
-    Ok(())
+
+    // 插入新记录
+    sqlx::query("INSERT OR REPLACE INTO skill_repos (owner, name, branch) VALUES (?, ?, ?)")
+        .bind(&new_owner)
+        .bind(&new_name)
+        .bind(&actual_branch)
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(SkillRepo {
+        owner: new_owner,
+        name: new_name,
+        branch: actual_branch,
+    })
 }
 
 // ==================== Skill 发现命令 ====================
 
 #[tauri::command]
-pub async fn discover_available_skills(db: State<'_, SqlitePool>) -> Result<Vec<DiscoverableSkill>> {
-    // 获取所有启用的仓库
-    let repos = sqlx::query_as::<_, SkillRepo>("SELECT * FROM skill_repos WHERE enabled = 1")
-        .fetch_all(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut all_skills = Vec::new();
-    let client = reqwest::Client::new();
-
-    for repo in repos {
-        match download_and_scan_repo(&client, &repo.owner, &repo.name, &repo.branch).await {
-            Ok(skills) => all_skills.extend(skills),
-            Err(e) => tracing::warn!("Failed to scan repo {}/{}: {}", repo.owner, repo.name, e),
-        }
+pub async fn discover_repo_skills(owner: String, name: String, branch: String) -> Result<Vec<DiscoverableSkill>> {
+    let branch_to_use = if branch.is_empty() { "main" } else { &branch };
+    
+    // 优先使用缓存
+    if let Some(bytes) = read_cached_zip(&owner, &name, branch_to_use) {
+        tracing::info!("Using cached ZIP for {}/{}", owner, name);
+        let mut skills = scan_zip_for_skills(&bytes, &owner, &name, branch_to_use)?;
+        skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        return Ok(skills);
     }
-
-    // 按名称排序
-    all_skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    Ok(all_skills)
+    
+    // 没有缓存则下载
+    let client = reqwest::Client::new();
+    let bytes = download_repo_zip(&client, &owner, &name, branch_to_use).await?;
+    
+    // 保存到缓存
+    let _ = save_zip_to_cache(&owner, &name, branch_to_use, &bytes);
+    
+    let mut skills = scan_zip_for_skills(&bytes, &owner, &name, branch_to_use)?;
+    skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(skills)
 }
 
-// 下载并扫描仓库
-async fn download_and_scan_repo(
+// 强制刷新仓库 skills（删除缓存后重新下载）
+#[tauri::command]
+pub async fn refresh_repo_skills(owner: String, name: String, branch: String) -> Result<Vec<DiscoverableSkill>> {
+    let branch_to_use = if branch.is_empty() { "main" } else { &branch };
+    
+    // 删除旧缓存
+    delete_cached_repo_zip(&owner, &name);
+    
+    // 重新下载
+    let client = reqwest::Client::new();
+    let bytes = download_repo_zip(&client, &owner, &name, branch_to_use).await?;
+    
+    // 保存到缓存
+    let _ = save_zip_to_cache(&owner, &name, branch_to_use, &bytes);
+    
+    let mut skills = scan_zip_for_skills(&bytes, &owner, &name, branch_to_use)?;
+    skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(skills)
+}
+
+// 下载仓库 ZIP
+async fn download_repo_zip(
     client: &reqwest::Client,
     owner: &str,
     name: &str,
     branch: &str,
-) -> Result<Vec<DiscoverableSkill>> {
-    // 尝试不同分支
-    let branches = if branch.is_empty() {
-        vec!["main", "master"]
-    } else {
-        vec![branch, "main", "master"]
-    };
-
-    let mut last_error = None;
-    for br in branches {
-        let url = format!("https://github.com/{}/{}/archive/refs/heads/{}.zip", owner, name, br);
-        match client.get(&url).send().await {
-            Ok(response) if response.status().is_success() => {
-                match response.bytes().await {
-                    Ok(bytes) => {
-                        return scan_zip_for_skills(&bytes, owner, name, br);
-                    }
-                    Err(e) => last_error = Some(e.to_string()),
-                }
-            }
-            Ok(response) => last_error = Some(format!("HTTP {}", response.status())),
-            Err(e) => last_error = Some(e.to_string()),
-        }
+) -> Result<Vec<u8>> {
+    let url = format!("https://github.com/{}/{}/archive/refs/heads/{}.zip", owner, name, branch);
+    let response = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    
+    if !response.status().is_success() {
+        return Err(format!("下载失败: HTTP {}", response.status()));
     }
-    Err(last_error.unwrap_or_else(|| "Download failed".to_string()))
+    
+    response.bytes().await
+        .map(|b| b.to_vec())
+        .map_err(|e| e.to_string())
 }
 
 // 扫描 ZIP 中的 skills
@@ -3903,12 +4083,14 @@ fn scan_zip_for_skills(
 // ==================== Skill 安装/卸载命令 ====================
 
 #[tauri::command]
-pub async fn install_skill(db: State<'_, SqlitePool>, skill: DiscoverableSkill) -> Result<InstalledSkillResponse> {
+pub async fn install_skill(db: State<'_, SqlitePool>, skill: DiscoverableSkill, reinstall: Option<bool>) -> Result<InstalledSkillResponse> {
     let ssot_dir = get_ssot_dir();
     let directory_name = std::path::Path::new(&skill.directory)
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| skill.directory.clone());
+
+    let is_reinstall = reinstall.unwrap_or(false);
 
     // 检查是否已安装
     let existing = sqlx::query_as::<_, SkillConfig>("SELECT * FROM skill_configs WHERE directory = ?")
@@ -3917,57 +4099,73 @@ pub async fn install_skill(db: State<'_, SqlitePool>, skill: DiscoverableSkill) 
         .await
         .map_err(|e| e.to_string())?;
 
-    if existing.is_some() {
+    if existing.is_some() && !is_reinstall {
         return Err(format!("Skill '{}' is already installed", directory_name));
     }
 
-    // 下载并安装
-    let client = reqwest::Client::new();
-    let branches = [&skill.repo_branch as &str, "main", "master"];
-    let mut installed = false;
-
-    for branch in branches {
-        let url = format!(
-            "https://github.com/{}/{}/archive/refs/heads/{}.zip",
-            skill.repo_owner, skill.repo_name, branch
-        );
-
-        match client.get(&url).send().await {
-            Ok(response) if response.status().is_success() => {
-                if let Ok(bytes) = response.bytes().await {
-                    if let Ok(_) = extract_skill_from_zip(&bytes, &skill.directory, &ssot_dir, &directory_name) {
-                        installed = true;
-                        break;
-                    }
-                }
-            }
-            _ => continue,
+    // 如果是重装，先删除旧的 SSOT 目录
+    if is_reinstall {
+        let old_skill_path = ssot_dir.join(&directory_name);
+        if old_skill_path.exists() {
+            let _ = std::fs::remove_dir_all(&old_skill_path);
         }
     }
 
-    if !installed {
-        return Err("Failed to download skill".to_string());
-    }
+    // 优先使用缓存的 ZIP
+    let branch_to_use = if skill.repo_branch.is_empty() { "main" } else { &skill.repo_branch };
+    let bytes = if let Some(cached) = read_cached_zip(&skill.repo_owner, &skill.repo_name, branch_to_use) {
+        tracing::info!("Using cached ZIP for install: {}/{}", skill.repo_owner, skill.repo_name);
+        cached
+    } else {
+        // 没有缓存则下载
+        let client = reqwest::Client::new();
+        let downloaded = download_repo_zip(&client, &skill.repo_owner, &skill.repo_name, branch_to_use).await?;
+        // 保存到缓存
+        let _ = save_zip_to_cache(&skill.repo_owner, &skill.repo_name, branch_to_use, &downloaded);
+        downloaded
+    };
 
-    // 保存到数据库
+    // 提取 skill 到 SSOT
+    extract_skill_from_zip(&bytes, &skill.directory, &ssot_dir, &directory_name)?;
+
+    // 保存到数据库（如果是重装则更新）
     let now = chrono::Utc::now().timestamp();
-    let result = sqlx::query(
-        "INSERT INTO skill_configs (name, description, directory, repo_owner, repo_name, repo_branch, readme_url, installed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    )
-    .bind(&skill.name)
-    .bind(&skill.description)
-    .bind(&directory_name)
-    .bind(&skill.repo_owner)
-    .bind(&skill.repo_name)
-    .bind(&skill.repo_branch)
-    .bind(&skill.readme_url)
-    .bind(now)
-    .execute(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let id = result.last_insert_rowid();
-    tracing::info!("Installed skill: {} ({})", skill.name, directory_name);
+    let id = if is_reinstall && existing.is_some() {
+        let old = existing.unwrap();
+        sqlx::query(
+            "UPDATE skill_configs SET name = ?, description = ?, repo_owner = ?, repo_name = ?, repo_branch = ?, readme_url = ?, installed_at = ? WHERE id = ?"
+        )
+        .bind(&skill.name)
+        .bind(&skill.description)
+        .bind(&skill.repo_owner)
+        .bind(&skill.repo_name)
+        .bind(&skill.repo_branch)
+        .bind(&skill.readme_url)
+        .bind(now)
+        .bind(old.id)
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+        tracing::info!("Reinstalled skill: {} ({})", skill.name, directory_name);
+        old.id
+    } else {
+        let result = sqlx::query(
+            "INSERT INTO skill_configs (name, description, directory, repo_owner, repo_name, repo_branch, readme_url, installed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&skill.name)
+        .bind(&skill.description)
+        .bind(&directory_name)
+        .bind(&skill.repo_owner)
+        .bind(&skill.repo_name)
+        .bind(&skill.repo_branch)
+        .bind(&skill.readme_url)
+        .bind(now)
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+        tracing::info!("Installed skill: {} ({})", skill.name, directory_name);
+        result.last_insert_rowid()
+    };
 
     // 返回安装结果（默认三个端都未启用）
     let cli_flags = vec![
@@ -3987,6 +4185,7 @@ pub async fn install_skill(db: State<'_, SqlitePool>, skill: DiscoverableSkill) 
         readme_url: skill.readme_url,
         installed_at: now,
         cli_flags,
+        exists_on_disk: true, // 刚安装完肯定存在
     })
 }
 
@@ -4080,6 +4279,7 @@ pub async fn get_installed_skills(db: State<'_, SqlitePool>) -> Result<Vec<Insta
         .await
         .map_err(|e| e.to_string())?;
 
+    let ssot_dir = get_ssot_dir();
     let mut results = Vec::new();
     for skill in skills {
         let cli_flags = vec![
@@ -4097,6 +4297,9 @@ pub async fn get_installed_skills(db: State<'_, SqlitePool>) -> Result<Vec<Insta
             },
         ];
 
+        // 检查 skill 目录是否存在于 SSOT 目录
+        let exists_on_disk = ssot_dir.join(&skill.directory).exists();
+
         results.push(InstalledSkillResponse {
             id: skill.id,
             name: skill.name,
@@ -4108,6 +4311,7 @@ pub async fn get_installed_skills(db: State<'_, SqlitePool>) -> Result<Vec<Insta
             readme_url: skill.readme_url,
             installed_at: skill.installed_at,
             cli_flags,
+            exists_on_disk,
         });
     }
     Ok(results)

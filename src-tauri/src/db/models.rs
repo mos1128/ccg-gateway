@@ -293,33 +293,11 @@ pub struct SkillRepo {
     pub owner: String,
     pub name: String,
     pub branch: String,
-    pub enabled: i64,
-}
-
-// Skill Repo Response (用于 API 响应)
-#[derive(Debug, Serialize)]
-pub struct SkillRepoResponse {
-    pub owner: String,
-    pub name: String,
-    pub branch: String,
-    pub enabled: bool,
-}
-
-impl From<SkillRepo> for SkillRepoResponse {
-    fn from(r: SkillRepo) -> Self {
-        Self {
-            owner: r.owner,
-            name: r.name,
-            branch: r.branch,
-            enabled: r.enabled != 0,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SkillRepoCreate {
-    pub owner: String,
-    pub name: String,
+    pub url: String,           // GitHub 仓库 URL
     pub branch: Option<String>,
 }
 
@@ -369,6 +347,7 @@ pub struct InstalledSkillResponse {
     pub readme_url: Option<String>,
     pub installed_at: i64,
     pub cli_flags: Vec<SkillCliFlag>,
+    pub exists_on_disk: bool, // skill 文件是否存在于本地
 }
 
 // ==================== Request Logs 相关实体 ====================

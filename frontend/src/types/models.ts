@@ -148,12 +148,10 @@ export interface SkillRepo {
   owner: string
   name: string
   branch: string
-  enabled: boolean
 }
 
 export interface SkillRepoCreate {
-  owner: string
-  name: string
+  url: string      // GitHub 仓库 URL
   branch?: string
 }
 
@@ -179,6 +177,7 @@ export interface InstalledSkill {
   readme_url: string | null
   installed_at: number
   cli_flags: Record<string, boolean>
+  exists_on_disk: boolean // skill 文件是否存在于本地
 }
 
 // Stats types
