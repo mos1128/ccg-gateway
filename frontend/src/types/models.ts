@@ -84,6 +84,20 @@ export interface CliSettingsUpdate {
   default_json_config?: string
 }
 
+// User-Agent 映射类型
+export interface UseragentMapInput {
+  source_pattern: string
+  target_value: string
+  enabled: boolean
+}
+
+export interface UseragentMapResponse {
+  id: number
+  source_pattern: string
+  target_value: string
+  enabled: boolean
+}
+
 export interface SystemStatus {
   status: 'running' | 'stopped'
   port: number

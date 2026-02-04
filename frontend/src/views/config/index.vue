@@ -76,6 +76,36 @@
             </el-tab-pane>
           </el-tabs>
         </el-card>
+
+        <!-- User-Agent Mapping -->
+        <el-card class="config-card">
+          <template #header>
+            <div class="card-header-with-action">
+              <span>User-Agent 映射</span>
+              <el-button type="primary" size="small" @click="addUaMap">
+                <el-icon><Plus /></el-icon>添加映射
+              </el-button>
+            </div>
+          </template>
+          <div class="ua-map-tip">将请求的 User-Agent 映射为指定值，支持 * 和 ? 通配符</div>
+          <div v-if="uaMaps.length === 0" class="ua-map-empty">
+            暂无 User-Agent 映射配置
+          </div>
+          <div v-else class="ua-map-list">
+            <div v-for="(map, index) in uaMaps" :key="index" class="ua-map-item">
+              <el-switch v-model="map.enabled" size="small" />
+              <el-input v-model="map.source_pattern" placeholder="源 User-Agent (支持通配符)" class="ua-input" />
+              <el-icon class="arrow-icon"><Right /></el-icon>
+              <el-input v-model="map.target_value" placeholder="目标 User-Agent" class="ua-input" />
+              <el-button type="danger" size="small" circle @click="removeUaMap(index)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+          </div>
+          <div class="ua-map-actions">
+            <el-button type="primary" @click="saveUaMaps" :loading="savingUaMaps">保存</el-button>
+          </div>
+        </el-card>
       </div>
     </div>
 
@@ -100,11 +130,14 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Right, Delete } from '@element-plus/icons-vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import CliSettingsForm from './components/CliSettingsForm.vue'
 import * as backupApi from '@/api/backup'
+import { settingsApi } from '@/api/settings'
 import type { WebdavSettings, WebdavBackup } from '@/api/backup'
+import type { UseragentMapInput } from '@/types/models'
 
 const settingsStore = useSettingsStore()
 const uiStore = useUiStore()
@@ -277,9 +310,60 @@ function formatSize(bytes: number) {
   return (bytes / 1024 / 1024).toFixed(1) + ' MB'
 }
 
+// User-Agent 映射
+const uaMaps = ref<UseragentMapInput[]>([])
+const savingUaMaps = ref(false)
+
+async function loadUaMaps() {
+  try {
+    const { data } = await settingsApi.getUseragentMaps()
+    uaMaps.value = data.map(m => ({
+      source_pattern: m.source_pattern,
+      target_value: m.target_value,
+      enabled: m.enabled
+    }))
+  } catch {}
+}
+
+function addUaMap() {
+  uaMaps.value.push({
+    source_pattern: '',
+    target_value: '',
+    enabled: true
+  })
+}
+
+function removeUaMap(index: number) {
+  uaMaps.value.splice(index, 1)
+}
+
+async function saveUaMaps() {
+  // 过滤空的映射
+  const validMaps = uaMaps.value.filter(m => m.source_pattern.trim() && m.target_value.trim())
+  savingUaMaps.value = true
+  try {
+    const { data } = await settingsApi.updateUseragentMaps(validMaps.map(m => ({
+      source_pattern: m.source_pattern.trim(),
+      target_value: m.target_value.trim(),
+      enabled: m.enabled
+    })))
+    uaMaps.value = data.map(m => ({
+      source_pattern: m.source_pattern,
+      target_value: m.target_value,
+      enabled: m.enabled
+    }))
+    ElMessage.success('User-Agent 映射已保存')
+  } catch (error: any) {
+    ElMessage.error(error?.message || '保存失败')
+  } finally {
+    savingUaMaps.value = false
+  }
+}
+
 onMounted(() => {
   settingsStore.fetchSettings()
   loadWebdavSettings()
+  loadUaMaps()
 })
 </script>
 
@@ -311,5 +395,43 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
+}
+.card-header-with-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.ua-map-tip {
+  color: #909399;
+  font-size: 13px;
+  margin-bottom: 15px;
+}
+.ua-map-empty {
+  text-align: center;
+  padding: 20px;
+  color: #909399;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+}
+.ua-map-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ua-map-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ua-input {
+  flex: 1;
+}
+.arrow-icon {
+  color: #909399;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.ua-map-actions {
+  margin-top: 15px;
 }
 </style>

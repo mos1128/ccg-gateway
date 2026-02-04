@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { AllSettings, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate, SystemStatus } from '@/types/models'
+import type { AllSettings, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate, SystemStatus, UseragentMapInput, UseragentMapResponse } from '@/types/models'
 
 export const settingsApi = {
   getAll: async () => {
@@ -38,6 +38,14 @@ export const settingsApi = {
   },
   getStatus: async () => {
     const data = await invoke<SystemStatus>('get_system_status')
+    return { data }
+  },
+  getUseragentMaps: async () => {
+    const data = await invoke<UseragentMapResponse[]>('get_useragent_maps')
+    return { data }
+  },
+  updateUseragentMaps: async (maps: UseragentMapInput[]) => {
+    const data = await invoke<UseragentMapResponse[]>('update_useragent_maps', { maps })
     return { data }
   }
 }

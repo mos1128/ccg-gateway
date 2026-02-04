@@ -13,6 +13,7 @@ use crate::db::models::{
     WebdavSettings, WebdavSettingsUpdate, WebdavBackup,
     ProjectInfo, SessionInfo, PaginatedProjects, PaginatedSessions, SessionMessage,
     SystemStatus,
+    UseragentMap, UseragentMapInput, UseragentMapResponse,
 };
 use crate::LogDb;
 use sqlx::SqlitePool;
@@ -4333,4 +4334,47 @@ pub async fn toggle_skill_cli(db: State<'_, SqlitePool>, id: i64, cli_type: Stri
     }
 
     Ok(())
+}
+
+// ==================== User-Agent 映射命令 ====================
+
+#[tauri::command]
+pub async fn get_useragent_maps(db: State<'_, SqlitePool>) -> Result<Vec<UseragentMapResponse>> {
+    let maps = sqlx::query_as::<_, UseragentMap>(
+        "SELECT * FROM useragent_map ORDER BY sort_order, id"
+    )
+    .fetch_all(db.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(maps.into_iter().map(UseragentMapResponse::from).collect())
+}
+
+#[tauri::command]
+pub async fn update_useragent_maps(
+    db: State<'_, SqlitePool>,
+    maps: Vec<UseragentMapInput>,
+) -> Result<Vec<UseragentMapResponse>> {
+    // 删除所有现有映射
+    sqlx::query("DELETE FROM useragent_map")
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 插入新的映射
+    for (idx, map) in maps.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO useragent_map (source_pattern, target_value, enabled, sort_order) VALUES (?, ?, ?, ?)"
+        )
+        .bind(&map.source_pattern)
+        .bind(&map.target_value)
+        .bind(map.enabled as i64)
+        .bind(idx as i64)
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    // 返回更新后的列表
+    get_useragent_maps(db).await
 }

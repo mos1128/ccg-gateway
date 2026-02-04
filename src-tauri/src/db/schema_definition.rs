@@ -73,7 +73,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 5,
+            version: 6,
             tables: Self::define_main_tables(),
         }
     }
@@ -485,6 +485,48 @@ impl DatabaseSchema {
                 ],
                 primary_key: vec!["owner".to_string(), "name".to_string()],
                 unique_constraints: vec![],
+            },
+        );
+
+        // useragent_map 表（全局 User-Agent 映射）
+        tables.insert(
+            "useragent_map".to_string(),
+            TableDefinition {
+                name: "useragent_map".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "source_pattern".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "target_value".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "enabled".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("1".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "sort_order".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![vec!["source_pattern".to_string()]],
             },
         );
 

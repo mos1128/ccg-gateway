@@ -204,6 +204,46 @@ pub struct WebdavBackup {
     pub modified: String,
 }
 
+// ==================== User-Agent 映射相关实体 ====================
+
+// User-Agent Map (对应数据库表)
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct UseragentMap {
+    pub id: i64,
+    pub source_pattern: String,
+    pub target_value: String,
+    pub enabled: i64,
+    pub sort_order: i64,
+}
+
+// User-Agent Map Input (用于创建/更新)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UseragentMapInput {
+    pub source_pattern: String,
+    pub target_value: String,
+    pub enabled: bool,
+}
+
+// User-Agent Map Response (用于API响应)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UseragentMapResponse {
+    pub id: i64,
+    pub source_pattern: String,
+    pub target_value: String,
+    pub enabled: bool,
+}
+
+impl From<UseragentMap> for UseragentMapResponse {
+    fn from(m: UseragentMap) -> Self {
+        Self {
+            id: m.id,
+            source_pattern: m.source_pattern,
+            target_value: m.target_value,
+            enabled: m.enabled != 0,
+        }
+    }
+}
+
 // ==================== MCP 相关实体 ====================
 
 // MCP Config (对应数据库表)
