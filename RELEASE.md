@@ -1,307 +1,33 @@
-# GitHub Actions 三平台打包和发布教程
+# 发版指南
 
-## 📦 自动打包的三种方式
+## 发布新版本
 
-### 方式 1：推送标签触发（推荐，自动发布）
-
-**步骤**：
 
 ```bash
-# 1. 提交代码
+# 1. 确保代码已提交并推送
 git add .
-git commit -m "feat: 新功能完成，准备发布"
-
-# 2. 创建版本标签
-git tag v1.0.0
-
-# 3. 推送标签到 GitHub
-git push origin v1.0.0
-```
-
-**效果**：
-- ✅ 自动在 Windows、macOS、Linux 上构建
-- ✅ 自动创建 GitHub Release (v1.0.0)
-- ✅ 自动上传所有安装包到 Release
-
-**适用场景**：正式版本发布
-
----
-
-### 方式 2：手动触发（测试，不自动发布）
-
-**步骤**：
-
-1. 访问 GitHub 仓库
-2. 点击 **Actions** 选项卡
-3. 选择 **Release Build** workflow
-4. 点击 **Run workflow** 按钮
-5. 选择分支（如 `main`）
-6. 点击 **Run workflow**
-
-**效果**：
-- ✅ 自动构建三平台安装包
-- ✅ 上传为 Artifacts（下载后手动分发）
-- ❌ **不会**自动创建 Release
-
-**适用场景**：测试构建、内部测试版本
-
----
-
-### 方式 3：推送代码自动触发（可选配置）
-
-如果想每次推送 `main` 分支都自动构建（不发布），可以修改配置：
-
-```yaml
-on:
-  push:
-    branches:
-      - main  # 推送到 main 分支时触发
-    tags:
-      - 'v*'  # 推送标签时触发
-  workflow_dispatch:
-```
-
----
-
-## 🚀 完整发布流程示例
-
-### 发布 v1.0.0 版本
-
-```bash
-# 1. 更新版本号
-# 编辑 src-tauri/Cargo.toml
-version = "1.0.0"
-
-# 编辑 src-tauri/tauri.conf.json
-"version": "1.0.0"
-
-# 2. 提交版本更新
-git add .
-git commit -m "chore: bump version to 1.0.0"
+git commit -m "feat: 你的提交信息"
 git push
 
-# 3. 创建并推送标签
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
+# 2. 创建带信息的标签并推送（标签信息会作为 Release 说明）
+git tag -a v1.2.0 -m "新增xxx功能，修复xxx问题"
+git push origin v1.2.0
 
-# 4. 等待构建完成（约 10-20 分钟）
-# 访问 GitHub Actions 页面查看进度
-
-# 5. 发布完成！
-# 访问 https://github.com/你的用户名/ccg-gateway/releases
+# 3. 等待 GitHub Actions 自动构建并发布（约 15-20 分钟）
 ```
 
----
+## 发版错误：删除标签
 
-## 📋 构建产物说明
-
-### Windows
-- `CCG-Gateway_1.0.0_x64-setup.exe` - NSIS 安装程序（推荐）
-- `CCG-Gateway_1.0.0_x64_en-US.msi` - MSI 安装包
-
-### macOS
-- `CCG Gateway_1.0.0_universal.dmg` - DMG 镜像（推荐）
-- `CCG Gateway.app` - 应用包
-
-### Linux
-- `ccg-gateway_1.0.0_amd64.deb` - Debian/Ubuntu 安装包
-- `ccg-gateway_1.0.0_amd64.AppImage` - 通用 AppImage（推荐）
-
----
-
-## ⏱️ 构建时间
-
-| 平台 | 预计时间 |
-|------|---------|
-| Windows | 8-12 分钟 |
-| macOS | 10-15 分钟 |
-| Linux | 6-10 分钟 |
-| **总计** | **15-20 分钟** |
-
-**并行构建**：三个平台同时构建，总时间取决于最慢的平台（通常是 macOS）。
-
----
-
-## 🔍 查看构建进度
-
-1. 访问仓库 GitHub 页面
-2. 点击 **Actions** 选项卡
-3. 查看正在运行的 workflow
-
-**实时日志**：
-- ✅ 绿色勾号 = 成功
-- 🔵 蓝色圆圈 = 进行中
-- ❌ 红色叉号 = 失败
-
----
-
-## 📥 下载构建产物
-
-### 方法 1：从 Release 下载（推荐）
-
-访问：`https://github.com/你的用户名/ccg-gateway/releases/latest`
-
-选择对应平台的安装包下载。
-
-### 方法 2：从 Actions 下载（手动触发时）
-
-1. 进入对应的 workflow run
-2. 滚动到页面底部 **Artifacts** 区域
-3. 下载对应平台的构建产物：
-   - `windows-x64`
-   - `macos-universal`
-   - `linux-x64`
-
----
-
-## 🔐 高级：启用自动更新（可选）
-
-Tauri 支持应用内自动更新功能。需要配置签名密钥：
-
-### 1. 生成签名密钥
+如果发版有误，需要同时删除本地和远程标签，以及对应的 Release：
 
 ```bash
-# 安装 Tauri CLI（如果还没有）
-cargo install tauri-cli
+# 删除本地标签
+git tag -d v1.2.0
 
-# 生成密钥对
-cargo tauri signer generate -w ~/.tauri/myapp.key
+# 删除远程标签（会自动取消正在运行的 workflow）
+git push origin --delete v1.2.0
+
+# 然后去 GitHub Releases 页面手动删除对应的 Release（如果已创建）
 ```
 
-输出：
-```
-Private Key: dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5...
-Public Key: dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU2M0Y5...
-```
-
-### 2. 配置 GitHub Secrets
-
-在 GitHub 仓库设置中添加：
-
-- `TAURI_PRIVATE_KEY` = 私钥内容
-- `TAURI_KEY_PASSWORD` = 密钥密码（如果设置了）
-
-### 3. 更新 tauri.conf.json
-
-```json
-{
-  "updater": {
-    "active": true,
-    "pubkey": "你的公钥"
-  }
-}
-```
-
----
-
-## 🛠️ 故障排查
-
-### 问题 1：构建失败 - 前端依赖错误
-
-**原因**：`package.json` 中的依赖未锁定或 pnpm 缓存问题
-
-**解决**：
-```bash
-# 本地测试构建
-cd frontend
-pnpm install
-pnpm build
-cd ../src-tauri
-cargo tauri build
-```
-
-### 问题 2：构建失败 - Rust 编译错误
-
-**原因**：代码有编译错误
-
-**解决**：
-```bash
-# 本地测试编译
-cd src-tauri
-cargo build --release
-```
-
-### 问题 3：Release 未自动创建
-
-**原因**：
-- 标签格式不对（必须是 `v*`，如 `v1.0.0`）
-- 或者没有推送标签到远程
-
-**解决**：
-```bash
-# 检查本地标签
-git tag
-
-# 推送标签
-git push origin v1.0.0
-
-# 或推送所有标签
-git push --tags
-```
-
----
-
-## 📝 版本管理建议
-
-### 语义化版本
-
-遵循 [Semantic Versioning](https://semver.org/)：
-
-- `v1.0.0` - 主版本（重大更新）
-- `v1.1.0` - 次版本（新功能）
-- `v1.1.1` - 补丁版本（Bug 修复）
-
-### 预发布版本
-
-```bash
-git tag v1.0.0-beta.1
-git tag v1.0.0-rc.1
-```
-
-配置为 prerelease：
-
-```yaml
-# .github/workflows/release.yml
-- name: Create Release
-  uses: softprops/action-gh-release@v1
-  with:
-    prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
-```
-
----
-
-## 🎯 快速参考
-
-| 操作 | 命令 |
-|------|------|
-| 创建标签 | `git tag v1.0.0` |
-| 推送标签 | `git push origin v1.0.0` |
-| 删除本地标签 | `git tag -d v1.0.0` |
-| 删除远程标签 | `git push origin --delete v1.0.0` |
-| 查看所有标签 | `git tag -l` |
-| 查看构建状态 | 访问 GitHub Actions 页面 |
-
----
-
-## ✅ 检查清单
-
-发布前确认：
-
-- [ ] 代码已提交并推送到 GitHub
-- [ ] 更新了 `Cargo.toml` 和 `tauri.conf.json` 中的版本号
-- [ ] 更新了 `README.md` 或 `CHANGELOG.md`
-- [ ] 本地测试通过 (`cargo tauri build`)
-- [ ] 创建并推送了版本标签
-- [ ] 等待 GitHub Actions 构建完成（~15-20 分钟）
-- [ ] 验证 Release 页面的安装包
-
----
-
-## 🎉 完成！
-
-现在你可以：
-- ✅ 一键打包三平台安装包
-- ✅ 自动发布到 GitHub Releases
-- ✅ 用户直接下载安装
-
-**下一步**：推送标签，见证自动化的魔力！🚀
+删除后修正代码，重新走发布流程即可。
