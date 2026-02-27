@@ -42,7 +42,12 @@ echo "Release notes (empty line to finish):"
 NOTES=""
 while IFS= read -r line; do
     [[ -z "$line" ]] && break
-    NOTES="${NOTES:+$NOTES$'\n'}$line"
+    if [[ -z "$NOTES" ]]; then
+        NOTES="$line"
+    else
+        NOTES="$NOTES
+$line"
+    fi
 done
 if [[ -z "$NOTES" ]]; then
     echo "[ERROR] Release notes cannot be empty"
