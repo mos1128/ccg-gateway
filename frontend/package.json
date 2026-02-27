@@ -1,6 +1,6 @@
 {
   "name": "ccg-gateway-frontend",
-  "version": "1.0.7",
+  "version": "1.1.4",
   "private": true,
   "type": "module",
   "scripts": {

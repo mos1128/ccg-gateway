@@ -1,6 +1,6 @@
 [package]
 name = "ccg-gateway"
-version = "1.0.7"
+version = "1.1.4"
 edition = "2021"
 description = "CCG Gateway - API Gateway for Claude Code, Codex, and Gemini CLI"
 authors = ["CCG Gateway"]
