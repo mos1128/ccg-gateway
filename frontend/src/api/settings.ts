@@ -1,15 +1,15 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { AllSettings, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate, SystemStatus } from '@/types/models'
+import type { AllSettings, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate, CliSettings, SystemStatus } from '@/types/models'
 
 export const settingsApi = {
   getAll: async () => {
     const [gateway, timeouts, claudeCode, codex, gemini, status] = await Promise.all([
       invoke<{ debug_log: number }>('get_gateway_settings'),
       invoke<{ stream_first_byte_timeout: number; stream_idle_timeout: number; non_stream_timeout: number }>('get_timeout_settings'),
-      invoke<{ cli_type: string; enabled: boolean; default_json_config: string }>('get_cli_settings', { cliType: 'claude_code' }),
-      invoke<{ cli_type: string; enabled: boolean; default_json_config: string }>('get_cli_settings', { cliType: 'codex' }),
-      invoke<{ cli_type: string; enabled: boolean; default_json_config: string }>('get_cli_settings', { cliType: 'gemini' }),
-      invoke<SystemStatus>('get_system_status')
+      invoke<CliSettings>('get_cli_settings', { cliType: 'claude_code' }),
+      invoke<CliSettings>('get_cli_settings', { cliType: 'codex' }),
+      invoke<CliSettings>('get_cli_settings', { cliType: 'gemini' }),
+      invoke<SystemStatus>('get_system_status'),
     ])
     return {
       data: {
@@ -34,6 +34,10 @@ export const settingsApi = {
   },
   updateCli: async (cliType: string, data: CliSettingsUpdate) => {
     await invoke('update_cli_settings', { cliType, input: data })
+    return { data: null }
+  },
+  setCliMode: async (cliType: string, mode: 'proxy' | 'direct') => {
+    await invoke('set_cli_mode', { cliType, mode })
     return { data: null }
   },
   getStatus: async () => {

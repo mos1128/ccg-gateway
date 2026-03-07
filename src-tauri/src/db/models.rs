@@ -159,6 +159,7 @@ pub struct TimeoutSettingsUpdate {
 pub struct CliSettingsRow {
     pub cli_type: String,
     pub default_json_config: Option<String>,
+    pub cli_mode: String,
     pub updated_at: i64,
 }
 
@@ -167,6 +168,7 @@ pub struct CliSettingsResponse {
     pub cli_type: String,
     pub enabled: bool,
     pub default_json_config: String,
+    pub cli_mode: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -207,6 +209,43 @@ pub struct WebdavBackup {
     pub filename: String,
     pub size: i64,
     pub modified: String,
+}
+
+// ==================== Official Credential 相关实体 ====================
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OfficialCredential {
+    pub id: i64,
+    pub cli_type: String,
+    pub name: String,
+    pub credential_json: String,
+    pub sort_order: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OfficialCredentialCreate {
+    pub cli_type: String,
+    pub name: String,
+    pub credential_json: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OfficialCredentialUpdate {
+    pub name: Option<String>,
+    pub credential_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OfficialCredentialResponse {
+    pub id: i64,
+    pub cli_type: String,
+    pub name: String,
+    pub credential_json: String,
+    pub sort_order: i64,
+    pub is_active: bool,
+    pub display_info: String,
 }
 
 // ==================== MCP 相关实体 ====================

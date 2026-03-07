@@ -32,5 +32,10 @@ export const useSettingsStore = defineStore('settings', () => {
     await fetchSettings()
   }
 
-  return { settings, loading, fetchSettings, updateGateway, updateTimeouts, updateCli }
+  async function setCliMode(cliType: string, mode: 'proxy' | 'direct') {
+    await settingsApi.setCliMode(cliType, mode)
+    await fetchSettings()
+  }
+
+  return { settings, loading, fetchSettings, updateGateway, updateTimeouts, updateCli, setCliMode }
 })

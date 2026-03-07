@@ -64,6 +64,7 @@ export interface CliSettings {
   cli_type: string
   enabled: boolean
   default_json_config: string
+  cli_mode: 'proxy' | 'direct'
 }
 
 export interface AllSettings {
@@ -85,6 +86,28 @@ export interface TimeoutSettingsUpdate {
 export interface CliSettingsUpdate {
   enabled?: boolean
   default_json_config?: string
+}
+
+// Official Credential types
+export interface OfficialCredential {
+  id: number
+  cli_type: CliType
+  name: string
+  credential_json: string
+  sort_order: number
+  is_active: boolean
+  display_info: string
+}
+
+export interface OfficialCredentialCreate {
+  cli_type: CliType
+  name: string
+  credential_json: string
+}
+
+export interface OfficialCredentialUpdate {
+  name?: string
+  credential_json?: string
 }
 
 export interface SystemStatus {

@@ -9,7 +9,12 @@
               <span class="status-indicator" :class="getCliEnabled(cli.type) ? 'running' : 'stopped'"></span>
               <div class="status-info">
                 <span class="status-name">{{ cli.label }}</span>
-                <span class="status-text">{{ getCliEnabled(cli.type) ? '运行中' : '已停止' }}</span>
+                <div class="status-details">
+                  <span class="status-text">{{ getCliEnabled(cli.type) ? '运行中' : '已停止' }}</span>
+                  <el-tag :type="getCliMode(cli.type) === 'proxy' ? 'success' : 'info'" size="small" class="mode-tag">
+                    {{ getCliMode(cli.type) === 'proxy' ? '中转模式' : '官方模式' }}
+                  </el-tag>
+                </div>
               </div>
             </div>
             <el-switch
@@ -81,7 +86,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, reactive, computed, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
@@ -133,7 +138,19 @@ const kpiList = computed(() => {
 })
 
 function getCliEnabled(cliType: string): boolean {
-  return settingsStore.settings?.cli_settings?.[cliType]?.enabled ?? false
+  const settings = settingsStore.settings?.cli_settings?.[cliType]
+  if (!settings) return false
+  
+  // enabled 是从配置文件实时读取的
+  // 官方模式下，如果配置文件中还有网关地址，也会显示为 enabled=true
+  // 但逻辑上官方模式不应该使用网关，所以这里强制显示为 false
+  if (settings.cli_mode === 'direct') return false
+  
+  return settings.enabled ?? false
+}
+
+function getCliMode(cliType: string): 'proxy' | 'direct' {
+  return settingsStore.settings?.cli_settings?.[cliType]?.cli_mode ?? 'proxy'
 }
 
 function formatTokens(tokens: number): string {
@@ -143,16 +160,48 @@ function formatTokens(tokens: number): string {
 }
 
 async function handleCliToggle(cliType: string, enabled: boolean) {
-  cliLoading[cliType] = true
-  try {
-    await settingsStore.updateCli(cliType, { enabled })
-    ElMessage.success(`${cliType} 已${enabled ? '启用' : '禁用'}`)
-  } catch (error: any) {
-    console.error('CLI toggle error:', error)
-    const errorMsg = error?.message || error?.toString() || '操作失败'
-    ElMessage.error(`操作失败: ${errorMsg}`)
-  } finally {
-    cliLoading[cliType] = false
+  // 如果要启用 CLI，但当前是官方模式，提示用户切换
+  if (enabled && getCliMode(cliType) === 'direct') {
+    try {
+      await ElMessageBox.confirm(
+        '当前是官方模式，网关代理不会生效。是否切换至中转模式？',
+        '提示',
+        {
+          confirmButtonText: '切换至中转模式',
+          cancelButtonText: '保持官方模式',
+          type: 'warning'
+        }
+      )
+      // 用户选择切换至中转模式
+      cliLoading[cliType] = true
+      try {
+        await settingsStore.setCliMode(cliType, 'proxy')
+        await settingsStore.updateCli(cliType, { enabled: true })
+        ElMessage.success(`${cliType} 已切换至中转模式并启用`)
+      } catch (error: any) {
+        console.error('CLI toggle error:', error)
+        const errorMsg = error?.message || error?.toString() || '操作失败'
+        ElMessage.error(`操作失败: ${errorMsg}`)
+      } finally {
+        cliLoading[cliType] = false
+      }
+    } catch {
+      // 用户取消或选择保持官方模式，不做任何操作
+      ElMessage.info(`${cliType} 保持官方模式`)
+    }
+  } else {
+    // 正常的启用/禁用操作
+    cliLoading[cliType] = true
+    try {
+      await settingsStore.updateCli(cliType, { enabled })
+      ElMessage.success(`${cliType} 已${enabled ? '启用' : '禁用'}`)
+    } catch (error: any) {
+      console.error('CLI toggle error:', error)
+      const errorMsg = error?.message || error?.toString() || '操作失败'
+      ElMessage.error(`操作失败: ${errorMsg}`)
+    } finally {
+      cliLoading[cliType] = false
+    }
   }
 }
 
@@ -281,6 +330,7 @@ onMounted(async () => {
 .status-info {
   display: flex;
   flex-direction: column;
+  gap: 4px;
 }
 
 .status-name {
@@ -289,9 +339,19 @@ onMounted(async () => {
   color: #303133;
 }
 
+.status-details {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .status-text {
   font-size: 12px;
   color: #909399;
+}
+
+.mode-tag {
+  font-size: 11px;
 }
 
 .kpi-row {

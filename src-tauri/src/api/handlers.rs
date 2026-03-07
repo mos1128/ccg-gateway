@@ -1300,6 +1300,7 @@ pub async fn get_all_settings(
                 cli_type: cli_type.to_string(),
                 enabled: false, // TODO: Check if config file exists
                 default_json_config: String::new(),
+                cli_mode: "proxy".to_string(),
             },
         );
     }

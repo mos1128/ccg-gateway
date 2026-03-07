@@ -46,6 +46,6 @@ export const useUiStore = defineStore('ui', () => {
     setSessionsActiveCliType,
     setLogsActiveTab,
     setConfigActiveCliTab,
-    setConfigActiveBackupTab
+    setConfigActiveBackupTab,
   }
 })

@@ -215,6 +215,15 @@ pub fn run() {
             commands::import_from_webdav,
             commands::delete_webdav_backup,
             commands::check_for_updates,
+            commands::get_credentials,
+            commands::get_credential,
+            commands::create_credential,
+            commands::update_credential,
+            commands::delete_credential,
+            commands::reorder_credentials,
+            commands::read_cli_credential,
+            commands::get_cli_mode,
+            commands::set_cli_mode,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

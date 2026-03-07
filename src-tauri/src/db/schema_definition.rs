@@ -73,7 +73,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 7,
+            version: 10,
             tables: Self::define_main_tables(),
         }
     }
@@ -327,6 +327,12 @@ impl DatabaseSchema {
                         default_value: None,
                     },
                     ColumnDefinition {
+                        name: "cli_mode".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'proxy'".to_string()),
+                    },
+                    ColumnDefinition {
                         name: "updated_at".to_string(),
                         data_type: "INTEGER".to_string(),
                         nullable: false,
@@ -557,6 +563,60 @@ impl DatabaseSchema {
                 ],
                 primary_key: vec!["id".to_string()],
                 unique_constraints: vec![vec!["directory".to_string()]],
+            },
+        );
+
+        // official_credentials 表（官方凭证）
+        tables.insert(
+            "official_credentials".to_string(),
+            TableDefinition {
+                name: "official_credentials".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "cli_type".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "credential_json".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "sort_order".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "created_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "updated_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![vec!["cli_type".to_string(), "name".to_string()]],
             },
         );
 
