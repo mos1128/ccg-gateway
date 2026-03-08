@@ -181,6 +181,15 @@ pub async fn proxy_handler_catchall(
             "application/json".parse().unwrap(),
         );
     }
+    
+    // Explicitly set Content-Length to ensure correct body transmission
+    // This is critical because we filtered out the original content-length header
+    if !final_body.is_empty() {
+        req_headers.insert(
+            reqwest::header::CONTENT_LENGTH,
+            final_body.len().to_string().parse().unwrap(),
+        );
+    }
 
     // Serialize forward headers for logging (mask sensitive headers)
     let forward_headers_json = serialize_reqwest_headers(&req_headers);
@@ -201,6 +210,7 @@ pub async fn proxy_handler_catchall(
     };
 
     let request_builder = request_builder.headers(req_headers);
+    
     let request_builder = if !final_body.is_empty() {
         request_builder.body(final_body)
     } else {
