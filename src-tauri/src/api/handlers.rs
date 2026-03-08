@@ -191,10 +191,6 @@ pub async fn proxy_handler_catchall(
         );
     }
 
-    // Serialize forward headers for logging (mask sensitive headers)
-    let forward_headers_json = serialize_reqwest_headers(&req_headers);
-    let forward_body_str = truncate_body(&final_body);
-
     // Create HTTP client request
     let client = reqwest::Client::new();
     let request_builder = match method.as_str() {
@@ -217,20 +213,37 @@ pub async fn proxy_handler_catchall(
         request_builder
     };
 
-    // Build log info
+    // Build the request to inspect actual headers and body that will be sent
+    let request = match request_builder.build() {
+        Ok(req) => req,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to build request");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Log the actual request that will be sent
+    let actual_forward_headers = serialize_reqwest_headers(request.headers());
+    let actual_forward_body = request.body()
+        .and_then(|b| b.as_bytes())
+        .map(|bytes| truncate_body(bytes))
+        .unwrap_or_default();
+
+    // Build log info with actual request data
     let log_info = RequestLogInfo {
         client_headers: Some(client_headers_json),
         client_body: Some(client_body_str),
         forward_url: Some(upstream_url.clone()),
-        forward_headers: Some(forward_headers_json),
-        forward_body: Some(forward_body_str),
+        forward_headers: Some(actual_forward_headers),
+        forward_body: Some(actual_forward_body),
         ..Default::default()
     };
 
     // Execute request
     if streaming {
         handle_streaming_request(
-            request_builder,
+            request,
+            &client,
             &state,
             provider_id,
             &provider_name,
@@ -245,7 +258,8 @@ pub async fn proxy_handler_catchall(
         .await
     } else {
         handle_non_streaming_request(
-            request_builder,
+            request,
+            &client,
             &state,
             provider_id,
             &provider_name,
@@ -302,7 +316,8 @@ fn maybe_decompress(body: &[u8], content_encoding: Option<&str>) -> Vec<u8> {
 }
 
 async fn handle_streaming_request(
-    request_builder: reqwest::RequestBuilder,
+    request: reqwest::Request,
+    client: &reqwest::Client,
     state: &Arc<AppState>,
     provider_id: i64,
     provider_name: &str,
@@ -317,7 +332,7 @@ async fn handle_streaming_request(
     // Send request with timeout for first byte
     let response = match tokio::time::timeout(
         timeouts.first_byte_timeout,
-        request_builder.send(),
+        client.execute(request),
     )
     .await
     {
@@ -592,7 +607,8 @@ async fn handle_streaming_request(
 }
 
 async fn handle_non_streaming_request(
-    request_builder: reqwest::RequestBuilder,
+    request: reqwest::Request,
+    client: &reqwest::Client,
     state: &Arc<AppState>,
     provider_id: i64,
     provider_name: &str,
@@ -607,7 +623,7 @@ async fn handle_non_streaming_request(
     // Send request with timeout
     let response = match tokio::time::timeout(
         timeouts.non_stream_timeout,
-        request_builder.send(),
+        client.execute(request),
     )
     .await
     {
