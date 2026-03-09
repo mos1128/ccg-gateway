@@ -1320,6 +1320,7 @@ pub async fn get_all_settings(
     // Get CLI settings
     let mut cli_settings = std::collections::HashMap::new();
     for cli_type in &["claude_code", "codex", "gemini"] {
+        let config_dir = crate::commands::get_default_config_dir(cli_type);
         cli_settings.insert(
             cli_type.to_string(),
             crate::db::models::CliSettingsResponse {
@@ -1327,6 +1328,8 @@ pub async fn get_all_settings(
                 enabled: false, // TODO: Check if config file exists
                 default_json_config: String::new(),
                 cli_mode: "proxy".to_string(),
+                config_dir: config_dir.clone(),
+                default_config_dir: config_dir,
             },
         );
     }

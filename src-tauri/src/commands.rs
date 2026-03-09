@@ -2,7 +2,7 @@ use crate::config::get_data_dir;
 use crate::db::models::{
     Provider, ProviderCreate, ProviderResponse, ProviderUpdate,
     GatewaySettings, TimeoutSettings, TimeoutSettingsUpdate,
-    CliSettingsRow, CliSettingsResponse, CliSettingsUpdate,
+    CliSettingsResponse, CliSettingsUpdate,
     RequestLogItem, RequestLogDetail, PaginatedLogs,
     SystemLogItem, SystemLogListResponse,
     DailyStats, ProviderStatsRow, ProviderStatsResponse,
@@ -446,7 +446,7 @@ pub async fn update_timeout_settings(
 
 #[tauri::command]
 pub async fn get_cli_settings(db: State<'_, SqlitePool>, cli_type: String) -> Result<CliSettingsResponse> {
-    let row = sqlx::query_as::<_, CliSettingsRow>(
+    let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
         "SELECT cli_type, default_json_config, cli_mode, updated_at FROM cli_settings WHERE cli_type = ?",
     )
     .bind(&cli_type)
@@ -454,23 +454,42 @@ pub async fn get_cli_settings(db: State<'_, SqlitePool>, cli_type: String) -> Re
     .await
     .map_err(|e| e.to_string())?;
 
+    // 从数据库获取 config_dir（可能为用户自定义值）
+    let config_dir = get_cli_config_dir(db.inner(), &cli_type).await;
+    // 默认 config_dir 始终是系统路径（硬编码）
+    let default_config_dir = get_default_config_dir(&cli_type);
+
     if let Some(row) = row {
-        // Check if CLI is enabled by reading config file
-        let enabled = check_cli_enabled(&cli_type);
+        let enabled = check_cli_enabled(db.inner(), &cli_type).await;
+
         Ok(CliSettingsResponse {
             cli_type: row.cli_type,
             enabled,
             default_json_config: row.default_json_config.unwrap_or_default(),
             cli_mode: row.cli_mode,
+            config_dir,
+            default_config_dir,
         })
     } else {
         Ok(CliSettingsResponse {
-            cli_type,
+            cli_type: cli_type.clone(),
             enabled: false,
             default_json_config: String::new(),
             cli_mode: "proxy".to_string(),
+            config_dir,
+            default_config_dir,
         })
     }
+}
+
+/// CliSettingsRow without config_dir (for backward compatibility with old databases)
+#[derive(Debug, sqlx::FromRow)]
+#[allow(dead_code)]
+struct CliSettingsRowWithoutConfigDir {
+    pub cli_type: String,
+    pub default_json_config: Option<String>,
+    pub cli_mode: String,
+    pub updated_at: i64,
 }
 
 #[tauri::command]
@@ -511,12 +530,19 @@ pub async fn update_cli_settings(
         .execute(db.inner())
         .await
         .map_err(|e| e.to_string())?;
+    }
 
-        // If CLI is enabled (checked via config file), sync config file immediately
-        if input.enabled.is_none() && check_cli_enabled(&cli_type) {
-            let default_config = config_trimmed.to_string();
-            sync_cli_config(&cli_type, true, &default_config).await?;
-        }
+    // Update config_dir if provided
+    if let Some(ref config_dir) = input.config_dir {
+        sqlx::query(
+            "UPDATE cli_settings SET config_dir = ?, updated_at = ? WHERE cli_type = ?",
+        )
+        .bind(config_dir)
+        .bind(now)
+        .bind(&cli_type)
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
     }
 
     // Update CLI config file if enabled flag is provided
@@ -535,13 +561,13 @@ pub async fn update_cli_settings(
         // 只有在中转模式下才处理 enabled 参数
         if mode == "proxy" {
             // 检查 CLI 当前是否已经处于目标状态
-            let current_enabled = check_cli_enabled(&cli_type);
+            let current_enabled = check_cli_enabled(db.inner(), &cli_type).await;
             
             if current_enabled == enabled {
                 tracing::info!("{} CLI 已经处于目标状态（enabled={}），跳过操作", cli_type, enabled);
             } else {
-                // Get default_json_config from database
-                let row = sqlx::query_as::<_, CliSettingsRow>(
+                // Get default_json_config from database (without config_dir to avoid column errors)
+                let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
                     "SELECT cli_type, default_json_config, cli_mode, updated_at FROM cli_settings WHERE cli_type = ?",
                 )
                 .bind(&cli_type)
@@ -551,7 +577,7 @@ pub async fn update_cli_settings(
 
                 let default_config = row.and_then(|r| r.default_json_config).unwrap_or_default();
                 tracing::info!("{} 执行 CLI 状态切换：enabled={}", cli_type, enabled);
-                sync_cli_config(&cli_type, enabled, &default_config).await?;
+                sync_cli_config(db.inner(), &cli_type, enabled, &default_config).await?;
             }
         } else {
             tracing::info!("{} 处于直连模式，忽略 enabled 参数", cli_type);
@@ -570,42 +596,41 @@ fn normalize_text(text: &str) -> String {
         .join("\n")
 }
 
-// Check if MCP config exists in the CLI config file
-fn mcp_enabled_in_file(cli_type: &str, mcp_name: &str) -> bool {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
+// Check if MCP config exists in the CLI config file - 异步版本，支持自定义配置目录
+async fn mcp_enabled_in_file_async(db: &SqlitePool, cli_type: &str, mcp_name: &str) -> bool {
+    let config_path = match cli_type {
+        "claude_code" => {
+            // Claude Code MCP 配置在 .claude.json（父目录）
+            let config_dir = get_cli_config_dir_path(db, cli_type).await;
+            config_dir.parent().map(|p| p.join(".claude.json"))
+        }
+        "gemini" => {
+            let config_dir = get_cli_config_dir_path(db, cli_type).await;
+            Some(config_dir.join("settings.json"))
+        }
+        "codex" => {
+            let config_dir = get_cli_config_dir_path(db, cli_type).await;
+            Some(config_dir.join("config.toml"))
+        }
+        _ => None,
+    };
+
+    let path = match config_path {
+        Some(p) => p,
         None => return false,
     };
 
+    if !path.exists() {
+        return false;
+    }
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
     match cli_type {
-        "claude_code" => {
-            let path = home.join(".claude.json");
-            if !path.exists() {
-                return false;
-            }
-            let content = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(_) => return false,
-            };
-            match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(config) => {
-                    config.get("mcpServers")
-                        .and_then(|v| v.as_object())
-                        .map(|servers| servers.contains_key(mcp_name))
-                        .unwrap_or(false)
-                }
-                Err(_) => false,
-            }
-        }
-        "gemini" => {
-            let path = home.join(".gemini").join("settings.json");
-            if !path.exists() {
-                return false;
-            }
-            let content = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(_) => return false,
-            };
+        "claude_code" | "gemini" => {
             match serde_json::from_str::<serde_json::Value>(&content) {
                 Ok(config) => {
                     config.get("mcpServers")
@@ -617,14 +642,6 @@ fn mcp_enabled_in_file(cli_type: &str, mcp_name: &str) -> bool {
             }
         }
         "codex" => {
-            let path = home.join(".codex").join("config.toml");
-            if !path.exists() {
-                return false;
-            }
-            let content = match std::fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(_) => return false,
-            };
             match content.parse::<toml_edit::DocumentMut>() {
                 Ok(doc) => {
                     doc.get("mcp_servers")
@@ -639,17 +656,15 @@ fn mcp_enabled_in_file(cli_type: &str, mcp_name: &str) -> bool {
     }
 }
 
-// Check if prompt content matches the file content
-fn prompt_enabled_in_file(cli_type: &str, prompt_content: &str) -> bool {
-    let home = match dirs::home_dir() {
-        Some(h) => h,
-        None => return false,
-    };
 
+// Check if prompt content matches the file content - 异步版本，支持自定义配置目录
+async fn prompt_enabled_in_file_async(db: &SqlitePool, cli_type: &str, prompt_content: &str) -> bool {
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
+    
     let prompt_path = match cli_type {
-        "claude_code" => home.join(".claude").join("CLAUDE.md"),
-        "codex" => home.join(".codex").join("AGENTS.md"),
-        "gemini" => home.join(".gemini").join("GEMINI.md"),
+        "claude_code" => config_dir.join("CLAUDE.md"),
+        "codex" => config_dir.join("AGENTS.md"),
+        "gemini" => config_dir.join("GEMINI.md"),
         _ => return false,
     };
 
@@ -666,20 +681,64 @@ fn prompt_enabled_in_file(cli_type: &str, prompt_content: &str) -> bool {
     normalize_text(prompt_content) == normalize_text(&file_content)
 }
 
-fn check_cli_enabled(cli_type: &str) -> bool {
+// ============================================================================
+// 统一的配置目录获取方法
+// ============================================================================
+
+/// 从数据库获取CLI配置目录（异步版本）
+/// 如果数据库中没有设置，返回默认配置目录
+pub async fn get_cli_config_dir(db: &SqlitePool, cli_type: &str) -> String {
+    let result: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT config_dir FROM cli_settings WHERE cli_type = ?",
+    )
+    .bind(cli_type)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten();
+
+    result
+        .and_then(|r| r.0)
+        .unwrap_or_else(|| get_default_config_dir(cli_type))
+}
+
+/// 获取CLI默认配置目录
+pub fn get_default_config_dir(cli_type: &str) -> String {
+    let home = dirs::home_dir().unwrap_or_default();
     match cli_type {
-        "claude_code" => check_claude_uses_gateway(),
-        "codex" => check_codex_uses_gateway(),
-        "gemini" => check_gemini_uses_gateway(),
+        "claude_code" => home.join(".claude").to_string_lossy().to_string(),
+        "codex" => home.join(".codex").to_string_lossy().to_string(),
+        "gemini" => home.join(".gemini").to_string_lossy().to_string(),
+        _ => home.to_string_lossy().to_string(),
+    }
+}
+
+/// 获取CLI配置目录的PathBuf版本（异步）
+pub async fn get_cli_config_dir_path(db: &SqlitePool, cli_type: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(get_cli_config_dir(db, cli_type).await)
+}
+
+// ============================================================================
+// 以下是旧的函数，保留用于向后兼容，内部调用新的统一方法
+// ============================================================================
+
+// 从数据库获取配置目录，如果没有则返回默认值
+async fn get_config_dir_from_db(db: &SqlitePool, cli_type: &str) -> String {
+    get_cli_config_dir(db, cli_type).await
+}
+
+async fn check_cli_enabled(db: &SqlitePool, cli_type: &str) -> bool {
+    match cli_type {
+        "claude_code" => check_claude_uses_gateway(db, cli_type).await,
+        "codex" => check_codex_uses_gateway(db, cli_type).await,
+        "gemini" => check_gemini_uses_gateway(db, cli_type).await,
         _ => false,
     }
 }
 
-fn check_claude_uses_gateway() -> bool {
-    let Some(home) = dirs::home_dir() else {
-        return false;
-    };
-    let config_path = home.join(".claude").join("settings.json");
+async fn check_claude_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
+    let config_dir = get_config_dir_from_db(db, cli_type).await;
+    let config_path = std::path::PathBuf::from(config_dir).join("settings.json");
 
     if !config_path.exists() {
         return false;
@@ -708,11 +767,9 @@ fn check_claude_uses_gateway() -> bool {
     }
 }
 
-fn check_codex_uses_gateway() -> bool {
-    let Some(home) = dirs::home_dir() else {
-        return false;
-    };
-    let config_path = home.join(".codex").join("config.toml");
+async fn check_codex_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
+    let config_dir = get_config_dir_from_db(db, cli_type).await;
+    let config_path = std::path::PathBuf::from(config_dir).join("config.toml");
 
     if !config_path.exists() {
         return false;
@@ -741,11 +798,9 @@ fn check_codex_uses_gateway() -> bool {
     }
 }
 
-fn check_gemini_uses_gateway() -> bool {
-    let Some(home) = dirs::home_dir() else {
-        return false;
-    };
-    let env_path = home.join(".gemini").join(".env");
+async fn check_gemini_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
+    let config_dir = get_config_dir_from_db(db, cli_type).await;
+    let env_path = std::path::PathBuf::from(config_dir).join(".env");
 
     if !env_path.exists() {
         return false;
@@ -767,21 +822,26 @@ fn check_gemini_uses_gateway() -> bool {
 }
 
 // Get the config file path for MCP/prompts sync (different for Codex)
-fn get_mcp_config_path(cli_type: &str) -> Option<std::path::PathBuf> {
-    let home = dirs::home_dir()?;
+async fn get_mcp_config_path(db: &SqlitePool, cli_type: &str) -> Option<std::path::PathBuf> {
+    let config_dir = get_config_dir_from_db(db, cli_type).await;
+    let base_path = std::path::PathBuf::from(config_dir);
+    
     match cli_type {
-        "claude_code" => Some(home.join(".claude.json")),  // Claude Code MCP goes to ~/.claude.json
-        "codex" => Some(home.join(".codex").join("config.toml")),  // Codex MCP goes to config.toml
-        "gemini" => Some(home.join(".gemini").join("settings.json")),
+        "claude_code" => {
+            // Claude Code MCP goes to ~/.claude.json (parent of config_dir)
+            base_path.parent().map(|p| p.join(".claude.json"))
+        },
+        "codex" => Some(base_path.join("config.toml")),  // Codex MCP goes to config.toml
+        "gemini" => Some(base_path.join("settings.json")),
         _ => None,
     }
 }
 
-async fn sync_cli_config(cli_type: &str, enabled: bool, default_config: &str) -> Result<()> {
+async fn sync_cli_config(db: &SqlitePool, cli_type: &str, enabled: bool, default_config: &str) -> Result<()> {
     match cli_type {
-        "claude_code" => sync_claude_code_config(enabled, default_config).await,
-        "codex" => sync_codex_config(enabled, default_config).await,
-        "gemini" => sync_gemini_config(enabled, default_config).await,
+        "claude_code" => sync_claude_code_config(db, enabled, default_config).await,
+        "codex" => sync_codex_config(db, enabled, default_config).await,
+        "gemini" => sync_gemini_config(db, enabled, default_config).await,
         _ => Err("Invalid CLI type".to_string()),
     }
 }
@@ -844,9 +904,9 @@ fn deep_merge(base: &mut serde_json::Value, override_val: &serde_json::Value) {
 }
 
 // Sync Claude Code configuration (settings.json)
-async fn sync_claude_code_config(enabled: bool, default_config: &str) -> Result<()> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot get home directory".to_string())?;
-    let config_path = home.join(".claude").join("settings.json");
+async fn sync_claude_code_config(db: &SqlitePool, enabled: bool, default_config: &str) -> Result<()> {
+    let config_dir = get_cli_config_dir_path(db, "claude_code").await;
+    let config_path = config_dir.join("settings.json");
 
     if enabled {
         // Backup existing config if not already backed up
@@ -909,9 +969,8 @@ async fn sync_claude_code_config(enabled: bool, default_config: &str) -> Result<
 }
 
 // Sync Codex configuration (auth.json + config.toml)
-async fn sync_codex_config(enabled: bool, default_config: &str) -> Result<()> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot get home directory".to_string())?;
-    let codex_dir = home.join(".codex");
+async fn sync_codex_config(db: &SqlitePool, enabled: bool, default_config: &str) -> Result<()> {
+    let codex_dir = get_cli_config_dir_path(db, "codex").await;
     let auth_path = codex_dir.join("auth.json");
     let config_path = codex_dir.join("config.toml");
 
@@ -1010,9 +1069,8 @@ async fn sync_codex_config(enabled: bool, default_config: &str) -> Result<()> {
 }
 
 // Sync Gemini configuration (settings.json + .env)
-async fn sync_gemini_config(enabled: bool, default_config: &str) -> Result<()> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot get home directory".to_string())?;
-    let gemini_dir = home.join(".gemini");
+async fn sync_gemini_config(db: &SqlitePool, enabled: bool, default_config: &str) -> Result<()> {
+    let gemini_dir = get_cli_config_dir_path(db, "gemini").await;
     let config_path = gemini_dir.join("settings.json");
     let env_path = gemini_dir.join(".env");
 
@@ -1286,7 +1344,7 @@ pub async fn get_mcps(db: State<'_, SqlitePool>) -> Result<Vec<McpResponse>> {
         // Read real status from config files
         let mut cli_flags = Vec::new();
         for cli_type in &cli_types {
-            let enabled = mcp_enabled_in_file(cli_type, &mcp.name);
+            let enabled = mcp_enabled_in_file_async(db.inner(), cli_type, &mcp.name).await;
             cli_flags.push(McpCliFlag {
                 cli_type: cli_type.to_string(),
                 enabled,
@@ -1316,7 +1374,7 @@ pub async fn get_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<McpResponse> 
     let cli_types = vec!["claude_code", "codex", "gemini"];
     let mut cli_flags = Vec::new();
     for cli_type in &cli_types {
-        let enabled = mcp_enabled_in_file(cli_type, &mcp.name);
+        let enabled = mcp_enabled_in_file_async(db.inner(), cli_type, &mcp.name).await;
         cli_flags.push(McpCliFlag {
             cli_type: cli_type.to_string(),
             enabled,
@@ -1350,7 +1408,7 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
     // Sync to CLI files if cli_flags provided
     let cli_flags = input.cli_flags.unwrap_or_default();
     if !cli_flags.is_empty() {
-        sync_single_mcp_to_cli(id, &input.name, &input.config_json, &cli_flags).await?;
+        sync_single_mcp_to_cli(db.inner(), id, &input.name, &input.config_json, &cli_flags).await?;
     }
 
     get_mcp(db, id).await
@@ -1396,7 +1454,7 @@ pub async fn update_mcp(db: State<'_, SqlitePool>, id: i64, input: McpUpdate) ->
 
     // Sync to CLI files if cli_flags provided
     if let Some(cli_flags) = input.cli_flags {
-        sync_single_mcp_to_cli(id, &name, &config_json, &cli_flags).await?;
+        sync_single_mcp_to_cli(db.inner(), id, &name, &config_json, &cli_flags).await?;
     }
 
     get_mcp(db, id).await
@@ -1422,13 +1480,14 @@ pub async fn delete_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
         .map_err(|e| e.to_string())?;
 
     // Remove from all CLI configs
-    delete_mcp_from_cli(&mcp_name)?;
+    delete_mcp_from_cli(db.inner(), &mcp_name).await?;
 
     Ok(())
 }
 
 // Sync a single MCP to CLI files based on enabled flags
 async fn sync_single_mcp_to_cli(
+    db: &SqlitePool,
     _mcp_id: i64,
     mcp_name: &str,
     mcp_config_json: &str,
@@ -1441,7 +1500,7 @@ async fn sync_single_mcp_to_cli(
         let is_enabled = cli_flags.iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
 
-        let config_path = get_mcp_config_path(cli_type);
+        let config_path = get_mcp_config_path(db, cli_type).await;
         if let Some(path) = config_path {
             // Handle Codex separately (TOML format)
             if cli_type == "codex" {
@@ -1590,11 +1649,11 @@ fn sync_single_codex_mcp(
 }
 
 // Delete a single MCP from all CLI configs
-fn delete_mcp_from_cli(mcp_name: &str) -> Result<()> {
+async fn delete_mcp_from_cli(db: &SqlitePool, mcp_name: &str) -> Result<()> {
     let cli_types = vec!["claude_code", "codex", "gemini"];
 
     for cli_type in cli_types {
-        let config_path = get_mcp_config_path(cli_type);
+        let config_path = get_mcp_config_path(db, cli_type).await;
         if let Some(path) = config_path {
             if !path.exists() {
                 continue;
@@ -1643,7 +1702,7 @@ pub async fn get_prompts(db: State<'_, SqlitePool>) -> Result<Vec<PromptResponse
         // Read real status from prompt files
         let mut cli_flags = Vec::new();
         for cli_type in &cli_types {
-            let enabled = prompt_enabled_in_file(cli_type, &prompt.content);
+            let enabled = prompt_enabled_in_file_async(db.inner(), cli_type, &prompt.content).await;
             cli_flags.push(PromptCliFlag {
                 cli_type: cli_type.to_string(),
                 enabled,
@@ -1673,7 +1732,7 @@ pub async fn get_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<PromptResp
     let cli_types = vec!["claude_code", "codex", "gemini"];
     let mut cli_flags = Vec::new();
     for cli_type in &cli_types {
-        let enabled = prompt_enabled_in_file(cli_type, &prompt.content);
+        let enabled = prompt_enabled_in_file_async(db.inner(), cli_type, &prompt.content).await;
         cli_flags.push(PromptCliFlag {
             cli_type: cli_type.to_string(),
             enabled,
@@ -1707,7 +1766,7 @@ pub async fn create_prompt(db: State<'_, SqlitePool>, input: PromptCreate) -> Re
     // Sync to CLI files if cli_flags provided
     let cli_flags = input.cli_flags.unwrap_or_default();
     if !cli_flags.is_empty() {
-        sync_single_prompt_to_cli(&input.content, &cli_flags).await?;
+        sync_single_prompt_to_cli(db.inner(), &input.content, &cli_flags).await?;
     }
 
     get_prompt(db, id).await
@@ -1753,7 +1812,7 @@ pub async fn update_prompt(db: State<'_, SqlitePool>, id: i64, input: PromptUpda
 
     // Sync to CLI files if cli_flags provided
     if let Some(cli_flags) = input.cli_flags {
-        sync_single_prompt_to_cli(&content, &cli_flags).await?;
+        sync_single_prompt_to_cli(db.inner(), &content, &cli_flags).await?;
     }
 
     get_prompt(db, id).await
@@ -1775,6 +1834,7 @@ pub async fn delete_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
 
 // Sync a single prompt to CLI files based on enabled flags
 async fn sync_single_prompt_to_cli(
+    db: &SqlitePool,
     prompt_content: &str,
     cli_flags: &[PromptCliFlag],
 ) -> Result<()> {
@@ -1786,7 +1846,7 @@ async fn sync_single_prompt_to_cli(
             .any(|f| f.cli_type == cli_type && f.enabled);
 
         // Get the prompt file path for this CLI
-        let prompt_path = get_prompt_file_path(cli_type);
+        let prompt_path = get_prompt_file_path(db, cli_type).await;
         if let Some(path) = prompt_path {
             // Check if CLI directory exists (skip if CLI not installed)
             if let Some(parent) = path.parent() {
@@ -1825,12 +1885,14 @@ async fn sync_prompt_configs_to_cli(_db: State<'_, SqlitePool>) -> Result<()> {
     Ok(())
 }
 
-fn get_prompt_file_path(cli_type: &str) -> Option<std::path::PathBuf> {
-    let home = dirs::home_dir()?;
+async fn get_prompt_file_path(db: &SqlitePool, cli_type: &str) -> Option<std::path::PathBuf> {
+    let config_dir = get_config_dir_from_db(db, cli_type).await;
+    let base_path = std::path::PathBuf::from(config_dir);
+    
     match cli_type {
-        "claude_code" => Some(home.join(".claude").join("CLAUDE.md")),
-        "codex" => Some(home.join(".codex").join("AGENTS.md")),
-        "gemini" => Some(home.join(".gemini").join("GEMINI.md")),
+        "claude_code" => Some(base_path.join("CLAUDE.md")),
+        "codex" => Some(base_path.join("AGENTS.md")),
+        "gemini" => Some(base_path.join("GEMINI.md")),
         _ => None,
     }
 }
@@ -1943,14 +2005,12 @@ pub async fn get_provider_stats(
 }
 
 // Session helpers
-fn get_cli_base_dir(cli_type: &str) -> std::path::PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
-    match cli_type {
-        "codex" => home.join(".codex"),
-        "gemini" => home.join(".gemini"),
-        _ => home.join(".claude"),
-    }
+
+/// 获取CLI基础目录（异步版本，支持自定义配置目录）
+async fn get_cli_base_dir_async(db: &SqlitePool, cli_type: &str) -> std::path::PathBuf {
+    get_cli_config_dir_path(db, cli_type).await
 }
+
 
 /// Parse Claude Code session file to extract info (first_message, git_branch, summary)
 /// Returns (first_message, git_branch, summary)
@@ -2423,13 +2483,13 @@ fn get_gemini_projects(tmp_dir: std::path::PathBuf, page: i64, page_size: i64) -
     })
 }
 
-// Handle Codex sessions (find by cwd)
-fn get_codex_sessions(project_name: &str, page: i64, page_size: i64) -> Result<PaginatedSessions> {
+// Handle Codex sessions (find by cwd) - 异步版本，支持自定义配置目录
+async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64, page_size: i64) -> Result<PaginatedSessions> {
     use std::io::{BufRead, BufReader};
     use walkdir::WalkDir;
     
-    let home = dirs::home_dir().unwrap_or_default();
-    let sessions_dir = home.join(".codex").join("sessions");
+    let config_dir = get_cli_config_dir_path(db, "codex").await;
+    let sessions_dir = config_dir.join("sessions");
     
     if !sessions_dir.exists() {
         return Ok(PaginatedSessions {
@@ -2534,10 +2594,10 @@ fn get_codex_sessions(project_name: &str, page: i64, page_size: i64) -> Result<P
     })
 }
 
-// Handle Gemini sessions
-fn get_gemini_sessions(project_name: &str, page: i64, page_size: i64) -> Result<PaginatedSessions> {
-    let home = dirs::home_dir().unwrap_or_default();
-    let chats_dir = home.join(".gemini").join("tmp").join(project_name).join("chats");
+// Handle Gemini sessions - 异步版本，支持自定义配置目录
+async fn get_gemini_sessions_async(db: &SqlitePool, project_name: &str, page: i64, page_size: i64) -> Result<PaginatedSessions> {
+    let config_dir = get_cli_config_dir_path(db, "gemini").await;
+    let chats_dir = config_dir.join("tmp").join(project_name).join("chats");
     
     if !chats_dir.exists() {
         return Ok(PaginatedSessions {
@@ -2632,13 +2692,13 @@ fn get_gemini_sessions(project_name: &str, page: i64, page_size: i64) -> Result<
     })
 }
 
-// Parse Codex messages from JSONL file
-fn get_codex_messages(session_id: &str) -> Result<Vec<SessionMessage>> {
+// Parse Codex messages from JSONL file - 异步版本，支持自定义配置目录
+async fn get_codex_messages_async(db: &SqlitePool, session_id: &str) -> Result<Vec<SessionMessage>> {
     use std::io::{BufRead, BufReader};
     use walkdir::WalkDir;
     
-    let home = dirs::home_dir().unwrap_or_default();
-    let sessions_dir = home.join(".codex").join("sessions");
+    let config_dir = get_cli_config_dir_path(db, "codex").await;
+    let sessions_dir = config_dir.join("sessions");
     
     // Find the session file by searching recursively
     let mut session_file_path: Option<std::path::PathBuf> = None;
@@ -2883,6 +2943,7 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
 // Session commands
 #[tauri::command]
 pub async fn get_session_projects(
+    db: State<'_, SqlitePool>,
     cli_type: String,
     page: Option<i64>,
     page_size: Option<i64>,
@@ -2890,7 +2951,7 @@ pub async fn get_session_projects(
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(20).clamp(1, 100);
 
-    let base_dir = get_cli_base_dir(&cli_type);
+    let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
     let projects_dir = match cli_type.as_str() {
         "codex" => base_dir.join("sessions"),
         "gemini" => base_dir.join("tmp"),
@@ -2997,6 +3058,7 @@ pub async fn get_session_projects(
 
 #[tauri::command]
 pub async fn get_project_sessions(
+    db: State<'_, SqlitePool>,
     cli_type: String,
     project_name: String,
     page: Option<i64>,
@@ -3007,16 +3069,16 @@ pub async fn get_project_sessions(
 
     // Special handling for Codex
     if cli_type == "codex" {
-        return get_codex_sessions(&project_name, page, page_size);
+        return get_codex_sessions_async(db.inner(), &project_name, page, page_size).await;
     }
 
     // Special handling for Gemini
     if cli_type == "gemini" {
-        return get_gemini_sessions(&project_name, page, page_size);
+        return get_gemini_sessions_async(db.inner(), &project_name, page, page_size).await;
     }
 
     // Claude Code default handling
-    let base_dir = get_cli_base_dir(&cli_type);
+    let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
     let project_dir = base_dir.join("projects").join(&project_name);
 
     let mut sessions = Vec::new();
@@ -3089,16 +3151,17 @@ pub async fn get_project_sessions(
 
 #[tauri::command]
 pub async fn get_session_messages(
+    db: State<'_, SqlitePool>,
     cli_type: String,
     project_name: String,
     session_id: String,
 ) -> Result<Vec<SessionMessage>> {
     // Special handling for Codex JSONL format
     if cli_type == "codex" {
-        return get_codex_messages(&session_id);
+        return get_codex_messages_async(db.inner(), &session_id).await;
     }
     
-    let base_dir = get_cli_base_dir(&cli_type);
+    let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
     let session_file = match cli_type.as_str() {
         "gemini" => base_dir.join("tmp").join(&project_name).join("chats").join(format!("{}.json", session_id)),
         _ => base_dir.join("projects").join(&project_name).join(format!("{}.jsonl", session_id)),
@@ -3228,11 +3291,12 @@ pub async fn get_session_messages(
 
 #[tauri::command]
 pub async fn delete_session(
+    db: State<'_, SqlitePool>,
     cli_type: String,
     project_name: String,
     session_id: String,
 ) -> Result<()> {
-    let base_dir = get_cli_base_dir(&cli_type);
+    let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
     
     // Special handling for Codex - need to search recursively
     if cli_type == "codex" {
@@ -3279,10 +3343,11 @@ pub async fn delete_session(
 
 #[tauri::command]
 pub async fn delete_project(
+    db: State<'_, SqlitePool>,
     cli_type: String,
     project_name: String,
 ) -> Result<()> {
-    let base_dir = get_cli_base_dir(&cli_type);
+    let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
     
     if cli_type == "codex" {
         // For Codex, delete all session files matching the project cwd
@@ -3725,24 +3790,21 @@ fn delete_cached_repo_zip(owner: &str, name: &str) {
     }
 }
 
-// 获取 CLI 的 skills 目录
-fn get_skill_cli_dir(cli_type: &str) -> Option<std::path::PathBuf> {
-    let home = dirs::home_dir()?;
-    match cli_type {
-        "claude_code" => Some(home.join(".claude").join("skills")),
-        "codex" => Some(home.join(".codex").join("skills")),
-        "gemini" => Some(home.join(".gemini").join("skills")),
-        _ => None,
-    }
+// 获取 CLI 的 skills 目录（异步版本，支持自定义配置目录）
+async fn get_skill_cli_dir_async(db: &SqlitePool, cli_type: &str) -> Option<std::path::PathBuf> {
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
+    Some(config_dir.join("skills"))
 }
 
-// 检查 skill 是否在 CLI 目录中启用
-fn skill_enabled_in_cli(cli_type: &str, directory: &str) -> bool {
-    let cli_dir = match get_skill_cli_dir(cli_type) {
+// 检查 skill 是否在 CLI 目录中启用（异步版本）
+async fn skill_enabled_in_cli_async(db: &SqlitePool, cli_type: &str, directory: &str) -> bool {
+    let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
         Some(d) => d,
         None => return false,
     };
-    cli_dir.join(directory).join("SKILL.md").exists()
+    
+    let skill_path = cli_dir.join(directory);
+    skill_path.exists()
 }
 
 // 解析 SKILL.md frontmatter
@@ -3782,31 +3844,27 @@ fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> Result<(
     Ok(())
 }
 
-// 同步 skill 到 CLI 目录
-fn sync_skill_to_cli(directory: &str, cli_type: &str) -> Result<()> {
+// 同步 skill 到 CLI 目录（异步版本）
+async fn sync_skill_to_cli_async(db: &SqlitePool, directory: &str, cli_type: &str) -> Result<()> {
     let ssot_dir = get_ssot_dir();
     let source = ssot_dir.join(directory);
     if !source.exists() {
         return Err(format!("Skill directory not found: {}", source.display()));
     }
-    let cli_dir = match get_skill_cli_dir(cli_type) {
+    let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
         Some(d) => d,
         None => return Err(format!("Unsupported CLI type: {}", cli_type)),
     };
-    std::fs::create_dir_all(&cli_dir).map_err(|e| e.to_string())?;
+
     let dest = cli_dir.join(directory);
-    // 如果已存在，先删除
-    if dest.exists() {
-        std::fs::remove_dir_all(&dest).ok();
-    }
     copy_dir_recursive(&source, &dest)?;
     tracing::info!("Synced skill {} to {}", directory, cli_type);
     Ok(())
 }
 
-// 从 CLI 目录移除 skill
-fn remove_skill_from_cli(directory: &str, cli_type: &str) -> Result<()> {
-    let cli_dir = match get_skill_cli_dir(cli_type) {
+// 从 CLI 目录移除 skill（异步版本）
+async fn remove_skill_from_cli_async(db: &SqlitePool, directory: &str, cli_type: &str) -> Result<()> {
+    let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
         Some(d) => d,
         None => return Ok(()),
     };
@@ -3818,10 +3876,10 @@ fn remove_skill_from_cli(directory: &str, cli_type: &str) -> Result<()> {
     Ok(())
 }
 
-// 从所有 CLI 目录移除 skill
-fn remove_skill_from_all_cli(directory: &str) -> Result<()> {
+// 从所有 CLI 目录移除 skill（异步版本）
+async fn remove_skill_from_all_cli_async(db: &SqlitePool, directory: &str) -> Result<()> {
     for cli_type in ["claude_code", "codex", "gemini"] {
-        remove_skill_from_cli(directory, cli_type)?;
+        remove_skill_from_cli_async(db, directory, cli_type).await?;
     }
     Ok(())
 }
@@ -4324,7 +4382,7 @@ pub async fn uninstall_skill(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
         .ok_or_else(|| "Skill not found".to_string())?;
 
     // 从所有 CLI 目录移除
-    remove_skill_from_all_cli(&skill.directory)?;
+    remove_skill_from_all_cli_async(db.inner(), &skill.directory).await?;
 
     // 从 SSOT 移除
     let ssot_dir = get_ssot_dir();
@@ -4359,15 +4417,15 @@ pub async fn get_installed_skills(db: State<'_, SqlitePool>) -> Result<Vec<Insta
         let cli_flags = vec![
             SkillCliFlag {
                 cli_type: "claude_code".to_string(),
-                enabled: skill_enabled_in_cli("claude_code", &skill.directory),
+                enabled: skill_enabled_in_cli_async(db.inner(), "claude_code", &skill.directory).await,
             },
             SkillCliFlag {
                 cli_type: "codex".to_string(),
-                enabled: skill_enabled_in_cli("codex", &skill.directory),
+                enabled: skill_enabled_in_cli_async(db.inner(), "codex", &skill.directory).await,
             },
             SkillCliFlag {
                 cli_type: "gemini".to_string(),
-                enabled: skill_enabled_in_cli("gemini", &skill.directory),
+                enabled: skill_enabled_in_cli_async(db.inner(), "gemini", &skill.directory).await,
             },
         ];
 
@@ -4401,9 +4459,9 @@ pub async fn toggle_skill_cli(db: State<'_, SqlitePool>, id: i64, cli_type: Stri
         .ok_or_else(|| "Skill not found".to_string())?;
 
     if enabled {
-        sync_skill_to_cli(&skill.directory, &cli_type)?;
+        sync_skill_to_cli_async(db.inner(), &skill.directory, &cli_type).await?;
     } else {
-        remove_skill_from_cli(&skill.directory, &cli_type)?;
+        remove_skill_from_cli_async(db.inner(), &skill.directory, &cli_type).await?;
     }
 
     Ok(())
@@ -4568,19 +4626,19 @@ fn parse_display_info(cli_type: &str, credential_json: &str) -> String {
     }
 }
 
-/// 读取 CLI 当前凭证
-fn read_cli_credential_impl(cli_type: &str) -> Result<String> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot get home directory".to_string())?;
+/// 读取 CLI 当前凭证（异步版本，支持自定义配置目录）
+async fn read_cli_credential_impl_async(db: &SqlitePool, cli_type: &str) -> Result<String> {
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
 
     match cli_type {
         "claude_code" => {
-            let config_path = home.join(".claude").join("settings.json");
+            let config_path = config_dir.join("settings.json");
             
             // 如果文件不存在，返回空内容（而不是报错）
             if !config_path.exists() {
                 let files = vec![
                     serde_json::json!({
-                        "path": "~/.claude/settings.json",
+                        "path": format!("{}/settings.json", config_dir.display()),
                         "content": ""
                     })
                 ];
@@ -4592,20 +4650,20 @@ fn read_cli_credential_impl(cli_type: &str) -> Result<String> {
             
             let files = vec![
                 serde_json::json!({
-                    "path": "~/.claude/settings.json",
+                    "path": format!("{}/settings.json", config_dir.display()),
                     "content": content
                 })
             ];
             Ok(serde_json::to_string(&files).unwrap())
         }
         "codex" => {
-            let auth_path = home.join(".codex").join("auth.json");
+            let auth_path = config_dir.join("auth.json");
             
             // 如果文件不存在，返回空的文件列表（而不是报错）
             if !auth_path.exists() {
                 let files = vec![
                     serde_json::json!({
-                        "path": "~/.codex/auth.json",
+                        "path": format!("{}/auth.json", config_dir.display()),
                         "content": ""
                     })
                 ];
@@ -4617,16 +4675,16 @@ fn read_cli_credential_impl(cli_type: &str) -> Result<String> {
             
             let files = vec![
                 serde_json::json!({
-                    "path": "~/.codex/auth.json",
+                    "path": format!("{}/auth.json", config_dir.display()),
                     "content": content
                 })
             ];
             Ok(serde_json::to_string(&files).unwrap())
         }
         "gemini" => {
-            let oauth_path = home.join(".gemini").join("oauth_creds.json");
-            let accounts_path = home.join(".gemini").join("google_accounts.json");
-            let settings_path = home.join(".gemini").join("settings.json");
+            let oauth_path = config_dir.join("oauth_creds.json");
+            let accounts_path = config_dir.join("google_accounts.json");
+            let settings_path = config_dir.join("settings.json");
 
             let mut files = vec![];
 
@@ -4635,12 +4693,12 @@ fn read_cli_credential_impl(cli_type: &str) -> Result<String> {
                 let content = std::fs::read_to_string(&oauth_path)
                     .map_err(|e| format!("读取 oauth_creds.json 失败: {}", e))?;
                 files.push(serde_json::json!({
-                    "path": "~/.gemini/oauth_creds.json",
+                    "path": format!("{}/oauth_creds.json", config_dir.display()),
                     "content": content
                 }));
             } else {
                 files.push(serde_json::json!({
-                    "path": "~/.gemini/oauth_creds.json",
+                    "path": format!("{}/oauth_creds.json", config_dir.display()),
                     "content": ""
                 }));
             }
@@ -4649,12 +4707,12 @@ fn read_cli_credential_impl(cli_type: &str) -> Result<String> {
                 let content = std::fs::read_to_string(&accounts_path)
                     .map_err(|e| format!("读取 google_accounts.json 失败: {}", e))?;
                 files.push(serde_json::json!({
-                    "path": "~/.gemini/google_accounts.json",
+                    "path": format!("{}/google_accounts.json", config_dir.display()),
                     "content": content
                 }));
             } else {
                 files.push(serde_json::json!({
-                    "path": "~/.gemini/google_accounts.json",
+                    "path": format!("{}/google_accounts.json", config_dir.display()),
                     "content": ""
                 }));
             }
@@ -4663,29 +4721,29 @@ fn read_cli_credential_impl(cli_type: &str) -> Result<String> {
                 let content = std::fs::read_to_string(&settings_path)
                     .map_err(|e| format!("读取 settings.json 失败: {}", e))?;
                 files.push(serde_json::json!({
-                    "path": "~/.gemini/settings.json",
+                    "path": format!("{}/settings.json", config_dir.display()),
                     "content": content
                 }));
             } else {
                 files.push(serde_json::json!({
-                    "path": "~/.gemini/settings.json",
+                    "path": format!("{}/settings.json", config_dir.display()),
                     "content": ""
                 }));
             }
 
             Ok(serde_json::to_string(&files).unwrap())
         }
-        _ => Err("不支持的 CLI 类型".to_string())
+        _ => Err("Unsupported CLI type".to_string()),
     }
 }
 
-/// 同步凭证到 CLI 配置文件
-fn sync_credential_to_cli(cli_type: &str, credential_json: &str, default_config: &str) -> Result<()> {
+/// 同步凭证到 CLI 配置文件（异步版本，支持自定义配置目录）
+async fn sync_credential_to_cli_async(db: &SqlitePool, cli_type: &str, credential_json: &str, default_config: &str) -> Result<()> {
     // 解析文件列表
     let files: Vec<serde_json::Value> = serde_json::from_str(credential_json)
         .map_err(|e| format!("解析凭证文件列表失败: {}", e))?;
     
-    let home = dirs::home_dir().ok_or_else(|| "Cannot get home directory".to_string())?;
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
 
     match cli_type {
         "claude_code" => {
@@ -4693,12 +4751,11 @@ fn sync_credential_to_cli(cli_type: &str, credential_json: &str, default_config:
             tracing::warn!("Claude Code 的直连模式配置写入功能尚未实现");
         }
         "codex" => {
-            let codex_dir = home.join(".codex");
-            let auth_path = codex_dir.join("auth.json");
-            let config_path = codex_dir.join("config.toml");
+            let auth_path = config_dir.join("auth.json");
+            let config_path = config_dir.join("config.toml");
 
             // 直连模式不备份
-            std::fs::create_dir_all(&codex_dir).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
 
             // 查找 auth.json 文件
             let auth_file = files.iter()
@@ -4742,14 +4799,13 @@ fn sync_credential_to_cli(cli_type: &str, credential_json: &str, default_config:
             }
         }
         "gemini" => {
-            let gemini_dir = home.join(".gemini");
-            let oauth_path = gemini_dir.join("oauth_creds.json");
-            let accounts_path = gemini_dir.join("google_accounts.json");
-            let settings_path = gemini_dir.join("settings.json");
-            let env_path = gemini_dir.join(".env");
+            let oauth_path = config_dir.join("oauth_creds.json");
+            let accounts_path = config_dir.join("google_accounts.json");
+            let settings_path = config_dir.join("settings.json");
+            let env_path = config_dir.join(".env");
 
             // 直连模式不备份
-            std::fs::create_dir_all(&gemini_dir).map_err(|e| e.to_string())?;
+            std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
 
             // 用于存储 settings.json 的内容
             let mut settings_content: Option<String> = None;
@@ -4828,6 +4884,7 @@ fn sync_credential_to_cli(cli_type: &str, credential_json: &str, default_config:
         }
         _ => return Err("不支持的 CLI 类型".to_string())
     }
+
     Ok(())
 }
 
@@ -4878,7 +4935,7 @@ async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) ->
         tracing::info!("{} 全局配置长度: {}", cli_type, default_config.len());
         tracing::info!("{} 开始同步凭证到文件", cli_type);
         
-        match sync_credential_to_cli(cli_type, &cred.credential_json, &default_config) {
+        match sync_credential_to_cli_async(db, cli_type, &cred.credential_json, &default_config).await {
             Ok(_) => {
                 tracing::info!("{} 凭证同步成功", cli_type);
                 Ok(())
@@ -4894,9 +4951,9 @@ async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) ->
     }
 }
 
-/// 删除直连模式写入的所有文件
-fn remove_direct_mode_files(cli_type: &str) -> Result<()> {
-    let home = dirs::home_dir().ok_or_else(|| "Cannot get home directory".to_string())?;
+/// 删除直连模式写入的所有文件（异步版本，支持自定义配置目录）
+async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Result<()> {
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
     
     match cli_type {
         "claude_code" => {
@@ -4905,9 +4962,8 @@ fn remove_direct_mode_files(cli_type: &str) -> Result<()> {
             Ok(())
         }
         "codex" => {
-            let codex_dir = home.join(".codex");
-            let auth_path = codex_dir.join("auth.json");
-            let config_path = codex_dir.join("config.toml");
+            let auth_path = config_dir.join("auth.json");
+            let config_path = config_dir.join("config.toml");
             
             if auth_path.exists() {
                 tracing::info!("删除直连模式文件: {:?}", auth_path);
@@ -4926,10 +4982,9 @@ fn remove_direct_mode_files(cli_type: &str) -> Result<()> {
             Ok(())
         }
         "gemini" => {
-            let gemini_dir = home.join(".gemini");
-            let oauth_path = gemini_dir.join("oauth_creds.json");
-            let accounts_path = gemini_dir.join("google_accounts.json");
-            let settings_path = gemini_dir.join("settings.json");
+            let oauth_path = config_dir.join("oauth_creds.json");
+            let accounts_path = config_dir.join("google_accounts.json");
+            let settings_path = config_dir.join("settings.json");
             
             if oauth_path.exists() {
                 tracing::info!("删除直连模式文件: {:?}", oauth_path);
@@ -5179,8 +5234,8 @@ pub async fn reorder_credentials(
 }
 
 #[tauri::command]
-pub async fn read_cli_credential(cli_type: String) -> Result<String> {
-    read_cli_credential_impl(&cli_type)
+pub async fn read_cli_credential(db: State<'_, SqlitePool>, cli_type: String) -> Result<String> {
+    read_cli_credential_impl_async(db.inner(), &cli_type).await
 }
 
 #[tauri::command]
@@ -5231,7 +5286,7 @@ pub async fn set_cli_mode(
         // 步骤1: 如果从中转模式切换过来，先关闭 CLI
         if current_mode == "proxy" {
             // 检查是否真的有中转配置（通过检查配置文件）
-            let has_gateway_config = check_cli_enabled(&cli_type);
+            let has_gateway_config = check_cli_enabled(db.inner(), &cli_type).await;
             
             if has_gateway_config {
                 let default_config = sqlx::query_as::<_, (Option<String>,)>(
@@ -5246,7 +5301,7 @@ pub async fn set_cli_mode(
 
                 tracing::info!("{} 从中转模式切换到直连模式，先关闭 CLI", cli_type);
                 // 关闭中转模式（会自动处理备份恢复）
-                sync_cli_config(&cli_type, false, &default_config).await?;
+                sync_cli_config(db.inner(), &cli_type, false, &default_config).await?;
             } else {
                 tracing::info!("{} 当前没有中转配置，跳过关闭 CLI 步骤", cli_type);
             }
@@ -5272,7 +5327,7 @@ pub async fn set_cli_mode(
             .unwrap_or_default();
 
             tracing::info!("开始同步 {} 凭证到文件", cli_type);
-            match sync_credential_to_cli(&cli_type, &cred.credential_json, &default_config) {
+            match sync_credential_to_cli_async(db.inner(), &cli_type, &cred.credential_json, &default_config).await {
                 Ok(_) => {
                     tracing::info!("{} 凭证同步成功", cli_type);
                 }
@@ -5296,7 +5351,7 @@ pub async fn set_cli_mode(
         // 步骤1: 如果从直连模式切换过来，先删除直连模式的文件
         if current_mode == "direct" {
             tracing::info!("{} 从直连模式切换到中转模式，先删除直连模式文件", cli_type);
-            remove_direct_mode_files(&cli_type)?;
+            remove_direct_mode_files_async(db.inner(), &cli_type).await?;
         }
         
         // 步骤2: 开启中转模式
@@ -5310,7 +5365,7 @@ pub async fn set_cli_mode(
         .and_then(|r| r.0)
         .unwrap_or_default();
 
-        sync_cli_config(&cli_type, true, &default_config).await?;
+        sync_cli_config(db.inner(), &cli_type, true, &default_config).await?;
 
         let _ = crate::services::stats::record_system_log(
             &log_db.0,

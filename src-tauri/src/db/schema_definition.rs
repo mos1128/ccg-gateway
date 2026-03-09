@@ -73,7 +73,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 10,
+            version: 12,
             tables: Self::define_main_tables(),
         }
     }
@@ -331,6 +331,12 @@ impl DatabaseSchema {
                         data_type: "TEXT".to_string(),
                         nullable: false,
                         default_value: Some("'proxy'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "config_dir".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
                     },
                     ColumnDefinition {
                         name: "updated_at".to_string(),

@@ -158,14 +158,14 @@ async fn init_default_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
-    // cli_settings
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, updated_at) VALUES ('claude_code', strftime('%s', 'now'))")
+    // cli_settings（插入默认配置）
+    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('claude_code', '{\n  \"env\": {},\n  \"permissions\": {}\n}', strftime('%s', 'now'))")
         .execute(pool)
         .await?;
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, updated_at) VALUES ('codex', strftime('%s', 'now'))")
+    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('codex', 'model_reasoning_effort = \"high\"\nmodel_reasoning_summary = \"detailed\"', strftime('%s', 'now'))")
         .execute(pool)
         .await?;
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, updated_at) VALUES ('gemini', strftime('%s', 'now'))")
+    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('gemini', '{\n  \"theme\": \"dark\"\n}', strftime('%s', 'now'))")
         .execute(pool)
         .await?;
 
