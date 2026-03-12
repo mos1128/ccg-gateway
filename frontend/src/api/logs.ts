@@ -17,9 +17,7 @@ export interface RequestLogQuery {
 export interface SystemLogQuery {
   page?: number
   page_size?: number
-  level?: string
   event_type?: string
-  provider_name?: string
 }
 
 export const logsApi = {
@@ -36,7 +34,8 @@ export const logsApi = {
     const data = await invoke<RequestLogListResponse>('get_request_logs', {
       page: params.page,
       pageSize: params.page_size,
-      cliType: params.cli_type
+      cliType: params.cli_type,
+      providerName: params.provider_name
     })
     return { data }
   },
@@ -53,9 +52,7 @@ export const logsApi = {
     const data = await invoke<SystemLogListResponse>('get_system_logs', {
       page: params.page,
       pageSize: params.page_size,
-      level: params.level,
-      eventType: params.event_type,
-      providerName: params.provider_name
+      eventType: params.event_type
     })
     return { data }
   },

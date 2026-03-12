@@ -1096,6 +1096,7 @@ pub struct LogQuery {
     #[serde(default = "default_page_size")]
     page_size: i64,
     cli_type: Option<String>,
+    provider_name: Option<String>,
 }
 
 pub async fn get_request_logs(
@@ -1107,41 +1108,41 @@ pub async fn get_request_logs(
     let offset = (page - 1) * page_size;
     let pool = &state.log_db;
 
-    let (items, total) = if let Some(ct) = query.cli_type {
-        let items = sqlx::query_as::<_, RequestLogItem>(
-            "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path FROM request_logs WHERE cli_type = ? ORDER BY id DESC LIMIT ? OFFSET ?",
-        )
-        .bind(&ct)
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(pool)
-        .await
-        .map_err(db_error)?;
+    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path FROM request_logs WHERE 1=1".to_string();
+    let mut count_sql = "SELECT COUNT(*) FROM request_logs WHERE 1=1".to_string();
 
-        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM request_logs WHERE cli_type = ?")
-            .bind(&ct)
-            .fetch_one(pool)
-            .await
-            .map_err(db_error)?;
+    if query.cli_type.is_some() {
+        sql.push_str(" AND cli_type = ?");
+        count_sql.push_str(" AND cli_type = ?");
+    }
+    if query.provider_name.is_some() {
+        sql.push_str(" AND provider_name = ?");
+        count_sql.push_str(" AND provider_name = ?");
+    }
 
-        (items, total.0)
-    } else {
-        let items = sqlx::query_as::<_, RequestLogItem>(
-            "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path FROM request_logs ORDER BY id DESC LIMIT ? OFFSET ?",
-        )
-        .bind(page_size)
-        .bind(offset)
-        .fetch_all(pool)
-        .await
-        .map_err(db_error)?;
+    sql.push_str(" ORDER BY id DESC LIMIT ? OFFSET ?");
 
-        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM request_logs")
-            .fetch_one(pool)
-            .await
-            .map_err(db_error)?;
+    let mut q = sqlx::query_as::<_, RequestLogItem>(&sql);
 
-        (items, total.0)
-    };
+    if let Some(ct) = &query.cli_type {
+        q = q.bind(ct);
+    }
+    if let Some(pn) = &query.provider_name {
+        q = q.bind(pn);
+    }
+
+    q = q.bind(page_size).bind(offset);
+
+    let items = q.fetch_all(pool).await.map_err(db_error)?;
+
+    let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
+    if let Some(ct) = &query.cli_type {
+        count_q = count_q.bind(ct);
+    }
+    if let Some(pn) = &query.provider_name {
+        count_q = count_q.bind(pn);
+    }
+    let (total,) = count_q.fetch_one(pool).await.map_err(db_error)?;
 
     Ok(Json(PaginatedLogs {
         items,
@@ -1205,19 +1206,19 @@ pub async fn get_system_logs_handler(
     }
 
     sql.push_str(" ORDER BY id DESC LIMIT ? OFFSET ?");
-    let mut q = sqlx::query_as::<_, SystemLogItem>(&sql)
-        .bind(page_size)
-        .bind(offset);
+    let mut q = sqlx::query_as::<_, SystemLogItem>(&sql);
 
-    if let Some(ref et) = query.event_type {
+    if let Some(et) = &query.event_type {
         q = q.bind(et);
     }
+
+    q = q.bind(page_size).bind(offset);
 
     let items = q.fetch_all(pool).await.map_err(db_error)?;
 
     // Get total count
     let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
-    if let Some(ref et) = query.event_type {
+    if let Some(et) = &query.event_type {
         count_q = count_q.bind(et);
     }
     let (total,) = count_q.fetch_one(pool).await.map_err(db_error)?;
