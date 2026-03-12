@@ -42,7 +42,9 @@
               <div class="provider-info">
                 <div class="provider-name">
                   {{ element.name }}
-                  <el-tag v-if="element.is_blacklisted" type="danger" size="small">已拉黑</el-tag>
+                  <el-tag v-if="element.is_blacklisted" type="danger" size="small">
+                    {{ getUnblacklistTime(element) }}
+                  </el-tag>
                   <el-tag v-else-if="!element.enabled" type="info" size="small">已禁用</el-tag>
                   <el-tag v-if="element.model_maps.length > 0" type="success" size="small">
                     {{ element.model_maps.length }}个模型映射
@@ -266,7 +268,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import draggable from 'vuedraggable'
@@ -285,6 +287,10 @@ const settingsStore = useSettingsStore()
 
 const providerFormRef = ref<FormInstance>()
 const credentialFormRef = ref<FormInstance>()
+const refreshTimer = ref<number>()
+const forceRefresh = ref(0)
+const hasRefreshed = ref(false)
+const visibilityHandler = ref<() => void>()
 
 const activeCliType = computed({
   get: () => uiStore.providersActiveCliType,
@@ -682,9 +688,77 @@ async function handleCredentialDragEnd() {
   ElMessage.success('排序已保存，第一位置凭证已激活')
 }
 
+function getUnblacklistTime(provider: Provider): string {
+  void forceRefresh.value
+
+  if (!provider.is_blacklisted || !provider.blacklisted_until) {
+    return '已拉黑'
+  }
+
+  const now = Date.now() / 1000
+  const blacklistedUntil = provider.blacklisted_until
+  const diffSeconds = blacklistedUntil - now
+
+  if (diffSeconds <= 0) {
+    // 倒计时归零，自动刷新数据（只刷新一次）
+    if (!hasRefreshed.value) {
+      hasRefreshed.value = true
+      providerStore.fetchProviders()
+    }
+    return '已拉黑'
+  }
+
+  const totalSeconds = Math.ceil(diffSeconds)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  if (minutes === 0) {
+    return `${seconds}秒后解除拉黑`
+  } else {
+    return `${minutes}分${seconds}秒后解除拉黑`
+  }
+}
+
 onMounted(() => {
   providerStore.fetchProviders()
   credentialStore.fetchCredentials(activeCliType.value)
+
+  // 启动定时器，每秒刷新一次倒计时显示
+  refreshTimer.value = window.setInterval(() => {
+    forceRefresh.value++
+    hasRefreshed.value = false
+  }, 1000)
+
+  // 页面可见性监听：当页面切换到后台时暂停定时器，切回时恢复
+  let wasRunning = true
+  visibilityHandler.value = () => {
+    if (document.hidden) {
+      // 页面不可见，暂停定时器
+      if (refreshTimer.value) {
+        clearInterval(refreshTimer.value)
+        refreshTimer.value = undefined
+      }
+      wasRunning = true
+    } else if (wasRunning) {
+      // 页面重新可见，恢复定时器
+      refreshTimer.value = window.setInterval(() => {
+        forceRefresh.value++
+        hasRefreshed.value = false
+      }, 1000)
+      // 切回时立即刷新一次数据
+      providerStore.fetchProviders()
+    }
+  }
+  document.addEventListener('visibilitychange', visibilityHandler.value)
+})
+
+onUnmounted(() => {
+  if (refreshTimer.value) {
+    clearInterval(refreshTimer.value)
+  }
+  if (visibilityHandler.value) {
+    document.removeEventListener('visibilitychange', visibilityHandler.value)
+  }
 })
 </script>
 
