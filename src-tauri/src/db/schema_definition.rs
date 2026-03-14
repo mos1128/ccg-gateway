@@ -73,7 +73,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 12,
+            version: 13,
             tables: Self::define_main_tables(),
         }
     }
@@ -81,7 +81,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 5,
+            version: 6,
             tables: Self::define_log_tables(),
         }
     }
@@ -232,6 +232,39 @@ impl DatabaseSchema {
                 unique_constraints: vec![vec![
                     "provider_id".to_string(),
                     "source_model".to_string(),
+                ]],
+            },
+        );
+
+        // provider_model_blacklist 表
+        tables.insert(
+            "provider_model_blacklist".to_string(),
+            TableDefinition {
+                name: "provider_model_blacklist".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "provider_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "model_pattern".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![vec![
+                    "provider_id".to_string(),
+                    "model_pattern".to_string(),
                 ]],
             },
         );
@@ -749,6 +782,18 @@ impl DatabaseSchema {
                     },
                     ColumnDefinition {
                         name: "error_message".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "source_model".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "target_model".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: true,
                         default_value: None,

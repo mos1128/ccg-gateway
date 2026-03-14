@@ -7,7 +7,7 @@ use crate::db::models::ProviderModelMap;
 use crate::services::routing::ProviderWithMaps;
 
 /// Wildcard pattern matching: * matches any characters, ? matches single character
-fn wildcard_match(pattern: &str, value: &str) -> bool {
+pub fn wildcard_match(pattern: &str, value: &str) -> bool {
     let pattern_chars: Vec<char> = pattern.chars().collect();
     let value_chars: Vec<char> = value.chars().collect();
 
@@ -40,6 +40,19 @@ fn wildcard_match(pattern: &str, value: &str) -> bool {
     }
 
     p_idx == pattern_chars.len()
+}
+
+/// Extract model name from request body (Claude/Codex)
+pub fn extract_model_from_body(body: &[u8]) -> Option<String> {
+    let json = serde_json::from_slice::<Value>(body).ok()?;
+    json.get("model").and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
+/// Extract model name from URL path (Gemini)
+pub fn extract_model_from_path(path: &str) -> Option<String> {
+    let re = Regex::new(r"/models/([^/:]+)").ok()?;
+    let caps = re.captures(path)?;
+    caps.get(1).map(|m| m.as_str().to_string())
 }
 
 /// CLI type enum
@@ -137,11 +150,7 @@ pub fn apply_body_model_mapping(
         target_model: None,
     };
 
-    let Ok(mut json) = serde_json::from_slice::<Value>(body) else {
-        return result;
-    };
-
-    let Some(model) = json.get("model").and_then(|v| v.as_str()).map(|s| s.to_string()) else {
+    let Some(model) = extract_model_from_body(body) else {
         return result;
     };
 
@@ -158,12 +167,13 @@ pub fn apply_body_model_mapping(
             result.target_model = Some(map.target_model.clone());
 
             // Replace model in body
-            if let Some(obj) = json.as_object_mut() {
-                obj.insert("model".to_string(), Value::String(map.target_model.clone()));
-            }
-
-            if let Ok(new_body) = serde_json::to_vec(&json) {
-                result.body = new_body;
+            if let Ok(mut json) = serde_json::from_slice::<Value>(body) {
+                if let Some(obj) = json.as_object_mut() {
+                    obj.insert("model".to_string(), Value::String(map.target_model.clone()));
+                }
+                if let Ok(new_body) = serde_json::to_vec(&json) {
+                    result.body = new_body;
+                }
             }
 
             break;
@@ -186,19 +196,12 @@ pub fn apply_url_model_mapping(
         target_model: None,
     };
 
-    // Extract model from Gemini path: /v1beta/models/{model}:generateContent
-    let re = Regex::new(r"/models/([^/:]+)").unwrap();
-    let Some(caps) = re.captures(path) else {
+    let Some(source_model) = extract_model_from_path(path) else {
         return result;
     };
 
-    let source_model = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-    if source_model.is_empty() {
-        return result;
-    }
-
     // Always record the source model
-    result.source_model = Some(source_model.to_string());
+    result.source_model = Some(source_model.clone());
 
     if model_maps.is_empty() {
         return result;
@@ -206,7 +209,7 @@ pub fn apply_url_model_mapping(
 
     // Find matching model map (supports wildcard: * matches any, ? matches single char)
     for map in model_maps {
-        if wildcard_match(&map.source_model, source_model) {
+        if wildcard_match(&map.source_model, &source_model) {
             result.target_model = Some(map.target_model.clone());
 
             // Replace model in path

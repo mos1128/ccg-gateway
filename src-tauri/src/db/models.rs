@@ -30,12 +30,24 @@ pub struct ProviderModelMap {
     pub enabled: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ProviderModelBlacklist {
+    pub id: i64,
+    pub provider_id: i64,
+    pub model_pattern: String,
+}
+
 // Input DTOs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelMapInput {
     pub source_model: String,
     pub target_model: String,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelBlacklistInput {
+    pub model_pattern: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +61,7 @@ pub struct ProviderCreate {
     pub blacklist_minutes: Option<i64>,
     pub custom_useragent: Option<String>,
     pub model_maps: Option<Vec<ModelMapInput>>,
+    pub model_blacklist: Option<Vec<ModelBlacklistInput>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +74,7 @@ pub struct ProviderUpdate {
     pub blacklist_minutes: Option<i64>,
     pub custom_useragent: Option<String>,
     pub model_maps: Option<Vec<ModelMapInput>>,
+    pub model_blacklist: Option<Vec<ModelBlacklistInput>>,
 }
 
 // Response DTOs
@@ -70,6 +84,12 @@ pub struct ModelMapResponse {
     pub source_model: String,
     pub target_model: String,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelBlacklistResponse {
+    pub id: i64,
+    pub model_pattern: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +108,7 @@ pub struct ProviderResponse {
     pub custom_useragent: Option<String>,
     pub is_blacklisted: bool,
     pub model_maps: Vec<ModelMapResponse>,
+    pub model_blacklist: Vec<ModelBlacklistResponse>,
 }
 
 impl From<Provider> for ProviderResponse {
@@ -108,7 +129,8 @@ impl From<Provider> for ProviderResponse {
             sort_order: p.sort_order,
             custom_useragent: p.custom_useragent,
             is_blacklisted,
-            model_maps: vec![], // Will be populated by the caller
+            model_maps: vec![],
+            model_blacklist: vec![],
         }
     }
 }
@@ -427,6 +449,8 @@ pub struct RequestLogItem {
     pub output_tokens: i64,
     pub client_method: String,
     pub client_path: String,
+    pub source_model: Option<String>,
+    pub target_model: Option<String>,
 }
 
 // Request Log Detail (详情视图)
@@ -451,6 +475,8 @@ pub struct RequestLogDetail {
     pub provider_headers: Option<String>,
     pub provider_body: Option<String>,
     pub error_message: Option<String>,
+    pub source_model: Option<String>,
+    pub target_model: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

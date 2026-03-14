@@ -50,6 +50,8 @@ pub async fn record_request_log(
     output_tokens: i64,
     client_method: &str,
     client_path: &str,
+    source_model: Option<&str>,
+    target_model: Option<&str>,
     info: Option<RequestLogInfo>,
 ) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().timestamp();
@@ -57,8 +59,8 @@ pub async fn record_request_log(
 
     sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
@@ -79,6 +81,8 @@ pub async fn record_request_log(
     .bind(&info.provider_headers)
     .bind(&info.provider_body)
     .bind(&info.error_message)
+    .bind(source_model)
+    .bind(target_model)
     .execute(log_db)
     .await?;
 

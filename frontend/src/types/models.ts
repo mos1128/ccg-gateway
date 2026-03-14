@@ -9,6 +9,11 @@ export interface ModelMap {
   enabled: boolean
 }
 
+export interface ModelBlacklist {
+  id?: number
+  model_pattern: string
+}
+
 export interface Provider {
   id: number
   cli_type: CliType
@@ -23,6 +28,7 @@ export interface Provider {
   sort_order: number
   custom_useragent: string | null
   model_maps: ModelMap[]
+  model_blacklist: ModelBlacklist[]
   is_blacklisted: boolean
 }
 
@@ -36,6 +42,7 @@ export interface ProviderCreate {
   blacklist_minutes?: number
   custom_useragent?: string
   model_maps?: ModelMap[]
+  model_blacklist?: ModelBlacklist[]
 }
 
 export interface ProviderUpdate {
@@ -47,6 +54,7 @@ export interface ProviderUpdate {
   blacklist_minutes?: number
   custom_useragent?: string
   model_maps?: ModelMap[]
+  model_blacklist?: ModelBlacklist[]
 }
 
 // Settings types
@@ -244,6 +252,8 @@ export interface RequestLogListItem {
   output_tokens: number
   client_method: string
   client_path: string
+  source_model: string | null
+  target_model: string | null
 }
 
 export interface RequestLogDetail extends RequestLogListItem {

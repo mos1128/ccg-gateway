@@ -49,6 +49,9 @@
                   <el-tag v-if="element.model_maps.length > 0" type="success" size="small">
                     {{ element.model_maps.length }}个模型映射
                   </el-tag>
+                  <el-tag v-if="element.model_blacklist && element.model_blacklist.length > 0" type="warning" size="small">
+                    {{ element.model_blacklist.length }}个黑名单
+                  </el-tag>
                 </div>
                 <div class="provider-url">{{ element.base_url }}</div>
               </div>
@@ -124,6 +127,27 @@
                 <el-icon class="arrow-icon"><Right /></el-icon>
                 <el-input v-model="map.target_model" placeholder="目标模型 (服务商)" class="model-input" />
                 <el-button type="danger" size="small" circle @click="removeModelMap(index)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </div>
+          </div>
+
+          <el-divider>模型黑名单</el-divider>
+          <div class="model-maps-section">
+            <div class="model-maps-header">
+              <span class="model-maps-tip">配置不支持请求的模型（支持通配符 * 和 ?）</span>
+              <el-button type="primary" size="small" @click="addModelBlacklist">
+                <el-icon><Plus /></el-icon>添加黑名单
+              </el-button>
+            </div>
+            <div v-if="form.model_blacklist.length === 0" class="model-maps-empty">
+              暂无黑名单配置（默认支持所有模型）
+            </div>
+            <div v-else class="model-maps-list">
+              <div v-for="(item, index) in form.model_blacklist" :key="index" class="model-map-item">
+                <el-input v-model="item.model_pattern" placeholder="模型匹配模式 (如: claude-opus-*)" class="model-input" />
+                <el-button type="danger" size="small" circle @click="removeModelBlacklist(index)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </div>
@@ -277,7 +301,7 @@ import { useCredentialStore } from '@/stores/credentials'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore } from '@/stores/settings'
 import { credentialsApi } from '@/api/credentials'
-import type { Provider, ModelMap, CliType } from '@/types/models'
+import type { Provider, ModelMap, ModelBlacklist, CliType } from '@/types/models'
 import type { OfficialCredential, OfficialCredentialCreate } from '@/types/models'
 
 const providerStore = useProviderStore()
@@ -332,6 +356,10 @@ interface FormModelMap {
   enabled: boolean
 }
 
+interface FormModelBlacklist {
+  model_pattern: string
+}
+
 const form = ref({
   name: '',
   base_url: '',
@@ -339,7 +367,8 @@ const form = ref({
   failure_threshold: 3,
   blacklist_minutes: 10,
   custom_useragent: '',
-  model_maps: [] as FormModelMap[]
+  model_maps: [] as FormModelMap[],
+  model_blacklist: [] as FormModelBlacklist[]
 })
 
 const credentialForm = ref({
@@ -385,7 +414,8 @@ function resetForm() {
     failure_threshold: 3,
     blacklist_minutes: 10,
     custom_useragent: '',
-    model_maps: []
+    model_maps: [],
+    model_blacklist: []
   }
 }
 
@@ -410,6 +440,16 @@ function addModelMap() {
 
 function removeModelMap(index: number) {
   form.value.model_maps.splice(index, 1)
+}
+
+function addModelBlacklist() {
+  form.value.model_blacklist.push({
+    model_pattern: ''
+  })
+}
+
+function removeModelBlacklist(index: number) {
+  form.value.model_blacklist.splice(index, 1)
 }
 
 function handleCliTypeChange(cliType: string) {
@@ -454,6 +494,9 @@ function handleEdit(provider: Provider) {
       source_model: m.source_model,
       target_model: m.target_model,
       enabled: m.enabled
+    })),
+    model_blacklist: provider.model_blacklist.map(b => ({
+      model_pattern: b.model_pattern
     }))
   }
 }
@@ -465,6 +508,14 @@ function buildModelMaps(): ModelMap[] {
       source_model: m.source_model.trim(),
       target_model: m.target_model.trim(),
       enabled: true
+    }))
+}
+
+function buildModelBlacklist(): ModelBlacklist[] {
+  return form.value.model_blacklist
+    .filter(b => b.model_pattern)
+    .map(b => ({
+      model_pattern: b.model_pattern.trim()
     }))
 }
 
@@ -482,7 +533,8 @@ async function handleSave() {
       failure_threshold: form.value.failure_threshold,
       blacklist_minutes: form.value.blacklist_minutes,
       custom_useragent: form.value.custom_useragent.trim(),
-      model_maps: buildModelMaps()
+      model_maps: buildModelMaps(),
+      model_blacklist: buildModelBlacklist()
     }
 
     try {

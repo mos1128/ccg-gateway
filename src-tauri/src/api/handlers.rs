@@ -25,7 +25,7 @@ use crate::db::models::{
 use crate::services::proxy::{
     apply_body_model_mapping, apply_url_model_mapping, apply_useragent_override,
     detect_cli_type, filter_headers, is_streaming, parse_token_usage, set_auth_header,
-    CliType, TimeoutConfig, TokenUsage,
+    CliType, TimeoutConfig, TokenUsage, extract_model_from_body, extract_model_from_path,
 };
 use crate::services::routing::select_provider;
 use crate::services::{provider as provider_service, stats as stats_service};
@@ -106,8 +106,14 @@ pub async fn proxy_handler_catchall(
     // Store client body for logging
     let client_body_str = truncate_body(&body_bytes);
 
-    // Select provider based on CLI type
-    let provider_with_maps = match select_provider(&state.db, cli_type.as_str()).await {
+    // Extract model name before selecting provider (for blacklist filtering)
+    let extracted_model = match cli_type {
+        CliType::Gemini => extract_model_from_path(&full_path),
+        _ => extract_model_from_body(&body_bytes),
+    };
+
+    // Select provider based on CLI type and model
+    let provider_with_maps = match select_provider(&state.db, cli_type.as_str(), extracted_model.as_deref()).await {
         Ok(Some(p)) => p,
         Ok(None) => {
             tracing::warn!(cli_type = %cli_type, "No available provider");
@@ -253,6 +259,8 @@ pub async fn proxy_handler_catchall(
             &full_path,
             start_time,
             timeouts,
+            source_model.as_deref(),
+            target_model.as_deref(),
             log_info,
         )
         .await
@@ -269,6 +277,8 @@ pub async fn proxy_handler_catchall(
             &full_path,
             start_time,
             timeouts,
+            source_model.as_deref(),
+            target_model.as_deref(),
             log_info,
         )
         .await
@@ -327,6 +337,8 @@ async fn handle_streaming_request(
     client_path: &str,
     start_time: Instant,
     timeouts: TimeoutConfig,
+    source_model: Option<&str>,
+    target_model: Option<&str>,
     mut log_info: RequestLogInfo,
 ) -> Result<Response<Body>, StatusCode> {
     // Send request with timeout for first byte
@@ -360,6 +372,8 @@ async fn handle_streaming_request(
                 0,
                 client_method,
                 client_path,
+                source_model,
+                target_model,
                 Some(log_info),
             )
             .await;
@@ -392,6 +406,8 @@ async fn handle_streaming_request(
                 0,
                 client_method,
                 client_path,
+                source_model,
+                target_model,
                 Some(log_info),
             )
             .await;
@@ -511,6 +527,8 @@ async fn handle_streaming_request(
     let log_status = status;
     let log_resp_headers = resp_headers.clone();
     let log_is_success = is_success;
+    let log_source_model = source_model.map(|s| s.to_string());
+    let log_target_model = target_model.map(|s| s.to_string());
     
     tokio::spawn(async move {
         // 等待stream结束通知（已验证可靠，无需超时兜底）
@@ -595,6 +613,8 @@ async fn handle_streaming_request(
             usage.output_tokens,
             &log_client_method,
             &log_client_path,
+            log_source_model.as_deref(),
+            log_target_model.as_deref(),
             Some(final_log_info),
         ).await;
         
@@ -618,6 +638,8 @@ async fn handle_non_streaming_request(
     client_path: &str,
     start_time: Instant,
     timeouts: TimeoutConfig,
+    source_model: Option<&str>,
+    target_model: Option<&str>,
     mut log_info: RequestLogInfo,
 ) -> Result<Response<Body>, StatusCode> {
     // Send request with timeout
@@ -651,6 +673,8 @@ async fn handle_non_streaming_request(
                 0,
                 client_method,
                 client_path,
+                source_model,
+                target_model,
                 Some(log_info),
             )
             .await;
@@ -683,6 +707,8 @@ async fn handle_non_streaming_request(
                 0,
                 client_method,
                 client_path,
+                source_model,
+                target_model,
                 Some(log_info),
             )
             .await;
@@ -727,6 +753,8 @@ async fn handle_non_streaming_request(
                 0,
                 client_method,
                 client_path,
+                source_model,
+                target_model,
                 Some(log_info),
             )
             .await;
@@ -780,6 +808,8 @@ async fn handle_non_streaming_request(
         usage.output_tokens,
         client_method,
         client_path,
+        source_model,
+        target_model,
         Some(log_info),
     )
     .await;
@@ -811,6 +841,8 @@ async fn record_request_stats(
     output_tokens: i64,
     client_method: &str,
     client_path: &str,
+    source_model: Option<&str>,
+    target_model: Option<&str>,
     log_info: Option<RequestLogInfo>,
 ) {
     // Derive success from status_code (200-299 = success)
@@ -828,6 +860,8 @@ async fn record_request_stats(
         output_tokens,
         client_method,
         client_path,
+        source_model,
+        target_model,
         log_info,
     )
     .await;
@@ -1108,7 +1142,7 @@ pub async fn get_request_logs(
     let offset = (page - 1) * page_size;
     let pool = &state.log_db;
 
-    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path FROM request_logs WHERE 1=1".to_string();
+    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE 1=1".to_string();
     let mut count_sql = "SELECT COUNT(*) FROM request_logs WHERE 1=1".to_string();
 
     if query.cli_type.is_some() {
@@ -1167,7 +1201,7 @@ pub async fn get_request_log_detail(
     Path(id): Path<i64>,
 ) -> Result<Json<RequestLogDetail>, (StatusCode, Json<ErrorResponse>)> {
     sqlx::query_as::<_, RequestLogDetail>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&state.log_db)

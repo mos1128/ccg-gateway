@@ -65,6 +65,23 @@ pub async fn get_providers(
             })
             .collect();
 
+        // Load model blacklist
+        let blacklist: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT id, model_pattern FROM provider_model_blacklist WHERE provider_id = ? ORDER BY id",
+        )
+        .bind(provider.id)
+        .fetch_all(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        response.model_blacklist = blacklist
+            .into_iter()
+            .map(|(id, model_pattern)| crate::db::models::ModelBlacklistResponse {
+                id,
+                model_pattern,
+            })
+            .collect();
+
         results.push(response);
     }
 
@@ -98,6 +115,23 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
             source_model,
             target_model,
             enabled: enabled != 0,
+        })
+        .collect();
+
+    // Load model blacklist
+    let blacklist: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT id, model_pattern FROM provider_model_blacklist WHERE provider_id = ? ORDER BY id",
+    )
+    .bind(id)
+    .fetch_all(db.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    response.model_blacklist = blacklist
+        .into_iter()
+        .map(|(id, model_pattern)| crate::db::models::ModelBlacklistResponse {
+            id,
+            model_pattern,
         })
         .collect();
 
@@ -159,6 +193,20 @@ pub async fn create_provider(
         }
     }
 
+    // Insert model blacklist if provided
+    if let Some(model_blacklist) = input.model_blacklist {
+        for item in model_blacklist {
+            sqlx::query(
+                "INSERT INTO provider_model_blacklist (provider_id, model_pattern) VALUES (?, ?)",
+            )
+            .bind(id)
+            .bind(&item.model_pattern)
+            .execute(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
     // Log system event
     let _ = crate::services::stats::record_system_log(
         &log_db.0,
@@ -191,6 +239,7 @@ pub async fn update_provider(
 
     // Check if model maps will be updated (before moving)
     let has_model_maps_update = input.model_maps.is_some();
+    let has_model_blacklist_update = input.model_blacklist.is_some();
 
     // Build dynamic update query
     let mut updates = vec!["updated_at = ?".to_string()];
@@ -287,8 +336,30 @@ pub async fn update_provider(
         }
     }
 
+    // Update model blacklist if provided
+    if let Some(model_blacklist) = input.model_blacklist {
+        // Delete existing blacklist
+        sqlx::query("DELETE FROM provider_model_blacklist WHERE provider_id = ?")
+            .bind(id)
+            .execute(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Insert new blacklist
+        for item in model_blacklist {
+            sqlx::query(
+                "INSERT INTO provider_model_blacklist (provider_id, model_pattern) VALUES (?, ?)",
+            )
+            .bind(id)
+            .bind(&item.model_pattern)
+            .execute(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
     // Log system event (only if there were actual updates)
-    if has_updates || has_model_maps_update {
+    if has_updates || has_model_maps_update || has_model_blacklist_update {
         let _ = crate::services::stats::record_system_log(
             &log_db.0,
             "provider_updated",
@@ -318,6 +389,13 @@ pub async fn delete_provider(
 
     // Delete associated model maps first (cascade delete)
     sqlx::query("DELETE FROM provider_model_map WHERE provider_id = ?")
+        .bind(id)
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete associated model blacklist
+    sqlx::query("DELETE FROM provider_model_blacklist WHERE provider_id = ?")
         .bind(id)
         .execute(db.inner())
         .await
@@ -1169,7 +1247,7 @@ pub async fn get_request_logs(
     let offset = (page - 1) * page_size;
     let pool = &log_db.0;
 
-    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path FROM request_logs WHERE 1=1".to_string();
+    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE 1=1".to_string();
     let mut count_sql = "SELECT COUNT(*) FROM request_logs WHERE 1=1".to_string();
 
     if cli_type.is_some() {
@@ -1233,7 +1311,7 @@ pub async fn get_request_log_detail(
     id: i64,
 ) -> Result<RequestLogDetail> {
     sqlx::query_as::<_, RequestLogDetail>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&log_db.0)

@@ -50,7 +50,6 @@
             </el-table-column>
             <el-table-column prop="cli_type" label="CLI" width="130" />
             <el-table-column prop="provider_name" label="服务商" width="150" show-overflow-tooltip />
-            <el-table-column prop="model_id" label="模型" width="220" show-overflow-tooltip />
             <el-table-column label="状态码" width="90">
               <template #default="{ row }">
                 <el-tag :type="getStatusCodeType(row.status_code)" size="small">
@@ -60,6 +59,18 @@
             </el-table-column>
             <el-table-column label="耗时" width="90">
               <template #default="{ row }">{{ row.elapsed_ms }}ms</template>
+            </el-table-column>
+            <el-table-column label="源模型" width="200" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="row.source_model">{{ row.source_model }}</span>
+                <span v-else class="text-muted">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="映射模型" width="200" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="row.target_model">{{ row.target_model }}</span>
+                <span v-else class="text-muted">-</span>
+              </template>
             </el-table-column>
             <el-table-column label="Tokens" width="140">
               <template #default="{ row }">
@@ -151,7 +162,8 @@
           <el-descriptions-item label="耗时">{{ requestDetail.elapsed_ms }}ms</el-descriptions-item>
           <el-descriptions-item label="CLI类型">{{ requestDetail.cli_type }}</el-descriptions-item>
           <el-descriptions-item label="服务商">{{ requestDetail.provider_name }}</el-descriptions-item>
-          <el-descriptions-item label="模型">{{ requestDetail.model_id || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="源模型">{{ requestDetail.source_model || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="映射模型">{{ requestDetail.target_model || '-' }}</el-descriptions-item>
           <el-descriptions-item label="Input Tokens">{{ formatTokens(requestDetail.input_tokens) }}</el-descriptions-item>
           <el-descriptions-item label="Output Tokens">{{ formatTokens(requestDetail.output_tokens) }}</el-descriptions-item>
           <el-descriptions-item label="状态码">
@@ -553,5 +565,8 @@ onMounted(() => {
   justify-content: space-between;
   width: 100%;
   padding-right: 8px;
+}
+.text-muted {
+  color: #909399;
 }
 </style>
