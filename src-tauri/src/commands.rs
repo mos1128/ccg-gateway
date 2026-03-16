@@ -608,6 +608,30 @@ pub async fn update_cli_settings(
         .execute(db.inner())
         .await
         .map_err(|e| e.to_string())?;
+
+        // 配置更新后，自动同步到 CLI 配置文件
+        let mode: String = sqlx::query_as::<_, (String,)>(
+            "SELECT cli_mode FROM cli_settings WHERE cli_type = ?",
+        )
+        .bind(&cli_type)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|r| r.0)
+        .unwrap_or_else(|| "proxy".to_string());
+
+        if mode == "proxy" {
+            // 中转模式：如果 CLI 已启用，重新同步配置
+            let enabled = check_cli_enabled(db.inner(), &cli_type).await;
+            if enabled {
+                tracing::info!("{} CLI 已启用，配置变更后自动同步配置文件", cli_type);
+                sync_cli_config(db.inner(), &cli_type, true, config_trimmed).await?;
+            }
+        } else {
+            // 直连模式：重新同步凭证配置
+            tracing::info!("{} 直连模式，配置变更后自动同步凭证配置", cli_type);
+            auto_sync_credential_in_direct_mode(db.inner(), &cli_type).await?;
+        }
     }
 
     // Update config_dir if provided
