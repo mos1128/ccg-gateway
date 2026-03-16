@@ -612,10 +612,12 @@ pub async fn update_cli_settings(
 
     // Update config_dir if provided
     if let Some(ref config_dir) = input.config_dir {
+        // 收缩路径为 ~ 开头的相对路径，便于跨设备同步
+        let shrunk_path = shrink_home_path(config_dir);
         sqlx::query(
             "UPDATE cli_settings SET config_dir = ?, updated_at = ? WHERE cli_type = ?",
         )
-        .bind(config_dir)
+        .bind(&shrunk_path)
         .bind(now)
         .bind(&cli_type)
         .execute(db.inner())
@@ -763,6 +765,53 @@ async fn prompt_enabled_in_file_async(db: &SqlitePool, cli_type: &str, prompt_co
 // 统一的配置目录获取方法
 // ============================================================================
 
+/// 获取CLI默认配置目录
+pub fn get_default_config_dir(cli_type: &str) -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+    match cli_type {
+        "claude_code" => home.join(".claude").to_string_lossy().to_string(),
+        "codex" => home.join(".codex").to_string_lossy().to_string(),
+        "gemini" => home.join(".gemini").to_string_lossy().to_string(),
+        _ => home.to_string_lossy().to_string(),
+    }
+}
+
+/// 展开 ~ 为用户目录
+/// 例如: ~/.claude -> C:\Users\mos\.claude
+pub fn expand_home_path(path: &str) -> String {
+    if path.starts_with('~') {
+        let home = dirs::home_dir().unwrap_or_default();
+        let remaining = &path[1..]; // 去掉 ~
+        // 处理 ~/ 或 ~ 两种情况
+        let remaining = remaining.strip_prefix('/').or_else(|| remaining.strip_prefix('\\')).unwrap_or(remaining);
+        home.join(remaining).to_string_lossy().to_string()
+    } else {
+        path.to_string()
+    }
+}
+
+/// 将绝对路径收缩为 ~ 开头的相对路径
+/// 例如: C:\Users\mos\.claude -> ~/.claude
+pub fn shrink_home_path(path: &str) -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+    let home_str = home.to_string_lossy();
+
+    // 标准化路径分隔符进行比较
+    let path_normalized = path.replace('\\', "/");
+    let home_normalized = home_str.replace('\\', "/");
+
+    if path_normalized.starts_with(&home_normalized) {
+        let remaining = &path_normalized[home_normalized.len()..];
+        if remaining.is_empty() {
+            "~".to_string()
+        } else {
+            format!("~{}", remaining)
+        }
+    } else {
+        path.to_string()
+    }
+}
+
 /// 从数据库获取CLI配置目录（异步版本）
 /// 如果数据库中没有设置，返回默认配置目录
 pub async fn get_cli_config_dir(db: &SqlitePool, cli_type: &str) -> String {
@@ -777,18 +826,8 @@ pub async fn get_cli_config_dir(db: &SqlitePool, cli_type: &str) -> String {
 
     result
         .and_then(|r| r.0)
+        .map(|p| expand_home_path(&p)) // 展开路径中的 ~
         .unwrap_or_else(|| get_default_config_dir(cli_type))
-}
-
-/// 获取CLI默认配置目录
-pub fn get_default_config_dir(cli_type: &str) -> String {
-    let home = dirs::home_dir().unwrap_or_default();
-    match cli_type {
-        "claude_code" => home.join(".claude").to_string_lossy().to_string(),
-        "codex" => home.join(".codex").to_string_lossy().to_string(),
-        "gemini" => home.join(".gemini").to_string_lossy().to_string(),
-        _ => home.to_string_lossy().to_string(),
-    }
 }
 
 /// 获取CLI配置目录的PathBuf版本（异步）
