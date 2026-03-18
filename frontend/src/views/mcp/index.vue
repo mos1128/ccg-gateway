@@ -59,11 +59,14 @@
             type="textarea"
             :rows="10"
             placeholder='{"command": "npx", "args": ["-y", "@example/mcp"]}'
+            @blur="validateConfig"
           />
+          <div v-if="validationError" class="error-tip">{{ validationError }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showDialog = false">取消</el-button>
+        <el-button @click="formatJson">格式化</el-button>
         <el-button type="primary" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
@@ -75,10 +78,12 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mcpApi } from '@/api/mcp'
 import type { Mcp } from '@/types/models'
+import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 
 const mcpList = ref<Mcp[]>([])
 const showAddDialog = ref(false)
 const editingMcp = ref<Mcp | null>(null)
+const validationError = ref('')
 
 const showDialog = computed({
   get: () => showAddDialog.value || !!editingMcp.value,
@@ -86,6 +91,7 @@ const showDialog = computed({
     if (!val) {
       showAddDialog.value = false
       editingMcp.value = null
+      validationError.value = ''
     }
   }
 })
@@ -106,9 +112,29 @@ function handleEdit(mcp: Mcp) {
     name: mcp.name,
     config_json: mcp.config_json
   }
+  validationError.value = ''
+}
+
+function validateConfig(): boolean {
+  validationError.value = validateJson(form.value.config_json)
+  return !validationError.value
+}
+
+function formatJson() {
+  const result = formatJsonUtil(form.value.config_json)
+  if (result === form.value.config_json) {
+    validationError.value = validateJson(form.value.config_json)
+  } else {
+    form.value.config_json = result
+    validationError.value = ''
+  }
 }
 
 async function handleSave() {
+  if (!validateConfig()) {
+    ElMessage.error('JSON 格式错误，请修正后再保存')
+    return
+  }
   try {
     const data = {
       name: form.value.name.trim(),
@@ -124,6 +150,7 @@ async function handleSave() {
     }
     showDialog.value = false
     form.value = { name: '', config_json: '' }
+    validationError.value = ''
     await fetchList()
   } catch (error: any) {
     ElMessage.error(error?.message || '操作失败')
@@ -164,5 +191,10 @@ onMounted(fetchList)
 <style scoped>
 .page-header {
   margin-bottom: 20px;
+}
+.error-tip {
+  margin-top: 5px;
+  color: #f56c6c;
+  font-size: 12px;
 }
 </style>

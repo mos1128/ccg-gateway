@@ -1526,11 +1526,18 @@ pub async fn get_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<McpResponse> 
 pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<McpResponse> {
     let now = chrono::Utc::now().timestamp();
 
+    // Validate JSON format if config_json is not empty
+    let config_trimmed = input.config_json.trim();
+    if !config_trimmed.is_empty() {
+        serde_json::from_str::<serde_json::Value>(config_trimmed)
+            .map_err(|e| format!("JSON 格式错误: {}", e))?;
+    }
+
     let result = sqlx::query(
         "INSERT INTO mcp_configs (name, config_json, updated_at) VALUES (?, ?, ?)",
     )
     .bind(&input.name)
-    .bind(&input.config_json)
+    .bind(config_trimmed)
     .bind(now)
     .execute(db.inner())
     .await
@@ -1541,7 +1548,7 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
     // Sync to CLI files if cli_flags provided
     let cli_flags = input.cli_flags.unwrap_or_default();
     if !cli_flags.is_empty() {
-        sync_single_mcp_to_cli(db.inner(), id, &input.name, &input.config_json, &cli_flags).await?;
+        sync_single_mcp_to_cli(db.inner(), id, &input.name, config_trimmed, &cli_flags).await?;
     }
 
     get_mcp(db, id).await
@@ -1550,6 +1557,15 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
 #[tauri::command]
 pub async fn update_mcp(db: State<'_, SqlitePool>, id: i64, input: McpUpdate) -> Result<McpResponse> {
     let now = chrono::Utc::now().timestamp();
+
+    // Validate JSON format if config_json is provided and not empty
+    if let Some(ref config) = input.config_json {
+        let config_trimmed = config.trim();
+        if !config_trimmed.is_empty() {
+            serde_json::from_str::<serde_json::Value>(config_trimmed)
+                .map_err(|e| format!("JSON 格式错误: {}", e))?;
+        }
+    }
 
     let (name, config_json) = if input.name.is_some() || input.config_json.is_some() {
         let current = sqlx::query_as::<_, McpConfig>("SELECT * FROM mcp_configs WHERE id = ?")
@@ -1560,7 +1576,7 @@ pub async fn update_mcp(db: State<'_, SqlitePool>, id: i64, input: McpUpdate) ->
             .ok_or_else(|| "MCP not found".to_string())?;
 
         let new_name = input.name.unwrap_or(current.name.clone());
-        let new_config = input.config_json.unwrap_or(current.config_json.clone());
+        let new_config = input.config_json.map(|c| c.trim().to_string()).unwrap_or(current.config_json.clone());
 
         sqlx::query(
             "UPDATE mcp_configs SET name = ?, config_json = ?, updated_at = ? WHERE id = ?",

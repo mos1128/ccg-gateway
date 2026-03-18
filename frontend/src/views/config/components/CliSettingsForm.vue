@@ -23,6 +23,7 @@
       <div class="form-tip">{{ tip }}</div>
     </el-form-item>
     <el-form-item>
+      <el-button @click="formatJson" :disabled="!isJsonFormat">格式化</el-button>
       <el-button type="primary" @click="handleSave">保存</el-button>
     </el-form-item>
   </el-form>
@@ -32,6 +33,7 @@
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { CliSettings } from '@/types/models'
+import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 
 const props = defineProps<{
   cliType: string
@@ -84,6 +86,10 @@ const tip = computed(() => {
   }
 })
 
+const isJsonFormat = computed(() => {
+  return props.cliType === 'claude_code' || props.cliType === 'gemini'
+})
+
 const configDirTip = computed(() => {
   return `默认：${defaultConfigDir.value}`
 })
@@ -113,27 +119,29 @@ function validateConfig() {
 
   // 对于 claude_code 和 gemini，验证 JSON 格式
   if (props.cliType === 'claude_code' || props.cliType === 'gemini') {
-    try {
-      JSON.parse(config)
-      return true
-    } catch (e) {
-      validationError.value = `JSON 格式错误: ${(e as Error).message}`
-      return false
-    }
+    validationError.value = validateJson(config)
+    return !validationError.value
   }
 
   // 对于 codex，验证 TOML 格式（简单检查）
   if (props.cliType === 'codex') {
-    // TOML 格式较为宽松，这里做基本检查
-    // 检查是否有明显的 JSON 语法（常见错误）
     if (config.includes('{') || config.includes('[') && config.includes(']') && config.includes(',')) {
       validationError.value = 'TOML 格式错误: 请使用 TOML 格式而非 JSON 格式'
       return false
     }
-    return true
   }
 
   return true
+}
+
+function formatJson() {
+  const result = formatJsonUtil(form.value.default_json_config)
+  if (result === form.value.default_json_config) {
+    validationError.value = validateJson(form.value.default_json_config)
+  } else {
+    form.value.default_json_config = result
+    validationError.value = ''
+  }
 }
 
 function handleSave() {
