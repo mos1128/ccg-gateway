@@ -623,7 +623,6 @@ pub struct PluginFavorite {
     pub plugin_id: String,
     pub plugin_name: String,
     pub marketplace_name: String,
-    pub marketplace_url: Option<String>,
     pub version: Option<String>,
     pub description: Option<String>,
     pub created_at: i64,
@@ -634,7 +633,6 @@ pub struct PluginFavoriteCreate {
     pub plugin_id: String,
     pub plugin_name: String,
     pub marketplace_name: String,
-    pub marketplace_url: Option<String>,
     pub version: Option<String>,
     pub description: Option<String>,
 }
@@ -645,7 +643,6 @@ pub struct PluginFavoriteResponse {
     pub plugin_id: String,
     pub plugin_name: String,
     pub marketplace_name: String,
-    pub marketplace_url: Option<String>,
     pub version: Option<String>,
     pub description: Option<String>,
     pub created_at: i64,
@@ -657,7 +654,6 @@ pub struct PluginFavoriteResponse {
 pub struct MarketplaceInfo {
     pub name: String,
     pub description: Option<String>,
-    pub url: Option<String>,
 }
 
 // 市场中的插件信息 (从 JSON 解析)

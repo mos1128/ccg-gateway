@@ -1,77 +1,66 @@
 import { invoke } from '@tauri-apps/api/core'
 import type {
-  InstalledPlugin,
   MarketplaceInfo,
   PluginItem,
-  PluginFavorite,
-  PluginFavoriteCreate
+  PluginActionResult,
+  MarketplaceActionResult
 } from '@/types/models'
 
 export const pluginsApi = {
-  // ==================== 插件管理 ====================
-  getInstalled: async (): Promise<InstalledPlugin[]> => {
-    return await invoke<InstalledPlugin[]>('get_installed_plugins')
-  },
-
+  // 获取插件列表
   getAll: async (): Promise<PluginItem[]> => {
     return await invoke<PluginItem[]>('get_all_plugins')
   },
 
-  install: async (pluginId: string): Promise<void> => {
-    await invoke('install_plugin', { pluginId })
-  },
-
-  uninstall: async (pluginId: string): Promise<void> => {
-    await invoke('uninstall_plugin', { pluginId })
-  },
-
-  enable: async (pluginId: string): Promise<void> => {
-    await invoke('enable_plugin', { pluginId })
-  },
-
-  disable: async (pluginId: string): Promise<void> => {
-    await invoke('disable_plugin', { pluginId })
-  },
-
-  update: async (pluginId: string): Promise<void> => {
-    await invoke('update_plugin', { pluginId })
-  },
-
-  // ==================== 市场管理 ====================
+  // 获取市场列表
   getMarketplaces: async (): Promise<MarketplaceInfo[]> => {
-    return await invoke<MarketplaceInfo[]>('get_installed_marketplaces')
+    return await invoke<MarketplaceInfo[]>('get_marketplaces')
   },
 
-  addMarketplace: async (url: string): Promise<MarketplaceInfo> => {
-    return await invoke<MarketplaceInfo>('add_marketplace', { url })
+  // 刷新插件列表
+  refresh: async (): Promise<PluginItem[]> => {
+    return await invoke<PluginItem[]>('refresh_plugins')
   },
 
-  removeMarketplace: async (name: string): Promise<void> => {
-    await invoke('remove_marketplace', { name })
+  // 插件操作
+  pluginAction: async (action: string, pluginId: string): Promise<PluginActionResult> => {
+    return await invoke<PluginActionResult>('plugin_action', { action, pluginId })
   },
 
-  updateMarketplace: async (name: string): Promise<void> => {
-    await invoke('update_marketplace', { name })
+  // 收藏操作
+  addFavorite: async (
+    pluginId: string,
+    pluginName: string,
+    marketplaceName: string,
+    version?: string,
+    description?: string
+  ): Promise<PluginActionResult> => {
+    return await invoke<PluginActionResult>('add_plugin_favorite', {
+      pluginId,
+      pluginName,
+      marketplaceName,
+      version,
+      description
+    })
   },
 
-  checkMarketplaceExists: async (name: string): Promise<boolean> => {
-    return await invoke<boolean>('check_marketplace_exists', { name })
+  removeFavorite: async (pluginId: string): Promise<PluginActionResult> => {
+    return await invoke<PluginActionResult>('remove_plugin_favorite', { pluginId })
   },
 
-  // ==================== 收藏管理 ====================
-  getFavorites: async (): Promise<PluginFavorite[]> => {
-    return await invoke<PluginFavorite[]>('get_plugin_favorites')
+  // 市场操作
+  marketplaceAction: async (action: string, param: string): Promise<MarketplaceActionResult> => {
+    return await invoke<MarketplaceActionResult>('marketplace_action', { action, param })
   },
 
-  addFavorite: async (input: PluginFavoriteCreate): Promise<void> => {
-    await invoke('add_plugin_favorite', { input })
-  },
+  // 便捷方法
+  install: (pluginId: string) => pluginsApi.pluginAction('install', pluginId),
+  uninstall: (pluginId: string) => pluginsApi.pluginAction('uninstall', pluginId),
+  enable: (pluginId: string) => pluginsApi.pluginAction('enable', pluginId),
+  disable: (pluginId: string) => pluginsApi.pluginAction('disable', pluginId),
+  update: (pluginId: string) => pluginsApi.pluginAction('update', pluginId),
 
-  removeFavorite: async (pluginId: string): Promise<void> => {
-    await invoke('remove_plugin_favorite', { pluginId })
-  },
-
-  installFromFavorite: async (pluginId: string): Promise<void> => {
-    await invoke('install_from_favorite', { pluginId })
-  }
+  addMarketplace: (url: string) => pluginsApi.marketplaceAction('add', url),
+  removeMarketplace: (name: string) => pluginsApi.marketplaceAction('remove', name),
+  updateMarketplace: (name: string) => pluginsApi.marketplaceAction('update', name)
 }

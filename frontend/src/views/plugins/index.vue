@@ -14,7 +14,7 @@
               <el-icon><Search /></el-icon>
             </template>
           </el-input>
-          <el-button type="primary" @click="fetchAllPlugins" :loading="loading">
+          <el-button type="primary" @click="handleRefresh" :loading="loading">
             刷新列表
           </el-button>
         </div>
@@ -133,12 +133,6 @@
               {{ row.description || '-' }}
             </template>
           </el-table-column>
-          <el-table-column prop="url" label="URL" min-width="200">
-            <template #default="{ row }">
-              <span v-if="row.url" class="url-text">{{ row.url }}</span>
-              <span v-else class="text-muted">-</span>
-            </template>
-          </el-table-column>
           <el-table-column label="操作" width="160">
             <template #default="{ row }">
               <el-button
@@ -159,11 +153,11 @@
       <!-- 收藏列表 -->
       <el-tab-pane label="收藏" name="favorites">
         <div class="favorites-tip">收藏的插件会跟随备份跨设备同步</div>
-        <el-table :data="favoriteList" stripe style="width: 100%" v-loading="loadingFavorites">
+        <el-table :data="favoriteList" stripe style="width: 100%">
           <el-table-column label="名称" min-width="150">
             <template #default="{ row }">
               <div class="plugin-name-cell">
-                <span>{{ row.plugin_name }}</span>
+                <span>{{ row.name }}</span>
                 <span v-if="row.version" class="plugin-meta">v{{ row.version }}</span>
                 <span class="plugin-meta">@{{ row.marketplace_name }}</span>
               </div>
@@ -197,15 +191,15 @@
                 <el-button
                   size="small"
                   type="primary"
-                  :loading="operatingPlugin === row.plugin_id && operatingType === 'install'"
+                  :loading="operatingPlugin === row.name && operatingType === 'install'"
                   :disabled="!!operatingPlugin"
-                  @click="handleInstallFromFavorite(row)"
+                  @click="handleInstall(row)"
                 >安装</el-button>
               </template>
               <el-button
                 size="small"
                 type="danger"
-                :loading="operatingPlugin === row.plugin_id && operatingType === 'removeFavorite'"
+                :loading="operatingPlugin === row.name && operatingType === 'unfavorite'"
                 :disabled="!!operatingPlugin"
                 @click="handleRemoveFavoriteById(row)"
               >移除</el-button>
@@ -232,10 +226,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElNotification } from 'element-plus'
 import { Plus, Search, Star, StarFilled } from '@element-plus/icons-vue'
 import { pluginsApi } from '@/api/plugins'
-import type { MarketplaceInfo, PluginItem, PluginFavorite } from '@/types/models'
+import type { MarketplaceInfo, PluginItem } from '@/types/models'
 
 const activeTab = ref('plugins')
 
@@ -243,6 +237,17 @@ const activeTab = ref('plugins')
 const allPlugins = ref<PluginItem[]>([])
 const loading = ref(false)
 const pluginSearchQuery = ref('')
+
+// 市场列表
+const marketplaceList = ref<MarketplaceInfo[]>([])
+const loadingMarketplaces = ref(false)
+const showAddMarketDialog = ref(false)
+const marketForm = ref({ url: '' })
+const savingMarket = ref(false)
+
+// 操作状态
+const operatingPlugin = ref<string | null>(null)
+const operatingType = ref<string | null>(null)
 
 // 已安装排顶部的排序列表
 const sortedPlugins = computed(() => {
@@ -261,66 +266,65 @@ const filteredPlugins = computed(() => {
   )
 })
 
-// 市场管理
-const marketplaceList = ref<MarketplaceInfo[]>([])
-const loadingMarketplaces = ref(false)
-const showAddMarketDialog = ref(false)
-const marketForm = ref({ url: '' })
-const savingMarket = ref(false)
-
-// 收藏列表
-const favoriteList = ref<PluginFavorite[]>([])
-const loadingFavorites = ref(false)
-
-// 操作状态
-const operatingPlugin = ref<string | null>(null)
-const operatingType = ref<string | null>(null)
-
-// 加载所有插件
-async function fetchAllPlugins() {
-  loading.value = true
-  try {
-    allPlugins.value = await pluginsApi.getAll()
-  } catch (error: any) {
-    const msg = error?.message || String(error) || '加载失败'
-    console.error('加载插件列表失败:', error)
-    ElMessage.error(msg)
-  } finally {
-    loading.value = false
-  }
-}
-
-// 加载市场列表
-async function fetchMarketplaces() {
-  loadingMarketplaces.value = true
-  try {
-    marketplaceList.value = await pluginsApi.getMarketplaces()
-  } catch (error: any) {
-    const msg = error?.message || String(error) || '加载失败'
-    console.error('加载市场列表失败:', error)
-    ElMessage.error(msg)
-  } finally {
-    loadingMarketplaces.value = false
-  }
-}
-
-// 加载收藏列表
-async function fetchFavorites() {
-  loadingFavorites.value = true
-  try {
-    favoriteList.value = await pluginsApi.getFavorites()
-  } catch (error: any) {
-    const msg = error?.message || String(error) || '加载失败'
-    console.error('加载收藏列表失败:', error)
-    ElMessage.error(msg)
-  } finally {
-    loadingFavorites.value = false
-  }
-}
+// 收藏列表（从插件列表过滤）
+const favoriteList = computed(() => {
+  return allPlugins.value.filter(p => p.is_favorited)
+})
 
 // 获取 plugin_id
 function getPluginId(plugin: PluginItem): string {
   return plugin.marketplace_name ? `${plugin.name}@${plugin.marketplace_name}` : plugin.name
+}
+
+// 展示 CLI 输出
+function showCliOutput(output: string, isError: boolean = false) {
+  if (!output) return
+  ElNotification({
+    title: isError ? '操作失败' : '操作结果',
+    message: output,
+    type: isError ? 'error' : 'success',
+    duration: 5000,
+    position: 'top-right'
+  })
+}
+
+// 加载所有数据
+async function loadAll() {
+  loading.value = true
+  loadingMarketplaces.value = true
+  try {
+    const [plugins, marketplaces] = await Promise.all([
+      pluginsApi.getAll(),
+      pluginsApi.getMarketplaces()
+    ])
+    allPlugins.value = plugins
+    marketplaceList.value = marketplaces
+  } catch (error: any) {
+    const msg = error?.message || String(error) || '加载失败'
+    ElNotification({
+      title: '加载失败',
+      message: msg,
+      type: 'error',
+      duration: 5000,
+      position: 'top-right'
+    })
+  } finally {
+    loading.value = false
+    loadingMarketplaces.value = false
+  }
+}
+
+// 刷新
+async function handleRefresh() {
+  loading.value = true
+  try {
+    allPlugins.value = await pluginsApi.refresh()
+    showCliOutput('刷新成功')
+  } catch (error: any) {
+    showCliOutput(error?.message || '刷新失败', true)
+  } finally {
+    loading.value = false
+  }
 }
 
 // 安装插件
@@ -329,11 +333,11 @@ async function handleInstall(plugin: PluginItem) {
   operatingPlugin.value = plugin.name
   operatingType.value = 'install'
   try {
-    await pluginsApi.install(pluginId)
-    ElMessage.success('安装成功')
-    await Promise.all([fetchAllPlugins(), fetchFavorites()])
+    const result = await pluginsApi.install(pluginId)
+    allPlugins.value = result.plugins
+    showCliOutput(result.cli_output)
   } catch (error: any) {
-    ElMessage.error(error?.message || '安装失败')
+    showCliOutput(error?.message || '安装失败', true)
   } finally {
     operatingPlugin.value = null
     operatingType.value = null
@@ -347,12 +351,12 @@ async function handleUninstall(plugin: PluginItem) {
     await ElMessageBox.confirm(`确定卸载插件 "${plugin.name}"?`, '确认')
     operatingPlugin.value = plugin.name
     operatingType.value = 'uninstall'
-    await pluginsApi.uninstall(pluginId)
-    ElMessage.success('卸载成功')
-    await Promise.all([fetchAllPlugins(), fetchFavorites()])
+    const result = await pluginsApi.uninstall(pluginId)
+    allPlugins.value = result.plugins
+    showCliOutput(result.cli_output)
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '卸载失败')
+      showCliOutput(error?.message || '卸载失败', true)
     }
   } finally {
     operatingPlugin.value = null
@@ -366,11 +370,11 @@ async function handleEnable(plugin: PluginItem) {
   operatingPlugin.value = plugin.name
   operatingType.value = 'enable'
   try {
-    await pluginsApi.enable(pluginId)
-    ElMessage.success('已启用')
-    await fetchAllPlugins()
+    const result = await pluginsApi.enable(pluginId)
+    allPlugins.value = result.plugins
+    showCliOutput(result.cli_output)
   } catch (error: any) {
-    ElMessage.error(error?.message || '操作失败')
+    showCliOutput(error?.message || '操作失败', true)
   } finally {
     operatingPlugin.value = null
     operatingType.value = null
@@ -383,11 +387,11 @@ async function handleDisable(plugin: PluginItem) {
   operatingPlugin.value = plugin.name
   operatingType.value = 'disable'
   try {
-    await pluginsApi.disable(pluginId)
-    ElMessage.success('已停用')
-    await fetchAllPlugins()
+    const result = await pluginsApi.disable(pluginId)
+    allPlugins.value = result.plugins
+    showCliOutput(result.cli_output)
   } catch (error: any) {
-    ElMessage.error(error?.message || '操作失败')
+    showCliOutput(error?.message || '操作失败', true)
   } finally {
     operatingPlugin.value = null
     operatingType.value = null
@@ -400,11 +404,68 @@ async function handleUpdate(plugin: PluginItem) {
   operatingPlugin.value = plugin.name
   operatingType.value = 'update'
   try {
-    await pluginsApi.update(pluginId)
-    ElMessage.success('更新成功')
-    await fetchAllPlugins()
+    const result = await pluginsApi.update(pluginId)
+    allPlugins.value = result.plugins
+    showCliOutput(result.cli_output)
   } catch (error: any) {
-    ElMessage.error(error?.message || '更新失败')
+    showCliOutput(error?.message || '更新失败', true)
+  } finally {
+    operatingPlugin.value = null
+    operatingType.value = null
+  }
+}
+
+// 添加收藏
+async function handleAddFavorite(plugin: PluginItem) {
+  const pluginId = getPluginId(plugin)
+  operatingPlugin.value = plugin.name
+  operatingType.value = 'favorite'
+  try {
+    const result = await pluginsApi.addFavorite(
+      pluginId,
+      plugin.name,
+      plugin.marketplace_name,
+      plugin.version || undefined,
+      plugin.description || undefined
+    )
+    allPlugins.value = result.plugins
+    showCliOutput('已收藏')
+  } catch (error: any) {
+    showCliOutput(error?.message || '操作失败', true)
+  } finally {
+    operatingPlugin.value = null
+    operatingType.value = null
+  }
+}
+
+// 移除收藏
+async function handleRemoveFavorite(plugin: PluginItem) {
+  const pluginId = getPluginId(plugin)
+  operatingPlugin.value = plugin.name
+  operatingType.value = 'unfavorite'
+  try {
+    const result = await pluginsApi.removeFavorite(pluginId)
+    allPlugins.value = result.plugins
+    showCliOutput('已取消收藏')
+  } catch (error: any) {
+    showCliOutput(error?.message || '操作失败', true)
+  } finally {
+    operatingPlugin.value = null
+    operatingType.value = null
+  }
+}
+
+// 从收藏中移除（收藏列表页）
+async function handleRemoveFavoriteById(plugin: PluginItem) {
+  const pluginId = getPluginId(plugin)
+  operatingPlugin.value = plugin.name
+  operatingType.value = 'unfavorite'
+  try {
+    const result = await pluginsApi.removeFavorite(pluginId)
+    allPlugins.value = result.plugins
+    showCliOutput('已移除')
+  } catch (error: any) {
+    showCliOutput(error?.message || '操作失败', true)
   } finally {
     operatingPlugin.value = null
     operatingType.value = null
@@ -414,18 +475,19 @@ async function handleUpdate(plugin: PluginItem) {
 // 添加市场
 async function handleAddMarketplace() {
   if (!marketForm.value.url.trim()) {
-    ElMessage.error('请输入市场 URL')
+    showCliOutput('请输入市场 URL', true)
     return
   }
   savingMarket.value = true
   try {
-    await pluginsApi.addMarketplace(marketForm.value.url.trim())
-    ElMessage.success('添加成功')
+    const result = await pluginsApi.addMarketplace(marketForm.value.url.trim())
+    allPlugins.value = result.plugins
+    marketplaceList.value = result.marketplaces
+    showCliOutput(result.cli_output)
     showAddMarketDialog.value = false
     marketForm.value = { url: '' }
-    await fetchMarketplaces()
   } catch (error: any) {
-    ElMessage.error(error?.message || '添加失败')
+    showCliOutput(error?.message || '添加失败', true)
   } finally {
     savingMarket.value = false
   }
@@ -435,12 +497,13 @@ async function handleAddMarketplace() {
 async function handleRemoveMarketplace(market: MarketplaceInfo) {
   try {
     await ElMessageBox.confirm(`确定删除市场 "${market.name}"?`, '确认')
-    await pluginsApi.removeMarketplace(market.name)
-    ElMessage.success('已删除')
-    await fetchMarketplaces()
+    const result = await pluginsApi.removeMarketplace(market.name)
+    allPlugins.value = result.plugins
+    marketplaceList.value = result.marketplaces
+    showCliOutput(result.cli_output)
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '删除失败')
+      showCliOutput(error?.message || '删除失败', true)
     }
   }
 }
@@ -448,87 +511,17 @@ async function handleRemoveMarketplace(market: MarketplaceInfo) {
 // 更新市场
 async function handleUpdateMarketplace(market: MarketplaceInfo) {
   try {
-    await pluginsApi.updateMarketplace(market.name)
-    ElMessage.success('更新成功')
+    const result = await pluginsApi.updateMarketplace(market.name)
+    allPlugins.value = result.plugins
+    marketplaceList.value = result.marketplaces
+    showCliOutput(result.cli_output)
   } catch (error: any) {
-    ElMessage.error(error?.message || '更新失败')
-  }
-}
-
-// 添加收藏
-async function handleAddFavorite(plugin: PluginItem) {
-  operatingPlugin.value = plugin.name
-  operatingType.value = 'favorite'
-  try {
-    await pluginsApi.addFavorite({
-      plugin_id: getPluginId(plugin),
-      plugin_name: plugin.name,
-      marketplace_name: plugin.marketplace_name,
-      version: plugin.version || undefined,
-      description: plugin.description || undefined
-    })
-    ElMessage.success('已收藏')
-    await Promise.all([fetchAllPlugins(), fetchFavorites()])
-  } catch (error: any) {
-    ElMessage.error(error?.message || '操作失败')
-  } finally {
-    operatingPlugin.value = null
-    operatingType.value = null
-  }
-}
-
-// 移除收藏
-async function handleRemoveFavorite(plugin: PluginItem) {
-  operatingPlugin.value = plugin.name
-  operatingType.value = 'unfavorite'
-  try {
-    await pluginsApi.removeFavorite(getPluginId(plugin))
-    ElMessage.success('已取消收藏')
-    await Promise.all([fetchAllPlugins(), fetchFavorites()])
-  } catch (error: any) {
-    ElMessage.error(error?.message || '操作失败')
-  } finally {
-    operatingPlugin.value = null
-    operatingType.value = null
-  }
-}
-
-// 从收藏中移除
-async function handleRemoveFavoriteById(favorite: PluginFavorite) {
-  operatingPlugin.value = favorite.plugin_id
-  operatingType.value = 'removeFavorite'
-  try {
-    await pluginsApi.removeFavorite(favorite.plugin_id)
-    ElMessage.success('已移除')
-    await Promise.all([fetchFavorites(), fetchAllPlugins()])
-  } catch (error: any) {
-    ElMessage.error(error?.message || '操作失败')
-  } finally {
-    operatingPlugin.value = null
-    operatingType.value = null
-  }
-}
-
-// 从收藏安装
-async function handleInstallFromFavorite(favorite: PluginFavorite) {
-  operatingPlugin.value = favorite.plugin_id
-  operatingType.value = 'install'
-  try {
-    await pluginsApi.installFromFavorite(favorite.plugin_id)
-    ElMessage.success('安装成功')
-    await Promise.all([fetchFavorites(), fetchAllPlugins()])
-  } catch (error: any) {
-    ElMessage.error(error?.message || '安装失败')
-  } finally {
-    operatingPlugin.value = null
-    operatingType.value = null
+    showCliOutput(error?.message || '更新失败', true)
   }
 }
 
 onMounted(() => {
-  fetchAllPlugins()
-  fetchMarketplaces()
-  fetchFavorites()
+  loadAll()
 })
 </script>
 
@@ -546,10 +539,6 @@ onMounted(() => {
 
 .text-muted {
   color: #909399;
-}
-
-.url-text {
-  word-break: break-all;
 }
 
 .plugin-name-cell {

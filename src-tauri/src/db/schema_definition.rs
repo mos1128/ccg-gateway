@@ -73,7 +73,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 14,
+            version: 15,
             tables: Self::define_main_tables(),
         }
     }
@@ -687,12 +687,6 @@ impl DatabaseSchema {
                         name: "marketplace_name".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "marketplace_url".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
                         default_value: None,
                     },
                     ColumnDefinition {

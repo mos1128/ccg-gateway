@@ -1,11 +1,39 @@
-use crate::db::models::{InstalledPlugin, MarketplaceInfo, MarketplacePlugin, PluginItem};
-use serde::Deserialize;
+use crate::db::models::{MarketplaceInfo, MarketplacePlugin, PluginItem};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;
 
 type Result<T> = std::result::Result<T, String>;
 
-/// 执行 claude 命令
+// ==================== 缓存结构 ====================
+
+/// 插件缓存结构
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginsCache {
+    pub plugins: Vec<PluginItem>,
+    pub marketplaces: Vec<MarketplaceInfo>,
+    pub generated_at: i64,
+}
+
+/// 操作返回结果
+#[derive(Debug, Serialize)]
+pub struct PluginActionResult {
+    pub cli_output: String,
+    pub plugins: Vec<PluginItem>,
+}
+
+/// 市场操作返回结果
+#[derive(Debug, Serialize)]
+pub struct MarketplaceActionResult {
+    pub cli_output: String,
+    pub plugins: Vec<PluginItem>,
+    pub marketplaces: Vec<MarketplaceInfo>,
+}
+
+// ==================== CLI 执行 ====================
+
+/// 执行 claude 命令，返回完整输出
 fn run_claude(args: &[&str]) -> Result<String> {
     let args_str = args.iter().map(|s| {
         if s.contains(' ') || s.contains('"') {
@@ -18,19 +46,54 @@ fn run_claude(args: &[&str]) -> Result<String> {
     let output = Command::new("cmd")
         .args(["/c", &format!("claude {}", args_str)])
         .output()
-        .map_err(|e| format!("执行 claude 命令失败: {}", e))?;
+        .map_err(|e| format!("执行命令遇到错误：{}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            format!("命令执行失败，退出码: {:?}", output.status.code())
-        } else {
-            stderr
-        });
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    // 合并 stdout 和 stderr 作为完整输出
+    if stdout.is_empty() {
+        Ok(stderr)
+    } else if stderr.is_empty() {
+        Ok(stdout)
+    } else {
+        Ok(format!("{}\n{}", stdout, stderr))
+    }
+}
+
+// ==================== 缓存文件操作 ====================
+
+/// 获取缓存文件路径
+fn get_cache_path(config_dir: &std::path::Path) -> PathBuf {
+    config_dir.join("plugins").join("plugins_cache.json")
+}
+
+/// 读取缓存
+fn read_cache(config_dir: &std::path::Path) -> Option<PluginsCache> {
+    let cache_path = get_cache_path(config_dir);
+    if !cache_path.exists() {
+        return None;
+    }
+    let content = std::fs::read_to_string(&cache_path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+/// 写入缓存
+fn write_cache(config_dir: &std::path::Path, cache: &PluginsCache) -> Result<()> {
+    let cache_path = get_cache_path(config_dir);
+
+    // 确保目录存在
+    if let Some(parent) = cache_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建缓存目录失败: {}", e))?;
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let content = serde_json::to_string_pretty(cache).map_err(|e| format!("序列化缓存失败: {}", e))?;
+    std::fs::write(&cache_path, content).map_err(|e| format!("写入缓存失败: {}", e))?;
+
+    Ok(())
 }
+
+// ==================== 数据查询 ====================
 
 /// 从 plugin id 解析插件名和市场名
 fn parse_plugin_id(id: &str) -> (String, Option<String>) {
@@ -45,12 +108,12 @@ fn get_marketplaces_dir(config_dir: &std::path::Path) -> PathBuf {
     config_dir.join("plugins").join("marketplaces")
 }
 
-/// 获取已安装插件列表
-pub async fn get_installed_plugins_impl() -> Result<Vec<InstalledPlugin>> {
+/// 获取已安装插件列表（同步版本，内部使用）
+fn get_installed_plugins_sync() -> Result<std::collections::HashMap<String, (Option<String>, bool)>> {
     let stdout = run_claude(&["plugin", "list", "--json"])?;
 
     if stdout.is_empty() {
-        return Ok(vec![]);
+        return Ok(std::collections::HashMap::new());
     }
 
     #[derive(Deserialize)]
@@ -66,18 +129,13 @@ pub async fn get_installed_plugins_impl() -> Result<Vec<InstalledPlugin>> {
 
     Ok(plugins.into_iter().map(|p| {
         let (name, marketplace) = parse_plugin_id(&p.id);
-        InstalledPlugin {
-            name,
-            version: p.version,
-            description: None,
-            marketplace_name: marketplace,
-            is_enabled: p.enabled,
-        }
+        let key = format!("{}@{}", name, marketplace.unwrap_or_default());
+        (key, (p.version, p.enabled))
     }).collect())
 }
 
 /// 获取已安装市场列表
-pub fn get_installed_marketplaces_impl(config_dir: &std::path::Path) -> Result<Vec<MarketplaceInfo>> {
+fn get_marketplaces_sync(config_dir: &std::path::Path) -> Result<Vec<MarketplaceInfo>> {
     let marketplaces_dir = get_marketplaces_dir(config_dir);
 
     if !marketplaces_dir.exists() {
@@ -112,7 +170,7 @@ pub fn get_installed_marketplaces_impl(config_dir: &std::path::Path) -> Result<V
 }
 
 /// 读取市场中的插件列表
-pub fn read_marketplace_plugins(marketplace_name: &str, config_dir: &std::path::Path) -> Result<Vec<MarketplacePlugin>> {
+fn read_marketplace_plugins(marketplace_name: &str, config_dir: &std::path::Path) -> Result<Vec<MarketplacePlugin>> {
     let marketplaces_dir = get_marketplaces_dir(config_dir);
     let config_path = marketplaces_dir.join(marketplace_name).join(".claude-plugin").join("marketplace.json");
 
@@ -145,84 +203,18 @@ pub fn read_marketplace_plugins(marketplace_name: &str, config_dir: &std::path::
     }).collect())
 }
 
-/// 安装插件
-pub async fn install_plugin_impl(plugin_id: String) -> Result<()> {
-    run_claude(&["plugin", "install", &plugin_id])?;
-    Ok(())
-}
-
-/// 卸载插件
-pub async fn uninstall_plugin_impl(plugin_id: String) -> Result<()> {
-    run_claude(&["plugin", "uninstall", &plugin_id])?;
-    Ok(())
-}
-
-/// 启用插件
-pub async fn enable_plugin_impl(plugin_id: String) -> Result<()> {
-    run_claude(&["plugin", "enable", &plugin_id])?;
-    Ok(())
-}
-
-/// 停用插件
-pub async fn disable_plugin_impl(plugin_id: String) -> Result<()> {
-    run_claude(&["plugin", "disable", &plugin_id])?;
-    Ok(())
-}
-
-/// 更新插件
-pub async fn update_plugin_impl(plugin_id: String) -> Result<()> {
-    run_claude(&["plugin", "update", &plugin_id])?;
-    Ok(())
-}
-
-/// 添加市场
-pub async fn add_marketplace_impl(url: String) -> Result<MarketplaceInfo> {
-    let output = run_claude(&["marketplace", "add", &url])?;
-
-    let name = output
-        .split("Added marketplace:")
-        .nth(1)
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| url.split('/').last().unwrap_or("unknown").to_string());
-
-    Ok(MarketplaceInfo {
-        name,
-        description: None,
-        url: Some(url),
-    })
-}
-
-/// 移除市场
-pub async fn remove_marketplace_impl(name: String) -> Result<()> {
-    run_claude(&["marketplace", "remove", &name])?;
-    Ok(())
-}
-
-/// 更新市场
-pub async fn update_marketplace_impl(name: String) -> Result<()> {
-    run_claude(&["marketplace", "update", &name])?;
-    Ok(())
-}
-
 /// 检查市场是否存在
-pub fn check_marketplace_exists_impl(name: &str, config_dir: &std::path::Path) -> Result<bool> {
-    let marketplaces = get_installed_marketplaces_impl(config_dir)?;
+pub fn check_marketplace_exists(name: &str, config_dir: &std::path::Path) -> Result<bool> {
+    let marketplaces = get_marketplaces_sync(config_dir)?;
     Ok(marketplaces.iter().any(|m| m.name == name))
 }
 
-/// 获取所有插件列表
-pub fn get_all_plugins_impl(config_dir: &std::path::Path) -> Result<Vec<PluginItem>> {
-    let installed = get_installed_plugins_impl_sync()?;
-    let marketplaces = get_installed_marketplaces_impl(config_dir)?;
+// ==================== 缓存生成与更新 ====================
 
-    // 建立 name@marketplace → (version, enabled) 映射
-    let installed_map: std::collections::HashMap<String, (Option<String>, bool)> = installed
-        .iter()
-        .map(|p| {
-            let key = format!("{}@{}", p.name, p.marketplace_name.as_deref().unwrap_or(""));
-            (key, (p.version.clone(), p.is_enabled))
-        })
-        .collect();
+/// 生成完整插件缓存
+fn generate_cache(config_dir: &std::path::Path, favorite_ids: &HashSet<String>) -> Result<PluginsCache> {
+    let installed_map = get_installed_plugins_sync()?;
+    let marketplaces = get_marketplaces_sync(config_dir)?;
 
     let mut installed_plugins = Vec::new();
     let mut not_installed_plugins = Vec::new();
@@ -232,6 +224,7 @@ pub fn get_all_plugins_impl(config_dir: &std::path::Path) -> Result<Vec<PluginIt
         if let Ok(plugins) = read_marketplace_plugins(&market.name, config_dir) {
             for plugin in plugins {
                 let key = format!("{}@{}", plugin.name, plugin.marketplace_name);
+
                 if let Some((version, enabled)) = installed_map.get(&key) {
                     installed_plugins.push(PluginItem {
                         name: plugin.name,
@@ -240,7 +233,7 @@ pub fn get_all_plugins_impl(config_dir: &std::path::Path) -> Result<Vec<PluginIt
                         marketplace_name: plugin.marketplace_name,
                         is_installed: true,
                         is_enabled: Some(*enabled),
-                        is_favorited: false,
+                        is_favorited: favorite_ids.contains(&key),
                     });
                 } else {
                     not_installed_plugins.push(PluginItem {
@@ -250,49 +243,186 @@ pub fn get_all_plugins_impl(config_dir: &std::path::Path) -> Result<Vec<PluginIt
                         marketplace_name: plugin.marketplace_name,
                         is_installed: false,
                         is_enabled: None,
-                        is_favorited: false,
+                        is_favorited: favorite_ids.contains(&key),
                     });
                 }
             }
         }
     }
 
-    // 已安装的按名称排序，未安装的也按名称排序
+    // 排序
     installed_plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     not_installed_plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     // 已安装的放前面
     installed_plugins.extend(not_installed_plugins);
-    Ok(installed_plugins)
+
+    Ok(PluginsCache {
+        plugins: installed_plugins,
+        marketplaces,
+        generated_at: chrono::Utc::now().timestamp(),
+    })
 }
 
-/// 获取已安装插件列表（同步版本）
-fn get_installed_plugins_impl_sync() -> Result<Vec<InstalledPlugin>> {
-    let stdout = run_claude(&["plugin", "list", "--json"])?;
+/// 更新缓存中的安装状态（增量更新）
+fn update_installed_status(cache: &mut PluginsCache) -> Result<()> {
+    let installed_map = get_installed_plugins_sync()?;
 
-    if stdout.is_empty() {
-        return Ok(vec![]);
-    }
-
-    #[derive(Deserialize)]
-    struct PluginInfo {
-        id: String,
-        version: Option<String>,
-        #[serde(default)]
-        enabled: bool,
-    }
-
-    let plugins: Vec<PluginInfo> = serde_json::from_str(&stdout)
-        .map_err(|e| format!("解析插件列表失败: {}", e))?;
-
-    Ok(plugins.into_iter().map(|p| {
-        let (name, marketplace) = parse_plugin_id(&p.id);
-        InstalledPlugin {
-            name,
-            version: p.version,
-            description: None,
-            marketplace_name: marketplace,
-            is_enabled: p.enabled,
+    for plugin in &mut cache.plugins {
+        let key = format!("{}@{}", plugin.name, plugin.marketplace_name);
+        if let Some((version, enabled)) = installed_map.get(&key) {
+            plugin.is_installed = true;
+            plugin.version = version.clone();
+            plugin.is_enabled = Some(*enabled);
+        } else {
+            plugin.is_installed = false;
+            plugin.version = None;
+            plugin.is_enabled = None;
         }
-    }).collect())
+    }
+
+    // 重新排序
+    cache.plugins.sort_by(|a, b| {
+        match (a.is_installed, b.is_installed) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        }
+    });
+
+    cache.generated_at = chrono::Utc::now().timestamp();
+    Ok(())
+}
+
+/// 更新缓存中的收藏状态（增量更新）
+fn update_favorite_status(cache: &mut PluginsCache, favorite_ids: &HashSet<String>) {
+    for plugin in &mut cache.plugins {
+        let key = format!("{}@{}", plugin.name, plugin.marketplace_name);
+        plugin.is_favorited = favorite_ids.contains(&key);
+    }
+    cache.generated_at = chrono::Utc::now().timestamp();
+}
+
+// ==================== 公开接口 ====================
+
+/// 获取插件列表（读缓存或生成）
+pub fn get_plugins(config_dir: &std::path::Path, favorite_ids: HashSet<String>) -> Result<Vec<PluginItem>> {
+    // 尝试读取缓存
+    if let Some(mut cache) = read_cache(config_dir) {
+        // 更新收藏状态（可能被其他操作改变）
+        update_favorite_status(&mut cache, &favorite_ids);
+        return Ok(cache.plugins);
+    }
+
+    // 缓存不存在，生成新缓存
+    let cache = generate_cache(config_dir, &favorite_ids)?;
+    let plugins = cache.plugins.clone();
+    write_cache(config_dir, &cache)?;
+    Ok(plugins)
+}
+
+/// 获取市场列表
+pub fn get_marketplaces(config_dir: &std::path::Path) -> Result<Vec<MarketplaceInfo>> {
+    // 尝试从缓存读取
+    if let Some(cache) = read_cache(config_dir) {
+        return Ok(cache.marketplaces);
+    }
+
+    // 缓存不存在，直接查询
+    get_marketplaces_sync(config_dir)
+}
+
+/// 刷新插件缓存
+pub fn refresh_plugins(config_dir: &std::path::Path, favorite_ids: HashSet<String>) -> Result<Vec<PluginItem>> {
+    let cache = generate_cache(config_dir, &favorite_ids)?;
+    let plugins = cache.plugins.clone();
+    write_cache(config_dir, &cache)?;
+    Ok(plugins)
+}
+
+/// 插件操作
+pub fn plugin_action(
+    action: &str,
+    plugin_id: &str,
+    config_dir: &std::path::Path,
+    favorite_ids: HashSet<String>,
+) -> Result<PluginActionResult> {
+    // 执行 CLI 命令
+    let cli_output = match action {
+        "install" => run_claude(&["plugin", "install", plugin_id]),
+        "uninstall" => run_claude(&["plugin", "uninstall", plugin_id]),
+        "enable" => run_claude(&["plugin", "enable", plugin_id]),
+        "disable" => run_claude(&["plugin", "disable", plugin_id]),
+        "update" => run_claude(&["plugin", "update", plugin_id]),
+        _ => return Err(format!("未知操作: {}", action)),
+    }?;
+
+    // 读取或创建缓存
+    let mut cache = match read_cache(config_dir) {
+        Some(c) => c,
+        None => generate_cache(config_dir, &favorite_ids)?,
+    };
+
+    // 更新安装状态
+    update_installed_status(&mut cache)?;
+    update_favorite_status(&mut cache, &favorite_ids);
+
+    // 保存缓存
+    write_cache(config_dir, &cache)?;
+
+    Ok(PluginActionResult {
+        cli_output,
+        plugins: cache.plugins,
+    })
+}
+
+/// 收藏操作（更新缓存）
+pub fn favorite_action(
+    config_dir: &std::path::Path,
+    favorite_ids: HashSet<String>,
+) -> Result<PluginActionResult> {
+    // 收藏操作不需要执行 CLI，由上层处理数据库操作
+
+    // 读取或创建缓存
+    let mut cache = match read_cache(config_dir) {
+        Some(c) => c,
+        None => generate_cache(config_dir, &favorite_ids)?,
+    };
+
+    // 更新收藏状态
+    update_favorite_status(&mut cache, &favorite_ids);
+
+    // 保存缓存
+    write_cache(config_dir, &cache)?;
+
+    Ok(PluginActionResult {
+        cli_output: String::new(),
+        plugins: cache.plugins,
+    })
+}
+
+/// 市场操作
+pub fn marketplace_action(
+    action: &str,
+    param: &str,
+    config_dir: &std::path::Path,
+    favorite_ids: HashSet<String>,
+) -> Result<MarketplaceActionResult> {
+    // 执行 CLI 命令
+    let cli_output = match action {
+        "add" => run_claude(&["marketplace", "add", param]),
+        "remove" => run_claude(&["marketplace", "remove", param]),
+        "update" => run_claude(&["marketplace", "update", param]),
+        _ => return Err(format!("未知操作: {}", action)),
+    }?;
+
+    // 重新生成完整缓存（市场变化可能影响插件列表）
+    let cache = generate_cache(config_dir, &favorite_ids)?;
+    write_cache(config_dir, &cache)?;
+
+    Ok(MarketplaceActionResult {
+        cli_output,
+        plugins: cache.plugins,
+        marketplaces: cache.marketplaces,
+    })
 }

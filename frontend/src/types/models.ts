@@ -300,7 +300,6 @@ export interface InstalledPlugin {
 export interface MarketplaceInfo {
   name: string
   description: string | null
-  url: string | null
 }
 
 export interface MarketplacePlugin {
@@ -325,7 +324,6 @@ export interface PluginFavorite {
   plugin_id: string
   plugin_name: string
   marketplace_name: string
-  marketplace_url: string | null
   version: string | null
   description: string | null
   created_at: number
@@ -336,7 +334,19 @@ export interface PluginFavoriteCreate {
   plugin_id: string
   plugin_name: string
   marketplace_name: string
-  marketplace_url?: string
   version?: string
   description?: string
+}
+
+// 插件操作返回结果
+export interface PluginActionResult {
+  cli_output: string
+  plugins: PluginItem[]
+}
+
+// 市场操作返回结果
+export interface MarketplaceActionResult {
+  cli_output: string
+  plugins: PluginItem[]
+  marketplaces: MarketplaceInfo[]
 }
