@@ -31,7 +31,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { notify } from '@/utils/notification'
 import type { CliSettings } from '@/types/models'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 
@@ -146,7 +146,7 @@ function formatJson() {
 
 function handleSave() {
   if (!validateConfig()) {
-    ElMessage.error('配置格式错误，请修正后再保存')
+    notify('配置格式错误，请修正后再保存', 'error')
     return
   }
   emit('save', props.cliType, form.value)

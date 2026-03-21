@@ -293,7 +293,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { notify } from '@/utils/notification'
 import type { FormInstance, FormRules } from 'element-plus'
 import draggable from 'vuedraggable'
 import { useProviderStore } from '@/stores/providers'
@@ -460,7 +461,7 @@ function handleCliTypeChange(cliType: string) {
 async function handleModeChange(newMode: 'proxy' | 'direct') {
   // Claude Code 暂未实现官方模式
   if (newMode === 'direct' && activeCliType.value === 'claude_code') {
-    ElMessage.warning('Claude Code 暂未实现官方模式功能')
+    notify('Claude Code 暂未实现官方模式功能', 'warning')
     return
   }
 
@@ -468,16 +469,16 @@ async function handleModeChange(newMode: 'proxy' | 'direct') {
     await settingsStore.setCliMode(activeCliType.value, newMode)
     
     if (newMode === 'direct') {
-      ElMessage.success(`${activeCliType.value} 已切换到官方模式`)
+      notify(`${activeCliType.value} 已切换到官方模式`)
     } else {
-      ElMessage.success(`${activeCliType.value} 已切换到中转模式`)
+      notify(`${activeCliType.value} 已切换到中转模式`)
     }
     
     providerStore.fetchProviders(activeCliType.value)
     credentialStore.fetchCredentials(activeCliType.value)
   } catch (e: any) {
     console.error('set_cli_mode error:', e)
-    ElMessage.error(`切换模式失败: ${e?.message || e}`)
+    notify(`切换模式失败: ${e?.message || e}`, 'error')
   }
 }
 
@@ -540,10 +541,10 @@ async function handleSave() {
     try {
       if (editingProvider.value) {
         await providerStore.updateProvider(editingProvider.value.id, data)
-        ElMessage.success('更新成功')
+        notify('更新成功')
       } else {
         await providerStore.createProvider(data)
-        ElMessage.success('添加成功')
+        notify('添加成功')
       }
       showDialog.value = false
       resetForm()
@@ -557,7 +558,7 @@ async function handleSave() {
 async function handleToggle(provider: Provider) {
   try {
     await providerStore.updateProvider(provider.id, { enabled: provider.enabled })
-    ElMessage.success(provider.enabled ? '已启用' : '已禁用')
+    notify(provider.enabled ? '已启用' : '已禁用')
   } catch {
     provider.enabled = !provider.enabled
   }
@@ -566,20 +567,20 @@ async function handleToggle(provider: Provider) {
 async function handleDragEnd() {
   const ids = providerStore.providers.map(p => p.id)
   await providerStore.reorderProviders(ids)
-  ElMessage.success('排序已保存')
+  notify('排序已保存')
 }
 
 async function handleCommand(command: string, provider: Provider) {
   if (command === 'reset') {
     await providerStore.resetFailures(provider.id)
-    ElMessage.success('已重置')
+    notify('已重置')
   } else if (command === 'unblacklist') {
     await providerStore.unblacklist(provider.id)
-    ElMessage.success('已解除拉黑')
+    notify('已解除拉黑')
   } else if (command === 'delete') {
     await ElMessageBox.confirm('确定删除该服务商？', '确认')
     await providerStore.deleteProvider(provider.id)
-    ElMessage.success('已删除')
+    notify('已删除')
   }
 }
 
@@ -618,7 +619,7 @@ function handleEditCredential(credential: OfficialCredential) {
 async function handleDeleteCredential(credential: OfficialCredential) {
   await ElMessageBox.confirm('确定删除该凭证？', '确认')
   await credentialStore.deleteCredential(credential.id)
-  ElMessage.success('已删除')
+  notify('已删除')
 }
 
 async function handleReadFromCli() {
@@ -651,9 +652,9 @@ async function handleReadFromCli() {
       console.error('解析文件数据失败:', e)
     }
     
-    ElMessage.success('读取成功')
+    notify('读取成功')
   } catch (e: any) {
-    ElMessage.error(e.message || '读取失败')
+    notify(e.message || '读取失败', 'error')
   }
 }
 
@@ -702,7 +703,7 @@ async function handleSaveCredential() {
     }
 
     if (files.length === 0) {
-      ElMessage.error('请至少填写一个文件内容')
+      notify('请至少填写一个文件内容', 'error')
       return
     }
 
@@ -720,10 +721,10 @@ async function handleSaveCredential() {
           name: data.name,
           credential_json: data.credential_json
         })
-        ElMessage.success('更新成功')
+        notify('更新成功')
       } else {
         await credentialStore.createCredential(data)
-        ElMessage.success('添加成功')
+        notify('添加成功')
       }
       showCredentialDialog.value = false
       resetCredentialForm()
@@ -737,7 +738,7 @@ async function handleSaveCredential() {
 async function handleCredentialDragEnd() {
   const ids = credentialStore.credentials.map(c => c.id)
   await credentialStore.reorderCredentials(ids)
-  ElMessage.success('排序已保存，第一位置凭证已激活')
+  notify('排序已保存，第一位置凭证已激活')
 }
 
 function getUnblacklistTime(provider: Provider): string {

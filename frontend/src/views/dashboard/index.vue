@@ -86,7 +86,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref, reactive, computed, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { notify } from '@/utils/notification'
 import * as echarts from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
@@ -172,28 +173,28 @@ async function handleCliToggle(cliType: string, enabled: boolean) {
       try {
         await settingsStore.setCliMode(cliType, 'proxy')
         await settingsStore.updateCli(cliType, { enabled: true })
-        ElMessage.success(`${cliType} 已切换至中转模式并启用`)
+        notify(`${cliType} 已切换至中转模式并启用`)
       } catch (error: any) {
         console.error('CLI toggle error:', error)
         const errorMsg = error?.message || error?.toString() || '操作失败'
-        ElMessage.error(`操作失败: ${errorMsg}`)
+        notify(`操作失败: ${errorMsg}`, 'error')
       } finally {
         cliLoading[cliType] = false
       }
     } catch {
       // 用户取消或选择保持官方模式，不做任何操作
-      ElMessage.info(`${cliType} 保持官方模式`)
+      notify(`${cliType} 保持官方模式`, 'info')
     }
   } else {
     // 正常的启用/禁用操作
     cliLoading[cliType] = true
     try {
       await settingsStore.updateCli(cliType, { enabled })
-      ElMessage.success(`${cliType} 已${enabled ? '启用' : '禁用'}`)
+      notify(`${cliType} 已${enabled ? '启用' : '禁用'}`)
     } catch (error: any) {
       console.error('CLI toggle error:', error)
       const errorMsg = error?.message || error?.toString() || '操作失败'
-      ElMessage.error(`操作失败: ${errorMsg}`)
+      notify(`操作失败: ${errorMsg}`, 'error')
     } finally {
       cliLoading[cliType] = false
     }

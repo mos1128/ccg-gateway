@@ -1,7 +1,8 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-shell'
-import { ElMessageBox, ElMessage, ElNotification } from 'element-plus'
+import { ElMessageBox, ElNotification } from 'element-plus'
+import { notify } from '@/utils/notification'
 
 // GitHub 仓库配置
 const GITHUB_OWNER = 'mos1128'
@@ -58,7 +59,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<void> {
     if (!latestRelease) {
       // 仓库没有发布任何 release
       if (!silent) {
-        ElMessage.info('当前没有发布的版本')
+        notify('当前没有发布的版本', 'info')
       }
       return
     }
@@ -87,7 +88,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<void> {
         // 用户取消
       })
     } else if (!silent) {
-      ElMessage.success(`当前已是最新版本 v${currentVersion}`)
+      notify(`当前已是最新版本 v${currentVersion}`)
     }
   } catch (error) {
     console.error('检查更新失败:', error)

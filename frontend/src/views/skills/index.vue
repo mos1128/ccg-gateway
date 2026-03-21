@@ -185,7 +185,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { notify } from '@/utils/notification'
 import { Plus, ArrowLeft, Search } from '@element-plus/icons-vue'
 import { skillsApi } from '@/api/skills'
 import type { SkillRepo, DiscoverableSkill, InstalledSkill } from '@/types/models'
@@ -238,7 +239,7 @@ async function fetchInstalled() {
   try {
     installedList.value = await skillsApi.getInstalled()
   } catch (error: any) {
-    ElMessage.error(error?.message || '加载失败')
+    notify(error?.message || '加载失败', 'error')
   } finally {
     loadingInstalled.value = false
   }
@@ -250,7 +251,7 @@ async function fetchRepos() {
   try {
     repoList.value = await skillsApi.getRepos()
   } catch (error: any) {
-    ElMessage.error(error?.message || '加载失败')
+    notify(error?.message || '加载失败', 'error')
   } finally {
     loadingRepos.value = false
   }
@@ -273,7 +274,7 @@ async function fetchRepoSkills() {
       currentRepo.value.branch
     )
   } catch (error: any) {
-    ElMessage.error(error?.message || '加载失败')
+    notify(error?.message || '加载失败', 'error')
   } finally {
     loadingSkills.value = false
   }
@@ -289,9 +290,9 @@ async function refreshRepoSkills() {
       currentRepo.value.name,
       currentRepo.value.branch
     )
-    ElMessage.success('已获取最新列表')
+    notify('已获取最新列表')
   } catch (error: any) {
-    ElMessage.error(error?.message || '刷新失败')
+    notify(error?.message || '刷新失败', 'error')
   } finally {
     loadingSkills.value = false
   }
@@ -308,9 +309,9 @@ async function handleCliToggle(skill: InstalledSkill, cliType: string, enabled: 
   try {
     await skillsApi.toggleCli(skill.id, cliType, enabled)
     await fetchInstalled()
-    ElMessage.success('已更新')
+    notify('已更新')
   } catch (error: any) {
-    ElMessage.error(error?.message || '更新失败')
+    notify(error?.message || '更新失败', 'error')
   }
 }
 
@@ -319,11 +320,11 @@ async function handleUninstall(skill: InstalledSkill) {
   try {
     await ElMessageBox.confirm(`确定卸载 "${skill.name}"?`, '确认')
     await skillsApi.uninstall(skill.id)
-    ElMessage.success('已卸载')
+    notify('已卸载')
     await fetchInstalled()
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '卸载失败')
+      notify(error?.message || '卸载失败', 'error')
     }
   }
 }
@@ -336,11 +337,11 @@ async function handleInstall(skill: DiscoverableSkill, reinstall: boolean = fals
     }
     installingSkillId.value = skill.key
     await skillsApi.install(skill, reinstall)
-    ElMessage.success(reinstall ? '重装成功' : '安装成功')
+    notify(reinstall ? '重装成功' : '安装成功')
     await fetchInstalled()
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '安装失败')
+      notify(error?.message || '安装失败', 'error')
     }
   } finally {
     installingSkillId.value = null
@@ -364,16 +365,16 @@ function toDiscoverableSkill(installed: InstalledSkill): DiscoverableSkill {
 // 从已安装列表安装 (exists_on_disk = false 时)
 async function handleInstallFromInstalled(skill: InstalledSkill) {
   if (!skill.repo_owner || !skill.repo_name) {
-    ElMessage.error('缺少仓库信息，无法安装')
+    notify('缺少仓库信息，无法安装', 'error')
     return
   }
   installingSkillId.value = `installed-${skill.id}`
   try {
     await skillsApi.install(toDiscoverableSkill(skill), true) // 使用 reinstall=true 更新记录
-    ElMessage.success('安装成功')
+    notify('安装成功')
     await fetchInstalled()
   } catch (error: any) {
-    ElMessage.error(error?.message || '安装失败')
+    notify(error?.message || '安装失败', 'error')
   } finally {
     installingSkillId.value = null
   }
@@ -382,18 +383,18 @@ async function handleInstallFromInstalled(skill: InstalledSkill) {
 // 从已安装列表重装 (exists_on_disk = true 时)
 async function handleReinstallFromInstalled(skill: InstalledSkill) {
   if (!skill.repo_owner || !skill.repo_name) {
-    ElMessage.error('缺少仓库信息，无法重装')
+    notify('缺少仓库信息，无法重装', 'error')
     return
   }
   try {
     await ElMessageBox.confirm(`确定重装 "${skill.name}"?（将更新为最新版本）`, '确认')
     installingSkillId.value = `installed-${skill.id}`
     await skillsApi.install(toDiscoverableSkill(skill), true)
-    ElMessage.success('重装成功')
+    notify('重装成功')
     await fetchInstalled()
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '重装失败')
+      notify(error?.message || '重装失败', 'error')
     }
   } finally {
     installingSkillId.value = null
@@ -404,16 +405,16 @@ async function handleReinstallFromInstalled(skill: InstalledSkill) {
 async function copyDescription(text: string) {
   try {
     await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制')
+    notify('已复制')
   } catch {
-    ElMessage.error('复制失败')
+    notify('复制失败', 'error')
   }
 }
 
 // 添加仓库
 async function handleAddRepo() {
   if (!repoForm.value.url.trim()) {
-    ElMessage.error('请输入仓库地址')
+    notify('请输入仓库地址', 'error')
     return
   }
   savingRepo.value = true
@@ -422,12 +423,12 @@ async function handleAddRepo() {
       url: repoForm.value.url.trim(),
       branch: repoForm.value.branch.trim() || undefined
     })
-    ElMessage.success('添加成功')
+    notify('添加成功')
     showAddRepoDialog.value = false
     repoForm.value = { url: '', branch: '' }
     await fetchRepos()
   } catch (error: any) {
-    ElMessage.error(getErrorMessage(error, '添加失败'))
+    notify(getErrorMessage(error, '添加失败'), 'error')
   } finally {
     savingRepo.value = false
   }
@@ -438,11 +439,11 @@ async function handleRemoveRepo(repo: SkillRepo) {
   try {
     await ElMessageBox.confirm(`确定删除仓库 "${repo.owner}/${repo.name}"?`, '确认')
     await skillsApi.removeRepo(repo.owner, repo.name)
-    ElMessage.success('已删除')
+    notify('已删除')
     await fetchRepos()
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '删除失败')
+      notify(error?.message || '删除失败', 'error')
     }
   }
 }
@@ -460,7 +461,7 @@ function handleEditRepo(repo: SkillRepo) {
 
 async function handleUpdateRepo() {
   if (!editRepoForm.value.url.trim()) {
-    ElMessage.error('请输入仓库地址')
+    notify('请输入仓库地址', 'error')
     return
   }
   savingRepo.value = true
@@ -471,11 +472,11 @@ async function handleUpdateRepo() {
       editRepoForm.value.url.trim(),
       editRepoForm.value.branch.trim()
     )
-    ElMessage.success('更新成功')
+    notify('更新成功')
     showEditRepoDialog.value = false
     await fetchRepos()
   } catch (error: any) {
-    ElMessage.error(getErrorMessage(error, '更新失败'))
+    notify(getErrorMessage(error, '更新失败'), 'error')
   } finally {
     savingRepo.value = false
   }

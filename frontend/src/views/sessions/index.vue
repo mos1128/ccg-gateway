@@ -177,7 +177,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { notify } from '@/utils/notification'
 import { Search, Folder, Delete, ArrowLeft, ChatDotRound, Connection, CopyDocument } from '@element-plus/icons-vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
@@ -254,11 +255,11 @@ async function handleDeleteProject(project: ProjectInfo) {
       { type: 'warning' }
     )
     await sessionStore.deleteProject(project.name)
-    ElMessage.success('项目已删除')
+    notify('项目已删除')
   } catch (e: any) {
     if (e !== 'cancel' && e?.toString() !== 'cancel') {
       console.error('Delete project error:', e)
-      ElMessage.error(e?.message || e?.toString() || '删除失败')
+      notify(e?.message || e?.toString() || '删除失败', 'error')
     }
   }
 }
@@ -271,12 +272,12 @@ async function handleDeleteSession(session: SessionInfo) {
       { type: 'warning' }
     )
     await sessionStore.deleteSession(sessionStore.currentProject, session.session_id)
-    ElMessage.success('会话已删除')
+    notify('会话已删除')
   } catch (e: any) {
     // Only show error if it's not a cancel action
     if (e !== 'cancel' && e?.toString() !== 'cancel') {
       console.error('Delete session error:', e)
-      ElMessage.error(e?.message || e?.toString() || '删除失败')
+      notify(e?.message || e?.toString() || '删除失败', 'error')
     }
   }
 }
@@ -306,9 +307,9 @@ function truncateText(text: string, maxLength: number): string {
 async function handleCopyMessage(content: string) {
   try {
     await navigator.clipboard.writeText(normalizeContent(content))
-    ElMessage.success('已复制')
+    notify('已复制')
   } catch {
-    ElMessage.error('复制失败')
+    notify('复制失败', 'error')
   }
 }
 

@@ -100,7 +100,8 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { notify } from '@/utils/notification'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import CliSettingsForm from './components/CliSettingsForm.vue'
@@ -132,12 +133,12 @@ watch(() => settingsStore.settings, (settings) => {
 
 async function saveTimeouts() {
   await settingsStore.updateTimeouts(timeoutForm.value)
-  ElMessage.success('超时配置已保存')
+  notify('超时配置已保存')
 }
 
 async function saveCli(cliType: string, data: any) {
   await settingsStore.updateCli(cliType, data)
-  ElMessage.success('CLI 配置已保存')
+  notify('CLI 配置已保存')
 }
 
 // Backup related
@@ -172,9 +173,9 @@ async function handleExportLocal() {
     link.click()
     document.body.removeChild(link)
     window.URL.revokeObjectURL(url)
-    ElMessage.success('导出成功（默认保存至下载文件夹）')
+    notify('导出成功（默认保存至下载文件夹）')
   } catch (error: any) {
-    ElMessage.error(error?.message || '导出失败')
+    notify(error?.message || '导出失败', 'error')
   } finally {
     exportingLocal.value = false
   }
@@ -185,7 +186,7 @@ async function handleImportLocal(file: File) {
   importingLocal.value = true
   try {
     await backupApi.importFromLocal(file)
-    ElMessage.success('导入成功，应用将自动退出，请重新打开应用')
+    notify('导入成功，应用将自动退出，请重新打开应用')
   } finally {
     importingLocal.value = false
   }
@@ -197,12 +198,12 @@ async function handleTestWebdav() {
   try {
     const { data } = await backupApi.testWebdavConnection(webdavForm.value)
     if (data.success) {
-      ElMessage.success('连接成功')
+      notify('连接成功')
     } else {
-      ElMessage.error('连接失败')
+      notify('连接失败', 'error')
     }
   } catch (error: any) {
-    ElMessage.error(error?.message || '连接失败')
+    notify(error?.message || '连接失败', 'error')
   } finally {
     testingWebdav.value = false
   }
@@ -212,9 +213,9 @@ async function handleSaveWebdav() {
   savingWebdav.value = true
   try {
     await backupApi.updateWebdavSettings(webdavForm.value)
-    ElMessage.success('WebDAV 配置已保存')
+    notify('WebDAV 配置已保存')
   } catch (error: any) {
-    ElMessage.error(error?.message || '保存失败')
+    notify(error?.message || '保存失败', 'error')
   } finally {
     savingWebdav.value = false
   }
@@ -224,9 +225,9 @@ async function handleExportWebdav() {
   exportingWebdav.value = true
   try {
     const { data } = await backupApi.exportToWebdav()
-    ElMessage.success(`导出成功: ${data.filename}`)
+    notify(`导出成功: ${data.filename}`)
   } catch (error: any) {
-    ElMessage.error(error?.message || '导出失败')
+    notify(error?.message || '导出失败', 'error')
   } finally {
     exportingWebdav.value = false
   }
@@ -248,10 +249,10 @@ async function handleImportWebdav(filename: string) {
   importingWebdav.value = true
   try {
     await backupApi.importFromWebdav(filename)
-    ElMessage.success('导入成功，应用将自动退出，请重新打开应用')
+    notify('导入成功，应用将自动退出，请重新打开应用')
     webdavListVisible.value = false
   } catch (error: any) {
-    ElMessage.error(error?.message || '导入失败')
+    notify(error?.message || '导入失败', 'error')
   } finally {
     importingWebdav.value = false
   }
@@ -262,11 +263,11 @@ async function handleDeleteWebdav(filename: string) {
   deletingWebdav.value = true
   try {
     await backupApi.deleteWebdavBackup(filename)
-    ElMessage.success('删除成功')
+    notify('删除成功')
     // 重新加载备份列表
     await handleShowWebdavList()
   } catch (error: any) {
-    ElMessage.error(error?.message || '删除失败')
+    notify(error?.message || '删除失败', 'error')
   } finally {
     deletingWebdav.value = false
   }

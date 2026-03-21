@@ -280,7 +280,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { notify } from '@/utils/notification'
 import { CopyDocument } from '@element-plus/icons-vue'
 import { logsApi } from '@/api/logs'
 import { providersApi } from '@/api/providers'
@@ -338,7 +339,7 @@ async function fetchLogSettings() {
 async function updateLogSettings() {
   try {
     await logsApi.updateSettings({ debug_log: logEnabled.value })
-    ElMessage.success('日志设置已更新')
+    notify('日志设置已更新')
   } catch {}
 }
 
@@ -370,7 +371,7 @@ async function clearRequestLogs() {
   try {
     await ElMessageBox.confirm('确定要清空所有请求日志吗？', '确认', { type: 'warning' })
     await logsApi.clearRequestLogs()
-    ElMessage.success('请求日志已清空')
+    notify('请求日志已清空')
     fetchRequestLogs()
   } catch {}
 }
@@ -410,7 +411,7 @@ async function clearSystemLogs() {
   try {
     await ElMessageBox.confirm('确定要清空所有系统日志吗？', '确认', { type: 'warning' })
     await logsApi.clearSystemLogs()
-    ElMessage.success('系统日志已清空')
+    notify('系统日志已清空')
     fetchSystemLogs()
   } catch {}
 }
@@ -456,9 +457,9 @@ async function handleCopy(content: string | null) {
   if (!content) return
   try {
     await navigator.clipboard.writeText(formatJson(content))
-    ElMessage.success('已复制')
+    notify('已复制')
   } catch {
-    ElMessage.error('复制失败')
+    notify('复制失败', 'error')
   }
 }
 

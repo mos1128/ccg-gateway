@@ -75,7 +75,8 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { notify } from '@/utils/notification'
 import { mcpApi } from '@/api/mcp'
 import type { Mcp } from '@/types/models'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
@@ -132,7 +133,7 @@ function formatJson() {
 
 async function handleSave() {
   if (!validateConfig()) {
-    ElMessage.error('JSON 格式错误，请修正后再保存')
+    notify('JSON 格式错误，请修正后再保存', 'error')
     return
   }
   try {
@@ -143,17 +144,17 @@ async function handleSave() {
 
     if (editingMcp.value) {
       await mcpApi.update(editingMcp.value.id, data)
-      ElMessage.success('更新成功')
+      notify('更新成功')
     } else {
       await mcpApi.create(data)
-      ElMessage.success('添加成功')
+      notify('添加成功')
     }
     showDialog.value = false
     form.value = { name: '', config_json: '' }
     validationError.value = ''
     await fetchList()
   } catch (error: any) {
-    ElMessage.error(error?.message || '操作失败')
+    notify(error?.message || '操作失败', 'error')
   }
 }
 
@@ -166,9 +167,9 @@ async function handleCliToggle(mcp: Mcp, cliType: string, enabled: boolean) {
     ]
     await mcpApi.update(mcp.id, { cli_flags })
     await fetchList()
-    ElMessage.success('已更新')
+    notify('已更新')
   } catch (error: any) {
-    ElMessage.error(error?.message || '更新失败')
+    notify(error?.message || '更新失败', 'error')
   }
 }
 
@@ -176,11 +177,11 @@ async function handleDelete(mcp: Mcp) {
   try {
     await ElMessageBox.confirm('确定删除该 MCP?', '确认')
     await mcpApi.delete(mcp.id)
-    ElMessage.success('已删除')
+    notify('已删除')
     await fetchList()
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '删除失败')
+      notify(error?.message || '删除失败', 'error')
     }
   }
 }
