@@ -1,3 +1,4 @@
+use crate::config::get_data_dir;
 use crate::db::models::{MarketplaceInfo, MarketplacePlugin, PluginItem};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -63,14 +64,14 @@ fn run_claude(args: &[&str]) -> Result<String> {
 
 // ==================== 缓存文件操作 ====================
 
-/// 获取缓存文件路径
-fn get_cache_path(config_dir: &std::path::Path) -> PathBuf {
-    config_dir.join("plugins").join("plugins_cache.json")
+/// 获取缓存文件路径（软件数据目录）
+fn get_cache_path() -> PathBuf {
+    get_data_dir().join("plugins_cache.json")
 }
 
 /// 读取缓存
-fn read_cache(config_dir: &std::path::Path) -> Option<PluginsCache> {
-    let cache_path = get_cache_path(config_dir);
+fn read_cache() -> Option<PluginsCache> {
+    let cache_path = get_cache_path();
     if !cache_path.exists() {
         return None;
     }
@@ -79,8 +80,8 @@ fn read_cache(config_dir: &std::path::Path) -> Option<PluginsCache> {
 }
 
 /// 写入缓存
-fn write_cache(config_dir: &std::path::Path, cache: &PluginsCache) -> Result<()> {
-    let cache_path = get_cache_path(config_dir);
+fn write_cache(cache: &PluginsCache) -> Result<()> {
+    let cache_path = get_cache_path();
 
     // 确保目录存在
     if let Some(parent) = cache_path.parent() {
@@ -308,7 +309,7 @@ fn update_favorite_status(cache: &mut PluginsCache, favorite_ids: &HashSet<Strin
 /// 获取插件列表（读缓存或生成）
 pub fn get_plugins(config_dir: &std::path::Path, favorite_ids: HashSet<String>) -> Result<Vec<PluginItem>> {
     // 尝试读取缓存
-    if let Some(mut cache) = read_cache(config_dir) {
+    if let Some(mut cache) = read_cache() {
         // 更新收藏状态（可能被其他操作改变）
         update_favorite_status(&mut cache, &favorite_ids);
         return Ok(cache.plugins);
@@ -317,14 +318,14 @@ pub fn get_plugins(config_dir: &std::path::Path, favorite_ids: HashSet<String>) 
     // 缓存不存在，生成新缓存
     let cache = generate_cache(config_dir, &favorite_ids)?;
     let plugins = cache.plugins.clone();
-    write_cache(config_dir, &cache)?;
+    write_cache(&cache)?;
     Ok(plugins)
 }
 
 /// 获取市场列表
 pub fn get_marketplaces(config_dir: &std::path::Path) -> Result<Vec<MarketplaceInfo>> {
     // 尝试从缓存读取
-    if let Some(cache) = read_cache(config_dir) {
+    if let Some(cache) = read_cache() {
         return Ok(cache.marketplaces);
     }
 
@@ -336,7 +337,7 @@ pub fn get_marketplaces(config_dir: &std::path::Path) -> Result<Vec<MarketplaceI
 pub fn refresh_plugins(config_dir: &std::path::Path, favorite_ids: HashSet<String>) -> Result<Vec<PluginItem>> {
     let cache = generate_cache(config_dir, &favorite_ids)?;
     let plugins = cache.plugins.clone();
-    write_cache(config_dir, &cache)?;
+    write_cache(&cache)?;
     Ok(plugins)
 }
 
@@ -358,7 +359,7 @@ pub fn plugin_action(
     }?;
 
     // 读取或创建缓存
-    let mut cache = match read_cache(config_dir) {
+    let mut cache = match read_cache() {
         Some(c) => c,
         None => generate_cache(config_dir, &favorite_ids)?,
     };
@@ -368,7 +369,7 @@ pub fn plugin_action(
     update_favorite_status(&mut cache, &favorite_ids);
 
     // 保存缓存
-    write_cache(config_dir, &cache)?;
+    write_cache(&cache)?;
 
     Ok(PluginActionResult {
         cli_output,
@@ -384,7 +385,7 @@ pub fn favorite_action(
     // 收藏操作不需要执行 CLI，由上层处理数据库操作
 
     // 读取或创建缓存
-    let mut cache = match read_cache(config_dir) {
+    let mut cache = match read_cache() {
         Some(c) => c,
         None => generate_cache(config_dir, &favorite_ids)?,
     };
@@ -393,7 +394,7 @@ pub fn favorite_action(
     update_favorite_status(&mut cache, &favorite_ids);
 
     // 保存缓存
-    write_cache(config_dir, &cache)?;
+    write_cache(&cache)?;
 
     Ok(PluginActionResult {
         cli_output: String::new(),
@@ -418,7 +419,7 @@ pub fn marketplace_action(
 
     // 重新生成完整缓存（市场变化可能影响插件列表）
     let cache = generate_cache(config_dir, &favorite_ids)?;
-    write_cache(config_dir, &cache)?;
+    write_cache(&cache)?;
 
     Ok(MarketplaceActionResult {
         cli_output,
