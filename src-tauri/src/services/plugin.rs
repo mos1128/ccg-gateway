@@ -430,7 +430,6 @@ fn update_enabled_status(cache: &mut PluginsCache, plugin_id: &str, enabled: boo
 /// 获取收藏列表（优先从缓存读取安装状态）
 pub fn get_favorites(
     favorites: Vec<(String, String, String, Option<String>)>,
-    config_dir: &std::path::Path,
 ) -> Result<Vec<PluginFavoriteItem>> {
     // 优先从缓存读取安装状态
     if let Some(cache) = read_cache() {

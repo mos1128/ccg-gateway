@@ -5488,9 +5488,8 @@ async fn get_favorites_raw(db: &SqlitePool) -> Result<Vec<(String, String, Strin
 
 #[tauri::command]
 pub async fn get_plugin_favorites(db: State<'_, SqlitePool>) -> Result<Vec<PluginFavoriteItem>> {
-    let config_dir = get_cli_config_dir_path(db.inner(), "claude_code").await;
     let favorites = get_favorites_raw(db.inner()).await?;
-    crate::services::plugin::get_favorites(favorites, &config_dir)
+    crate::services::plugin::get_favorites(favorites)
 }
 
 #[tauri::command]
