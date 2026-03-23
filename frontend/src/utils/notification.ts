@@ -15,6 +15,6 @@ export function notify(message: string, type: NotifyType = 'success') {
     message,
     type,
     position: 'top-right',
-    duration: 3000
+    duration: 2000
   })
 }
