@@ -6,11 +6,11 @@
 
 ## 一、全局规范
 
-- 获取数据目录全部使用 `config.rs` 中的 `get_dir_path()` 方法，禁止额外创建。
+- 获取数据目录全部使用 `config.rs` 中的 `get_data_dir()` 方法，禁止额外创建。
 
 - 所有建表语句都在 `db/schema_definition.rs` 文件，每次数据库结构改动都将数据库版本号 +1。
 
-- 所有实体类都创建在 `model` 目录下，每次数据库改动都需要对应更新实体类。
+- 所有实体类都创建在 `db/models.rs` 文件，每次数据库改动都需要对应更新实体类。
 
 - 所有后端接口参数改动都确保前端同步更新。
 
@@ -23,17 +23,15 @@
   | `db/models.rs`    | 实体类定义，包含数据库映射和 DTO               |
   | `api/handlers.rs` | HTTP 代理处理，不涉及 Tauri 命令               |
 
-- 统一使用 `Result<T>` 作为返回类型，错误信息使用 `map_err` 转换为友好提示：
+- 统一使用 `Result<T>` 作为返回类型，错误信息使用 `map_err` 转换为友好提示。
 
-- 使用 `tracing` 宏记录关键操作，系统事件使用 `stats_service::record_system_log` 记录。
+- 使用 `tracing` 宏记录关键操作，系统事件使用 `stats::record_system_log` 记录。
 
 - 前端类型定义统一放在 `types/models.ts`
 
 - 禁止前端直接调用外部 HTTP 接口（GitHub API 等特殊情况除外），应通过 Tauri 命令调用
 
 - 状态管理统一使用 **Pinia**，禁止在组件内直接维护跨组件共享状态
-
-- 统一使用 `Result<T>` 作为返回类型，错误信息使用 `map_err` 转换为友好提示
 
 ---
 

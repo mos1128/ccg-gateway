@@ -35,8 +35,6 @@ cargo tauri dev --no-watch
 if %errorlevel% neq 0 (
     echo.
     echo [ERROR] Tauri development environment failed to start
-    pause
-    exit /b 1
 )
 echo.
 echo ========================================
