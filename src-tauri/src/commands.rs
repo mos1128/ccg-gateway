@@ -18,6 +18,7 @@ use crate::db::models::{
 };
 use crate::LogDb;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use tauri::State;
 use std::io::Read;
 
@@ -42,49 +43,82 @@ pub async fn get_providers(
     };
 
     let providers = providers.map_err(|e| e.to_string())?;
-    let mut results = Vec::new();
 
-    for provider in providers {
-        let mut response = ProviderResponse::from(provider.clone());
+    // 批量查询所有 model_maps（避免 N+1 问题）
+    let all_maps: Vec<(i64, i64, String, String, i64)> = sqlx::query_as(
+        "SELECT id, provider_id, source_model, target_model, enabled FROM provider_model_map ORDER BY provider_id, id",
+    )
+    .fetch_all(db.inner())
+    .await
+    .map_err(|e| e.to_string())?;
 
-        // Load model maps
-        let maps: Vec<(i64, String, String, i64)> = sqlx::query_as(
-            "SELECT id, source_model, target_model, enabled FROM provider_model_map WHERE provider_id = ? ORDER BY id",
-        )
-        .bind(provider.id)
-        .fetch_all(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
+    // 批量查询所有 model_blacklist（避免 N+1 问题）
+    let all_blacklist: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT id, provider_id, model_pattern FROM provider_model_blacklist ORDER BY provider_id, id",
+    )
+    .fetch_all(db.inner())
+    .await
+    .map_err(|e| e.to_string())?;
 
-        response.model_maps = maps
-            .into_iter()
-            .map(|(id, source_model, target_model, enabled)| crate::db::models::ModelMapResponse {
-                id,
-                source_model,
-                target_model,
-                enabled: enabled != 0,
-            })
-            .collect();
+    // 按 provider_id 分组
+    let maps_by_provider: HashMap<i64, Vec<_>> = all_maps
+        .into_iter()
+        .fold(HashMap::new(), |mut acc, (id, provider_id, source_model, target_model, enabled)| {
+            acc.entry(provider_id)
+                .or_insert_with(Vec::new)
+                .push((id, source_model, target_model, enabled));
+            acc
+        });
 
-        // Load model blacklist
-        let blacklist: Vec<(i64, String)> = sqlx::query_as(
-            "SELECT id, model_pattern FROM provider_model_blacklist WHERE provider_id = ? ORDER BY id",
-        )
-        .bind(provider.id)
-        .fetch_all(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
+    let blacklist_by_provider: HashMap<i64, Vec<_>> = all_blacklist
+        .into_iter()
+        .fold(HashMap::new(), |mut acc, (id, provider_id, model_pattern)| {
+            acc.entry(provider_id)
+                .or_insert_with(Vec::new)
+                .push((id, model_pattern));
+            acc
+        });
 
-        response.model_blacklist = blacklist
-            .into_iter()
-            .map(|(id, model_pattern)| crate::db::models::ModelBlacklistResponse {
-                id,
-                model_pattern,
-            })
-            .collect();
+    // 组装结果
+    let results: Vec<ProviderResponse> = providers
+        .into_iter()
+        .map(|provider| {
+            let mut response = ProviderResponse::from(provider.clone());
 
-        results.push(response);
-    }
+            // 从分组数据中获取 model_maps
+            response.model_maps = maps_by_provider
+                .get(&provider.id)
+                .map(|maps| {
+                    maps.iter()
+                        .map(|(id, source_model, target_model, enabled)| {
+                            crate::db::models::ModelMapResponse {
+                                id: *id,
+                                source_model: source_model.clone(),
+                                target_model: target_model.clone(),
+                                enabled: *enabled != 0,
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // 从分组数据中获取 model_blacklist
+            response.model_blacklist = blacklist_by_provider
+                .get(&provider.id)
+                .map(|blacklist| {
+                    blacklist
+                        .iter()
+                        .map(|(id, model_pattern)| crate::db::models::ModelBlacklistResponse {
+                            id: *id,
+                            model_pattern: model_pattern.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            response
+        })
+        .collect();
 
     Ok(results)
 }
@@ -421,14 +455,30 @@ pub async fn delete_provider(
 
 #[tauri::command]
 pub async fn reorder_providers(db: State<'_, SqlitePool>, ids: Vec<i64>) -> Result<()> {
-    for (idx, id) in ids.iter().enumerate() {
-        sqlx::query("UPDATE providers SET sort_order = ? WHERE id = ?")
-            .bind(idx as i64)
-            .bind(id)
-            .execute(db.inner())
-            .await
-            .map_err(|e| e.to_string())?;
+    if ids.is_empty() {
+        return Ok(());
     }
+
+    // 使用 CASE WHEN 批量更新（避免 N 次单独更新）
+    let case_clauses: Vec<String> = ids
+        .iter()
+        .enumerate()
+        .map(|(idx, id)| format!("WHEN {} THEN {}", id, idx))
+        .collect();
+
+    let id_list: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+
+    let sql = format!(
+        "UPDATE providers SET sort_order = CASE id {} END WHERE id IN ({})",
+        case_clauses.join(" "),
+        id_list.join(", ")
+    );
+
+    sqlx::query(&sql)
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -5287,25 +5337,36 @@ pub async fn reorder_credentials(
     db: State<'_, SqlitePool>,
     ids: Vec<i64>,
 ) -> Result<()> {
-    // 获取第一个凭证的 cli_type（用于后续同步）
-    let cli_type: Option<(String,)> = if !ids.is_empty() {
-        sqlx::query_as("SELECT cli_type FROM official_credentials WHERE id = ?")
-            .bind(ids[0])
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?
-    } else {
-        None
-    };
-
-    for (index, id) in ids.iter().enumerate() {
-        sqlx::query("UPDATE official_credentials SET sort_order = ? WHERE id = ?")
-            .bind(index as i64)
-            .bind(id)
-            .execute(db.inner())
-            .await
-            .map_err(|e| e.to_string())?;
+    if ids.is_empty() {
+        return Ok(());
     }
+
+    // 获取第一个凭证的 cli_type（用于后续同步）
+    let cli_type: Option<(String,)> = sqlx::query_as("SELECT cli_type FROM official_credentials WHERE id = ?")
+        .bind(ids[0])
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 使用 CASE WHEN 批量更新（避免 N 次单独更新）
+    let case_clauses: Vec<String> = ids
+        .iter()
+        .enumerate()
+        .map(|(idx, id)| format!("WHEN {} THEN {}", id, idx))
+        .collect();
+
+    let id_list: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+
+    let sql = format!(
+        "UPDATE official_credentials SET sort_order = CASE id {} END WHERE id IN ({})",
+        case_clauses.join(" "),
+        id_list.join(", ")
+    );
+
+    sqlx::query(&sql)
+        .execute(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
 
     // 如果是直连模式，自动同步到文件
     if let Some((cli_type_str,)) = cli_type {
