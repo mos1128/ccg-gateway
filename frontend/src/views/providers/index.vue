@@ -89,13 +89,13 @@
             
             <div style="display: flex; align-items: center; gap: 40px;">
                <div style="display: flex; gap: 24px;">
-                 <div style="text-align: right;">
+                 <div style="display: flex; flex-direction: column; align-items: center;">
                    <div style="font-size: 12px; margin-bottom: 2px;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#94a3b8' }">失败次数</div>
                    <div :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#0f172a', fontWeight: 500, fontSize: '15px' }">
                      {{ element.consecutive_failures }}
                    </div>
                  </div>
-                 <div style="text-align: right;">
+                 <div style="display: flex; flex-direction: column; align-items: center;">
                    <div style="font-size: 12px; color: #94a3b8; margin-bottom: 2px;">失败阈值</div>
                    <div style="color: #64748b; font-weight: 500; font-size: 15px;">{{ element.failure_threshold }}</div>
                  </div>

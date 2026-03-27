@@ -1,8 +1,6 @@
 <template>
   <div class="dashboard-page">
-    <div class="page-header">
-      <h1 class="page-title">仪表盘</h1>
-    </div>
+
 
     <!-- 顶部状态卡片区 -->
     <div style="display: flex; gap: 24px; margin-bottom: 24px;">

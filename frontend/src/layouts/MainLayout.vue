@@ -7,7 +7,7 @@
         <div class="nav-group-title">总览</div>
         <div class="nav-item" :class="{ active: route.path === '/' }" @click="router.push('/')">仪表盘</div>
         <div class="nav-item" :class="{ active: route.path === '/sessions' }" @click="router.push('/sessions')">会话记录</div>
-        <div class="nav-item" :class="{ active: route.path === '/logs' }" @click="router.push('/logs')">系统日志</div>
+        <div class="nav-item" :class="{ active: route.path === '/logs' }" @click="router.push('/logs')">日志记录</div>
       </div>
       
       <div class="nav-group">
@@ -81,6 +81,89 @@ body {
   padding: 20px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #0f172a;
+}
+
+/* Ethereal Frost ElMessageBox Global Overrides to mimic custom modals */
+.el-overlay.is-message-box {
+  background: rgba(15, 23, 42, 0.25) !important;
+  backdrop-filter: blur(3px) !important;
+}
+
+.el-message-box {
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.1) !important;
+  padding-bottom: 0 !important;
+  width: 400px !important;
+  max-width: 90vw !important;
+}
+
+.el-message-box__header {
+  padding: 20px 24px 0 24px !important;
+  border-bottom: none !important;
+  background: transparent !important;
+}
+
+.el-message-box__title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #0f172a !important;
+}
+
+.el-message-box__headerbtn {
+  top: 18px !important;
+  right: 20px !important;
+}
+
+.el-message-box__content {
+  padding: 16px 24px 24px 24px !important;
+  font-size: 14px !important;
+  color: #475569 !important;
+}
+
+.el-message-box__btns {
+  padding: 16px 24px !important;
+  background: #f8fafc !important;
+  border-top: 1px dashed rgba(226, 232, 240, 0.8) !important;
+  border-radius: 0 0 12px 12px !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 12px;
+}
+
+.el-message-box__btns .el-button {
+  margin-left: 0 !important;
+  padding: 8px 16px !important;
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  transition: all 0.2s !important;
+  outline: none !important;
+  min-height: auto !important;
+}
+
+.el-message-box__btns .el-button--default {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #475569 !important;
+}
+.el-message-box__btns .el-button--default:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.el-message-box__btns .el-button--primary {
+  background: #0ea5e9 !important;
+  border: none !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.2) !important;
+}
+.el-message-box__btns .el-button--primary:hover {
+  background: #0284c7 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3) !important;
 }
 </style>
 
