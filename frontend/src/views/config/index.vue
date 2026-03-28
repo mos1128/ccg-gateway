@@ -156,22 +156,34 @@
     </div>
 
     <!-- WebDAV Backup List Dialog -->
-    <el-dialog v-model="webdavListVisible" title="管理 WebDAV 备份" width="720px" class="frost-dialog">
-      <el-table :data="webdavBackups" v-loading="loadingWebdavList">
-        <el-table-column prop="filename" label="文件名" min-width="240" />
-        <el-table-column prop="size" label="大小" width="100">
-          <template #default="{ row }">{{ formatSize(row.size) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="160" align="right">
-          <template #default="{ row }">
-            <div style="display: flex; gap: 8px; justify-content: flex-end;">
-              <el-button type="primary" link @click="handleImportWebdav(row.filename)" :loading="importingWebdav">恢复</el-button>
-              <el-button type="danger" link @click="handleDeleteWebdav(row.filename)" :loading="deletingWebdav">删除</el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
+    <div class="modal-overlay" :class="{ active: webdavListVisible }" @click.self="webdavListVisible = false">
+      <div class="modal-content">
+        <div style="padding: 24px 32px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
+          <div style="font-size: 20px; font-weight: 500; color: #0f172a;">管理 WebDAV 备份</div>
+          <div style="cursor: pointer; color: #94a3b8; font-size: 20px; font-weight: bold;" @click="webdavListVisible = false">×</div>
+        </div>
+        <div style="padding: 0; max-height: 70vh; overflow-y: auto;">
+          <el-table :data="webdavBackups" v-loading="loadingWebdavList" style="width: 100%; border-radius: 0 0 20px 20px; overflow: hidden;">
+            <el-table-column prop="filename" label="文件名" min-width="240">
+              <template #default="{ row }">
+                <div style="padding-left: 20px;">{{ row.filename }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="size" label="大小" width="100">
+              <template #default="{ row }">{{ formatSize(row.size) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="160" align="right">
+              <template #default="{ row }">
+                <div style="display: flex; gap: 8px; justify-content: flex-end; padding-right: 20px;">
+                  <el-button type="primary" link @click="handleImportWebdav(row.filename)" :loading="importingWebdav">恢复</el-button>
+                  <el-button type="danger" link @click="handleDeleteWebdav(row.filename)" :loading="deletingWebdav">删除</el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -435,4 +447,9 @@ onMounted(() => {
 /* CLI Column adjustment */
 .cli-settings-card { flex: 1; }
 .cli-form-container { flex: 1; min-height: 400px; display: flex; flex-direction: column; }
+
+/* Modal Styles */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.4); display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 1000; }
+.modal-overlay.active { opacity: 1; pointer-events: auto; }
+.modal-content { background: white; border-radius: 20px; width: 720px; max-width: 95vw; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15); display: flex; flex-direction: column; }
 </style>
