@@ -246,60 +246,57 @@
     </div>
 
     <!-- Modals -->
-    <div class="modal-overlay" :class="{ active: showAddRepoDialog || showEditRepoDialog }" @click.self="closeAllDialogs">
-      <div class="modal-content" style="width: 500px;">
-        <div class="modal-header">
-          <div class="modal-title">{{ showEditRepoDialog ? '编辑仓库' : '添加 Skill 仓库' }}</div>
-          <div class="modal-close" @click="closeAllDialogs">×</div>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
+    <AppModal v-model="showAddRepoDialog" title="添加 Skill 仓库" width="500px" :show-footer="false">
+        <div class="form-group">
             <label class="c-label">仓库地址 <span class="required">*</span></label>
-            <input 
-              v-if="showEditRepoDialog"
-              type="text" 
-              v-model="editRepoForm.url" 
-              class="c-input" 
-              placeholder="例如: owner/repo 或 GitHub 链接"
-            >
-            <input 
-              v-else
-              type="text" 
-              v-model="repoForm.url" 
-              class="c-input" 
+            <input
+              type="text"
+              v-model="repoForm.url"
+              class="c-input"
               placeholder="例如: owner/repo 或 GitHub 链接"
             >
           </div>
           <div class="form-group">
             <label class="c-label">分支</label>
-            <input 
-              v-if="showEditRepoDialog"
-              type="text" 
-              v-model="editRepoForm.branch" 
-              class="c-input" 
-              placeholder="默认 main"
-            >
-            <input 
-              v-else
-              type="text" 
-              v-model="repoForm.branch" 
-              class="c-input" 
+            <input
+              type="text"
+              v-model="repoForm.branch"
+              class="c-input"
               placeholder="默认 main"
             >
           </div>
-        </div>
-        <div class="modal-footer">
-          <button class="b-button-outline" @click="closeAllDialogs" :disabled="savingRepo">取消</button>
-          <button 
-            class="b-button" 
-            @click="showEditRepoDialog ? handleUpdateRepo() : handleAddRepo()" 
-            :disabled="savingRepo"
-          >
-            {{ showEditRepoDialog ? '保存更改' : '确认添加' }}
-          </button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button class="b-button-outline" @click="showAddRepoDialog = false" :disabled="savingRepo">取消</button>
+        <button class="b-button" @click="handleAddRepo" :disabled="savingRepo">确认添加</button>
+      </template>
+    </AppModal>
+
+    <AppModal v-model="showEditRepoDialog" title="编辑仓库" width="500px" :show-footer="false">
+        <div class="form-group">
+            <label class="c-label">仓库地址 <span class="required">*</span></label>
+            <input
+              type="text"
+              v-model="editRepoForm.url"
+              class="c-input"
+              placeholder="例如: owner/repo 或 GitHub 链接"
+            >
+          </div>
+          <div class="form-group">
+            <label class="c-label">分支</label>
+            <input
+              type="text"
+              v-model="editRepoForm.branch"
+              class="c-input"
+              placeholder="默认 main"
+            >
+          </div>
+
+      <template #footer>
+        <button class="b-button-outline" @click="showEditRepoDialog = false" :disabled="savingRepo">取消</button>
+        <button class="b-button" @click="handleUpdateRepo" :disabled="savingRepo">保存更改</button>
+      </template>
+    </AppModal>
 
   </div>
 </template>
@@ -308,6 +305,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import AppModal from '@/components/AppModal.vue'
 import { skillsApi } from '@/api/skills'
 import type { SkillRepo, DiscoverableSkill, InstalledSkill } from '@/types/models'
 
@@ -347,11 +345,6 @@ const installedDirectories = computed(() => new Set(installedList.value.map(s =>
 function isInstalled(directory: string): boolean {
   const dirName = directory.split('/').pop() || directory
   return installedDirectories.value.has(dirName)
-}
-
-function closeAllDialogs() {
-  showAddRepoDialog.value = false
-  showEditRepoDialog.value = false
 }
 
 async function fetchInstalled() {
@@ -707,21 +700,7 @@ onMounted(() => {
 .empty-state { padding: 80px 40px; text-align: center; color: #94a3b8; background: #ffffff; border-radius: 24px; border: 2px dashed #e2e8f0; }
 .empty-state p { margin-top: 16px; font-size: 15px; }
 
-/* Modal Styling */
-.modal-overlay { 
-  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); 
-  display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.2s; 
-}
-.modal-overlay.active { opacity: 1; pointer-events: auto; }
-.modal-content { background: #ffffff; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2); display: flex; flex-direction: column; overflow: hidden; }
-.modal-header { padding: 24px 32px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
-.modal-title { font-size: 20px; font-weight: 600; color: #0f172a; }
-.modal-close { font-size: 24px; color: #94a3b8; cursor: pointer; line-height: 1; }
-.modal-body { padding: 32px; }
-.modal-footer { padding: 20px 32px; background: #f8fafc; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 12px; }
-
 .form-group { margin-bottom: 24px; }
 .c-label { display: block; font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 8px; }
 .required { color: #f43f5e; }
-.modal-body .c-input { padding-left: 12px; }
 </style>

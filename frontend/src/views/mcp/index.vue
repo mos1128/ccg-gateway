@@ -86,27 +86,20 @@
     </div>
 
     <!-- Add/Edit Modal -->
-    <div class="modal-overlay" :class="{ active: showDialog }" @click.self="showDialog = false">
-      <div class="modal-content">
-        <div class="modal-header">
-          <div class="modal-title">{{ editingMcp ? '编辑 MCP' : '添加 MCP' }}</div>
-          <div class="modal-close" @click="showDialog = false">×</div>
+    <AppModal v-model="showDialog" :title="editingMcp ? '编辑 MCP' : '添加 MCP'" width="640px" :show-footer="false">
+        <div class="form-group">
+          <label class="c-label">MCP 名称 <span class="required">*</span></label>
+          <input type="text" v-model="form.name" class="c-input" placeholder="例如: Google Maps Search">
         </div>
-        
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="c-label">MCP 名称 <span class="required">*</span></label>
-            <input type="text" v-model="form.name" class="c-input" placeholder="例如: Google Maps Search">
+
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <label class="c-label" style="margin-bottom: 0;">配置 JSON <span class="required">*</span></label>
+            <button class="b-button-outline" style="font-size: 12px; padding: 4px 10px;" @click="formatJson">
+              <svg width="14" height="14" style="margin-right: 4px;"><use href="#icon-code"/></svg>
+              格式化
+            </button>
           </div>
-          
-          <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-              <label class="c-label" style="margin-bottom: 0;">配置 JSON <span class="required">*</span></label>
-              <button class="b-button-outline" style="font-size: 12px; padding: 4px 10px;" @click="formatJson">
-                <svg width="14" height="14" style="margin-right: 4px;"><use href="#icon-code"/></svg>
-                格式化
-              </button>
-            </div>
             <textarea
               v-model="form.config_json"
               class="c-input mono"
@@ -116,14 +109,12 @@
             ></textarea>
             <div v-if="validationError" class="error-tip">{{ validationError }}</div>
           </div>
-        </div>
-        
-        <div class="modal-footer">
-          <button class="b-button-outline" @click="showDialog = false">取消</button>
-          <button class="b-button" @click="handleSave">保存配置</button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button class="b-button-outline" @click="showDialog = false">取消</button>
+        <button class="b-button" @click="handleSave">保存配置</button>
+      </template>
+    </AppModal>
   </div>
 </template>
 
@@ -131,6 +122,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import AppModal from '@/components/AppModal.vue'
 import { mcpApi } from '@/api/mcp'
 import type { Mcp } from '@/types/models'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
@@ -382,66 +374,6 @@ onMounted(fetchList)
   font-size: 13px;
   font-weight: 500;
   color: #475569;
-}
-
-/* Modal Styling */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
-}
-.modal-overlay.active {
-  opacity: 1;
-  pointer-events: auto;
-}
-.modal-content {
-  background: #ffffff;
-  border-radius: 20px;
-  width: 640px;
-  max-width: 95vw;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.modal-header {
-  padding: 24px 32px;
-  border-bottom: 1px solid #f1f5f9;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: #0f172a;
-}
-.modal-close {
-  font-size: 24px;
-  color: #94a3b8;
-  cursor: pointer;
-  line-height: 1;
-}
-.modal-body {
-  padding: 32px;
-  max-height: 70vh;
-  overflow-y: auto;
-}
-.modal-footer {
-  padding: 20px 32px;
-  background: #f8fafc;
-  border-top: 1px solid #f1f5f9;
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
 }
 
 /* Form Elements */

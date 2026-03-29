@@ -6,6 +6,7 @@ src-tauri/WixTools
 # Node.js / Frontend
 frontend/node_modules/
 frontend/dist/
+*.d.ts
 .vite/
 
 # IDE

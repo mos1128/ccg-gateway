@@ -217,29 +217,22 @@
     </div>
 
     <!-- Modals -->
-    <div class="modal-overlay" :class="{ active: showAddMarketDialog }" @click.self="showAddMarketDialog = false">
-      <div class="modal-content" style="width: 500px;">
-        <div class="modal-header">
-          <div class="modal-title">添加插件市场</div>
-          <div class="modal-close" @click="showAddMarketDialog = false">×</div>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
+    <AppModal v-model="showAddMarketDialog" title="添加插件市场" width="500px" :show-footer="false">
+        <div class="form-group">
             <label class="c-label">市场源地址 <span class="required">*</span></label>
-            <input 
-              type="text" 
-              v-model="marketForm.url" 
-              class="c-input" 
+            <input
+              type="text"
+              v-model="marketForm.url"
+              class="c-input"
               placeholder="支持 URL 地址、GitHub owner/repo、本地路径"
             >
           </div>
-        </div>
-        <div class="modal-footer">
-          <button class="b-button-outline" @click="showAddMarketDialog = false">取消</button>
-          <button class="b-button" @click="handleAddMarketplace" :disabled="savingMarket">确认添加</button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button class="b-button-outline" @click="showAddMarketDialog = false">取消</button>
+        <button class="b-button" @click="handleAddMarketplace" :disabled="savingMarket">确认添加</button>
+      </template>
+    </AppModal>
 
   </div>
 </template>
@@ -247,6 +240,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessageBox, ElNotification } from 'element-plus'
+import AppModal from '@/components/AppModal.vue'
 import { pluginsApi } from '@/api/plugins'
 import type { MarketplaceInfo, PluginItem, PluginFavoriteItem } from '@/types/models'
 
@@ -660,21 +654,7 @@ onMounted(loadAll)
 .empty-state { padding: 80px 40px; text-align: center; color: #94a3b8; background: #ffffff; border-radius: 24px; border: 2px dashed #e2e8f0; }
 .empty-state p { margin-top: 16px; font-size: 15px; }
 
-/* Modal Styling */
-.modal-overlay { 
-  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px); 
-  display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.2s; 
-}
-.modal-overlay.active { opacity: 1; pointer-events: auto; }
-.modal-content { background: #ffffff; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2); display: flex; flex-direction: column; overflow: hidden; }
-.modal-header { padding: 24px 32px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
-.modal-title { font-size: 20px; font-weight: 600; color: #0f172a; }
-.modal-close { font-size: 24px; color: #94a3b8; cursor: pointer; line-height: 1; }
-.modal-body { padding: 32px; }
-.modal-footer { padding: 20px 32px; background: #f8fafc; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 12px; }
-
 .form-group { margin-bottom: 24px; }
 .c-label { display: block; font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 8px; }
 .required { color: #f43f5e; }
-.modal-body .c-input { padding-left: 12px; }
 </style>

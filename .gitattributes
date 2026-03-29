@@ -1,0 +1,20 @@
+* text=auto
+
+# Rust / Tauri - 强制 LF
+*.rs text eol=lf
+*.toml text eol=lf
+Cargo.lock text eol=lf
+
+# Tauri 生成的 schema - 强制 LF
+src-tauri/gen/schemas/*.json text eol=lf
+
+# TypeScript 类型声明 - 强制 LF
+*.d.ts text eol=lf
+
+# 前端配置文件 - 强制 LF
+*.json text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.vue text eol=lf
+*.css text eol=lf
+*.html text eol=lf

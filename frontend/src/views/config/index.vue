@@ -28,9 +28,40 @@
     </svg>
 
     <div class="config-layout">
-      <!-- Left Column: Core & Backup -->
+      <!-- Left Column: CLI Settings -->
       <div class="config-column">
-        
+        <div class="frost-card cli-settings-card">
+          <div class="card-header-simple">
+            <svg width="20" height="20" class="header-icon"><use href="#icon-terminal"/></svg>
+            <span class="card-label">CLI 运行配置</span>
+            <div style="flex: 1;"></div>
+            <div class="action-icon" @click="cliFormRef?.handleSave()" title="保存并应用">
+              <svg width="18" height="18"><use href="#icon-save"/></svg>
+            </div>
+          </div>
+          <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
+            <div class="frost-segmented" style="margin-bottom: 24px;">
+              <div class="seg-item" :class="{ active: activeCliTab === 'claude_code' }" @click="activeCliTab = 'claude_code'">Claude Code</div>
+              <div class="seg-item" :class="{ active: activeCliTab === 'codex' }" @click="activeCliTab = 'codex'">Codex</div>
+              <div class="seg-item" :class="{ active: activeCliTab === 'gemini' }" @click="activeCliTab = 'gemini'">Gemini</div>
+            </div>
+
+            <div class="cli-form-container">
+              <CliSettingsForm
+                ref="cliFormRef"
+                :key="activeCliTab"
+                :cli-type="activeCliTab"
+                :settings="settingsStore.settings?.cli_settings?.[activeCliTab]"
+                @save="saveCli"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Core & Backup -->
+      <div class="config-column">
+
         <!-- Timeout Card -->
         <div class="frost-card">
           <div class="card-header-simple">
@@ -73,84 +104,34 @@
             <span class="card-label">备份与同步</span>
           </div>
           <div class="card-body">
-            <div class="frost-segmented">
-              <div class="seg-item" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</div>
-              <div class="seg-item" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV 备份</div>
-            </div>
-
-            <div v-if="activeBackupTab === 'local'" class="tab-content">
-              <div class="action-row-end">
-                <button class="f-button ghost" @click="handleExportLocal" :disabled="exportingLocal">
-                  <svg width="14" height="14" style="margin-right: 6px;"><use href="#icon-download"/></svg>
-                  导出
-                </button>
-                <el-upload :show-file-list="false" :before-upload="handleImportLocal" accept=".db">
-                   <button class="f-button secondary" :disabled="importingLocal">
-                     <svg width="14" height="14" style="margin-right: 6px;"><use href="#icon-upload"/></svg>
-                     导入
-                   </button>
-                </el-upload>
+            <div class="backup-row">
+              <div class="frost-segmented backup-segmented">
+                <div class="seg-item" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</div>
+                <div class="seg-item" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</div>
               </div>
-            </div>
-
-            <div v-if="activeBackupTab === 'webdav'" class="tab-content">
-              <div class="input-item">
-                <label class="item-label">服务器地址</label>
-                <input type="text" v-model="webdavForm.url" placeholder="https://dav.jianguoyun.com/dav/" class="f-input">
+              <div class="backup-actions">
+                <template v-if="activeBackupTab === 'local'">
+                  <div class="action-icon" @click="!exportingLocal && handleExportLocal()" title="导出" :class="{ disabled: exportingLocal }">
+                    <svg width="18" height="18"><use href="#icon-download"/></svg>
+                  </div>
+                  <el-upload :show-file-list="false" :before-upload="handleImportLocal" accept=".db" :disabled="importingLocal">
+                    <div class="action-icon" title="导入" :class="{ disabled: importingLocal }">
+                      <svg width="18" height="18"><use href="#icon-upload"/></svg>
+                    </div>
+                  </el-upload>
+                </template>
+                <template v-else>
+                  <div class="action-icon" @click="showWebdavSettings" title="WebDAV设置">
+                    <svg width="18" height="18"><use href="#icon-settings"/></svg>
+                  </div>
+                  <div class="action-icon" @click="!exportingWebdav && handleExportWebdav()" title="导出" :class="{ disabled: exportingWebdav }">
+                    <svg width="18" height="18"><use href="#icon-download"/></svg>
+                  </div>
+                  <div class="action-icon" @click="handleShowWebdavList" title="导入">
+                    <svg width="18" height="18"><use href="#icon-upload"/></svg>
+                  </div>
+                </template>
               </div>
-              <div class="input-row">
-                <div class="input-item" style="flex: 1;">
-                  <label class="item-label">用户名</label>
-                  <input type="text" v-model="webdavForm.username" class="f-input">
-                </div>
-                <div class="input-item" style="flex: 1;">
-                  <label class="item-label">密码</label>
-                  <input type="password" v-model="webdavForm.password" class="f-input">
-                </div>
-              </div>
-              <div class="action-row-end" style="margin-top: 12px; gap: 8px;">
-                <button class="f-button ghost-plain" @click="handleTestWebdav" :disabled="testingWebdav">测试链接</button>
-                <button class="f-button ghost-plain" @click="handleSaveWebdav">保存账号</button>
-                <button class="f-button ghost" @click="handleExportWebdav" :disabled="exportingWebdav">
-                  <svg width="14" height="14" style="margin-right: 6px;"><use href="#icon-download"/></svg>
-                  导出
-                </button>
-                <button class="f-button secondary" @click="handleShowWebdavList">
-                  <svg width="14" height="14" style="margin-right: 6px;"><use href="#icon-upload"/></svg>
-                  导入
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Right Column: CLI Settings -->
-      <div class="config-column">
-        <div class="frost-card cli-settings-card">
-          <div class="card-header-simple">
-            <svg width="20" height="20" class="header-icon"><use href="#icon-terminal"/></svg>
-            <span class="card-label">CLI 运行配置</span>
-            <div style="flex: 1;"></div>
-            <div class="action-icon" @click="cliFormRef?.handleSave()" title="保存并应用">
-              <svg width="18" height="18"><use href="#icon-save"/></svg>
-            </div>
-          </div>
-          <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
-            <div class="frost-segmented" style="margin-bottom: 24px;">
-              <div class="seg-item" :class="{ active: activeCliTab === 'claude_code' }" @click="activeCliTab = 'claude_code'">Claude Code</div>
-              <div class="seg-item" :class="{ active: activeCliTab === 'codex' }" @click="activeCliTab = 'codex'">Codex</div>
-              <div class="seg-item" :class="{ active: activeCliTab === 'gemini' }" @click="activeCliTab = 'gemini'">Gemini</div>
-            </div>
-
-            <div class="cli-form-container">
-              <CliSettingsForm 
-                ref="cliFormRef"
-                :key="activeCliTab"
-                :cli-type="activeCliTab" 
-                :settings="settingsStore.settings?.cli_settings?.[activeCliTab]" 
-                @save="saveCli" 
-              />
             </div>
           </div>
         </div>
@@ -158,13 +139,8 @@
     </div>
 
     <!-- WebDAV Backup List Dialog -->
-    <div class="modal-overlay" :class="{ active: webdavListVisible }" @click.self="webdavListVisible = false">
-      <div class="modal-content">
-        <div style="padding: 24px 32px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
-          <div style="font-size: 20px; font-weight: 500; color: #0f172a;">管理 WebDAV 备份</div>
-          <div style="cursor: pointer; color: #94a3b8; font-size: 20px; font-weight: bold;" @click="webdavListVisible = false">×</div>
-        </div>
-        <div class="table-container" v-loading="loadingWebdavList" style="border: none; box-shadow: none; border-radius: 0 0 20px 20px; max-height: 70vh; overflow: hidden auto; padding: 0;">
+    <AppModal v-model="webdavListVisible" title="管理 WebDAV 备份" width="720px" :show-footer="false">
+        <div class="table-container" v-loading="loadingWebdavList" style="border: none; box-shadow: none; border-radius: 12px; max-height: 60vh; overflow: hidden auto; padding: 0;">
             <table class="flat-table">
               <thead>
                 <tr>
@@ -190,8 +166,35 @@
               </tbody>
             </table>
           </div>
+    </AppModal>
+
+    <!-- WebDAV Settings Dialog -->
+    <AppModal v-model="webdavSettingsVisible" title="WebDAV 设置" width="480px" :show-footer="false">
+      <div class="webdav-settings-form">
+        <div class="input-item">
+          <label class="item-label">服务器地址</label>
+          <input type="text" v-model="webdavForm.url" placeholder="https://dav.jianguoyun.com/dav/" class="f-input">
+        </div>
+        <div class="input-row">
+          <div class="input-item" style="flex: 1;">
+            <label class="item-label">用户名</label>
+            <input type="text" v-model="webdavForm.username" class="f-input">
+          </div>
+          <div class="input-item" style="flex: 1;">
+            <label class="item-label">密码</label>
+            <input type="password" v-model="webdavForm.password" class="f-input">
+          </div>
+        </div>
+        <div class="webdav-settings-footer">
+          <button class="f-button ghost-plain" @click="handleTestWebdav" :disabled="testingWebdav">
+            {{ testingWebdav ? '测试中...' : '测试链接' }}
+          </button>
+          <button class="f-button" @click="handleSaveWebdav" :disabled="savingWebdav">
+            {{ savingWebdav ? '保存中...' : '保存配置' }}
+          </button>
+        </div>
       </div>
-    </div>
+    </AppModal>
   </div>
 </template>
 
@@ -201,6 +204,7 @@ import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import AppModal from '@/components/AppModal.vue'
 import CliSettingsForm from './components/CliSettingsForm.vue'
 import * as backupApi from '@/api/backup'
 import type { WebdavSettings, WebdavBackup } from '@/api/backup'
@@ -251,6 +255,7 @@ const loadingWebdavList = ref(false)
 const importingWebdav = ref(false)
 const deletingWebdav = ref(false)
 const webdavListVisible = ref(false)
+const webdavSettingsVisible = ref(false)
 const webdavBackups = ref<WebdavBackup[]>([])
 
 async function loadWebdavSettings() {
@@ -258,6 +263,10 @@ async function loadWebdavSettings() {
     const { data } = await backupApi.getWebdavSettings()
     webdavForm.value = data
   } catch {}
+}
+
+function showWebdavSettings() {
+  webdavSettingsVisible.value = true
 }
 
 async function handleExportLocal() {
@@ -309,11 +318,15 @@ async function handleTestWebdav() {
 }
 
 async function handleSaveWebdav() {
+  savingWebdav.value = true
   try {
     await backupApi.updateWebdavSettings(webdavForm.value)
     notify('WebDAV 配置已保存')
+    webdavSettingsVisible.value = false
   } catch (error: any) {
     notify(error?.message || '保存失败', 'error')
+  } finally {
+    savingWebdav.value = false
   }
 }
 
@@ -476,11 +489,6 @@ onMounted(() => {
 .cli-settings-card { flex: 1; }
 .cli-form-container { flex: 1; min-height: 400px; display: flex; flex-direction: column; }
 
-/* Modal Styles */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.4); display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 1000; }
-.modal-overlay.active { opacity: 1; pointer-events: auto; }
-.modal-content { background: white; border-radius: 20px; width: 720px; max-width: 95vw; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15); display: flex; flex-direction: column; }
-
 /* Flat Table (matching logs page style) */
 .table-container { background: #ffffff; border-radius: 12px; padding: 0; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.02); overflow: hidden; }
 .flat-table { width: 100%; border-collapse: collapse; text-align: left; }
@@ -494,4 +502,14 @@ onMounted(() => {
 .table-link:hover { text-decoration: underline; }
 .table-link.danger { color: #ef4444; }
 .table-link.danger:hover { color: #dc2626; }
+
+/* Backup Row */
+.backup-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.backup-segmented { margin-bottom: 0; flex-shrink: 0; }
+.backup-actions { display: flex; gap: 8px; }
+.backup-actions .action-icon.disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* WebDAV Settings Form */
+.webdav-settings-form { padding: 4px 0; }
+.webdav-settings-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
 </style>

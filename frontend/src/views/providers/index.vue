@@ -182,18 +182,9 @@
       </draggable>
     </div>
 
-    <!-- Add/Edit Provider Modal custom implementation -->
-    <div class="modal-overlay" :class="{ active: showDialog }" @click.self="showDialog = false">
-      <div class="modal-content">
-        <div style="padding: 24px 32px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
-          <div style="font-size: 20px; font-weight: 500; color: #0f172a;">{{ editingProvider ? '编辑服务商' : '添加服务商' }}</div>
-          <div style="cursor: pointer; color: #94a3b8; font-size: 20px; font-weight: bold;" @click="showDialog = false">×</div>
-        </div>
-        
-        <div style="padding: 32px; max-height: 70vh; overflow-y: auto;">
-          <!-- Base info -->
-          <!-- INCREASE MARGIN AND GAPS TO FIX "CRAMPED" ERROR -->
-          <div style="display: flex; gap: 32px; margin-bottom: 32px;">
+    <!-- Add/Edit Provider Modal -->
+    <AppModal v-model="showDialog" :title="editingProvider ? '编辑服务商' : '添加服务商'" width="720px" :show-footer="false">
+      <div style="display: flex; gap: 32px; margin-bottom: 32px;">
             <div style="flex: 1;">
               <label class="c-label">服务商名称 <span style="color: #ef4444;">*</span></label>
               <input type="text" v-model="form.name" class="c-input" placeholder="例如: OpenAI 官方">
@@ -259,7 +250,7 @@
               </div>
               <button class="b-button-outline" style="font-size: 13px; padding: 6px 12px;" @click="addModelBlacklist">+ 加黑名单</button>
             </div>
-            
+
             <div style="display: flex; flex-direction: column; gap: 20px;">
               <div v-for="(item, index) in form.model_blacklist" :key="'blk-'+index" style="display: flex; gap: 16px; align-items: center;">
                  <input type="text" v-model="item.model_pattern" class="c-input" placeholder="模型规则" style="flex: 1;">
@@ -267,26 +258,16 @@
               </div>
             </div>
           </div>
-          
-        </div>
-        
-        <div style="padding: 24px 32px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 12px; background: #f8fafc; border-radius: 0 0 20px 20px;">
-          <button class="b-button-outline" @click="showDialog = false">取消修改</button>
-          <button class="b-button" @click="handleSave" style="background: #0ea5e9; color: white;">保存配置</button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button class="b-button-outline" @click="showDialog = false">取消修改</button>
+        <button class="b-button" @click="handleSave">保存配置</button>
+      </template>
+    </AppModal>
     <!-- / Add Provider Modal -->
 
     <!-- Add/Edit Credential Modal -->
-    <div class="modal-overlay" :class="{ active: showCredentialDialog }" @click.self="showCredentialDialog = false">
-      <div class="modal-content">
-         <div style="padding: 24px 32px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
-          <div style="font-size: 20px; font-weight: 500; color: #0f172a;">{{ editingCredential ? '编辑凭证' : '添加凭证' }}</div>
-          <div style="cursor: pointer; color: #94a3b8; font-size: 20px; font-weight: bold;" @click="showCredentialDialog = false">×</div>
-        </div>
-        
-        <div style="padding: 32px; max-height: 70vh; overflow-y: auto;">
+    <AppModal v-model="showCredentialDialog" :title="editingCredential ? '编辑凭证' : '添加凭证'" width="720px" :show-footer="false">
           <div style="margin-bottom: 32px;">
             <label class="c-label">凭证名称 <span style="color: #ef4444;">*</span></label>
             <input type="text" v-model="credentialForm.name" class="c-input" placeholder="例如: 个人主账号">
@@ -325,14 +306,12 @@
                <el-input type="textarea" :rows="4" v-model="credentialForm.gemini_settings" />
              </div>
           </template>
-        </div>
 
-        <div style="padding: 24px 32px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 12px; background: #f8fafc; border-radius: 0 0 20px 20px;">
-          <button class="b-button-outline" @click="showCredentialDialog = false">取消</button>
-          <button class="b-button" @click="handleSaveCredential" style="background: #0ea5e9; color: white;">保存凭证</button>
-        </div>
-      </div>
-    </div>
+      <template #footer>
+        <button class="b-button-outline" @click="showCredentialDialog = false">取消</button>
+        <button class="b-button" @click="handleSaveCredential">保存凭证</button>
+      </template>
+    </AppModal>
   </div>
 </template>
 
@@ -341,6 +320,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
 import draggable from 'vuedraggable'
+import AppModal from '@/components/AppModal.vue'
 import { useProviderStore } from '@/stores/providers'
 import { useCredentialStore } from '@/stores/credentials'
 import { useUiStore } from '@/stores/ui'
@@ -642,10 +622,6 @@ onMounted(() => {
 .drag-handle { display: flex; flex-direction: column; gap: 3px; cursor: grab; padding: 8px; margin-left: -8px; opacity: 0.3; transition: opacity 0.2s; }
 .drag-handle:hover { opacity: 0.8; }
 .drag-dot { width: 4px; height: 4px; border-radius: 50%; background: #64748b; }
-
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.4); display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 1000; }
-.modal-overlay.active { opacity: 1; pointer-events: auto; }
-.modal-content { background: white; border-radius: 20px; width: 720px; max-width: 95vw; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15); display: flex; flex-direction: column; }
 
 .action-icon {
   width: 34px;

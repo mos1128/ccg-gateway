@@ -206,15 +206,9 @@
     </div>
 
 
-    <!-- Request Detail Dialog (Kept structure for data explorer) -->
-    <div class="modal-overlay" :class="{ active: requestDetailVisible }" @click.self="requestDetailVisible = false">
-      <div class="modal-content" style="width: 900px;">
-        <div class="modal-header">
-          <div class="modal-title">请求详情</div>
-          <div class="modal-close" @click="requestDetailVisible = false">×</div>
-        </div>
-        <div class="modal-body">
-          <div v-if="requestDetail" class="detail-content">
+    <!-- Request Detail Dialog -->
+    <AppModal v-model="requestDetailVisible" title="请求详情" width="900px" :show-footer="false">
+        <div v-if="requestDetail" class="detail-content">
             <!-- Summary -->
         <el-descriptions :column="3" border size="small">
           <el-descriptions-item label="ID">{{ requestDetail.id }}</el-descriptions-item>
@@ -289,10 +283,7 @@
           </el-card>
         </div>
       </div>
-        </div>
-      </div>
-    </div>
-
+    </AppModal>
   </div>
 </template>
 
@@ -300,6 +291,7 @@
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import AppModal from '@/components/AppModal.vue'
 import { logsApi } from '@/api/logs'
 import { providersApi } from '@/api/providers'
 import { useUiStore } from '@/stores/ui'
@@ -642,20 +634,8 @@ watch(activeTab, (tab) => {
 .custom-option.selected { font-weight: 600; color: #0ea5e9; background: #f0f9ff; }
 .check { color:#0ea5e9; font-weight: bold; font-size:14px; margin-left:8px; }
 
-/* Modal Styling */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.2s;
-}
-.modal-overlay.active { opacity: 1; pointer-events: auto; }
-.modal-content { background: #ffffff; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2); display: flex; flex-direction: column; overflow: hidden; max-height: 90vh; }
-.modal-header { padding: 24px 32px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
-.modal-title { font-size: 20px; font-weight: 600; color: #0f172a; }
-.modal-close { font-size: 24px; color: #94a3b8; cursor: pointer; line-height: 1; }
-.modal-body { padding: 32px; overflow-y: auto; }
-
 /* Keep el-dialog styles clean to match ethereal frost inside detail view */
-.detail-content { max-height: 70vh; overflow-y: auto; padding-right: 12px; }
+.detail-content { max-height: 60vh; overflow-y: auto; }
 .cards-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .detail-card { margin: 0; }
 .detail-card-header { display: flex; justify-content: space-between; font-weight: 600; }

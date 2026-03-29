@@ -83,36 +83,27 @@
     </div>
 
     <!-- Add/Edit Modal -->
-    <div class="modal-overlay" :class="{ active: showDialog }" @click.self="showDialog = false">
-      <div class="modal-content" style="width: 800px;">
-        <div class="modal-header">
-          <div class="modal-title">{{ editingPrompt ? '编辑提示词' : '添加提示词' }}</div>
-          <div class="modal-close" @click="showDialog = false">×</div>
+    <AppModal v-model="showDialog" :title="editingPrompt ? '编辑提示词' : '添加提示词'" width="800px" :show-footer="false">
+        <div class="form-group">
+          <label class="c-label">提示词名称 <span class="required">*</span></label>
+          <input type="text" v-model="form.name" class="c-input" placeholder="例如: 单元测试生成器">
         </div>
-        
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="c-label">提示词名称 <span class="required">*</span></label>
-            <input type="text" v-model="form.name" class="c-input" placeholder="例如: 单元测试生成器">
-          </div>
-          
-          <div class="form-group">
-            <label class="c-label">提示词内容 <span class="required">*</span></label>
-            <textarea
-              v-model="form.content"
-              class="c-input mono"
-              rows="16"
-              placeholder="请输入提示词内容..."
-            ></textarea>
-          </div>
+
+        <div class="form-group">
+          <label class="c-label">提示词内容 <span class="required">*</span></label>
+          <textarea
+            v-model="form.content"
+            class="c-input mono"
+            rows="16"
+            placeholder="请输入提示词内容..."
+          ></textarea>
         </div>
-        
-        <div class="modal-footer">
-          <button class="b-button-outline" @click="showDialog = false">取消</button>
-          <button class="b-button" @click="handleSave">保存提示词</button>
-        </div>
-      </div>
-    </div>
+
+      <template #footer>
+        <button class="b-button-outline" @click="showDialog = false">取消</button>
+        <button class="b-button" @click="handleSave">保存提示词</button>
+      </template>
+    </AppModal>
   </div>
 </template>
 
@@ -120,6 +111,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import AppModal from '@/components/AppModal.vue'
 import { promptsApi } from '@/api/prompts'
 import type { Prompt } from '@/types/models'
 
@@ -350,64 +342,6 @@ onMounted(fetchList)
   font-size: 13px;
   font-weight: 500;
   color: #64748b;
-}
-
-/* Modal Styling */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
-}
-.modal-overlay.active {
-  opacity: 1;
-  pointer-events: auto;
-}
-.modal-content {
-  background: #ffffff;
-  border-radius: 20px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.modal-header {
-  padding: 24px 32px;
-  border-bottom: 1px solid #f1f5f9;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: #0f172a;
-}
-.modal-close {
-  font-size: 24px;
-  color: #94a3b8;
-  cursor: pointer;
-  line-height: 1;
-}
-.modal-body {
-  padding: 32px;
-  max-height: 70vh;
-  overflow-y: auto;
-}
-.modal-footer {
-  padding: 20px 32px;
-  background: #f8fafc;
-  border-top: 1px solid #f1f5f9;
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
 }
 
 /* Form Elements */
