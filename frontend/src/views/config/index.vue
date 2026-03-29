@@ -35,7 +35,7 @@
             <svg width="20" height="20" class="header-icon"><use href="#icon-terminal"/></svg>
             <span class="card-label">CLI 运行配置</span>
             <div style="flex: 1;"></div>
-            <button class="f-button ghost" style="padding: 6px 14px;" @click="cliFormRef?.handleSave()">
+            <button class="b-button" style="padding: 6px 14px;" @click="cliFormRef?.handleSave()">
               <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
               保存
             </button>
@@ -69,7 +69,7 @@
             <svg width="20" height="20" class="header-icon"><use href="#icon-activity"/></svg>
             <span class="card-label">基础配置</span>
             <div style="flex: 1;"></div>
-            <button class="f-button ghost" style="padding: 6px 14px;" @click="saveTimeouts">
+            <button class="b-button" style="padding: 6px 14px;" @click="saveTimeouts">
               <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
               保存
             </button>
@@ -191,8 +191,8 @@
           <button class="f-button ghost-plain" @click="handleTestWebdav" :disabled="testingWebdav">
             {{ testingWebdav ? '测试中...' : '测试链接' }}
           </button>
-          <button class="f-button" @click="handleSaveWebdav" :disabled="savingWebdav">
-            {{ savingWebdav ? '保存中...' : '保存配置' }}
+          <button class="b-button" @click="handleSaveWebdav" :disabled="savingWebdav">
+            {{ savingWebdav ? '保存中...' : '保存' }}
           </button>
         </div>
       </div>
@@ -514,4 +514,11 @@ onMounted(() => {
 /* WebDAV Settings Form */
 .webdav-settings-form { padding: 4px 0; }
 .webdav-settings-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+
+.b-button {
+  background: #0ea5e9; color: #ffffff; border: none; padding: 10px 20px; border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center;
+  transition: all 0.2s;
+}
+.b-button:hover { background: #0284c7; }
 </style>
