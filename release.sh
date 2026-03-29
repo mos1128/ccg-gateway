@@ -81,7 +81,7 @@ sed -i "0,/\"version\": \"[^\"]*\"/{s/\"version\": \"[^\"]*\"/\"version\": \"${V
 
 # Git commit
 echo "[4/6] Committing version change ..."
-git add src-tauri/tauri.conf.json src-tauri/Cargo.toml frontend/package.json
+git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock frontend/package.json
 git commit -m "version ${VERSION}"
 
 # Create annotated tag
