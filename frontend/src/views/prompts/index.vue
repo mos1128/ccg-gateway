@@ -83,7 +83,7 @@
     </div>
 
     <!-- Add/Edit Modal -->
-    <AppModal v-model="showDialog" :title="editingPrompt ? '编辑提示词' : '添加提示词'" width="800px" :show-footer="false">
+    <AppModal v-model="showDialog" :title="editingPrompt ? '编辑提示词' : '添加提示词'" width="800px">
         <div class="form-group">
           <label class="c-label">提示词名称 <span class="required">*</span></label>
           <input type="text" v-model="form.name" class="c-input" placeholder="例如: 单元测试生成器">
@@ -100,8 +100,7 @@
         </div>
 
       <template #footer>
-        <button class="b-button-outline" @click="showDialog = false">取消</button>
-        <button class="b-button" @click="handleSave">保存提示词</button>
+        <button class="b-button" @click="handleSave">保存</button>
       </template>
     </AppModal>
   </div>
@@ -393,12 +392,10 @@ textarea.c-input {
   cursor: pointer;
   display: flex;
   align-items: center;
-  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
   transition: all 0.2s;
 }
 .b-button:hover {
   background: #0284c7;
-  transform: translateY(-1px);
 }
 .b-button-outline {
   background: #ffffff;

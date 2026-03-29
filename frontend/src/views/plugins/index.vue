@@ -217,7 +217,7 @@
     </div>
 
     <!-- Modals -->
-    <AppModal v-model="showAddMarketDialog" title="添加插件市场" width="500px" :show-footer="false">
+    <AppModal v-model="showAddMarketDialog" title="添加插件市场" width="500px">
         <div class="form-group">
             <label class="c-label">市场源地址 <span class="required">*</span></label>
             <input
@@ -229,8 +229,7 @@
           </div>
 
       <template #footer>
-        <button class="b-button-outline" @click="showAddMarketDialog = false">取消</button>
-        <button class="b-button" @click="handleAddMarketplace" :disabled="savingMarket">确认添加</button>
+        <button class="b-button" @click="handleAddMarketplace" :disabled="savingMarket">保存</button>
       </template>
     </AppModal>
 
@@ -638,13 +637,12 @@ onMounted(loadAll)
 }
 .c-input:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1); }
 
-.b-button { 
-  background: #0ea5e9; color: #ffffff; border: none; padding: 10px 20px; border-radius: 10px; 
-  font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; 
-  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.2); transition: all 0.2s; 
+.b-button {
+  background: #0ea5e9; color: #ffffff; border: none; padding: 10px 20px; border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center;
+  transition: all 0.2s;
 }
-.b-button:hover { background: #0284c7; transform: translateY(-1px); }
-
+.b-button:hover { background: #0284c7; }
 .b-button-outline { 
   background: #ffffff; color: #475569; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px; 
   font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; 

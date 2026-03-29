@@ -175,12 +175,9 @@ body {
   background: #0ea5e9 !important;
   border: none !important;
   color: #ffffff !important;
-  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.2) !important;
 }
 .el-message-box__btns .el-button--primary:hover {
   background: #0284c7 !important;
-  transform: translateY(-1px) !important;
-  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3) !important;
 }
 </style>
 

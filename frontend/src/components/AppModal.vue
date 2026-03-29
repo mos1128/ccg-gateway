@@ -34,7 +34,7 @@ const props = withDefaults(defineProps<{
   width: '640px',
   showFooter: true,
   cancelText: '取消',
-  confirmText: '确定'
+  confirmText: '保存'
 })
 
 const emit = defineEmits<{
@@ -135,12 +135,10 @@ function handleConfirm() {
   cursor: pointer;
   display: flex;
   align-items: center;
-  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.2);
   transition: all 0.2s;
 }
 .b-button:hover {
   background: #0284c7;
-  transform: translateY(-1px);
 }
 
 .b-button-outline {

@@ -21,7 +21,6 @@
         <input type="text" v-model="form.config_dir" class="f-input" placeholder="CLI 配置目录">
         <button class="f-button ghost-plain" @click="handleResetDir" title="恢复默认">
           <svg width="14" height="14" style="margin-right: 4px;"><use href="#icon-rotate"/></svg>
-          重置
         </button>
       </div>
     </div>

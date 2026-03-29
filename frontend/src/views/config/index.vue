@@ -35,9 +35,10 @@
             <svg width="20" height="20" class="header-icon"><use href="#icon-terminal"/></svg>
             <span class="card-label">CLI 运行配置</span>
             <div style="flex: 1;"></div>
-            <div class="action-icon" @click="cliFormRef?.handleSave()" title="保存并应用">
-              <svg width="18" height="18"><use href="#icon-save"/></svg>
-            </div>
+            <button class="f-button ghost" style="padding: 6px 14px;" @click="cliFormRef?.handleSave()">
+              <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
+              保存
+            </button>
           </div>
           <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
             <div class="frost-segmented" style="margin-bottom: 24px;">
@@ -68,9 +69,10 @@
             <svg width="20" height="20" class="header-icon"><use href="#icon-activity"/></svg>
             <span class="card-label">基础配置</span>
             <div style="flex: 1;"></div>
-            <div class="action-icon" @click="saveTimeouts" title="保存配置">
-              <svg width="18" height="18"><use href="#icon-save"/></svg>
-            </div>
+            <button class="f-button ghost" style="padding: 6px 14px;" @click="saveTimeouts">
+              <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
+              保存
+            </button>
           </div>
           <div class="card-body">
             <div class="input-item">
@@ -112,11 +114,11 @@
               <div class="backup-actions">
                 <template v-if="activeBackupTab === 'local'">
                   <div class="action-icon" @click="!exportingLocal && handleExportLocal()" title="导出" :class="{ disabled: exportingLocal }">
-                    <svg width="18" height="18"><use href="#icon-download"/></svg>
+                    <svg width="18" height="18"><use href="#icon-upload"/></svg>
                   </div>
                   <el-upload :show-file-list="false" :before-upload="handleImportLocal" accept=".db" :disabled="importingLocal">
                     <div class="action-icon" title="导入" :class="{ disabled: importingLocal }">
-                      <svg width="18" height="18"><use href="#icon-upload"/></svg>
+                      <svg width="18" height="18"><use href="#icon-download"/></svg>
                     </div>
                   </el-upload>
                 </template>
@@ -125,10 +127,10 @@
                     <svg width="18" height="18"><use href="#icon-settings"/></svg>
                   </div>
                   <div class="action-icon" @click="!exportingWebdav && handleExportWebdav()" title="导出" :class="{ disabled: exportingWebdav }">
-                    <svg width="18" height="18"><use href="#icon-download"/></svg>
+                    <svg width="18" height="18"><use href="#icon-upload"/></svg>
                   </div>
                   <div class="action-icon" @click="handleShowWebdavList" title="导入">
-                    <svg width="18" height="18"><use href="#icon-upload"/></svg>
+                    <svg width="18" height="18"><use href="#icon-download"/></svg>
                   </div>
                 </template>
               </div>

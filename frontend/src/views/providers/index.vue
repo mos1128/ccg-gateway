@@ -36,7 +36,7 @@
       <button 
         v-if="viewMode === 'proxy'" 
         class="b-button" 
-        style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);" 
+        style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;" 
         @click="showAddDialog = true"
         title="添加服务商"
       >
@@ -47,7 +47,7 @@
       <button 
         v-else 
         class="b-button" 
-        style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);" 
+        style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;" 
         @click="showAddCredentialDialog = true"
         title="添加凭证"
       >
@@ -183,7 +183,7 @@
     </div>
 
     <!-- Add/Edit Provider Modal -->
-    <AppModal v-model="showDialog" :title="editingProvider ? '编辑服务商' : '添加服务商'" width="720px" :show-footer="false">
+    <AppModal v-model="showDialog" :title="editingProvider ? '编辑服务商' : '添加服务商'" width="720px">
       <div style="display: flex; gap: 32px; margin-bottom: 32px;">
             <div style="flex: 1;">
               <label class="c-label">服务商名称 <span style="color: #ef4444;">*</span></label>
@@ -260,14 +260,13 @@
           </div>
 
       <template #footer>
-        <button class="b-button-outline" @click="showDialog = false">取消修改</button>
-        <button class="b-button" @click="handleSave">保存配置</button>
+        <button class="b-button" @click="handleSave">保存</button>
       </template>
     </AppModal>
     <!-- / Add Provider Modal -->
 
     <!-- Add/Edit Credential Modal -->
-    <AppModal v-model="showCredentialDialog" :title="editingCredential ? '编辑凭证' : '添加凭证'" width="720px" :show-footer="false">
+    <AppModal v-model="showCredentialDialog" :title="editingCredential ? '编辑凭证' : '添加凭证'" width="720px">
           <div style="margin-bottom: 32px;">
             <label class="c-label">凭证名称 <span style="color: #ef4444;">*</span></label>
             <input type="text" v-model="credentialForm.name" class="c-input" placeholder="例如: 个人主账号">
@@ -308,8 +307,7 @@
           </template>
 
       <template #footer>
-        <button class="b-button-outline" @click="showCredentialDialog = false">取消</button>
-        <button class="b-button" @click="handleSaveCredential">保存凭证</button>
+        <button class="b-button" @click="handleSaveCredential">保存</button>
       </template>
     </AppModal>
   </div>
