@@ -36,6 +36,10 @@
           <div class="card-header-simple">
             <svg width="20" height="20" class="header-icon"><use href="#icon-activity"/></svg>
             <span class="card-label">基础配置</span>
+            <div style="flex: 1;"></div>
+            <div class="action-icon" @click="saveTimeouts" title="保存配置">
+              <svg width="18" height="18"><use href="#icon-save"/></svg>
+            </div>
           </div>
           <div class="card-body">
             <div class="input-item">
@@ -59,12 +63,6 @@
                 <span class="unit">秒</span>
               </div>
             </div>
-            <div class="card-footer-right">
-              <button class="f-button" @click="saveTimeouts">
-                <svg width="14" height="14" style="margin-right: 6px;"><use href="#icon-save"/></svg>
-                保存配置
-              </button>
-            </div>
           </div>
         </div>
 
@@ -81,7 +79,6 @@
             </div>
 
             <div v-if="activeBackupTab === 'local'" class="tab-content">
-              <p class="desc-text">定期导出数据库以保护您的服务商、MCP、提示词等配置数据不丢失。</p>
               <div class="action-row-end">
                 <button class="f-button ghost" @click="handleExportLocal" :disabled="exportingLocal">
                   <svg width="14" height="14" style="margin-right: 6px;"><use href="#icon-download"/></svg>
@@ -107,7 +104,7 @@
                   <input type="text" v-model="webdavForm.username" class="f-input">
                 </div>
                 <div class="input-item" style="flex: 1;">
-                  <label class="item-label">应用密码</label>
+                  <label class="item-label">密码</label>
                   <input type="password" v-model="webdavForm.password" class="f-input">
                 </div>
               </div>
@@ -133,7 +130,11 @@
         <div class="frost-card cli-settings-card">
           <div class="card-header-simple">
             <svg width="20" height="20" class="header-icon"><use href="#icon-terminal"/></svg>
-            <span class="card-label">CLI 运行环境配置</span>
+            <span class="card-label">CLI 运行配置</span>
+            <div style="flex: 1;"></div>
+            <div class="action-icon" @click="cliFormRef?.handleSave()" title="保存并应用">
+              <svg width="18" height="18"><use href="#icon-save"/></svg>
+            </div>
           </div>
           <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
             <div class="frost-segmented" style="margin-bottom: 24px;">
@@ -144,6 +145,7 @@
 
             <div class="cli-form-container">
               <CliSettingsForm 
+                ref="cliFormRef"
                 :key="activeCliTab"
                 :cli-type="activeCliTab" 
                 :settings="settingsStore.settings?.cli_settings?.[activeCliTab]" 
@@ -162,26 +164,32 @@
           <div style="font-size: 20px; font-weight: 500; color: #0f172a;">管理 WebDAV 备份</div>
           <div style="cursor: pointer; color: #94a3b8; font-size: 20px; font-weight: bold;" @click="webdavListVisible = false">×</div>
         </div>
-        <div style="padding: 0; max-height: 70vh; overflow-y: auto;">
-          <el-table :data="webdavBackups" v-loading="loadingWebdavList" style="width: 100%; border-radius: 0 0 20px 20px; overflow: hidden;">
-            <el-table-column prop="filename" label="文件名" min-width="240">
-              <template #default="{ row }">
-                <div style="padding-left: 20px;">{{ row.filename }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="size" label="大小" width="100">
-              <template #default="{ row }">{{ formatSize(row.size) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="160" align="right">
-              <template #default="{ row }">
-                <div style="display: flex; gap: 8px; justify-content: flex-end; padding-right: 20px;">
-                  <el-button type="primary" link @click="handleImportWebdav(row.filename)" :loading="importingWebdav">恢复</el-button>
-                  <el-button type="danger" link @click="handleDeleteWebdav(row.filename)" :loading="deletingWebdav">删除</el-button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
+        <div class="table-container" v-loading="loadingWebdavList" style="border: none; box-shadow: none; border-radius: 0 0 20px 20px; max-height: 70vh; overflow: hidden auto; padding: 0;">
+            <table class="flat-table">
+              <thead>
+                <tr>
+                  <th>文件名</th>
+                  <th style="width: 120px;">大小</th>
+                  <th style="width: 160px; text-align: right;">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="backup in webdavBackups" :key="backup.filename">
+                  <td class="mono">{{ backup.filename }}</td>
+                  <td class="mono">{{ formatSize(backup.size) }}</td>
+                  <td style="text-align: right;">
+                    <div style="display: inline-flex; gap: 12px;">
+                      <a class="table-link" @click="handleImportWebdav(backup.filename)">恢复</a>
+                      <a class="table-link danger" @click="handleDeleteWebdav(backup.filename)">删除</a>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="webdavBackups.length === 0">
+                  <td colspan="3" style="text-align: center; color: #94a3b8; padding: 40px; font-size: 13px;">暂无备份</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
       </div>
     </div>
   </div>
@@ -199,6 +207,7 @@ import type { WebdavSettings, WebdavBackup } from '@/api/backup'
 
 const settingsStore = useSettingsStore()
 const uiStore = useUiStore()
+const cliFormRef = ref<InstanceType<typeof CliSettingsForm> | null>(null)
 
 const activeCliTab = computed({
   get: () => uiStore.configActiveCliTab,
@@ -442,6 +451,25 @@ onMounted(() => {
 .action-row-end { display: flex; justify-content: flex-end; gap: 12px; align-items: center; }
 .card-footer-right { margin-top: 8px; display: flex; justify-content: flex-end; }
 
+/* Action Icon Buttons */
+.action-icon {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+  flex-shrink: 0;
+}
+.action-icon:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
 .desc-text { font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 0 0 20px 0; }
 
 /* CLI Column adjustment */
@@ -452,4 +480,18 @@ onMounted(() => {
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.4); display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 1000; }
 .modal-overlay.active { opacity: 1; pointer-events: auto; }
 .modal-content { background: white; border-radius: 20px; width: 720px; max-width: 95vw; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15); display: flex; flex-direction: column; }
+
+/* Flat Table (matching logs page style) */
+.table-container { background: #ffffff; border-radius: 12px; padding: 0; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.02); overflow: hidden; }
+.flat-table { width: 100%; border-collapse: collapse; text-align: left; }
+.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flat-table th { padding: 12px 20px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+.flat-table td { padding: 12px 20px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9; }
+.flat-table tr:last-child td { border-bottom: none; }
+.flat-table tr:hover td { background: #f8fafc; }
+.mono { font-family: "JetBrains Mono", monospace; color: #64748b; font-size: 12px; }
+.table-link { color: #0ea5e9; cursor: pointer; text-decoration: none; font-weight: 500; font-size: 13px; }
+.table-link:hover { text-decoration: underline; }
+.table-link.danger { color: #ef4444; }
+.table-link.danger:hover { color: #dc2626; }
 </style>

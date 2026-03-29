@@ -5,21 +5,25 @@
         <symbol id="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="m6 9 6 6 6-6"/>
         </symbol>
+        <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </symbol>
+        <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
+        </symbol>
+        <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+        </symbol>
+        <symbol id="icon-play" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <polygon points="6,3 20,12 6,21"/>
+        </symbol>
+        <symbol id="icon-pause" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <rect x="5" y="3" width="5" height="18" rx="1"/><rect x="14" y="3" width="5" height="18" rx="1"/>
+        </symbol>
       </defs>
     </svg>
 
-    <!-- Top Settings Widget -->
-    <div class="top-settings-widget">
-      <div style="display: flex; align-items: center; gap: 24px;">
-        <span style="font-weight: 600; color: #0f172a; font-size: 14px;">全局日志设置</span>
-        <div style="width: 1px; height: 20px; background: #e2e8f0;"></div>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span style="font-size: 13px; color: #475569; font-weight: 500;">记录请求日志</span>
-          <div :class="['toggle', { off: !logEnabled }]" @click="logEnabled = !logEnabled; updateLogSettings()"></div>
-        </div>
-      </div>
-      <span style="font-size: 12px; color: #94a3b8;">注：核心系统日志不受阻断，始终记录</span>
-    </div>
+
 
     <!-- Top Level Tabs -->
     <div class="top-tabs">
@@ -60,9 +64,20 @@
         </div>
 
         <div style="flex: 1;"></div>
-        <button class="b-button" @click="fetchRequestLogs">查询</button>
-        <button class="b-button-outline" @click="resetRequestFilters">重置</button>
-        <button class="b-button-danger" @click="clearRequestLogs">清空</button>
+        <div class="action-icon" :class="{ recording: logEnabled }" @click="logEnabled = !logEnabled; updateLogSettings()" :title="logEnabled ? '暂停记录' : '开启记录'">
+          <svg width="16" height="16" v-if="logEnabled"><use href="#icon-pause"/></svg>
+          <svg width="16" height="16" v-else><use href="#icon-play"/></svg>
+        </div>
+        <div style="width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px;"></div>
+        <div class="action-icon" @click="fetchRequestLogs" title="查询">
+          <svg width="18" height="18"><use href="#icon-search"/></svg>
+        </div>
+        <div class="action-icon" @click="resetRequestFilters" title="重置">
+          <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+        </div>
+        <div class="action-icon delete" @click="clearRequestLogs" title="清空">
+          <svg width="18" height="18"><use href="#icon-trash"/></svg>
+        </div>
       </div>
 
       <!-- Super Clean Flat Table -->
@@ -140,9 +155,15 @@
         </div>
 
         <div style="flex: 1;"></div>
-        <button class="b-button" @click="fetchSystemLogs">查询</button>
-        <button class="b-button-outline" @click="resetSystemFilters">重置</button>
-        <button class="b-button-danger" @click="clearSystemLogs">清空</button>
+        <div class="action-icon" @click="fetchSystemLogs" title="查询">
+          <svg width="18" height="18"><use href="#icon-search"/></svg>
+        </div>
+        <div class="action-icon" @click="resetSystemFilters" title="重置">
+          <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+        </div>
+        <div class="action-icon delete" @click="clearSystemLogs" title="清空">
+          <svg width="18" height="18"><use href="#icon-trash"/></svg>
+        </div>
       </div>
 
       <!-- Super Clean Flat Table -->
@@ -532,13 +553,6 @@ watch(activeTab, (tab) => {
   color: #0f172a;
 }
 
-/* Settings Widget Top */
-.top-settings-widget { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: rgba(255,255,255,0.7); backdrop-filter: blur(10px); border-radius: 12px; margin-bottom: 32px; border: 1px solid rgba(255,255,255,1); box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
-.toggle { width: 40px; height: 22px; background: #10b981; border-radius: 12px; position: relative; cursor: pointer; transition: background 0.3s; flex-shrink: 0; }
-.toggle::after { content: ''; position: absolute; width: 18px; height: 18px; background: white; border-radius: 50%; top: 2px; right: 2px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: right 0.3s; }
-.toggle.off { background: #cbd5e1; }
-.toggle.off::after { left: 2px; right: auto; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-
 /* Tab Underlines */
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin-bottom: 24px; padding-top: 8px; }
 .tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: 500; font-size: 15px; cursor: pointer; position: relative; transition: color 0.2s; }
@@ -546,17 +560,39 @@ watch(activeTab, (tab) => {
 .tab-item.active { color: #0f172a; font-weight: 600; border-bottom: 2px solid #0f172a; }
 
 /* Filter Container */
-.filters-row { display: flex; gap: 16px; margin-bottom: 20px; align-items: center; }
+.filters-row { display: flex; gap: 8px; margin-bottom: 20px; align-items: center; }
 .filter-group { display: flex; align-items: center; gap: 10px; margin-right: 8px; }
 .filter-label { font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; }
 
-/* Buttons & Inputs */
-.b-button { background: #0ea5e9; color: white; border: none; padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s; display: inline-flex; align-items: center; gap: 6px; }
-.b-button:hover { background: #0284c7; }
-.b-button-outline { background: white; color: #0f172a; border: 1px solid #e2e8f0; padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: background 0.2s;}
-.b-button-outline:hover { background: #f8fafc; }
-.b-button-danger { background: white; color: #ef4444; border: 1px solid #fee2e2; padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
-.b-button-danger:hover { background: #fef2f2; }
+/* Action Icon Buttons */
+.action-icon {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+  flex-shrink: 0;
+}
+.action-icon:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.action-icon.delete:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+.action-icon.recording {
+  color: #10b981;
+}
+.action-icon.recording:hover {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+}
 
 /* Pills */
 .pill { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px; }
@@ -565,11 +601,13 @@ watch(activeTab, (tab) => {
 .pill-grey { background: #f1f5f9; color: #64748b; font-weight: normal; }
 
 /* Flat Glass Table - 1 Line Strict */
-.table-container { background: #ffffff; border-radius: 12px; padding: 4px 0; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.02); overflow-x: auto; }
+.table-container { background: #ffffff; border-radius: 12px; padding: 0; border: 1px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.02); overflow: hidden; }
 .flat-table { width: 100%; border-collapse: collapse; text-align: left; }
 .flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .flat-table th { padding: 12px 20px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+.flat-table thead tr th:first-child { border-top-left-radius: 12px; }
+.flat-table thead tr th:last-child { border-top-right-radius: 12px; }
 .flat-table td { padding: 12px 20px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9; }
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: #f8fafc; }

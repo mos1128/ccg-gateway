@@ -378,9 +378,9 @@ onMounted(() => {
 .ghost-delete:hover { background: #fee2e2; color: #ef4444; }
 
 /* Sessions List Detail */
-.session-card { display: flex; align-items: flex-start; padding: 20px 24px; border-radius: 16px; background: #ffffff; cursor: pointer; margin-bottom: 12px; position: relative; border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,0.02); gap: 16px; transition: border-color 0.2s, background-color 0.2s; transform: none !important; }
+.session-card { display: flex; align-items: center; padding: 20px 24px; border-radius: 16px; background: #ffffff; cursor: pointer; margin-bottom: 12px; position: relative; border: 1px solid #f1f5f9; box-shadow: 0 2px 8px rgba(0,0,0,0.02); gap: 16px; transition: border-color 0.2s, background-color 0.2s; transform: none !important; }
 .session-card:hover { border-color: #e0f2fe; background: #f8fafc; transform: none !important; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
-.session-icon { width: 40px; height: 40px; border-radius: 50%; background: #f1f5f9; color: #0ea5e9; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+.session-icon { width: 40px; height: 40px; border-radius: 50%; background: #f1f5f9; color: #0ea5e9; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
 /* Custom Drawer */
 .scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.1); z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 0.3s; }

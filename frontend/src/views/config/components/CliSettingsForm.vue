@@ -18,21 +18,20 @@
     <div class="form-section">
       <div class="section-label">配置目录</div>
       <div class="input-group">
-        <input type="text" v-model="form.config_dir" class="f-input" placeholder="CLI 配置目录路径">
+        <input type="text" v-model="form.config_dir" class="f-input" placeholder="CLI 配置目录">
         <button class="f-button ghost-plain" @click="handleResetDir" title="恢复默认">
           <svg width="14" height="14" style="margin-right: 4px;"><use href="#icon-rotate"/></svg>
           重置
         </button>
       </div>
-      <div class="hint-text">{{ configDirTip }}</div>
     </div>
     
     <div class="form-section editor-section">
       <div class="editor-header">
-        <div class="section-label" style="margin-bottom: 0;">默认配置</div>
+        <div class="section-label" style="margin-bottom: 0;">预设配置</div>
         <button v-if="isJsonFormat" class="f-button ghost-plain sm" @click="formatJson">
           <svg width="12" height="12" style="margin-right: 4px;"><use href="#icon-code"/></svg>
-          格式化 JSON
+          格式化
         </button>
       </div>
       <textarea 
@@ -45,13 +44,7 @@
       <div class="hint-text">{{ tip }}</div>
     </div>
     
-    <div class="form-actions">
-      <button class="f-button" @click="handleSave">
-        <svg width="14" height="14" style="margin-right: 6px;"><use href="#icon-save"/></svg>
-        保存并应用
-      </button>
     </div>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -104,7 +97,6 @@ const tip = computed(() => {
 })
 
 const isJsonFormat = computed(() => props.cliType === 'claude_code' || props.cliType === 'gemini')
-const configDirTip = computed(() => `默认路径：${defaultConfigDir.value}`)
 
 watch(() => props.settings, (settings) => {
   if (settings) {
@@ -157,6 +149,8 @@ function handleSave() {
   }
   emit('save', props.cliType, form.value)
 }
+
+defineExpose({ handleSave })
 </script>
 
 <style scoped>
@@ -200,6 +194,4 @@ function handleSave() {
 .f-button.ghost-plain { background: transparent; color: #64748b; padding: 8px 12px; font-size: 13px; font-weight: 600; border-radius: 8px; }
 .f-button.ghost-plain:hover { color: #0f172a; background: #f1f5f9; }
 .f-button.ghost-plain.sm { padding: 4px 8px; font-size: 12px; }
-
-.form-actions { display: flex; justify-content: flex-end; margin-top: 12px; padding-top: 24px; border-top: 1px dashed #f1f5f9; }
 </style>
