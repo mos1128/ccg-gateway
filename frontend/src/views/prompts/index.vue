@@ -239,7 +239,7 @@ onMounted(fetchList)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
+  margin: 0 40px 32px 40px;
   flex-shrink: 0;
 }
 
@@ -248,13 +248,13 @@ onMounted(fetchList)
   display: flex;
   flex-direction: column;
   min-height: 0;
+  margin: 0 40px;
 }
 
 .scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
-  margin: -8px;
+  padding: 8px 0;
 }
 
 .page-subtitle {

@@ -347,7 +347,7 @@ onMounted(() => {
 }
 
 /* Tab Underlines */
-.top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin-bottom: 24px; padding-top: 8px; flex-shrink: 0; }
+.top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
 .tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: 500; font-size: 15px; cursor: pointer; position: relative; transition: color 0.2s; }
 .tab-item:hover { color: #475569; }
 .tab-item.active { color: #0f172a; font-weight: 600; border-bottom: 2px solid #0f172a; }
@@ -364,17 +364,17 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  margin: 0 40px;
 }
 
 .scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 4px;
-  margin: -4px;
+  padding: 4px 0;
 }
 
 /* Headers & Inputs */
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-shrink: 0; }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin: 0 40px 32px 40px; flex-shrink: 0; }
 .page-title { font-size: 24px; font-weight: 800; margin: 0; letter-spacing: -0.5px; color: #0f172a; }
 
 .search-box { position: relative; width: 320px; }

@@ -4,8 +4,8 @@
     <svg style="display:none">
       <defs>
         <symbol id="icon-boxes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.54l-3.97-2.38a2 2 0 0 0-2.06 0L7 10.54Z"/>
-          <path d="m7 21 5-3 5 3"/><path d="M12 18V12"/><path d="m7 15 5-3 5 3"/><path d="m2 14.63 10-6 10 6"/><path d="m12 8.63-3.97-2.38a2 2 0 0 1 0-3.44l3-1.8a2 2 0 0 1 2.06 0l3 1.8a2 2 0 0 1 0 3.44Z"/>
+          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+          <path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>
         </symbol>
         <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M5 12h14"/><path d="M12 5v14"/>
@@ -16,14 +16,11 @@
         <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
         </symbol>
-        <symbol id="icon-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
-        </symbol>
       </defs>
     </svg>
 
     <div class="page-header">
-      <p class="page-subtitle">配置并快速启用  Model Context Protocol 扩展</p>
+      <p class="page-subtitle">配置 Model Context Protocol (MCP) 服务器</p>
       <button class="b-button" style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;" @click="handleAdd" title="添加 MCP">
         <svg width="20" height="20"><use href="#icon-plus"/></svg>
       </button>
@@ -88,29 +85,36 @@
     </div>
 
     <!-- Add/Edit Modal -->
-    <AppModal v-model="showDialog" :title="editingMcp ? '编辑 MCP' : '添加 MCP'" width="640px">
+    <AppModal v-model="showDialog" :title="editingMcp ? '编辑 MCP' : '添加 MCP'" width="720px">
         <div class="form-group">
           <label class="c-label">MCP 名称 <span class="required">*</span></label>
-          <input type="text" v-model="form.name" class="c-input" placeholder="例如: Google Maps Search">
+          <input type="text" v-model="form.name" class="c-input" placeholder="例如: memory-server">
         </div>
 
         <div class="form-group">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <label class="c-label" style="margin-bottom: 0;">配置 JSON <span class="required">*</span></label>
-            <button class="b-button-outline" style="font-size: 12px; padding: 4px 10px;" @click="formatJson">
-              <svg width="14" height="14" style="margin-right: 4px;"><use href="#icon-code"/></svg>
-              格式化
-            </button>
-          </div>
-            <textarea
-              v-model="form.config_json"
-              class="c-input mono"
-              rows="12"
-              placeholder='{"command": "npx", "args": ["-y", "@example/mcp"]}'
-              @blur="validateConfig"
-            ></textarea>
-            <div v-if="validationError" class="error-tip">{{ validationError }}</div>
-          </div>
+          <label class="c-label">启动指令 <span class="required">*</span></label>
+          <input type="text" v-model="form.command" class="c-input mono" placeholder="例如: npx, node, python">
+        </div>
+
+        <div class="form-group">
+          <label class="c-label">参数 (JSON Array)</label>
+          <textarea
+            v-model="form.args"
+            class="c-input mono"
+            rows="4"
+            placeholder='例如: ["-y", "@modelcontextprotocol/server-memory"]'
+          ></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="c-label">环境变量 (JSON Object)</label>
+          <textarea
+            v-model="form.env"
+            class="c-input mono"
+            rows="4"
+            placeholder='例如: {"API_KEY": "..."}'
+          ></textarea>
+        </div>
 
       <template #footer>
         <button class="b-button" @click="handleSave">保存</button>
@@ -125,14 +129,12 @@ import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
 import AppModal from '@/components/AppModal.vue'
 import { mcpApi } from '@/api/mcp'
-import type { Mcp } from '@/types/models'
-import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
+import type { McpServer } from '@/types/models'
 
-const mcpList = ref<Mcp[]>([])
+const mcpList = ref<McpServer[]>([])
 const loading = ref(false)
 const showAddDialog = ref(false)
-const editingMcp = ref<Mcp | null>(null)
-const validationError = ref('')
+const editingMcp = ref<McpServer | null>(null)
 
 const showDialog = computed({
   get: () => showAddDialog.value || !!editingMcp.value,
@@ -140,14 +142,15 @@ const showDialog = computed({
     if (!val) {
       showAddDialog.value = false
       editingMcp.value = null
-      validationError.value = ''
     }
   }
 })
 
 const form = ref({
   name: '',
-  config_json: ''
+  command: '',
+  args: '[]',
+  env: '{}'
 })
 
 async function fetchList() {
@@ -162,48 +165,41 @@ async function fetchList() {
 
 function handleAdd() {
   editingMcp.value = null
-  form.value = { name: '', config_json: '' }
-  validationError.value = ''
+  form.value = { name: '', command: '', args: '[]', env: '{}' }
   showAddDialog.value = true
 }
 
-function handleEdit(mcp: Mcp) {
+function handleEdit(mcp: McpServer) {
   editingMcp.value = mcp
   form.value = {
     name: mcp.name,
-    config_json: mcp.config_json
-  }
-  validationError.value = ''
-}
-
-function validateConfig(): boolean {
-  validationError.value = validateJson(form.value.config_json)
-  return !validationError.value
-}
-
-function formatJson() {
-  const result = formatJsonUtil(form.value.config_json)
-  if (result === form.value.config_json) {
-    validationError.value = validateJson(form.value.config_json)
-  } else {
-    form.value.config_json = result
-    validationError.value = ''
+    command: mcp.command,
+    args: JSON.stringify(mcp.args, null, 2),
+    env: JSON.stringify(mcp.env || {}, null, 2)
   }
 }
 
 async function handleSave() {
-  if (!form.value.name.trim()) {
-    notify('请输入 MCP 名称', 'error')
-    return
-  }
-  if (!validateConfig()) {
-    notify('JSON 格式错误，请修正后再保存', 'error')
+  if (!form.value.name.trim() || !form.value.command.trim()) {
+    notify('请填写完整的必填项', 'error')
     return
   }
   try {
+    let parsedArgs = []
+    let parsedEnv = {}
+    try {
+      parsedArgs = JSON.parse(form.value.args)
+      parsedEnv = JSON.parse(form.value.env)
+    } catch (e) {
+      notify('JSON 格式错误，请检查参数或环境变量', 'error')
+      return
+    }
+
     const data = {
       name: form.value.name.trim(),
-      config_json: form.value.config_json.trim()
+      command: form.value.command.trim(),
+      args: parsedArgs,
+      env: parsedEnv
     }
 
     if (editingMcp.value) {
@@ -214,15 +210,14 @@ async function handleSave() {
       notify('添加成功')
     }
     showDialog.value = false
-    form.value = { name: '', config_json: '' }
-    validationError.value = ''
+    form.value = { name: '', command: '', args: '[]', env: '{}' }
     await fetchList()
   } catch (error: any) {
     notify(error?.message || '操作失败', 'error')
   }
 }
 
-async function handleCliToggle(mcp: Mcp, cliType: string, enabled: boolean) {
+async function handleCliToggle(mcp: McpServer, cliType: string, enabled: boolean) {
   try {
     const cli_flags = [
       { cli_type: 'claude_code', enabled: cliType === 'claude_code' ? enabled : (mcp.cli_flags?.claude_code ?? false) },
@@ -241,9 +236,9 @@ async function handleCliToggle(mcp: Mcp, cliType: string, enabled: boolean) {
   }
 }
 
-async function handleDelete(mcp: Mcp) {
+async function handleDelete(mcp: McpServer) {
   try {
-    await ElMessageBox.confirm(`确定删除 MCP "${mcp.name}"?`, '确认删除')
+    await ElMessageBox.confirm(`确定删除 MCP 服务器 "${mcp.name}"?`, '确认删除')
     await mcpApi.delete(mcp.id)
     notify('已删除')
     await fetchList()
@@ -270,7 +265,7 @@ onMounted(fetchList)
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
+  margin: 0 40px 32px 40px;
   flex-shrink: 0;
 }
 
@@ -279,13 +274,13 @@ onMounted(fetchList)
   display: flex;
   flex-direction: column;
   min-height: 0;
+  margin: 0 40px;
 }
 
 .scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
-  margin: -8px;
+  padding: 8px 0;
 }
 
 .page-subtitle {
@@ -309,7 +304,7 @@ onMounted(fetchList)
   transition: all 0.2s;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 .mcp-card:hover {
   border-color: #0ea5e9;
@@ -337,6 +332,7 @@ onMounted(fetchList)
   min-width: 0;
   display: flex;
   justify-content: space-between;
+  align-items: center;
 }
 .mcp-name {
   font-size: 16px;
@@ -380,10 +376,8 @@ onMounted(fetchList)
 .cli-toggles {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: #f8fafc;
-  padding: 16px;
-  border-radius: 12px;
+  gap: 10px;
+  padding-top: 4px;
 }
 .toggle-item {
   display: flex;
@@ -393,7 +387,7 @@ onMounted(fetchList)
 .toggle-label {
   font-size: 13px;
   font-weight: 500;
-  color: #475569;
+  color: #64748b;
 }
 
 /* Form Elements */
@@ -432,11 +426,6 @@ textarea.c-input {
 }
 .mono {
   font-family: "JetBrains Mono", monospace;
-}
-.error-tip {
-  color: #f43f5e;
-  font-size: 12px;
-  margin-top: 6px;
 }
 
 /* Buttons */

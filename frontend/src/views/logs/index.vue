@@ -597,7 +597,7 @@ watch(activeTab, (tab) => {
 }
 
 /* Tab Underlines */
-.top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin-bottom: 24px; padding-top: 8px; flex-shrink: 0; }
+.top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
 .tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: 500; font-size: 15px; cursor: pointer; position: relative; transition: color 0.2s; }
 .tab-item:hover { color: #475569; }
 .tab-item.active { color: #0f172a; font-weight: 600; border-bottom: 2px solid #0f172a; }
@@ -610,7 +610,7 @@ watch(activeTab, (tab) => {
 }
 
 /* Filter Container */
-.filters-row { display: flex; gap: 8px; margin-bottom: 20px; align-items: center; flex-shrink: 0; }
+.filters-row { display: flex; gap: 8px; margin: 0 40px 20px 40px; align-items: center; flex-shrink: 0; }
 .filter-group { display: flex; align-items: center; gap: 10px; margin-right: 8px; }
 .filter-label { font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; }
 
@@ -662,6 +662,7 @@ watch(activeTab, (tab) => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  margin: 0 40px 24px 40px;
 }
 .fixed-table-header {
   flex-shrink: 0;

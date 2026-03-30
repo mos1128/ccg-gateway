@@ -611,12 +611,14 @@ onMounted(() => {
   flex-direction: column;
 }
 
+.page-header { flex-shrink: 0; margin: 0 40px 32px 40px; }
+
 .list-container {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin-bottom: 0;
+  margin: 0 40px 0 40px;
 }
 
 .scroll-area {
@@ -630,8 +632,6 @@ onMounted(() => {
 .b-segmented { display: inline-flex; background: #e2e8f0; padding: 4px; border-radius: 10px; flex-shrink: 0; }
 .b-seg-btn { text-align: center; padding: 6px 16px; font-size: 14px; color: #475569; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.2s ease; }
 .b-seg-btn.active { background: #ffffff; color: #0f172a; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-
-.page-header { flex-shrink: 0; }
 
 .b-button { background: #0ea5e9; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s; }
 .b-button:hover { background: #0284c7; }
