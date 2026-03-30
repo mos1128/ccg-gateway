@@ -2,7 +2,7 @@
   <div class="dashboard-page">
     <div class="scroll-area">
       <!-- 顶部状态卡片区 -->
-      <div style="display: flex; gap: 24px; margin-bottom: 24px;">
+      <div style="display: flex; gap: 24px; margin-bottom: 20px;">
         <div v-for="cli in cliList" :key="cli.type" class="b-card" style="flex: 1; margin-bottom: 0;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <div style="display: flex; align-items: center; gap: 12px;">
@@ -23,7 +23,7 @@
       </div>
 
       <!-- 中部关键指标 KPI -->
-      <div style="display: flex; gap: 24px; margin-bottom: 24px;">
+      <div style="display: flex; gap: 24px; margin-bottom: 20px;">
         <div class="b-card kpi-card">
           <div class="kpi-title">请求总数</div>
           <div class="kpi-value mono text-blue">{{ kpiData.requests }}</div>
@@ -43,7 +43,7 @@
       </div>
 
       <!-- 底部图表与日志 -->
-      <div style="display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 24px;">
+      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
         <!-- 图表区 -->
         <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; min-width: 450px;">
           <div class="b-card-title">请求统计趋势</div>
@@ -308,7 +308,7 @@ onMounted(async () => {
 .scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 0 40px 24px 40px;
+  padding: 0 40px 16px 40px;
 }
 
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-shrink: 0; }

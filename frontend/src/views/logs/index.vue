@@ -662,7 +662,7 @@ watch(activeTab, (tab) => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin: 0 40px 24px 40px;
+  margin: 0 40px 16px 40px;
 }
 .fixed-table-header {
   flex-shrink: 0;
