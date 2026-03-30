@@ -410,7 +410,7 @@ onMounted(() => {
 .scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 0 40px 32px 40px;
+  padding: 0 40px 16px 40px;
 }
 
 /* Header */
