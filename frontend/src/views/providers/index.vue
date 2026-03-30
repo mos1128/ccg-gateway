@@ -626,7 +626,7 @@ onMounted(() => {
   overflow-y: auto;
 }
 
-.b-card { background: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); margin-bottom: 24px; transition: border-color 0.2s; border: 1px solid transparent; }
+.b-card { background: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); margin-bottom: 24px; transition: border-color 0.2s; border: 1px solid transparent; overflow: hidden; }
 .b-card:hover { border-color: #e2e8f0; }
 
 .b-segmented { display: inline-flex; background: #e2e8f0; padding: 4px; border-radius: 10px; flex-shrink: 0; }
