@@ -69,10 +69,10 @@
         handle=".drag-handle"
         @end="handleDragEnd"
       >
-        <template #item="{ element }">
+        <template #item="{ element, index }">
           <div :style="{
             padding: '24px',
-            borderBottom: '1px solid #f1f5f9',
+            borderBottom: index === providerStore.providers.length - 1 ? 'none' : '1px solid #f1f5f9',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
@@ -154,8 +154,15 @@
         handle=".drag-handle"
         @end="handleCredentialDragEnd"
       >
-        <template #item="{ element }">
-          <div style="padding: 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background: #ffffff;">
+        <template #item="{ element, index }">
+          <div :style="{
+            padding: '24px',
+            borderBottom: index === credentialStore.credentials.length - 1 ? 'none' : '1px solid #f1f5f9',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            background: '#ffffff'
+          }">
             <div style="display: flex; align-items: center; gap: 16px;">
               <div class="drag-handle" aria-label="拖拽排序">
                  <div class="drag-dot"></div><div class="drag-dot"></div><div class="drag-dot"></div>
@@ -197,7 +204,7 @@
           
           <div style="margin-bottom: 40px;">
             <label class="c-label">{{ activeCliType === 'claude_code' ? 'API Token' : 'API Key' }} <span style="color: #ef4444;">*</span></label>
-            <input type="password" v-model="form.api_key" class="c-input" placeholder="sk-...">
+            <input type="text" v-model="form.api_key" class="c-input" placeholder="sk-...">
           </div>
 
           <!-- Advanced Params -->
