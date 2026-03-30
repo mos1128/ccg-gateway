@@ -30,7 +30,7 @@ echo [INFO] First run may take longer to compile dependencies
 echo [INFO] Frontend will start automatically (http://localhost:7786)
 echo.
 set CCG_LOG_LEVEL=info,ccg_gateway=debug,ccg_gateway_lib=debug
-tauri dev --no-watch
+cargo tauri dev --no-watch
 
 if %errorlevel% neq 0 (
     echo.
