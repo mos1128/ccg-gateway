@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div class="modal-overlay" :class="{ active: modelValue }" @click.self="handleClose">
+    <div class="modal-overlay" :class="{ active: modelValue }">
       <div class="modal-content" :style="contentStyle">
         <div class="modal-header">
           <div class="modal-title">{{ title }}</div>
