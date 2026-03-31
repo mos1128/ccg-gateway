@@ -24,6 +24,38 @@ use std::io::Read;
 
 type Result<T> = std::result::Result<T, String>;
 
+fn map_db_error(e: sqlx::Error) -> String {
+    let err_str = e.to_string();
+    if err_str.contains("code: 2067") || err_str.contains("UNIQUE constraint failed") {
+        if err_str.contains("providers.cli_type") && err_str.contains("providers.name") {
+            return "同类型的服务商名称已存在".to_string();
+        }
+        if err_str.contains("provider_model_map.provider_id") && err_str.contains("provider_model_map.source_model") {
+            return "该服务商已存在相同的模型映射".to_string();
+        }
+        if err_str.contains("provider_model_blacklist.provider_id") && err_str.contains("provider_model_blacklist.model_pattern") {
+            return "该服务商已存在相同的黑名单模式".to_string();
+        }
+        if err_str.contains("mcp_configs.name") {
+            return "MCP 配置名称已存在".to_string();
+        }
+        if err_str.contains("prompt_presets.name") {
+            return "提示词预设名称已存在".to_string();
+        }
+        if err_str.contains("skill_configs.directory") {
+            return "该目录已安装过 Skill".to_string();
+        }
+        if err_str.contains("official_credentials.cli_type") && err_str.contains("official_credentials.name") {
+            return "同类型的凭证名称已存在".to_string();
+        }
+        if err_str.contains("plugin_favorites.plugin_id") {
+            return "该插件已收藏".to_string();
+        }
+        return "数据已存在，请勿重复添加".to_string();
+    }
+    err_str
+}
+
 #[tauri::command]
 pub async fn get_providers(
     db: State<'_, SqlitePool>,
@@ -208,7 +240,7 @@ pub async fn create_provider(
     .bind(now)
     .execute(db.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(map_db_error)?;
 
     let id = result.last_insert_rowid();
 
@@ -224,7 +256,7 @@ pub async fn create_provider(
             .bind(map.enabled as i64)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
         }
     }
 
@@ -238,7 +270,7 @@ pub async fn create_provider(
             .bind(&item.model_pattern)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
         }
     }
 
@@ -344,7 +376,7 @@ pub async fn update_provider(
         q.bind(id)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
     }
 
     // Update model maps if provided
@@ -354,7 +386,7 @@ pub async fn update_provider(
             .bind(id)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
 
         // Insert new maps
         for map in model_maps {
@@ -367,7 +399,7 @@ pub async fn update_provider(
             .bind(map.enabled as i64)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
         }
     }
 
@@ -378,7 +410,7 @@ pub async fn update_provider(
             .bind(id)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
 
         // Insert new blacklist
         for item in model_blacklist {
@@ -389,7 +421,7 @@ pub async fn update_provider(
             .bind(&item.model_pattern)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
         }
     }
 
@@ -427,21 +459,21 @@ pub async fn delete_provider(
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     // Delete associated model blacklist
     sqlx::query("DELETE FROM provider_model_blacklist WHERE provider_id = ?")
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     // Then delete the provider
     sqlx::query("DELETE FROM providers WHERE id = ?")
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     // Log system event
     let _ = crate::services::stats::record_system_log(
@@ -477,7 +509,7 @@ pub async fn reorder_providers(db: State<'_, SqlitePool>, ids: Vec<i64>) -> Resu
     sqlx::query(&sql)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     Ok(())
 }
@@ -503,7 +535,7 @@ pub async fn reset_provider_failures(
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     // Log system event
     let _ = crate::services::stats::record_system_log(
@@ -537,7 +569,7 @@ pub async fn update_gateway_settings(
         .bind(now)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     Ok(())
 }
@@ -569,7 +601,7 @@ pub async fn update_timeout_settings(
     .bind(now)
     .execute(db.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(map_db_error)?;
     Ok(())
 }
 
@@ -657,7 +689,7 @@ pub async fn update_cli_settings(
         .bind(&cli_type)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
         // 配置更新后，自动同步到 CLI 配置文件
         let mode: String = sqlx::query_as::<_, (String,)>(
@@ -696,7 +728,7 @@ pub async fn update_cli_settings(
         .bind(&cli_type)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
     }
 
     // Update CLI config file if enabled flag is provided
@@ -1540,7 +1572,7 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
     .bind(now)
     .execute(db.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(map_db_error)?;
 
     let id = result.last_insert_rowid();
 
@@ -1586,7 +1618,7 @@ pub async fn update_mcp(db: State<'_, SqlitePool>, id: i64, input: McpUpdate) ->
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
         (new_name, new_config)
     } else {
@@ -1625,7 +1657,7 @@ pub async fn delete_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     // Remove from all CLI configs
     delete_mcp_from_cli(db.inner(), &mcp_name).await?;
@@ -1907,7 +1939,7 @@ pub async fn create_prompt(db: State<'_, SqlitePool>, input: PromptCreate) -> Re
     .bind(now)
     .execute(db.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(map_db_error)?;
 
     let id = result.last_insert_rowid();
 
@@ -1944,7 +1976,7 @@ pub async fn update_prompt(db: State<'_, SqlitePool>, id: i64, input: PromptUpda
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
         new_content
     } else {
@@ -1972,7 +2004,7 @@ pub async fn delete_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     // Sync prompt configs to CLI files
     sync_prompt_configs_to_cli(db).await?;
@@ -3602,7 +3634,7 @@ pub async fn get_webdav_settings(db: State<'_, SqlitePool>) -> Result<WebdavSett
             .bind(now)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
 
             Ok(WebdavSettings {
                 url: String::new(),
@@ -3630,7 +3662,7 @@ pub async fn update_webdav_settings(
     .bind(now)
     .execute(db.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(map_db_error)?;
 
     get_webdav_settings(db).await
 }
@@ -4126,7 +4158,7 @@ pub async fn add_skill_repo(db: State<'_, SqlitePool>, input: SkillRepoCreate) -
             .bind(None::<String>)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
             
         return Ok(SkillRepo {
             name,
@@ -4159,7 +4191,7 @@ pub async fn add_skill_repo(db: State<'_, SqlitePool>, input: SkillRepoCreate) -
         .bind(&actual_branch)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     Ok(SkillRepo {
         name: repo_name,
@@ -4208,7 +4240,7 @@ pub async fn remove_skill_repo(db: State<'_, SqlitePool>, name: String) -> Resul
             .bind(&name)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
 
         // 如果是 GitHub 仓库，尝试删除缓存的 ZIP (格式为 owner/repo)
         if repo.source.contains('/') && !repo.source.contains(":\\") && !repo.source.starts_with('/') {
@@ -4251,7 +4283,7 @@ pub async fn update_skill_repo(
             .bind(None::<String>)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
             
         return Ok(SkillRepo {
             name,
@@ -4282,7 +4314,7 @@ pub async fn update_skill_repo(
             .bind(&old_name)
             .execute(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(map_db_error)?;
     }
     
     let source = format!("{}/{}", new_owner, new_repo_name);
@@ -4293,7 +4325,7 @@ pub async fn update_skill_repo(
         .bind(&actual_branch)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     Ok(SkillRepo {
         name: new_repo_name,
@@ -4620,7 +4652,7 @@ pub async fn install_skill(db: State<'_, SqlitePool>, skill: DiscoverableSkill, 
         .bind(old.id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
         tracing::info!("Reinstalled skill: {} ({})", skill.name, directory_name);
         old.id
     } else {
@@ -4637,7 +4669,7 @@ pub async fn install_skill(db: State<'_, SqlitePool>, skill: DiscoverableSkill, 
         .bind(now)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
         tracing::info!("Installed skill: {} ({})", skill.name, directory_name);
         result.last_insert_rowid()
     };
@@ -4739,7 +4771,7 @@ pub async fn uninstall_skill(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     tracing::info!("Uninstalled skill: {}", skill.directory);
     Ok(())
@@ -5415,7 +5447,7 @@ pub async fn create_credential(
     .bind(now)
     .execute(db.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(map_db_error)?;
 
     let id = result.last_insert_rowid();
 
@@ -5483,7 +5515,7 @@ pub async fn update_credential(
     let mut q = sqlx::query(&query).bind(now);
     if let Some(ref name) = input.name { q = q.bind(name); }
     if let Some(ref json) = input.credential_json { q = q.bind(json); }
-    q.bind(id).execute(db.inner()).await.map_err(|e| e.to_string())?;
+    q.bind(id).execute(db.inner()).await.map_err(map_db_error)?;
 
     let _ = crate::services::stats::record_system_log(
         &log_db.0,
@@ -5536,7 +5568,7 @@ pub async fn delete_credential(
         .bind(id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     Ok(())
 }
@@ -5575,7 +5607,7 @@ pub async fn reorder_credentials(
     sqlx::query(&sql)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     // 如果是直连模式，自动同步到文件
     if let Some((cli_type_str,)) = cli_type {
@@ -5634,7 +5666,7 @@ pub async fn set_cli_mode(
         .bind(&cli_type)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     if mode == "direct" {
         // 步骤1: 如果从中转模式切换过来，先关闭 CLI
@@ -5817,7 +5849,7 @@ pub async fn add_plugin_favorite(
     .bind(&marketplace_source)
     .execute(db.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(map_db_error)?;
 
     // 更新缓存中的收藏状态
     let favorite_ids = get_favorite_ids(db.inner()).await?;
@@ -5839,7 +5871,7 @@ pub async fn remove_plugin_favorite(
         .bind(&plugin_id)
         .execute(db.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(map_db_error)?;
 
     // 更新缓存中的收藏状态
     let config_dir = get_cli_config_dir_path(db.inner(), "claude_code").await;

@@ -234,13 +234,21 @@ watch(() => settingsStore.settings, (settings) => {
 }, { immediate: true })
 
 async function saveTimeouts() {
-  await settingsStore.updateTimeouts(timeoutForm.value)
-  notify('超时配置已保存')
+  try {
+    await settingsStore.updateTimeouts(timeoutForm.value)
+    notify('超时配置已保存')
+  } catch (e: any) {
+    notify(e.message || e || '保存失败', 'error')
+  }
 }
 
 async function saveCli(cliType: string, data: any) {
-  await settingsStore.updateCli(cliType, data)
-  notify('CLI 配置已保存')
+  try {
+    await settingsStore.updateCli(cliType, data)
+    notify('CLI 配置已保存')
+  } catch (e: any) {
+    notify(e.message || e || '保存失败', 'error')
+  }
 }
 
 // Backup related

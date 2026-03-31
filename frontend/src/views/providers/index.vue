@@ -451,16 +451,20 @@ async function handleSave() {
     model_blacklist: form.value.model_blacklist.filter(b => b.model_pattern)
   }
   
-  if (editingProvider.value) {
-    await providerStore.updateProvider(editingProvider.value.id, data)
-    notify('更新成功')
-  } else {
-    await providerStore.createProvider(data as any)
-    notify('添加成功')
+  try {
+    if (editingProvider.value) {
+      await providerStore.updateProvider(editingProvider.value.id, data)
+      notify('更新成功')
+    } else {
+      await providerStore.createProvider(data as any)
+      notify('添加成功')
+    }
+    showDialog.value = false
+    resetForm()
+    providerStore.fetchProviders(activeCliType.value as CliType)
+  } catch (e: any) {
+    notify(e.message || e || '保存失败', 'error')
   }
-  showDialog.value = false
-  resetForm()
-  providerStore.fetchProviders(activeCliType.value as CliType)
 }
 
 async function handleToggle(provider: Provider) {
@@ -572,16 +576,20 @@ async function handleSaveCredential() {
     credential_json: JSON.stringify(files)
   }
 
-  if (editingCredential.value) {
-    await credentialStore.updateCredential(editingCredential.value.id, { name: data.name, credential_json: data.credential_json })
-    notify('更新成功')
-  } else {
-    await credentialStore.createCredential(data)
-    notify('添加成功')
+  try {
+    if (editingCredential.value) {
+      await credentialStore.updateCredential(editingCredential.value.id, { name: data.name, credential_json: data.credential_json })
+      notify('更新成功')
+    } else {
+      await credentialStore.createCredential(data)
+      notify('添加成功')
+    }
+    showCredentialDialog.value = false
+    resetCredentialForm()
+    credentialStore.fetchCredentials(activeCliType.value as CliType)
+  } catch (e: any) {
+    notify(e.message || e || '保存失败', 'error')
   }
-  showCredentialDialog.value = false
-  resetCredentialForm()
-  credentialStore.fetchCredentials(activeCliType.value as CliType)
 }
 
 async function handleCredentialDragEnd() {
