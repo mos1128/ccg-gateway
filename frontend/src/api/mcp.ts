@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Mcp, McpCreate, McpUpdate } from '@/types/models'
+import type { CliType, Mcp, McpCreate, McpUpdate } from '@/types/models'
 
 // 后端返回的 cli_flags 格式
 type McpCliFlagBackend = { cli_type: string; enabled: boolean }
@@ -36,6 +36,10 @@ export const mcpApi = {
   },
   update: async (id: number, data: McpUpdate): Promise<{ data: Mcp }> => {
     const result = await invoke<McpBackend>('update_mcp', { id, input: data })
+    return { data: transformMcp(result) }
+  },
+  toggleCli: async (id: number, cliType: CliType, enabled: boolean): Promise<{ data: Mcp }> => {
+    const result = await invoke<McpBackend>('toggle_mcp_cli', { id, cliType, enabled })
     return { data: transformMcp(result) }
   },
   delete: async (id: number) => {

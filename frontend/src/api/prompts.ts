@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { Prompt, PromptCreate, PromptUpdate } from '@/types/models'
+import type { CliType, Prompt, PromptCreate, PromptUpdate } from '@/types/models'
 
 // 后端返回的 cli_flags 格式
 type PromptCliFlagBackend = { cli_type: string; enabled: boolean }
@@ -36,6 +36,10 @@ export const promptsApi = {
   },
   update: async (id: number, data: PromptUpdate): Promise<{ data: Prompt }> => {
     const result = await invoke<PromptBackend>('update_prompt', { id, input: data })
+    return { data: transformPrompt(result) }
+  },
+  toggleCli: async (id: number, cliType: CliType, enabled: boolean): Promise<{ data: Prompt }> => {
+    const result = await invoke<PromptBackend>('toggle_prompt_cli', { id, cliType, enabled })
     return { data: transformPrompt(result) }
   },
   delete: async (id: number) => {

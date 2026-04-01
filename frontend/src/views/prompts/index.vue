@@ -114,7 +114,7 @@ import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
 import AppModal from '@/components/AppModal.vue'
 import { promptsApi } from '@/api/prompts'
-import type { CliFlagItem, CliType, Prompt } from '@/types/models'
+import type { CliType, Prompt } from '@/types/models'
 
 const promptList = ref<Prompt[]>([])
 const loading = ref(false)
@@ -188,16 +188,8 @@ async function handleSave() {
 
 async function handleCliToggle(prompt: Prompt, cliType: CliType, enabled: boolean) {
   try {
-    const cli_flags: CliFlagItem[] = [
-      { cli_type: 'claude_code', enabled: cliType === 'claude_code' ? enabled : (prompt.cli_flags?.claude_code ?? false) },
-      { cli_type: 'codex', enabled: cliType === 'codex' ? enabled : (prompt.cli_flags?.codex ?? false) },
-      { cli_type: 'gemini', enabled: cliType === 'gemini' ? enabled : (prompt.cli_flags?.gemini ?? false) }
-    ]
-    await promptsApi.update(prompt.id, { cli_flags })
-    // Update local state directly for snappy UI
-    if (prompt.cli_flags) {
-      prompt.cli_flags[cliType] = enabled
-    }
+    const { data } = await promptsApi.toggleCli(prompt.id, cliType, enabled)
+    prompt.cli_flags = data.cli_flags
     notify('已更新')
   } catch (error: any) {
     notify(error?.message || '更新失败', 'error')

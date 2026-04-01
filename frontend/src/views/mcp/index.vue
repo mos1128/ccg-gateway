@@ -125,7 +125,7 @@ import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
 import AppModal from '@/components/AppModal.vue'
 import { mcpApi } from '@/api/mcp'
-import type { CliFlagItem, CliType, Mcp } from '@/types/models'
+import type { CliType, Mcp } from '@/types/models'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 
 const mcpList = ref<Mcp[]>([])
@@ -224,16 +224,8 @@ async function handleSave() {
 
 async function handleCliToggle(mcp: Mcp, cliType: CliType, enabled: boolean) {
   try {
-    const cli_flags: CliFlagItem[] = [
-      { cli_type: 'claude_code', enabled: cliType === 'claude_code' ? enabled : (mcp.cli_flags?.claude_code ?? false) },
-      { cli_type: 'codex', enabled: cliType === 'codex' ? enabled : (mcp.cli_flags?.codex ?? false) },
-      { cli_type: 'gemini', enabled: cliType === 'gemini' ? enabled : (mcp.cli_flags?.gemini ?? false) }
-    ]
-    await mcpApi.update(mcp.id, { cli_flags })
-    // Update local state directly for snappy UI
-    if (mcp.cli_flags) {
-      mcp.cli_flags[cliType] = enabled
-    }
+    const { data } = await mcpApi.toggleCli(mcp.id, cliType, enabled)
+    mcp.cli_flags = data.cli_flags
     notify('已更新')
   } catch (error: any) {
     notify(error?.message || '更新失败', 'error')

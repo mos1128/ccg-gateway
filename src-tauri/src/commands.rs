@@ -1815,6 +1815,20 @@ pub async fn update_mcp(db: State<'_, SqlitePool>, id: i64, input: McpUpdate) ->
 }
 
 #[tauri::command]
+pub async fn toggle_mcp_cli(db: State<'_, SqlitePool>, id: i64, cli_type: String, enabled: bool) -> Result<McpResponse> {
+    let mcp = sqlx::query_as::<_, McpConfig>("SELECT * FROM mcp_configs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "MCP not found".to_string())?;
+
+    sync_mcp_to_cli_async(db.inner(), &mcp.name, &mcp.config_json, &cli_type, enabled).await?;
+
+    get_mcp(db, id).await
+}
+
+#[tauri::command]
 pub async fn delete_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
     // Get MCP name before deletion
     let mcp = sqlx::query_as::<_, McpConfig>("SELECT * FROM mcp_configs WHERE id = ?")
@@ -1839,6 +1853,59 @@ pub async fn delete_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
     Ok(())
 }
 
+async fn sync_mcp_to_cli_async(
+    db: &SqlitePool,
+    mcp_name: &str,
+    mcp_config_json: &str,
+    cli_type: &str,
+    is_enabled: bool,
+) -> Result<()> {
+    let path = get_mcp_config_path(db, cli_type)
+        .await
+        .ok_or_else(|| format!("Invalid CLI type: {}", cli_type))?;
+
+    if !is_enabled && !path.exists() {
+        return Ok(());
+    }
+
+    if cli_type == "codex" {
+        sync_single_codex_mcp(path, mcp_name, mcp_config_json, is_enabled)?;
+        return Ok(());
+    }
+
+    let mut config = if path.exists() {
+        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<serde_json::Value>(&content).unwrap_or_else(|_| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if is_enabled {
+        if let Ok(mcp_json) = serde_json::from_str::<serde_json::Value>(mcp_config_json) {
+            if let Some(obj) = config.as_object_mut() {
+                if !obj.contains_key("mcpServers") {
+                    obj.insert("mcpServers".to_string(), serde_json::json!({}));
+                }
+                if let Some(servers) = obj.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+                    servers.insert(mcp_name.to_string(), mcp_json);
+                }
+            }
+        }
+    } else if let Some(obj) = config.as_object_mut() {
+        if let Some(servers) = obj.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+            servers.remove(mcp_name);
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let config_str = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    std::fs::write(&path, config_str).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 // Sync a single MCP to CLI files based on enabled flags
 async fn sync_single_mcp_to_cli(
     db: &SqlitePool,
@@ -1854,52 +1921,7 @@ async fn sync_single_mcp_to_cli(
         let is_enabled = cli_flags.iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
 
-        let config_path = get_mcp_config_path(db, cli_type).await;
-        if let Some(path) = config_path {
-            // Handle Codex separately (TOML format)
-            if cli_type == "codex" {
-                sync_single_codex_mcp(path, mcp_name, mcp_config_json, is_enabled)?;
-                continue;
-            }
-
-            // For ClaudeCode and Gemini (JSON format)
-            // Read existing config or create new one
-            let mut config = if path.exists() {
-                let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-                serde_json::from_str::<serde_json::Value>(&content).unwrap_or_else(|_| serde_json::json!({}))
-            } else {
-                serde_json::json!({})
-            };
-
-            // Update MCP section
-            if is_enabled {
-                // Add or update this MCP
-                if let Ok(mcp_json) = serde_json::from_str::<serde_json::Value>(mcp_config_json) {
-                    if let Some(obj) = config.as_object_mut() {
-                        if !obj.contains_key("mcpServers") {
-                            obj.insert("mcpServers".to_string(), serde_json::json!({}));
-                        }
-                        if let Some(servers) = obj.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-                            servers.insert(mcp_name.to_string(), mcp_json);
-                        }
-                    }
-                }
-            } else {
-                // Remove this MCP by name
-                if let Some(obj) = config.as_object_mut() {
-                    if let Some(servers) = obj.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-                        servers.remove(mcp_name);
-                    }
-                }
-            }
-
-            // Write config file
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-            }
-            let config_str = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-            std::fs::write(&path, config_str).map_err(|e| e.to_string())?;
-        }
+        sync_mcp_to_cli_async(db, mcp_name, mcp_config_json, cli_type, is_enabled).await?;
     }
 
     Ok(())
@@ -2128,6 +2150,20 @@ pub async fn update_prompt(db: State<'_, SqlitePool>, id: i64, input: PromptUpda
 }
 
 #[tauri::command]
+pub async fn toggle_prompt_cli(db: State<'_, SqlitePool>, id: i64, cli_type: String, enabled: bool) -> Result<PromptResponse> {
+    let prompt = sqlx::query_as::<_, PromptPreset>("SELECT * FROM prompt_presets WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Prompt not found".to_string())?;
+
+    sync_prompt_to_cli_async(db.inner(), &prompt.content, &cli_type, enabled).await?;
+
+    get_prompt(db, id).await
+}
+
+#[tauri::command]
 pub async fn delete_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
     sqlx::query("DELETE FROM prompt_presets WHERE id = ?")
         .bind(id)
@@ -2137,6 +2173,40 @@ pub async fn delete_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
 
     // Sync prompt configs to CLI files
     sync_prompt_configs_to_cli(db).await?;
+
+    Ok(())
+}
+
+async fn sync_prompt_to_cli_async(
+    db: &SqlitePool,
+    prompt_content: &str,
+    cli_type: &str,
+    is_enabled: bool,
+) -> Result<()> {
+    let path = get_prompt_file_path(db, cli_type)
+        .await
+        .ok_or_else(|| format!("Invalid CLI type: {}", cli_type))?;
+
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            return Ok(());
+        }
+
+        if is_enabled {
+            std::fs::write(&path, prompt_content).map_err(|e| {
+                tracing::error!("Failed to write prompt file: {}", e);
+                e.to_string()
+            })?;
+        } else if path.exists() {
+            let file_content = std::fs::read_to_string(&path).unwrap_or_default();
+            if normalize_text(prompt_content) == normalize_text(&file_content) {
+                std::fs::write(&path, "").map_err(|e| {
+                    tracing::error!("Failed to clear prompt file: {}", e);
+                    e.to_string()
+                })?;
+            }
+        }
+    }
 
     Ok(())
 }
@@ -2154,36 +2224,7 @@ async fn sync_single_prompt_to_cli(
         let is_enabled = cli_flags.iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
 
-        // Get the prompt file path for this CLI
-        let prompt_path = get_prompt_file_path(db, cli_type).await;
-        if let Some(path) = prompt_path {
-            // Check if CLI directory exists (skip if CLI not installed)
-            if let Some(parent) = path.parent() {
-                if !parent.exists() {
-                    continue;
-                }
-
-                if is_enabled {
-                    // Write prompt content to file
-                    std::fs::write(&path, prompt_content).map_err(|e| {
-                        tracing::error!("Failed to write prompt file: {}", e);
-                        e.to_string()
-                    })?;
-                } else {
-                    // Check if this prompt was previously in the file
-                    if path.exists() {
-                        let file_content = std::fs::read_to_string(&path).unwrap_or_default();
-                        if normalize_text(prompt_content) == normalize_text(&file_content) {
-                            // This prompt was in the file, clear it
-                            std::fs::write(&path, "").map_err(|e| {
-                                tracing::error!("Failed to clear prompt file: {}", e);
-                                e.to_string()
-                            })?;
-                        }
-                    }
-                }
-            }
-        }
+        sync_prompt_to_cli_async(db, prompt_content, cli_type, is_enabled).await?;
     }
 
     Ok(())
