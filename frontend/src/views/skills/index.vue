@@ -9,6 +9,9 @@
         <symbol id="icon-store" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 9 12 3l9 6v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><polyline points="9 22 9 12 15 12 15 22"/>
         </symbol>
+        <symbol id="icon-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </symbol>
         <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M5 12h14"/><path d="M12 5v14"/>
         </symbol>
@@ -37,21 +40,26 @@
     <div class="top-tabs">
       <div 
         class="tab-item" 
-        :class="{ active: activeTab === 'installed' }" 
-        @click="activeTab = 'installed'"
-      >已安装</div>
+        :class="{ active: activeTab === 'skills' }" 
+        @click="activeTab = 'skills'"
+      >技能</div>
       <div 
         class="tab-item" 
-        :class="{ active: activeTab === 'available' }" 
-        @click="activeTab = 'available'"
+        :class="{ active: activeTab === 'repos' }" 
+        @click="activeTab = 'repos'"
       >仓库</div>
+      <div 
+        class="tab-item" 
+        :class="{ active: activeTab === 'favorites' }" 
+        @click="activeTab = 'favorites'"
+      >收藏</div>
     </div>
 
     <!-- Main Content Area -->
     <div class="view-content-wrapper">
       
       <!-- TAB: INSTALLED -->
-      <div v-if="activeTab === 'installed'" class="tab-pane">
+      <div v-if="activeTab === 'skills'" class="tab-pane">
         <div v-loading="loadingInstalled" class="list-container">
           <template v-if="installedList.length === 0">
             <div class="empty-state">
@@ -71,10 +79,22 @@
                       <h3 class="skill-name">{{ skill.name }}</h3>
                       <div v-if="!skill.exists_on_disk" class="tag tag-red">缺失文件</div>
                     </div>
-                    <div class="skill-market" v-if="skill.repo_owner">@{{ skill.repo_owner }}/{{ skill.repo_name }}</div>
+                    <div class="skill-market" v-if="getInstalledSkillMarket(skill)">{{ getInstalledSkillMarket(skill) }}</div>
                     <div class="skill-source mono" v-else>本地安装</div>
                   </div>
                   <div class="card-actions">
+                    <button
+                      class="action-btn star"
+                      :title="isInstalledFavorited(skill) ? '取消收藏' : '收藏技能'"
+                      :disabled="!canFavoriteInstalledSkill(skill)"
+                      @click="toggleInstalledFavorite(skill)"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        :style="isInstalledFavorited(skill) ? 'fill: #f59e0b; color: #f59e0b;' : 'color: #cbd5e1;'"
+                      ><use href="#icon-star"/></svg>
+                    </button>
                     <template v-if="skill.exists_on_disk">
                       <button class="action-btn" title="重装/更新" :disabled="installingSkillId === `installed-${skill.id}`" @click="handleReinstallFromInstalled(skill)">
                         <svg width="16" height="16"><use href="#icon-refresh"/></svg>
@@ -124,7 +144,7 @@
       </div>
 
       <!-- TAB: AVAILABLE -->
-      <div v-else class="tab-pane">
+      <div v-else-if="activeTab === 'repos'" class="tab-pane">
         
         <!-- Repo List View -->
         <div v-if="!currentRepo" class="repo-list-view">
@@ -222,6 +242,17 @@
                     </div>
                   </div>
                   <div class="discover-actions">
+                    <button
+                      class="action-btn star"
+                      :title="favoriteKeys.has(skill.key) ? '取消收藏' : '收藏技能'"
+                      @click="toggleRepoFavorite(skill)"
+                    >
+                      <svg
+                        width="18"
+                        height="18"
+                        :style="favoriteKeys.has(skill.key) ? 'fill: #f59e0b; color: #f59e0b;' : 'color: #cbd5e1;'"
+                      ><use href="#icon-star"/></svg>
+                    </button>
                     <button 
                       v-if="isInstalled(skill.directory)"
                       class="action-btn"
@@ -243,6 +274,40 @@
                       <svg width="18" height="18"><use href="#icon-plus"/></svg>
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="tab-pane">
+        <div class="page-header">
+          <p class="page-subtitle">收藏的技能会保留仓库信息，方便后续快速安装</p>
+        </div>
+
+        <div v-loading="loadingFavorites" class="list-container">
+          <div v-if="favoriteList.length === 0" class="empty-state">
+            <svg width="64" height="64" color="#e2e8f0"><use href="#icon-star"/></svg>
+            <p>暂无收藏技能</p>
+          </div>
+          <div v-else class="scroll-area">
+            <div class="favorite-grid">
+              <div v-for="favorite in favoriteList" :key="favorite.key" class="fav-card">
+                <div class="fav-main">
+                  <div class="fav-info">
+                    <div class="fav-name">{{ favorite.name }}</div>
+                    <div class="fav-market">来自仓库: {{ favorite.repo.source }}</div>
+                  </div>
+                  <div class="fav-status">
+                    <span class="pill" :class="favorite.is_installed ? 'pill-green' : 'pill-grey'">
+                      {{ favorite.is_installed ? '已安装' : '未安装' }}
+                    </span>
+                  </div>
+                </div>
+                <div class="fav-footer">
+                  <button v-if="!favorite.is_installed" class="btn-sm primary" @click="handleInstallFavorite(favorite)">立即安装</button>
+                  <button class="btn-sm outline danger-text" @click="handleRemoveFavoriteById(favorite)">移除收藏</button>
                 </div>
               </div>
             </div>
@@ -311,9 +376,9 @@ import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
 import AppModal from '@/components/AppModal.vue'
 import { skillsApi } from '@/api/skills'
-import type { SkillRepo, DiscoverableSkill, InstalledSkill } from '@/types/models'
+import type { SkillRepo, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
 
-const activeTab = ref('installed')
+const activeTab = ref<'skills' | 'repos' | 'favorites'>('skills')
 
 // Installed Skills
 const installedList = ref<InstalledSkill[]>([])
@@ -327,7 +392,6 @@ const showAddRepoDialog = ref(false)
 const repoForm = ref({ url: '', branch: '' })
 const showEditRepoDialog = ref(false)
 const editRepoForm = ref({ oldName: '', url: '', branch: '' })
-const savingRepo = ref(false)
 
 // Discovery
 const currentRepo = ref<SkillRepo | null>(null)
@@ -335,10 +399,30 @@ const repoSkillList = ref<DiscoverableSkill[]>([])
 const loadingSkills = ref(false)
 const skillSearchQuery = ref('')
 
+// Favorites
+const favoriteList = ref<SkillFavoriteItem[]>([])
+const loadingFavorites = ref(false)
+
+const favoriteKeys = computed(() => new Set(favoriteList.value.map(item => item.key)))
+
+const sortedRepoSkillList = computed(() => {
+  return [...repoSkillList.value].sort((a, b) => {
+    const aFavorited = favoriteKeys.value.has(a.key)
+    const bFavorited = favoriteKeys.value.has(b.key)
+    if (aFavorited !== bFavorited) return aFavorited ? -1 : 1
+
+    const aInstalled = isInstalled(a.directory)
+    const bInstalled = isInstalled(b.directory)
+    if (aInstalled !== bInstalled) return aInstalled ? -1 : 1
+
+    return a.name.localeCompare(b.name, 'zh-CN')
+  })
+})
+
 const filteredSkillList = computed(() => {
-  if (!skillSearchQuery.value) return repoSkillList.value
+  if (!skillSearchQuery.value) return sortedRepoSkillList.value
   const query = skillSearchQuery.value.toLowerCase()
-  return repoSkillList.value.filter(s => 
+  return sortedRepoSkillList.value.filter(s => 
     s.name.toLowerCase().includes(query) || 
     s.directory.toLowerCase().includes(query) ||
     s.description?.toLowerCase().includes(query)
@@ -347,8 +431,48 @@ const filteredSkillList = computed(() => {
 
 const installedDirectories = computed(() => new Set(installedList.value.map(s => s.directory)))
 function isInstalled(directory: string): boolean {
-  const dirName = directory.split('/').pop() || directory
+  const dirName = directory === '.'
+    ? (currentRepo.value?.name || directory)
+    : (directory.split('/').pop() || directory)
   return installedDirectories.value.has(dirName)
+}
+
+function isLocalRepo(repo?: SkillRepo | null): boolean {
+  if (!repo) return true
+  return repo.source.includes(':\\') || repo.source.startsWith('/')
+}
+
+function getInstalledSkillMarket(skill: InstalledSkill): string {
+  if (!skill.repo || isLocalRepo(skill.repo)) return ''
+  return `@${skill.repo.source}`
+}
+
+function buildSkillKey(repo: SkillRepo, directory: string): string {
+  return `${isLocalRepo(repo) ? repo.name : repo.source}:${directory}`
+}
+
+function toDiscoverableSkill(installed: InstalledSkill): DiscoverableSkill | null {
+  if (!installed.repo) return null
+  const sourceDirectory = isLocalRepo(installed.repo) && installed.directory === installed.repo.name
+    ? '.'
+    : installed.directory
+  return {
+    key: buildSkillKey(installed.repo, sourceDirectory),
+    name: installed.name,
+    description: installed.description || '',
+    directory: sourceDirectory,
+    readme_url: installed.readme_url,
+    repo: installed.repo
+  }
+}
+
+function canFavoriteInstalledSkill(skill: InstalledSkill): boolean {
+  return Boolean(toDiscoverableSkill(skill))
+}
+
+function isInstalledFavorited(skill: InstalledSkill): boolean {
+  const discoverable = toDiscoverableSkill(skill)
+  return Boolean(discoverable && favoriteKeys.value.has(discoverable.key))
 }
 
 async function fetchInstalled() {
@@ -371,6 +495,21 @@ async function fetchRepos() {
   } finally {
     loadingRepos.value = false
   }
+}
+
+async function fetchFavorites() {
+  loadingFavorites.value = true
+  try {
+    favoriteList.value = await skillsApi.getFavorites()
+  } catch (error: any) {
+    notify(error?.message || '加载失败', 'error')
+  } finally {
+    loadingFavorites.value = false
+  }
+}
+
+async function refreshInstallationState() {
+  await Promise.all([fetchInstalled(), fetchFavorites()])
 }
 
 function handleRepoClick(repo: SkillRepo) {
@@ -428,7 +567,7 @@ async function handleUninstall(skill: InstalledSkill) {
     await ElMessageBox.confirm(`确定卸载技能 "${skill.name}"?`, '确认卸载')
     await skillsApi.uninstall(skill.id)
     notify('已卸载')
-    await fetchInstalled()
+    await refreshInstallationState()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
       notify(error?.message || '卸载失败', 'error')
@@ -444,7 +583,7 @@ async function handleInstall(skill: DiscoverableSkill, reinstall: boolean = fals
     installingSkillId.value = skill.key
     await skillsApi.install(skill, reinstall)
     notify(reinstall ? '重装成功' : '安装成功')
-    await fetchInstalled()
+    await refreshInstallationState()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
       notify(error?.message || '安装失败', 'error')
@@ -454,29 +593,17 @@ async function handleInstall(skill: DiscoverableSkill, reinstall: boolean = fals
   }
 }
 
-function toDiscoverableSkill(installed: InstalledSkill): DiscoverableSkill {
-  return {
-    key: `${installed.repo_owner}/${installed.repo_name}:${installed.directory}`,
-    name: installed.name,
-    description: installed.description || '',
-    directory: installed.directory,
-    readme_url: installed.readme_url,
-    repo_owner: installed.repo_owner || '',
-    repo_name: installed.repo_name || '',
-    repo_branch: installed.repo_branch || 'main',
-  }
-}
-
 async function handleInstallFromInstalled(skill: InstalledSkill) {
-  if (!skill.repo_owner || !skill.repo_name) {
+  const discoverable = toDiscoverableSkill(skill)
+  if (!discoverable) {
     notify('缺少仓库信息，无法安装', 'error')
     return
   }
   installingSkillId.value = `installed-${skill.id}`
   try {
-    await skillsApi.install(toDiscoverableSkill(skill), true)
+    await skillsApi.install(discoverable, true)
     notify('安装成功')
-    await fetchInstalled()
+    await refreshInstallationState()
   } catch (error: any) {
     notify(error?.message || '安装失败', 'error')
   } finally {
@@ -485,22 +612,74 @@ async function handleInstallFromInstalled(skill: InstalledSkill) {
 }
 
 async function handleReinstallFromInstalled(skill: InstalledSkill) {
-  if (!skill.repo_owner || !skill.repo_name) {
+  const discoverable = toDiscoverableSkill(skill)
+  if (!discoverable) {
     notify('缺少仓库信息，无法重装', 'error')
     return
   }
   try {
     await ElMessageBox.confirm(`确定重装技能 "${skill.name}"?`, '确认重装')
     installingSkillId.value = `installed-${skill.id}`
-    await skillsApi.install(toDiscoverableSkill(skill), true)
+    await skillsApi.install(discoverable, true)
     notify('重装成功')
-    await fetchInstalled()
+    await refreshInstallationState()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
       notify(error?.message || '重装失败', 'error')
     }
   } finally {
     installingSkillId.value = null
+  }
+}
+
+async function toggleFavorite(skill: DiscoverableSkill) {
+  try {
+    if (favoriteKeys.value.has(skill.key)) {
+      await skillsApi.removeFavorite(skill.key)
+      notify('已取消收藏')
+    } else {
+      await skillsApi.addFavorite(skill)
+      notify('已收藏')
+    }
+    await fetchFavorites()
+  } catch (error: any) {
+    notify(error?.message || '操作失败', 'error')
+  }
+}
+
+async function toggleInstalledFavorite(skill: InstalledSkill) {
+  const discoverable = toDiscoverableSkill(skill)
+  if (!discoverable) {
+    notify('缺少仓库信息，无法收藏', 'error')
+    return
+  }
+  await toggleFavorite(discoverable)
+}
+
+async function toggleRepoFavorite(skill: DiscoverableSkill) {
+  await toggleFavorite(skill)
+}
+
+async function handleInstallFavorite(favorite: SkillFavoriteItem) {
+  loadingFavorites.value = true
+  try {
+    await skillsApi.installFavorite(favorite.key)
+    notify('安装成功')
+    await refreshInstallationState()
+  } catch (error: any) {
+    notify(error?.message || '安装失败', 'error')
+  } finally {
+    loadingFavorites.value = false
+  }
+}
+
+async function handleRemoveFavoriteById(favorite: SkillFavoriteItem) {
+  try {
+    await skillsApi.removeFavorite(favorite.key)
+    favoriteList.value = await skillsApi.getFavorites()
+    notify('已移除')
+  } catch (error: any) {
+    notify(error?.message || '操作失败', 'error')
   }
 }
 
@@ -597,6 +776,7 @@ async function handleUpdateRepo() {
 onMounted(() => {
   fetchInstalled()
   fetchRepos()
+  fetchFavorites()
 })
 </script>
 
@@ -679,6 +859,8 @@ onMounted(() => {
 }
 .action-btn:hover { background: #f1f5f9; color: #0f172a; }
 .action-btn.delete:hover { background: #fef2f2; color: #f43f5e; }
+.action-btn.star:disabled { cursor: not-allowed; opacity: 0.45; }
+.action-btn.star:disabled:hover { background: transparent; color: #94a3b8; }
 
 /* CLI Toggles */
 .cli-toggles { display: flex; flex-direction: column; gap: 12px; background: #f8fafc; padding: 16px; border-radius: 12px; }
@@ -723,6 +905,25 @@ onMounted(() => {
 }
 .discover-actions { flex-shrink: 0; }
 
+/* Favorites */
+.favorite-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+.fav-card { background: white; border-radius: 16px; border: 1px solid #f1f5f9; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.fav-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.fav-info { min-width: 0; }
+.fav-name { font-weight: 700; font-size: 16px; color: #0f172a; margin-bottom: 4px; }
+.fav-market { font-size: 12px; color: #94a3b8; word-break: break-all; }
+.fav-footer { display: flex; gap: 10px; padding-top: 12px; border-top: 1px dashed #f1f5f9; }
+.btn-sm { 
+  border: none; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; 
+  cursor: pointer; transition: all 0.2s; display: flex; align-items: center; 
+}
+.btn-sm.primary { background: #0ea5e9; color: white; }
+.btn-sm.primary:hover { background: #0284c7; }
+.btn-sm.outline { background: white; border: 1px solid #e2e8f0; color: #475569; }
+.btn-sm.outline:hover { background: #f8fafc; color: #0f172a; }
+.btn-sm.danger-text { color: #f43f5e; }
+.btn-sm.danger-text:hover { background: #fef2f2; }
+
 
 /* Shared styles */
 .mono { font-family: "JetBrains Mono", monospace; }
@@ -730,6 +931,7 @@ onMounted(() => {
 .tag-red { background: #fef2f2; color: #f43f5e; }
 .pill { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
 .pill-grey { background: #f1f5f9; color: #64748b; }
+.pill-green { background: #ecfdf5; color: #10b981; }
 
 .search-box { position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; }

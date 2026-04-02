@@ -73,7 +73,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 18,
+            version: 19,
             tables: Self::define_main_tables(),
         }
     }
@@ -509,102 +509,6 @@ impl DatabaseSchema {
             },
         );
 
-        // skill_repos 表（Skill 仓库列表）
-        tables.insert(
-            "skill_repos".to_string(),
-            TableDefinition {
-                name: "skill_repos".to_string(),
-                columns: vec![
-                    ColumnDefinition {
-                        name: "name".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "source".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "branch".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: Some("'main'".to_string()),
-                    },
-                ],
-                primary_key: vec!["name".to_string()],
-                unique_constraints: vec![],
-            },
-        );
-
-        // skill_configs 表（已安装的 Skills）
-        tables.insert(
-            "skill_configs".to_string(),
-            TableDefinition {
-                name: "skill_configs".to_string(),
-                columns: vec![
-                    ColumnDefinition {
-                        name: "id".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "name".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "description".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "directory".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "repo_owner".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "repo_name".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "repo_branch".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "readme_url".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "installed_at".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                ],
-                primary_key: vec!["id".to_string()],
-                unique_constraints: vec![vec!["directory".to_string()]],
-            },
-        );
-
         // official_credentials 表（官方凭证）
         tables.insert(
             "official_credentials".to_string(),
@@ -716,6 +620,78 @@ impl DatabaseSchema {
                 ],
                 primary_key: vec!["id".to_string()],
                 unique_constraints: vec![vec!["plugin_id".to_string()]],
+            },
+        );
+
+        // skill_favorites 表（收藏的技能）
+        tables.insert(
+            "skill_favorites".to_string(),
+            TableDefinition {
+                name: "skill_favorites".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "skill_key".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "description".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "directory".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "readme_url".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "repo_name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "repo_source".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "repo_branch".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "created_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![vec!["skill_key".to_string()]],
             },
         );
 

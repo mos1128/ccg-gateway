@@ -396,31 +396,52 @@ pub struct DiscoverableSkill {
     pub description: String,
     pub directory: String,     // 目录路径
     pub readme_url: Option<String>,
-    pub repo_owner: String,
-    pub repo_name: String,
-    pub repo_branch: String,
+    pub repo: SkillRepo,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SkillCliFlag {
     pub cli_type: String,
     pub enabled: bool,
 }
 
 // 已安装 Skill 响应
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledSkillResponse {
-    pub id: i64,
+    pub id: String,
     pub name: String,
     pub description: Option<String>,
     pub directory: String,
-    pub repo_owner: Option<String>,
-    pub repo_name: Option<String>,
-    pub repo_branch: Option<String>,
+    pub repo: Option<SkillRepo>,
     pub readme_url: Option<String>,
     pub installed_at: i64,
     pub cli_flags: Vec<SkillCliFlag>,
     pub exists_on_disk: bool, // skill 文件是否存在于本地
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct SkillFavorite {
+    pub id: i64,
+    pub skill_key: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub directory: String,
+    pub readme_url: Option<String>,
+    pub repo_name: String,
+    pub repo_source: String,
+    pub repo_branch: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillFavoriteItem {
+    pub key: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub directory: String,
+    pub readme_url: Option<String>,
+    pub repo: SkillRepo,
+    pub is_installed: bool,
 }
 
 // ==================== Request Logs 相关实体 ====================

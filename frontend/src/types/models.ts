@@ -204,23 +204,29 @@ export interface DiscoverableSkill {
   description: string
   directory: string
   readme_url: string | null
-  repo_owner: string
-  repo_name: string
-  repo_branch: string
+  repo: SkillRepo
 }
 
 export interface InstalledSkill {
-  id: number
+  id: string
   name: string
   description: string | null
   directory: string
-  repo_owner: string | null
-  repo_name: string | null
-  repo_branch: string | null
+  repo: SkillRepo | null
   readme_url: string | null
   installed_at: number
   cli_flags: Record<string, boolean>
   exists_on_disk: boolean // skill 文件是否存在于本地
+}
+
+export interface SkillFavoriteItem {
+  key: string
+  name: string
+  description: string | null
+  directory: string
+  readme_url: string | null
+  repo: SkillRepo
+  is_installed: boolean
 }
 
 // Stats types

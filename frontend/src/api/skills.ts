@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { SkillRepo, SkillRepoCreate, DiscoverableSkill, InstalledSkill } from '@/types/models'
+import type { SkillRepo, SkillRepoCreate, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
 
 // 后端返回的 cli_flags 格式
 type SkillCliFlagBackend = { cli_type: string; enabled: boolean }
@@ -54,7 +54,7 @@ export const skillsApi = {
     return transformInstalledSkill(result)
   },
 
-  uninstall: async (id: number): Promise<void> => {
+  uninstall: async (id: string): Promise<void> => {
     await invoke('uninstall_skill', { id })
   },
 
@@ -64,7 +64,25 @@ export const skillsApi = {
     return data.map(transformInstalledSkill)
   },
 
-  toggleCli: async (id: number, cliType: string, enabled: boolean): Promise<void> => {
+  toggleCli: async (id: string, cliType: string, enabled: boolean): Promise<void> => {
     await invoke('toggle_skill_cli', { id, cliType, enabled })
+  },
+
+  // ==================== Skill 收藏 ====================
+  getFavorites: async (): Promise<SkillFavoriteItem[]> => {
+    return await invoke<SkillFavoriteItem[]>('get_skill_favorites')
+  },
+
+  addFavorite: async (skill: DiscoverableSkill): Promise<void> => {
+    await invoke('add_skill_favorite', { skillItem: skill })
+  },
+
+  removeFavorite: async (key: string): Promise<void> => {
+    await invoke('remove_skill_favorite', { key })
+  },
+
+  installFavorite: async (key: string): Promise<InstalledSkill> => {
+    const result = await invoke<InstalledSkillBackend>('install_favorite_skill', { key })
+    return transformInstalledSkill(result)
   },
 }

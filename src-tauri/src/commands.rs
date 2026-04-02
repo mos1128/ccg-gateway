@@ -9,13 +9,14 @@ use crate::db::models::{
     McpConfig, McpCliFlag, McpResponse, McpCreate, McpUpdate,
     PromptPreset, PromptCliFlag, PromptResponse, PromptCreate, PromptUpdate,
     SkillRepo, SkillRepoCreate,
-    SkillConfig, SkillCliFlag, DiscoverableSkill, InstalledSkillResponse,
+    SkillCliFlag, DiscoverableSkill, InstalledSkillResponse, SkillFavorite, SkillFavoriteItem,
     WebdavSettings, WebdavSettingsUpdate, WebdavBackup,
     ProjectInfo, SessionInfo, PaginatedProjects, PaginatedSessions, SessionMessage,
     SystemStatus,
     OfficialCredential, OfficialCredentialCreate, OfficialCredentialUpdate, OfficialCredentialResponse,
     MarketplaceInfo, PluginItem, PluginFavoriteItem,
 };
+use crate::services::skill::{self, InstalledSkillManifestEntry};
 use crate::LogDb;
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -240,6 +241,9 @@ fn map_db_error(e: sqlx::Error) -> String {
         }
         if err_str.contains("plugin_favorites.plugin_id") {
             return "该插件已收藏".to_string();
+        }
+        if err_str.contains("skill_favorites.skill_key") {
+            return "该技能已收藏".to_string();
         }
         return "数据已存在，请勿重复添加".to_string();
     }
@@ -4119,58 +4123,20 @@ pub async fn delete_webdav_backup(
 
 // ==================== Skill 相关命令 ====================
 
-// 获取 SSOT 目录 (ccg-gateway 数据目录下的 skills/)
 fn get_ssot_dir() -> std::path::PathBuf {
-    let dir = get_data_dir().join("skills");
-    std::fs::create_dir_all(&dir).ok();
-    dir
+    skill::get_ssot_dir()
 }
 
-// 获取 Skill 仓库缓存目录 (ccg-gateway 数据目录下的 skill_repo/)
-fn get_skill_cache_dir() -> std::path::PathBuf {
-    let dir = get_data_dir().join("skill_repo");
-    std::fs::create_dir_all(&dir).ok();
-    dir
-}
-
-// 获取缓存的仓库 ZIP 文件路径
-fn get_cached_repo_zip(owner: &str, name: &str, branch: &str) -> std::path::PathBuf {
-    get_skill_cache_dir().join(format!("{}_{}__{}.zip", owner, name, branch))
-}
-
-// 读取缓存的 ZIP 文件（如果存在）
 fn read_cached_zip(owner: &str, name: &str, branch: &str) -> Option<Vec<u8>> {
-    let path = get_cached_repo_zip(owner, name, branch);
-    if path.exists() {
-        std::fs::read(&path).ok()
-    } else {
-        None
-    }
+    skill::read_cached_zip(owner, name, branch)
 }
 
-// 保存 ZIP 到缓存
 fn save_zip_to_cache(owner: &str, name: &str, branch: &str, bytes: &[u8]) -> Result<()> {
-    let path = get_cached_repo_zip(owner, name, branch);
-    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-    tracing::info!("Saved repo ZIP to cache: {}", path.display());
-    Ok(())
+    skill::save_zip_to_cache(owner, name, branch, bytes)
 }
 
-// 删除缓存的仓库 ZIP
 fn delete_cached_repo_zip(owner: &str, name: &str) {
-    let cache_dir = get_skill_cache_dir();
-    // 删除所有该仓库的缓存（不同分支）
-    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
-        let prefix = format!("{}_{}_", owner, name);
-        for entry in entries.flatten() {
-            if let Some(filename) = entry.file_name().to_str() {
-                if filename.starts_with(&prefix) && filename.ends_with(".zip") {
-                    let _ = std::fs::remove_file(entry.path());
-                    tracing::info!("Deleted cached ZIP: {}", filename);
-                }
-            }
-        }
-    }
+    skill::delete_cached_repo_zip(owner, name)
 }
 
 // 获取 CLI 的 skills 目录（异步版本，支持自定义配置目录）
@@ -4188,6 +4154,23 @@ async fn skill_enabled_in_cli_async(db: &SqlitePool, cli_type: &str, directory: 
     
     let skill_path = cli_dir.join(directory);
     skill_path.exists()
+}
+
+async fn build_skill_cli_flags(db: &SqlitePool, directory: &str) -> Vec<SkillCliFlag> {
+    vec![
+        SkillCliFlag {
+            cli_type: "claude_code".to_string(),
+            enabled: skill_enabled_in_cli_async(db, "claude_code", directory).await,
+        },
+        SkillCliFlag {
+            cli_type: "codex".to_string(),
+            enabled: skill_enabled_in_cli_async(db, "codex", directory).await,
+        },
+        SkillCliFlag {
+            cli_type: "gemini".to_string(),
+            enabled: skill_enabled_in_cli_async(db, "gemini", directory).await,
+        },
+    ]
 }
 
 // 解析 SKILL.md frontmatter
@@ -4225,6 +4208,57 @@ fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> Result<(
         }
     }
     Ok(())
+}
+
+fn normalize_skill_text(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn normalize_optional_text(text: Option<String>) -> Option<String> {
+    text.and_then(|value| normalize_skill_text(&value))
+}
+
+fn skill_install_directory_name_from_parts(directory: &str, repo_name: &str) -> String {
+    if directory == "." {
+        repo_name.to_string()
+    } else {
+        std::path::Path::new(directory)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| directory.to_string())
+    }
+}
+
+fn skill_install_directory_name(skill_item: &DiscoverableSkill) -> String {
+    skill_install_directory_name_from_parts(&skill_item.directory, &skill_item.repo.name)
+}
+
+fn read_installed_skill_metadata(directory: &str) -> (Option<String>, Option<String>) {
+    let skill_md_path = get_ssot_dir().join(directory).join("SKILL.md");
+    if !skill_md_path.exists() {
+        return (None, None);
+    }
+
+    let content = match std::fs::read_to_string(skill_md_path) {
+        Ok(content) => content,
+        Err(_) => return (None, None),
+    };
+
+    parse_skill_metadata(&content)
+}
+
+fn file_modified_at(path: &std::path::Path) -> i64 {
+    path.metadata()
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_else(|| chrono::Utc::now().timestamp())
 }
 
 // 同步 skill 到 CLI 目录（异步版本）
@@ -4267,6 +4301,70 @@ async fn remove_skill_from_all_cli_async(db: &SqlitePool, directory: &str) -> Re
     Ok(())
 }
 
+async fn load_installed_skill_responses(db: &SqlitePool) -> Result<Vec<InstalledSkillResponse>> {
+    let manifest_entries = skill::load_installed_skill_manifest()?;
+    let mut manifest_map = manifest_entries
+        .into_iter()
+        .map(|entry| (entry.directory.clone(), entry))
+        .collect::<HashMap<String, InstalledSkillManifestEntry>>();
+
+    let ssot_dir = get_ssot_dir();
+    let mut results = Vec::new();
+
+    for directory in skill::list_installed_skill_directories()? {
+        let mut entry = manifest_map.remove(&directory).unwrap_or_else(|| InstalledSkillManifestEntry {
+            directory: directory.clone(),
+            name: directory.clone(),
+            description: None,
+            repo: None,
+            readme_url: None,
+            installed_at: file_modified_at(&ssot_dir.join(&directory)),
+        });
+
+        let (disk_name, disk_description) = read_installed_skill_metadata(&directory);
+        if let Some(name) = normalize_optional_text(disk_name) {
+            entry.name = name;
+        }
+        if let Some(description) = normalize_optional_text(disk_description) {
+            entry.description = Some(description);
+        } else {
+            entry.description = normalize_optional_text(entry.description);
+        }
+
+        let cli_flags = build_skill_cli_flags(db, &directory).await;
+        results.push(InstalledSkillResponse {
+            id: directory.clone(),
+            name: entry.name,
+            description: entry.description,
+            directory,
+            repo: entry.repo,
+            readme_url: entry.readme_url,
+            installed_at: entry.installed_at,
+            cli_flags,
+            exists_on_disk: true,
+        });
+    }
+
+    for (directory, mut entry) in manifest_map {
+        entry.description = normalize_optional_text(entry.description);
+        let cli_flags = build_skill_cli_flags(db, &directory).await;
+        results.push(InstalledSkillResponse {
+            id: directory.clone(),
+            name: entry.name,
+            description: entry.description,
+            directory,
+            repo: entry.repo,
+            readme_url: entry.readme_url,
+            installed_at: entry.installed_at,
+            cli_flags,
+            exists_on_disk: false,
+        });
+    }
+
+    results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(results)
+}
+
 // ==================== 仓库管理命令 ====================
 
 // 解析 GitHub 仓库 URL，返回 (owner, name)
@@ -4303,40 +4401,34 @@ fn parse_github_url(url: &str) -> Result<(String, String)> {
     }
 }
 
-#[tauri::command]
-pub async fn get_skill_repos(db: State<'_, SqlitePool>) -> Result<Vec<SkillRepo>> {
-    let repos = sqlx::query_as::<_, SkillRepo>("SELECT * FROM skill_repos ORDER BY name")
-        .fetch_all(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(repos)
+fn github_source_parts(source: &str) -> Result<(String, String)> {
+    parse_github_url(source)
 }
 
 #[tauri::command]
-pub async fn add_skill_repo(db: State<'_, SqlitePool>, input: SkillRepoCreate) -> Result<SkillRepo> {
+pub async fn get_skill_repos() -> Result<Vec<SkillRepo>> {
+    skill::load_skill_repos()
+}
+
+#[tauri::command]
+pub async fn add_skill_repo(input: SkillRepoCreate) -> Result<SkillRepo> {
     let url = input.url.trim();
     
     // 1. 尝试解析为本地目录
     let path = std::path::Path::new(url);
-    if (path.is_absolute() || url.contains(":\\") || url.starts_with('/')) && path.exists() && path.is_dir() {
+    if skill::is_local_repo_source(url) && path.exists() && path.is_dir() {
         let name = path.file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("local_repo")
             .to_string();
-        
-        sqlx::query("INSERT OR REPLACE INTO skill_repos (name, source, branch) VALUES (?, ?, ?)")
-            .bind(&name)
-            .bind(url)
-            .bind(None::<String>)
-            .execute(db.inner())
-            .await
-            .map_err(map_db_error)?;
-            
-        return Ok(SkillRepo {
+
+        let repo = SkillRepo {
             name,
             source: url.to_string(),
             branch: None,
-        });
+        };
+        skill::upsert_skill_repo(repo.clone())?;
+        return Ok(repo);
     }
 
     // 2. 尝试解析为 GitHub 仓库
@@ -4356,20 +4448,13 @@ pub async fn add_skill_repo(db: State<'_, SqlitePool>, input: SkillRepoCreate) -
     }
     
     let source = format!("{}/{}", owner, repo_name);
-    
-    sqlx::query("INSERT OR REPLACE INTO skill_repos (name, source, branch) VALUES (?, ?, ?)")
-        .bind(&repo_name)
-        .bind(&source)
-        .bind(&actual_branch)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
-
-    Ok(SkillRepo {
+    let repo = SkillRepo {
         name: repo_name,
         source,
         branch: Some(actual_branch),
-    })
+    };
+    skill::upsert_skill_repo(repo.clone())?;
+    Ok(repo)
 }
 
 // 检测仓库实际分支
@@ -4399,27 +4484,11 @@ async fn detect_repo_branch(
 }
 
 #[tauri::command]
-pub async fn remove_skill_repo(db: State<'_, SqlitePool>, name: String) -> Result<()> {
-    // 获取 repo 信息以决定是否删除 ZIP 缓存
-    let repo = sqlx::query_as::<_, SkillRepo>("SELECT * FROM skill_repos WHERE name = ?")
-        .bind(&name)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if let Some(repo) = repo {
-        sqlx::query("DELETE FROM skill_repos WHERE name = ?")
-            .bind(&name)
-            .execute(db.inner())
-            .await
-            .map_err(map_db_error)?;
-
-        // 如果是 GitHub 仓库，尝试删除缓存的 ZIP (格式为 owner/repo)
-        if repo.source.contains('/') && !repo.source.contains(":\\") && !repo.source.starts_with('/') {
-            let parts: Vec<&str> = repo.source.split('/').collect();
-            if parts.len() == 2 {
-                delete_cached_repo_zip(parts[0], parts[1]);
-            }
+pub async fn remove_skill_repo(name: String) -> Result<()> {
+    if let Some(repo) = skill::remove_skill_repo(&name)? {
+        if !skill::is_local_repo_source(&repo.source) {
+            let (owner, repo_name) = github_source_parts(&repo.source)?;
+            delete_cached_repo_zip(&owner, &repo_name);
         }
     }
 
@@ -4427,41 +4496,32 @@ pub async fn remove_skill_repo(db: State<'_, SqlitePool>, name: String) -> Resul
 }
 #[tauri::command]
 pub async fn update_skill_repo(
-    db: State<'_, SqlitePool>,
     old_name: String,
     new_url: String,
     new_branch: String,
 ) -> Result<SkillRepo> {
+    let old_repo = skill::get_skill_repo(&old_name)?;
     // 1. 尝试解析为本地目录
     let path = std::path::Path::new(&new_url);
-    if (path.is_absolute() || new_url.contains(":\\") || new_url.starts_with('/')) && path.exists() && path.is_dir() {
+    if skill::is_local_repo_source(&new_url) && path.exists() && path.is_dir() {
         let name = path.file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("local_repo")
             .to_string();
-        
-        // 删除旧记录 (如果 name 改变了)
-        if name != old_name {
-            sqlx::query("DELETE FROM skill_repos WHERE name = ?")
-                .bind(&old_name)
-                .execute(db.inner())
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-        
-        sqlx::query("INSERT OR REPLACE INTO skill_repos (name, source, branch) VALUES (?, ?, ?)")
-            .bind(&name)
-            .bind(&new_url)
-            .bind(None::<String>)
-            .execute(db.inner())
-            .await
-            .map_err(map_db_error)?;
-            
-        return Ok(SkillRepo {
+
+        let repo = SkillRepo {
             name,
             source: new_url.to_string(),
             branch: None,
-        });
+        };
+        skill::replace_skill_repo(&old_name, repo.clone())?;
+        if let Some(old_repo) = old_repo {
+            if !skill::is_local_repo_source(&old_repo.source) {
+                let (owner, repo_name) = github_source_parts(&old_repo.source)?;
+                delete_cached_repo_zip(&owner, &repo_name);
+            }
+        }
+        return Ok(repo);
     }
 
     // 2. 尝试解析为 GitHub 仓库
@@ -4480,114 +4540,85 @@ pub async fn update_skill_repo(
         ));
     }
     
-    // 删除旧记录 (如果 name 改变了)
-    if new_repo_name != old_name {
-        sqlx::query("DELETE FROM skill_repos WHERE name = ?")
-            .bind(&old_name)
-            .execute(db.inner())
-            .await
-            .map_err(map_db_error)?;
-    }
-    
     let source = format!("{}/{}", new_owner, new_repo_name);
-    
-    sqlx::query("INSERT OR REPLACE INTO skill_repos (name, source, branch) VALUES (?, ?, ?)")
-        .bind(&new_repo_name)
-        .bind(&source)
-        .bind(&actual_branch)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
-
-    Ok(SkillRepo {
+    let repo = SkillRepo {
         name: new_repo_name,
         source,
         branch: Some(actual_branch),
-    })
+    };
+    skill::replace_skill_repo(&old_name, repo.clone())?;
+    if let Some(old_repo) = old_repo {
+        if !skill::is_local_repo_source(&old_repo.source) {
+            let (owner, repo_name) = github_source_parts(&old_repo.source)?;
+            delete_cached_repo_zip(&owner, &repo_name);
+        }
+    }
+    Ok(repo)
 }
 
 // ==================== Skill 发现命令 ====================
 
 #[tauri::command]
-pub async fn discover_repo_skills(db: State<'_, SqlitePool>, name: String) -> Result<Vec<DiscoverableSkill>> {
-    let repo = sqlx::query_as::<_, SkillRepo>("SELECT * FROM skill_repos WHERE name = ?")
-        .bind(&name)
-        .fetch_one(db.inner())
-        .await
-        .map_err(|e| format!("未找到仓库 '{}': {}", name, e))?;
+pub async fn discover_repo_skills(name: String) -> Result<Vec<DiscoverableSkill>> {
+    let repo = skill::get_skill_repo(&name)?
+        .ok_or_else(|| format!("未找到仓库 '{}'", name))?;
 
     // 1. 如果是本地目录
-    let path = std::path::Path::new(&repo.source);
-    if path.is_absolute() || repo.source.contains(":\\") || repo.source.starts_with('/') {
-        return scan_local_repo_skills(&repo.name, &repo.source).await;
+    if skill::is_local_repo_source(&repo.source) {
+        return scan_local_repo_skills(&repo).await;
     }
 
     // 2. 如果是 GitHub 仓库
-    let parts: Vec<&str> = repo.source.split('/').collect();
-    if parts.len() != 2 {
-        return Err("GitHub 仓库格式应为 owner/repo".to_string());
-    }
-    let owner = parts[0];
-    let repo_name = parts[1];
+    let (owner, repo_name) = github_source_parts(&repo.source)?;
     let branch_to_use = repo.branch.as_deref().unwrap_or("main");
 
     // 优先使用缓存
-    if let Some(bytes) = read_cached_zip(owner, repo_name, branch_to_use) {
+    if let Some(bytes) = read_cached_zip(&owner, &repo_name, branch_to_use) {
         tracing::info!("Using cached ZIP for {}/{}", owner, repo_name);
-        let mut skills = scan_zip_for_skills(&bytes, owner, repo_name, branch_to_use)?;
+        let mut skills = scan_zip_for_skills(&bytes, &repo, &owner, &repo_name, branch_to_use)?;
         skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         return Ok(skills);
     }
 
     // 没有缓存则下载
     let client = reqwest::Client::new();
-    let bytes = download_repo_zip(&client, owner, repo_name, branch_to_use).await?;
+    let bytes = download_repo_zip(&client, &owner, &repo_name, branch_to_use).await?;
     
     // 保存到缓存
-    let _ = save_zip_to_cache(owner, repo_name, branch_to_use, &bytes);
+    let _ = save_zip_to_cache(&owner, &repo_name, branch_to_use, &bytes);
     
-    let mut skills = scan_zip_for_skills(&bytes, owner, repo_name, branch_to_use)?;
+    let mut skills = scan_zip_for_skills(&bytes, &repo, &owner, &repo_name, branch_to_use)?;
     skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(skills)
 }
 
 // 强制刷新仓库 skills（删除缓存后重新下载）
 #[tauri::command]
-pub async fn refresh_repo_skills(db: State<'_, SqlitePool>, name: String) -> Result<Vec<DiscoverableSkill>> {
-    let repo = sqlx::query_as::<_, SkillRepo>("SELECT * FROM skill_repos WHERE name = ?")
-        .bind(&name)
-        .fetch_one(db.inner())
-        .await
-        .map_err(|e| format!("未找到仓库 '{}': {}", name, e))?;
+pub async fn refresh_repo_skills(name: String) -> Result<Vec<DiscoverableSkill>> {
+    let repo = skill::get_skill_repo(&name)?
+        .ok_or_else(|| format!("未找到仓库 '{}'", name))?;
 
     // 1. 如果是本地目录
-    let path = std::path::Path::new(&repo.source);
-    if path.is_absolute() || repo.source.contains(":\\") || repo.source.starts_with('/') {
-        return scan_local_repo_skills(&repo.name, &repo.source).await;
+    if skill::is_local_repo_source(&repo.source) {
+        return scan_local_repo_skills(&repo).await;
     }
 
     // 2. 如果是 GitHub 仓库
-    let parts: Vec<&str> = repo.source.split('/').collect();
-    if parts.len() != 2 {
-        return Err("GitHub 仓库格式应为 owner/repo".to_string());
-    }
-    let owner = parts[0];
-    let repo_name = parts[1];
-    let _branch_to_use = repo.branch.as_deref().unwrap_or("main");
+    let (owner, repo_name) = github_source_parts(&repo.source)?;
 
     // 删除旧缓存
-    delete_cached_repo_zip(owner, repo_name);
+    delete_cached_repo_zip(&owner, &repo_name);
 
     // 重新发现
-    discover_repo_skills(db, name).await
+    discover_repo_skills(name).await
 }
 
-async fn scan_local_repo_skills(name: &str, path: &str) -> Result<Vec<DiscoverableSkill>> {
+async fn scan_local_repo_skills(repo: &SkillRepo) -> Result<Vec<DiscoverableSkill>> {
     let mut skills = Vec::new();
-    let root_path = std::path::Path::new(path);
+    let root_path = std::path::Path::new(&repo.source);
     
     if !root_path.exists() || !root_path.is_dir() {
-        return Err(format!("本地目录 {} 不存在", path));
+        return Err(format!("本地目录 {} 不存在", repo.source));
     }
 
     // 使用 walkdir 查找 SKILL.md
@@ -4608,7 +4639,7 @@ async fn scan_local_repo_skills(name: &str, path: &str) -> Result<Vec<Discoverab
             let (skill_name, description) = parse_skill_metadata(&content);
             
             let directory_name = if relative_path.is_empty() {
-                name.to_string()
+                repo.name.clone()
             } else {
                 parent_dir.file_name()
                     .map(|s| s.to_string_lossy().to_string())
@@ -4616,14 +4647,12 @@ async fn scan_local_repo_skills(name: &str, path: &str) -> Result<Vec<Discoverab
             };
 
             skills.push(DiscoverableSkill {
-                key: format!("local/{}:{}", name, relative_path),
+                key: format!("{}:{}", repo.name, if relative_path.is_empty() { "." } else { &relative_path }),
                 name: skill_name.unwrap_or_else(|| directory_name.clone()),
                 description: description.unwrap_or_default(),
                 directory: if relative_path.is_empty() { ".".to_string() } else { relative_path },
                 readme_url: None,
-                repo_owner: "local".to_string(),
-                repo_name: name.to_string(),
-                repo_branch: "local".to_string(),
+                repo: repo.clone(),
             });
         }
     }
@@ -4654,6 +4683,7 @@ async fn download_repo_zip(
 // 扫描 ZIP 中的 skills
 fn scan_zip_for_skills(
     bytes: &[u8],
+    repo: &SkillRepo,
     owner: &str,
     repo_name: &str,
     branch: &str,
@@ -4727,9 +4757,7 @@ fn scan_zip_for_skills(
             description: description.unwrap_or_default(),
             directory: dir.clone(),
             readme_url: Some(format!("https://github.com/{}/{}/tree/{}/{}", owner, repo_name, branch, dir)),
-            repo_owner: owner.to_string(),
-            repo_name: repo_name.to_string(),
-            repo_branch: branch.to_string(),
+            repo: repo.clone(),
         });
     }
 
@@ -4738,134 +4766,96 @@ fn scan_zip_for_skills(
 
 // ==================== Skill 安装/卸载命令 ====================
 
-#[tauri::command]
-pub async fn install_skill(db: State<'_, SqlitePool>, skill: DiscoverableSkill, reinstall: Option<bool>) -> Result<InstalledSkillResponse> {
+async fn install_skill_inner(
+    db: &SqlitePool,
+    skill_item: DiscoverableSkill,
+    reinstall: bool,
+) -> Result<InstalledSkillResponse> {
     let ssot_dir = get_ssot_dir();
-    let directory_name = std::path::Path::new(&skill.directory)
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| skill.directory.clone());
+    let directory_name = skill_install_directory_name(&skill_item);
+    let skill_path = ssot_dir.join(&directory_name);
+    let existing = skill::load_installed_skill_manifest()?
+        .into_iter()
+        .find(|entry| entry.directory == directory_name);
 
-    let is_reinstall = reinstall.unwrap_or(false);
-
-    // 检查是否已安装
-    let existing = sqlx::query_as::<_, SkillConfig>("SELECT * FROM skill_configs WHERE directory = ?")
-        .bind(&directory_name)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if existing.is_some() && !is_reinstall {
+    if (existing.is_some() || skill_path.exists()) && !reinstall {
         return Err(format!("Skill '{}' is already installed", directory_name));
     }
 
     // 如果是重装，先删除旧的 SSOT 目录
-    if is_reinstall {
-        let old_skill_path = ssot_dir.join(&directory_name);
-        if old_skill_path.exists() {
-            let _ = std::fs::remove_dir_all(&old_skill_path);
+    if reinstall {
+        if skill_path.exists() {
+            let _ = std::fs::remove_dir_all(&skill_path);
         }
     }
 
     // 根据类型进行安装
-    if skill.repo_owner == "local" {
-        // 本地安装
-        let repo = sqlx::query_as::<_, SkillRepo>("SELECT * FROM skill_repos WHERE name = ?")
-            .bind(&skill.repo_name)
-            .fetch_one(db.inner())
-            .await
-            .map_err(|e| format!("未找到本地仓库 {}: {}", skill.repo_name, e))?;
-            
-        let source_path = std::path::Path::new(&repo.source);
-        // 如果 directory 是 "."，则直接拷贝 source_path
-        let skill_source_path = if skill.directory == "." {
+    if skill::is_local_repo_source(&skill_item.repo.source) {
+        let source_path = std::path::Path::new(&skill_item.repo.source);
+        let skill_source_path = if skill_item.directory == "." {
             source_path.to_path_buf()
         } else {
-            source_path.join(&skill.directory)
+            source_path.join(&skill_item.directory)
         };
         
         let dest_path = ssot_dir.join(&directory_name);
+        if !skill_source_path.exists() {
+            return Err(format!("技能目录不存在: {}", skill_source_path.display()));
+        }
         
-        // 拷贝目录
         copy_dir_recursive(&skill_source_path, &dest_path)?;
     } else {
-        // GitHub 远程安装
-        let branch_to_use = if skill.repo_branch.is_empty() { "main" } else { &skill.repo_branch };
-        let bytes = if let Some(cached) = read_cached_zip(&skill.repo_owner, &skill.repo_name, branch_to_use) {
-            tracing::info!("Using cached ZIP for install: {}/{}", skill.repo_owner, skill.repo_name);
+        let (owner, repo_name) = github_source_parts(&skill_item.repo.source)?;
+        let branch_to_use = skill_item.repo.branch.as_deref().unwrap_or("main");
+        let bytes = if let Some(cached) = read_cached_zip(&owner, &repo_name, branch_to_use) {
+            tracing::info!("Using cached ZIP for install: {}/{}", owner, repo_name);
             cached
         } else {
-            // 没有缓存则下载
             let client = reqwest::Client::new();
-            let downloaded = download_repo_zip(&client, &skill.repo_owner, &skill.repo_name, branch_to_use).await?;
-            // 保存到缓存
-            let _ = save_zip_to_cache(&skill.repo_owner, &skill.repo_name, branch_to_use, &downloaded);
+            let downloaded = download_repo_zip(&client, &owner, &repo_name, branch_to_use).await?;
+            let _ = save_zip_to_cache(&owner, &repo_name, branch_to_use, &downloaded);
             downloaded
         };
 
-        // 提取 skill 到 SSOT
-        extract_skill_from_zip(&bytes, &skill.directory, &ssot_dir, &directory_name)?;
+        extract_skill_from_zip(&bytes, &skill_item.directory, &ssot_dir, &directory_name)?;
     }
 
-    // 保存到数据库（如果是重装则更新）
     let now = chrono::Utc::now().timestamp();
-    let id = if is_reinstall && existing.is_some() {
-        let old = existing.unwrap();
-        sqlx::query(
-            "UPDATE skill_configs SET name = ?, description = ?, repo_owner = ?, repo_name = ?, repo_branch = ?, readme_url = ?, installed_at = ? WHERE id = ?"
-        )
-        .bind(&skill.name)
-        .bind(&skill.description)
-        .bind(&skill.repo_owner)
-        .bind(&skill.repo_name)
-        .bind(&skill.repo_branch)
-        .bind(&skill.readme_url)
-        .bind(now)
-        .bind(old.id)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
-        tracing::info!("Reinstalled skill: {} ({})", skill.name, directory_name);
-        old.id
-    } else {
-        let result = sqlx::query(
-            "INSERT INTO skill_configs (name, description, directory, repo_owner, repo_name, repo_branch, readme_url, installed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&skill.name)
-        .bind(&skill.description)
-        .bind(&directory_name)
-        .bind(&skill.repo_owner)
-        .bind(&skill.repo_name)
-        .bind(&skill.repo_branch)
-        .bind(&skill.readme_url)
-        .bind(now)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
-        tracing::info!("Installed skill: {} ({})", skill.name, directory_name);
-        result.last_insert_rowid()
-    };
+    skill::upsert_installed_skill_manifest_entry(InstalledSkillManifestEntry {
+        directory: directory_name.clone(),
+        name: skill_item.name.clone(),
+        description: normalize_skill_text(&skill_item.description),
+        repo: Some(skill_item.repo.clone()),
+        readme_url: skill_item.readme_url.clone(),
+        installed_at: now,
+    })?;
 
-    // 返回安装结果（默认三个端都未启用）
-    let cli_flags = vec![
-        SkillCliFlag { cli_type: "claude_code".to_string(), enabled: false },
-        SkillCliFlag { cli_type: "codex".to_string(), enabled: false },
-        SkillCliFlag { cli_type: "gemini".to_string(), enabled: false },
-    ];
+    let mut cli_flags = build_skill_cli_flags(db, &directory_name).await;
+    for flag in cli_flags.iter().filter(|flag| flag.enabled) {
+        sync_skill_to_cli_async(db, &directory_name, &flag.cli_type).await?;
+    }
+    cli_flags = build_skill_cli_flags(db, &directory_name).await;
 
     Ok(InstalledSkillResponse {
-        id,
-        name: skill.name,
-        description: if skill.description.is_empty() { None } else { Some(skill.description) },
+        id: directory_name.clone(),
+        name: skill_item.name,
+        description: normalize_skill_text(&skill_item.description),
         directory: directory_name,
-        repo_owner: Some(skill.repo_owner),
-        repo_name: Some(skill.repo_name),
-        repo_branch: Some(skill.repo_branch),
-        readme_url: skill.readme_url,
+        repo: Some(skill_item.repo),
+        readme_url: skill_item.readme_url,
         installed_at: now,
         cli_flags,
-        exists_on_disk: true, // 刚安装完肯定存在
+        exists_on_disk: true,
     })
+}
+
+#[tauri::command]
+pub async fn install_skill(
+    db: State<'_, SqlitePool>,
+    skill: DiscoverableSkill,
+    reinstall: Option<bool>,
+) -> Result<InstalledSkillResponse> {
+    install_skill_inner(db.inner(), skill, reinstall.unwrap_or(false)).await
 }
 
 // 从 ZIP 中提取 skill 到 SSOT
@@ -4919,33 +4909,27 @@ fn extract_skill_from_zip(
 }
 
 #[tauri::command]
-pub async fn uninstall_skill(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
-    // 获取 skill 信息
-    let skill = sqlx::query_as::<_, SkillConfig>("SELECT * FROM skill_configs WHERE id = ?")
-        .bind(id)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Skill not found".to_string())?;
-
-    // 从所有 CLI 目录移除
-    remove_skill_from_all_cli_async(db.inner(), &skill.directory).await?;
-
-    // 从 SSOT 移除
+pub async fn uninstall_skill(db: State<'_, SqlitePool>, id: String) -> Result<()> {
+    let directory = id;
     let ssot_dir = get_ssot_dir();
-    let skill_path = ssot_dir.join(&skill.directory);
+    let skill_path = ssot_dir.join(&directory);
+    let manifest_exists = skill::load_installed_skill_manifest()?
+        .iter()
+        .any(|entry| entry.directory == directory);
+
+    if !manifest_exists && !skill_path.exists() {
+        return Err("Skill not found".to_string());
+    }
+
+    remove_skill_from_all_cli_async(db.inner(), &directory).await?;
+
     if skill_path.exists() {
         std::fs::remove_dir_all(&skill_path).map_err(|e| e.to_string())?;
     }
 
-    // 从数据库删除
-    sqlx::query("DELETE FROM skill_configs WHERE id = ?")
-        .bind(id)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
+    skill::remove_installed_skill_manifest_entry(&directory)?;
 
-    tracing::info!("Uninstalled skill: {}", skill.directory);
+    tracing::info!("Uninstalled skill: {}", directory);
     Ok(())
 }
 
@@ -4953,65 +4937,117 @@ pub async fn uninstall_skill(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
 
 #[tauri::command]
 pub async fn get_installed_skills(db: State<'_, SqlitePool>) -> Result<Vec<InstalledSkillResponse>> {
-    let skills = sqlx::query_as::<_, SkillConfig>("SELECT * FROM skill_configs ORDER BY name")
-        .fetch_all(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let ssot_dir = get_ssot_dir();
-    let mut results = Vec::new();
-    for skill in skills {
-        let cli_flags = vec![
-            SkillCliFlag {
-                cli_type: "claude_code".to_string(),
-                enabled: skill_enabled_in_cli_async(db.inner(), "claude_code", &skill.directory).await,
-            },
-            SkillCliFlag {
-                cli_type: "codex".to_string(),
-                enabled: skill_enabled_in_cli_async(db.inner(), "codex", &skill.directory).await,
-            },
-            SkillCliFlag {
-                cli_type: "gemini".to_string(),
-                enabled: skill_enabled_in_cli_async(db.inner(), "gemini", &skill.directory).await,
-            },
-        ];
-
-        // 检查 skill 目录是否存在于 SSOT 目录
-        let exists_on_disk = ssot_dir.join(&skill.directory).exists();
-
-        results.push(InstalledSkillResponse {
-            id: skill.id,
-            name: skill.name,
-            description: skill.description,
-            directory: skill.directory,
-            repo_owner: skill.repo_owner,
-            repo_name: skill.repo_name,
-            repo_branch: skill.repo_branch,
-            readme_url: skill.readme_url,
-            installed_at: skill.installed_at,
-            cli_flags,
-            exists_on_disk,
-        });
-    }
-    Ok(results)
+    load_installed_skill_responses(db.inner()).await
 }
 
 #[tauri::command]
-pub async fn toggle_skill_cli(db: State<'_, SqlitePool>, id: i64, cli_type: String, enabled: bool) -> Result<()> {
-    let skill = sqlx::query_as::<_, SkillConfig>("SELECT * FROM skill_configs WHERE id = ?")
-        .bind(id)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Skill not found".to_string())?;
-
+pub async fn toggle_skill_cli(db: State<'_, SqlitePool>, id: String, cli_type: String, enabled: bool) -> Result<()> {
+    let directory = id;
     if enabled {
-        sync_skill_to_cli_async(db.inner(), &skill.directory, &cli_type).await?;
+        sync_skill_to_cli_async(db.inner(), &directory, &cli_type).await?;
     } else {
-        remove_skill_from_cli_async(db.inner(), &skill.directory, &cli_type).await?;
+        remove_skill_from_cli_async(db.inner(), &directory, &cli_type).await?;
     }
 
     Ok(())
+}
+
+// ==================== Skill 收藏命令 ====================
+
+#[tauri::command]
+pub async fn get_skill_favorites(db: State<'_, SqlitePool>) -> Result<Vec<SkillFavoriteItem>> {
+    let favorites = sqlx::query_as::<_, SkillFavorite>(
+        "SELECT * FROM skill_favorites ORDER BY created_at DESC"
+    )
+    .fetch_all(db.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let ssot_dir = get_ssot_dir();
+    Ok(favorites
+        .into_iter()
+        .map(|favorite| {
+            let repo = SkillRepo {
+                name: favorite.repo_name,
+                source: favorite.repo_source,
+                branch: favorite.repo_branch,
+            };
+            let installed_directory = skill_install_directory_name_from_parts(&favorite.directory, &repo.name);
+            SkillFavoriteItem {
+                key: favorite.skill_key,
+                name: favorite.name,
+                description: favorite.description,
+                directory: favorite.directory,
+                readme_url: favorite.readme_url,
+                repo,
+                is_installed: ssot_dir.join(installed_directory).exists(),
+            }
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn add_skill_favorite(db: State<'_, SqlitePool>, skill_item: DiscoverableSkill) -> Result<()> {
+    let now = chrono::Utc::now().timestamp();
+    sqlx::query(
+        "INSERT OR REPLACE INTO skill_favorites (skill_key, name, description, directory, readme_url, repo_name, repo_source, repo_branch, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(&skill_item.key)
+    .bind(&skill_item.name)
+    .bind(normalize_skill_text(&skill_item.description))
+    .bind(&skill_item.directory)
+    .bind(&skill_item.readme_url)
+    .bind(&skill_item.repo.name)
+    .bind(&skill_item.repo.source)
+    .bind(&skill_item.repo.branch)
+    .bind(now)
+    .execute(db.inner())
+    .await
+    .map_err(map_db_error)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_skill_favorite(db: State<'_, SqlitePool>, key: String) -> Result<()> {
+    sqlx::query("DELETE FROM skill_favorites WHERE skill_key = ?")
+        .bind(&key)
+        .execute(db.inner())
+        .await
+        .map_err(map_db_error)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn install_favorite_skill(
+    db: State<'_, SqlitePool>,
+    key: String,
+) -> Result<InstalledSkillResponse> {
+    let favorite = sqlx::query_as::<_, SkillFavorite>(
+        "SELECT * FROM skill_favorites WHERE skill_key = ?"
+    )
+    .bind(&key)
+    .fetch_optional(db.inner())
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Skill favorite not found".to_string())?;
+
+    install_skill_inner(
+        db.inner(),
+        DiscoverableSkill {
+            key: favorite.skill_key,
+            name: favorite.name,
+            description: favorite.description.unwrap_or_default(),
+            directory: favorite.directory,
+            readme_url: favorite.readme_url,
+            repo: SkillRepo {
+                name: favorite.repo_name,
+                source: favorite.repo_source,
+                branch: favorite.repo_branch,
+            },
+        },
+        false,
+    )
+    .await
 }
 
 // ==================== 检查更新命令 ====================
