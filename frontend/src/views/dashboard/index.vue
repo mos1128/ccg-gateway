@@ -89,6 +89,7 @@
 import { onMounted, ref, reactive, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import { getErrorMessage } from '@/utils/error'
 
 import { use } from 'echarts/core'
 import { LineChart, BarChart } from 'echarts/charts'
@@ -163,7 +164,7 @@ async function handleModeSwitch(cliType: string, targetMode: 'proxy' | 'direct')
     await settingsStore.setCliMode(cliType, targetMode)
     notify(`${cliType} 已切换至 ${targetMode === 'proxy' ? '中转模式' : '官方模式'}`)
   } catch (e: any) {
-    notify(`切换失败: ${e.message}`, 'error')
+    notify(`切换失败: ${getErrorMessage(e)}`, 'error')
   } finally {
     cliLoading[cliType] = false
   }
@@ -180,7 +181,7 @@ async function handleCliToggle(cliType: string, enabled: boolean) {
         await settingsStore.setCliMode(cliType, 'proxy')
         await settingsStore.updateCli(cliType, { enabled: true })
         notify(`${cliType} 已切换至中转模式并启用`)
-      } catch (e: any) { notify(`操作失败: ${e.message}`, 'error') }
+      } catch (e: any) { notify(`操作失败: ${getErrorMessage(e)}`, 'error') }
       finally { cliLoading[cliType] = false }
     } catch { notify('操作已取消', 'info') }
   } else {
@@ -188,7 +189,7 @@ async function handleCliToggle(cliType: string, enabled: boolean) {
     try {
       await settingsStore.updateCli(cliType, { enabled })
       notify(`${cliType} 已${enabled ? '启用' : '禁用'}`)
-    } catch (e: any) { notify(`操作失败: ${e.message}`, 'error') }
+    } catch (e: any) { notify(`操作失败: ${getErrorMessage(e)}`, 'error') }
     finally { cliLoading[cliType] = false }
   }
 }

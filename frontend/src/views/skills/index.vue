@@ -367,6 +367,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import { getErrorMessage } from '@/utils/error'
 import AppModal from '@/components/AppModal.vue'
 import { skillsApi } from '@/api/skills'
 import type { SkillRepo, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
@@ -397,13 +398,6 @@ const favoriteList = ref<SkillFavoriteItem[]>([])
 const loadingFavorites = ref(false)
 
 const favoriteKeys = computed(() => new Set(favoriteList.value.map(item => item.key)))
-
-function getErrorMessage(error: unknown): string {
-  if (typeof error === 'string') return error
-  if (error instanceof Error) return error.message
-  if (typeof error === 'object' && error !== null && 'message' in error) return String((error as any).message)
-  return String(error)
-}
 
 const sortedRepoSkillList = computed(() => {
   return [...repoSkillList.value].sort((a, b) => {
@@ -478,7 +472,7 @@ async function fetchInstalled() {
   try {
     installedList.value = await skillsApi.getInstalled()
   } catch (error: any) {
-    notify(error?.message || '加载失败', 'error')
+    notify(getErrorMessage(error, '加载失败'), 'error')
   } finally {
     loadingInstalled.value = false
   }
@@ -489,7 +483,7 @@ async function fetchRepos() {
   try {
     repoList.value = await skillsApi.getRepos()
   } catch (error: any) {
-    notify(error?.message || '加载失败', 'error')
+    notify(getErrorMessage(error, '加载失败'), 'error')
   } finally {
     loadingRepos.value = false
   }
@@ -500,7 +494,7 @@ async function fetchFavorites() {
   try {
     favoriteList.value = await skillsApi.getFavorites()
   } catch (error: any) {
-    notify(error?.message || '加载失败', 'error')
+    notify(getErrorMessage(error, '加载失败'), 'error')
   } finally {
     loadingFavorites.value = false
   }
@@ -521,7 +515,7 @@ async function fetchRepoSkills() {
   try {
     repoSkillList.value = await skillsApi.discoverRepoSkills(currentRepo.value.name)
   } catch (error: any) {
-    notify(error?.message || '加载失败', 'error')
+    notify(getErrorMessage(error, '加载失败'), 'error')
   } finally {
     loadingSkills.value = false
   }
@@ -534,7 +528,7 @@ async function refreshRepoSkills() {
     repoSkillList.value = await skillsApi.refreshRepoSkills(currentRepo.value.name)
     notify('已获取最新列表')
   } catch (error: any) {
-    notify(error?.message || '刷新失败', 'error')
+    notify(getErrorMessage(error, '刷新失败'), 'error')
   } finally {
     loadingSkills.value = false
   }
@@ -555,7 +549,7 @@ async function handleCliToggle(skill: InstalledSkill, cliType: string, enabled: 
     }
     notify('已更新')
   } catch (error: any) {
-    notify(error?.message || '更新失败', 'error')
+    notify(getErrorMessage(error, '更新失败'), 'error')
     await fetchInstalled() // Rollback
   }
 }
@@ -568,7 +562,7 @@ async function handleUninstall(skill: InstalledSkill) {
     await refreshInstallationState()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      notify(error?.message || '卸载失败', 'error')
+      notify(getErrorMessage(error, '卸载失败'), 'error')
     }
   }
 }
@@ -584,7 +578,7 @@ async function handleInstall(skill: DiscoverableSkill, reinstall: boolean = fals
     await refreshInstallationState()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      notify(error?.message || '安装失败', 'error')
+      notify(getErrorMessage(error, '安装失败'), 'error')
     }
   } finally {
     installingSkillId.value = null
@@ -603,7 +597,7 @@ async function handleInstallFromInstalled(skill: InstalledSkill) {
     notify('安装成功')
     await refreshInstallationState()
   } catch (error: any) {
-    notify(error?.message || '安装失败', 'error')
+    notify(getErrorMessage(error, '安装失败'), 'error')
   } finally {
     installingSkillId.value = null
   }
@@ -623,7 +617,7 @@ async function handleReinstallFromInstalled(skill: InstalledSkill) {
     await refreshInstallationState()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      notify(error?.message || '重装失败', 'error')
+      notify(getErrorMessage(error, '重装失败'), 'error')
     }
   } finally {
     installingSkillId.value = null
@@ -641,7 +635,7 @@ async function toggleFavorite(skill: DiscoverableSkill) {
     }
     await fetchFavorites()
   } catch (error: any) {
-    notify(error?.message || '操作失败', 'error')
+    notify(getErrorMessage(error, '操作失败'), 'error')
   }
 }
 
@@ -669,7 +663,7 @@ async function handleInstallFavorite(favorite: SkillFavoriteItem, reinstall: boo
     await refreshInstallationState()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      notify(error?.message || '安装失败', 'error')
+      notify(getErrorMessage(error, '安装失败'), 'error')
     }
   } finally {
     installingSkillId.value = null
@@ -682,7 +676,7 @@ async function handleRemoveFavoriteById(favorite: SkillFavoriteItem) {
     favoriteList.value = await skillsApi.getFavorites()
     notify('已移除')
   } catch (error: any) {
-    notify(error?.message || '操作失败', 'error')
+    notify(getErrorMessage(error, '操作失败'), 'error')
   }
 }
 
@@ -713,7 +707,7 @@ async function handleAddRepo() {
     notify('添加成功')
     await fetchRepos()
   } catch (error: any) {
-    notify(error?.message || '添加失败', 'error')
+    notify(getErrorMessage(error, '添加失败'), 'error')
     loadingRepos.value = false
   }
 }
@@ -727,7 +721,7 @@ async function handleRemoveRepo(repo: SkillRepo) {
     await fetchRepos()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      notify(error?.message || '删除失败', 'error')
+      notify(getErrorMessage(error, '删除失败'), 'error')
       loadingRepos.value = false
     } else {
       loadingRepos.value = false
@@ -760,7 +754,7 @@ async function handleUpdateRepo() {
     notify('更新成功')
     await fetchRepos()
   } catch (error: any) {
-    notify(error?.message || '更新失败', 'error')
+    notify(getErrorMessage(error, '更新失败'), 'error')
     loadingRepos.value = false
   }
 }

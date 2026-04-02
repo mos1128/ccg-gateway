@@ -247,6 +247,7 @@ import { ref, onMounted, computed } from 'vue'
 import { ElMessageBox, ElNotification } from 'element-plus'
 import AppModal from '@/components/AppModal.vue'
 import { pluginsApi } from '@/api/plugins'
+import { getErrorMessage } from '@/utils/error'
 import type { MarketplaceInfo, PluginItem, PluginFavoriteItem } from '@/types/models'
 
 const activeTab = ref('plugins')
@@ -314,7 +315,7 @@ async function loadAll() {
     marketplaceList.value = marketplaces
     favoriteList.value = favorites
   } catch (error: any) {
-    notify(error?.message || '加载失败', 'error')
+    notify(getErrorMessage(error, '加载失败'), 'error')
   } finally {
     loading.value = false
     loadingMarketplaces.value = false
@@ -328,7 +329,7 @@ async function handleRefresh() {
     favoriteList.value = await pluginsApi.getFavorites()
     showCliOutput('刷新同步成功')
   } catch (error: any) {
-    showCliOutput(error?.message || '刷新失败', true)
+    showCliOutput(getErrorMessage(error, '刷新失败'), true)
   } finally {
     loading.value = false
   }
@@ -343,7 +344,7 @@ async function handleInstall(plugin: PluginItem) {
     favoriteList.value = await pluginsApi.getFavorites()
     showCliOutput(result.cli_output)
   } catch (error: any) {
-    showCliOutput(error?.message || '安装失败', true)
+    showCliOutput(getErrorMessage(error, '安装失败'), true)
   } finally {
     loading.value = false
   }
@@ -360,7 +361,7 @@ async function handleUninstall(plugin: PluginItem) {
     showCliOutput(result.cli_output)
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      showCliOutput(error?.message || '卸载失败', true)
+      showCliOutput(getErrorMessage(error, '卸载失败'), true)
     }
   } finally {
     loading.value = false
@@ -375,7 +376,7 @@ async function handleEnable(plugin: PluginItem) {
     allPlugins.value = result.plugins
     showCliOutput(result.cli_output)
   } catch (error: any) {
-    showCliOutput(error?.message || '操作失败', true)
+    showCliOutput(getErrorMessage(error, '操作失败'), true)
   } finally {
     loading.value = false
   }
@@ -389,7 +390,7 @@ async function handleDisable(plugin: PluginItem) {
     allPlugins.value = result.plugins
     showCliOutput(result.cli_output)
   } catch (error: any) {
-    showCliOutput(error?.message || '操作失败', true)
+    showCliOutput(getErrorMessage(error, '操作失败'), true)
   } finally {
     loading.value = false
   }
@@ -403,7 +404,7 @@ async function handleUpdate(plugin: PluginItem) {
     allPlugins.value = result.plugins
     showCliOutput(result.cli_output)
   } catch (error: any) {
-    showCliOutput(error?.message || '更新失败', true)
+    showCliOutput(getErrorMessage(error, '更新失败'), true)
   } finally {
     loading.value = false
   }
@@ -416,7 +417,7 @@ async function handleAddFavorite(plugin: PluginItem) {
     favoriteList.value = await pluginsApi.getFavorites()
     notify('已收藏')
   } catch (error: any) {
-    notify(error?.message || '操作失败', 'error')
+    notify(getErrorMessage(error, '操作失败'), 'error')
   }
 }
 
@@ -427,7 +428,7 @@ async function handleRemoveFavorite(plugin: PluginItem) {
     favoriteList.value = await pluginsApi.getFavorites()
     notify('已取消收藏')
   } catch (error: any) {
-    notify(error?.message || '操作失败', 'error')
+    notify(getErrorMessage(error, '操作失败'), 'error')
   }
 }
 
@@ -444,7 +445,7 @@ async function handleInstallFavorite(favorite: PluginFavoriteItem) {
     favoriteList.value = await pluginsApi.getFavorites()
     showCliOutput(result.cli_output)
   } catch (error: any) {
-    showCliOutput(error?.message || '安装失败', true)
+    showCliOutput(getErrorMessage(error, '安装失败'), true)
   } finally {
     loading.value = false
   }
@@ -456,7 +457,7 @@ async function handleRemoveFavoriteById(favorite: PluginFavoriteItem) {
     favoriteList.value = await pluginsApi.getFavorites()
     notify('已移除')
   } catch (error: any) {
-    notify(error?.message || '操作失败', 'error')
+    notify(getErrorMessage(error, '操作失败'), 'error')
   }
 }
 
@@ -478,7 +479,7 @@ async function handleAddMarketplace() {
     favoriteList.value = await pluginsApi.getFavorites()
     showCliOutput(result.cli_output)
   } catch (error: any) {
-    showCliOutput(error?.message || '添加失败', true)
+    showCliOutput(getErrorMessage(error, '添加失败'), true)
   } finally {
     loadingMarketplaces.value = false
   }
@@ -495,7 +496,7 @@ async function handleRemoveMarketplace(market: MarketplaceInfo) {
     showCliOutput(result.cli_output)
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      showCliOutput(error?.message || '删除失败', true)
+      showCliOutput(getErrorMessage(error, '删除失败'), true)
     }
   } finally {
     loadingMarketplaces.value = false
@@ -511,7 +512,7 @@ async function handleUpdateMarketplace(market: MarketplaceInfo) {
     favoriteList.value = await pluginsApi.getFavorites()
     showCliOutput(result.cli_output)
   } catch (error: any) {
-    showCliOutput(error?.message || '更新失败', true)
+    showCliOutput(getErrorMessage(error, '更新失败'), true)
   } finally {
     loadingMarketplaces.value = false
   }

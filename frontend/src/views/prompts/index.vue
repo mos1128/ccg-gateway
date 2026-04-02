@@ -112,6 +112,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import { getErrorMessage } from '@/utils/error'
 import AppModal from '@/components/AppModal.vue'
 import { promptsApi } from '@/api/prompts'
 import type { CliType, Prompt } from '@/types/models'
@@ -182,7 +183,7 @@ async function handleSave() {
     form.value = { name: '', content: '' }
     await fetchList()
   } catch (error: any) {
-    notify(error?.message || '操作失败', 'error')
+    notify(getErrorMessage(error, '操作失败'), 'error')
   }
 }
 
@@ -192,7 +193,7 @@ async function handleCliToggle(prompt: Prompt, cliType: CliType, enabled: boolea
     prompt.cli_flags = data.cli_flags
     notify('已更新')
   } catch (error: any) {
-    notify(error?.message || '更新失败', 'error')
+    notify(getErrorMessage(error, '更新失败'), 'error')
     await fetchList() // Rollback
   }
 }
@@ -205,7 +206,7 @@ async function handleDelete(prompt: Prompt) {
     await fetchList()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      notify(error?.message || '删除失败', 'error')
+      notify(getErrorMessage(error, '删除失败'), 'error')
     }
   }
 }

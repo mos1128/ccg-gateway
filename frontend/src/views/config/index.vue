@@ -201,6 +201,7 @@
 import { ref, watch, onMounted, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import { getErrorMessage } from '@/utils/error'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import AppModal from '@/components/AppModal.vue'
@@ -238,7 +239,7 @@ async function saveTimeouts() {
     await settingsStore.updateTimeouts(timeoutForm.value)
     notify('超时配置已保存')
   } catch (e: any) {
-    notify(e.message || e || '保存失败', 'error')
+    notify(getErrorMessage(e, '保存失败'), 'error')
   }
 }
 
@@ -247,7 +248,7 @@ async function saveCli(cliType: string, data: any) {
     await settingsStore.updateCli(cliType, data)
     notify('CLI 配置已保存')
   } catch (e: any) {
-    notify(e.message || e || '保存失败', 'error')
+    notify(getErrorMessage(e, '保存失败'), 'error')
   }
 }
 
@@ -290,7 +291,7 @@ async function handleExportLocal() {
     window.URL.revokeObjectURL(url)
     notify('导出成功')
   } catch (error: any) {
-    notify(error?.message || '导出失败', 'error')
+    notify(getErrorMessage(error, '导出失败'), 'error')
   } finally {
     exportingLocal.value = false
   }
@@ -318,7 +319,7 @@ async function handleTestWebdav() {
       notify('连接失败', 'error')
     }
   } catch (error: any) {
-    notify(error?.message || '连接失败', 'error')
+    notify(getErrorMessage(error, '连接失败'), 'error')
   } finally {
     testingWebdav.value = false
   }
@@ -331,7 +332,7 @@ async function handleSaveWebdav() {
     notify('WebDAV 配置已保存')
     webdavSettingsVisible.value = false
   } catch (error: any) {
-    notify(error?.message || '保存失败', 'error')
+    notify(getErrorMessage(error, '保存失败'), 'error')
   } finally {
     savingWebdav.value = false
   }
@@ -343,7 +344,7 @@ async function handleExportWebdav() {
     const { data } = await backupApi.exportToWebdav()
     notify(`同步成功: ${data.filename}`)
   } catch (error: any) {
-    notify(error?.message || '同步失败', 'error')
+    notify(getErrorMessage(error, '同步失败'), 'error')
   } finally {
     exportingWebdav.value = false
   }
@@ -368,7 +369,7 @@ async function handleImportWebdav(filename: string) {
     notify('导入成功，应用将自动退出，请重新打开应用')
     webdavListVisible.value = false
   } catch (error: any) {
-    if (error !== 'cancel') notify(error?.message || '导入失败', 'error')
+    if (error !== 'cancel') notify(getErrorMessage(error, '导入失败'), 'error')
   } finally {
     importingWebdav.value = false
   }
@@ -382,7 +383,7 @@ async function handleDeleteWebdav(filename: string) {
     notify('已删除')
     await handleShowWebdavList()
   } catch (error: any) {
-    if (error !== 'cancel') notify(error?.message || '删除失败', 'error')
+    if (error !== 'cancel') notify(getErrorMessage(error, '删除失败'), 'error')
   } finally {
     deletingWebdav.value = false
   }

@@ -123,6 +123,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import { getErrorMessage } from '@/utils/error'
 import AppModal from '@/components/AppModal.vue'
 import { mcpApi } from '@/api/mcp'
 import type { CliType, Mcp } from '@/types/models'
@@ -218,7 +219,7 @@ async function handleSave() {
     validationError.value = ''
     await fetchList()
   } catch (error: any) {
-    notify(error?.message || '操作失败', 'error')
+    notify(getErrorMessage(error, '操作失败'), 'error')
   }
 }
 
@@ -228,7 +229,7 @@ async function handleCliToggle(mcp: Mcp, cliType: CliType, enabled: boolean) {
     mcp.cli_flags = data.cli_flags
     notify('已更新')
   } catch (error: any) {
-    notify(error?.message || '更新失败', 'error')
+    notify(getErrorMessage(error, '更新失败'), 'error')
     await fetchList() // Rollback
   }
 }
@@ -241,7 +242,7 @@ async function handleDelete(mcp: Mcp) {
     await fetchList()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      notify(error?.message || '删除失败', 'error')
+      notify(getErrorMessage(error, '删除失败'), 'error')
     }
   }
 }

@@ -327,6 +327,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { notify } from '@/utils/notification'
+import { getErrorMessage } from '@/utils/error'
 import draggable from 'vuedraggable'
 import AppModal from '@/components/AppModal.vue'
 import { useProviderStore } from '@/stores/providers'
@@ -463,7 +464,7 @@ async function handleSave() {
     resetForm()
     providerStore.fetchProviders(activeCliType.value as CliType)
   } catch (e: any) {
-    notify(e.message || e || '保存失败', 'error')
+    notify(getErrorMessage(e, '保存失败'), 'error')
   }
 }
 
@@ -546,7 +547,7 @@ async function handleReadFromCli() {
     } catch {}
     notify('读取成功')
   } catch (e: any) {
-    notify(e.message || '读取失败', 'error')
+    notify(getErrorMessage(e, '读取失败'), 'error')
   }
 }
 
@@ -588,7 +589,7 @@ async function handleSaveCredential() {
     resetCredentialForm()
     credentialStore.fetchCredentials(activeCliType.value as CliType)
   } catch (e: any) {
-    notify(e.message || e || '保存失败', 'error')
+    notify(getErrorMessage(e, '保存失败'), 'error')
   }
 }
 
