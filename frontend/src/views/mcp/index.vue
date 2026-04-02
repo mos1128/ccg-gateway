@@ -11,7 +11,7 @@
           <path d="M5 12h14"/><path d="M12 5v14"/>
         </symbol>
         <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </symbol>
         <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
@@ -46,11 +46,11 @@
               <div class="mcp-info">
                 <h3 class="mcp-name">{{ mcp.name }}</h3>
                 <div class="mcp-actions">
-                  <button class="action-btn" title="编辑" @click="handleEdit(mcp)">
-                    <svg width="16" height="16"><use href="#icon-edit"/></svg>
+                  <button class="action-icon" title="编辑" @click="handleEdit(mcp)">
+                    <svg width="18" height="18"><use href="#icon-edit"/></svg>
                   </button>
-                  <button class="action-btn delete" title="删除" @click="handleDelete(mcp)">
-                    <svg width="16" height="16"><use href="#icon-trash"/></svg>
+                  <button class="action-icon delete" title="删除" @click="handleDelete(mcp)">
+                    <svg width="18" height="18"><use href="#icon-trash"/></svg>
                   </button>
                 </div>
               </div>
@@ -344,29 +344,31 @@ onMounted(fetchList)
 .mcp-actions {
   display: flex;
   gap: 4px;
+  flex-shrink: 0;
 }
 
-/* Action Buttons */
-.action-btn {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  padding: 6px;
-  border-radius: 6px;
-  cursor: pointer;
+/* Action Icons */
+.action-icon {
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
   transition: all 0.2s;
+  background: transparent;
+  border: none;
   outline: none;
 }
-.action-btn:hover {
+.action-icon:hover {
   background: #f1f5f9;
   color: #0f172a;
 }
-.action-btn.delete:hover {
-  background: #fef2f2;
-  color: #f43f5e;
+.action-icon.delete:hover {
+  background: #fee2e2;
+  color: #ef4444;
 }
 
 /* CLI Toggles */
@@ -393,20 +395,20 @@ onMounted(fetchList)
 }
 .c-label {
   display: block;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: #475569;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 .required {
   color: #f43f5e;
 }
 .c-input {
   width: 100%;
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 14px;
   color: #0f172a;
   outline: none;
@@ -414,7 +416,6 @@ onMounted(fetchList)
 }
 .c-input:focus {
   border-color: #0ea5e9;
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
 }
 textarea.c-input {
   resize: vertical;
@@ -435,10 +436,10 @@ textarea.c-input {
   background: #0ea5e9;
   color: #ffffff;
   border: none;
-  padding: 10px 20px;
-  border-radius: 10px;
+  padding: 8px 16px;
+  border-radius: 8px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -449,12 +450,12 @@ textarea.c-input {
 }
 .b-button-outline {
   background: #ffffff;
-  color: #475569;
+  color: #0f172a;
   border: 1px solid #e2e8f0;
-  padding: 10px 20px;
-  border-radius: 10px;
+  padding: 8px 16px;
+  border-radius: 8px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -462,7 +463,6 @@ textarea.c-input {
 }
 .b-button-outline:hover {
   background: #f8fafc;
-  color: #0f172a;
   border-color: #cbd5e1;
 }
 

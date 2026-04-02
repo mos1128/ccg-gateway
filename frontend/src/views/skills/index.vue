@@ -28,7 +28,7 @@
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
         </symbol>
         <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </symbol>
         <symbol id="icon-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
@@ -84,30 +84,24 @@
                   </div>
                   <div class="card-actions">
                     <button
-                      class="action-btn star"
+                      class="action-icon star"
+                      :class="{ 'star-active': isInstalledFavorited(skill) }"
                       :title="isInstalledFavorited(skill) ? '取消收藏' : '收藏技能'"
                       :disabled="!canFavoriteInstalledSkill(skill)"
                       @click="toggleInstalledFavorite(skill)"
                     >
                       <svg
-                        width="16"
-                        height="16"
-                        :style="isInstalledFavorited(skill) ? 'fill: #f59e0b; color: #f59e0b;' : 'color: #cbd5e1;'"
+                        width="18"
+                        height="18"
+                        :style="isInstalledFavorited(skill) ? 'fill: #f59e0b;' : ''"
                       ><use href="#icon-star"/></svg>
                     </button>
-                    <template v-if="skill.exists_on_disk">
-                      <button class="action-btn" title="重装/更新" :disabled="installingSkillId === `installed-${skill.id}`" @click="handleReinstallFromInstalled(skill)">
-                        <svg width="16" height="16"><use href="#icon-refresh"/></svg>
-                      </button>
-                      <button class="action-btn delete" title="卸载" @click="handleUninstall(skill)">
-                        <svg width="16" height="16"><use href="#icon-trash"/></svg>
-                      </button>
-                    </template>
-                    <template v-else>
-                      <button class="b-button-outline" style="font-size: 11px; padding: 4px 8px;" :disabled="installingSkillId === `installed-${skill.id}`" @click="handleInstallFromInstalled(skill)">
-                        安装技能
-                      </button>
-                    </template>
+                    <button class="action-icon" title="重装/更新" :disabled="installingSkillId === `installed-${skill.id}`" @click="handleReinstallFromInstalled(skill)">
+                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+                    </button>
+                    <button class="action-icon delete" title="卸载" @click="handleUninstall(skill)">
+                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
+                    </button>
                   </div>
                 </div>
 
@@ -173,11 +167,11 @@
                     <div class="repo-source-subtitle mono">{{ repo.source }}</div>
                   </div>
                   <div class="repo-actions-overlay" @click.stop>
-                    <button class="action-btn" title="编辑" @click="handleEditRepo(repo)">
-                      <svg width="16" height="16"><use href="#icon-edit"/></svg>
+                    <button class="action-icon" title="编辑" @click="handleEditRepo(repo)">
+                      <svg width="18" height="18"><use href="#icon-edit"/></svg>
                     </button>
-                    <button class="action-btn delete" title="删除" @click="handleRemoveRepo(repo)">
-                      <svg width="16" height="16"><use href="#icon-trash"/></svg>
+                    <button class="action-icon delete" title="删除" @click="handleRemoveRepo(repo)">
+                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
                     </button>
                   </div>
                 </div>
@@ -190,8 +184,8 @@
         <div v-else class="repo-skills-view">
           <div class="page-header">
             <div style="display: flex; align-items: center; gap: 16px;">
-              <button class="b-button-outline" style="border: none; background: transparent; box-shadow: none; padding: 6px; color: #64748b;" @click="handleBackToRepos">
-                <svg width="20" height="20"><use href="#icon-back"/></svg>
+              <button class="action-icon" @click="handleBackToRepos" title="返回">
+                <svg width="18" height="18"><use href="#icon-back"/></svg>
               </button>
               <div>
                 <h2 class="page-title" style="font-size: 20px; margin-bottom: 2px;">{{ currentRepo.name }}</h2>
@@ -201,10 +195,10 @@
             <div style="display: flex; gap: 12px; align-items: center;">
               <div class="search-box" style="width: 240px; position: relative;">
                 <svg class="search-icon" width="16" height="16" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; z-index: 1;"><use href="#icon-search"/></svg>
-                <input type="text" v-model="skillSearchQuery" class="c-input" placeholder="搜索..." style="height: 38px; padding: 0 12px 0 36px; margin: 0; box-shadow: none;">
+                <input type="text" v-model="skillSearchQuery" class="c-input" placeholder="搜索..." style="height: 38px; padding: 0 12px 0 36px; margin: 0;">
               </div>
-              <button class="b-button-outline" style="padding: 0; height: 38px; width: 38px; display: flex; align-items: center; justify-content: center; margin: 0; box-shadow: none; flex-shrink: 0;" :disabled="loadingSkills" @click="refreshRepoSkills" title="刷新列表">
-                <svg width="20" height="20"><use href="#icon-refresh"/></svg>
+              <button class="action-icon" :disabled="loadingSkills" @click="refreshRepoSkills" title="刷新列表">
+                <svg width="18" height="18"><use href="#icon-refresh"/></svg>
               </button>
             </div>
           </div>
@@ -243,8 +237,8 @@
                   </div>
                   <div class="discover-actions">
                     <button
-                      class="action-btn"
-                      :style="favoriteKeys.has(skill.key) ? 'color: #f59e0b; background: rgba(245, 158, 11, 0.1);' : 'color: #cbd5e1; background: rgba(203, 213, 225, 0.1);'"
+                      class="action-icon"
+                      :class="{ 'star-active': favoriteKeys.has(skill.key) }"
                       :title="favoriteKeys.has(skill.key) ? '取消收藏' : '收藏技能'"
                       @click="toggleRepoFavorite(skill)"
                     >
@@ -254,22 +248,20 @@
                         :style="favoriteKeys.has(skill.key) ? 'fill: #f59e0b;' : ''"
                       ><use href="#icon-star"/></svg>
                     </button>
-                    <button 
+                    <button
                       v-if="isInstalled(skill.install_directory)"
-                      class="action-btn"
-                      style="color: #f59e0b; background: rgba(245, 158, 11, 0.1);"
+                      class="action-icon installed"
                       title="重装"
-                      :disabled="installingSkillId === skill.key" 
+                      :disabled="installingSkillId === skill.key"
                       @click="handleInstall(skill, true)"
                     >
                       <svg width="18" height="18"><use href="#icon-refresh"/></svg>
                     </button>
-                    <button 
+                    <button
                       v-else
-                      class="action-btn"
-                      style="color: #0ea5e9; background: rgba(14, 165, 233, 0.1);"
+                      class="action-icon install"
                       title="安装技能"
-                      :disabled="installingSkillId === skill.key" 
+                      :disabled="installingSkillId === skill.key"
                       @click="handleInstall(skill, false)"
                     >
                       <svg width="18" height="18"><use href="#icon-plus"/></svg>
@@ -302,8 +294,7 @@
                   </div>
                   <div class="fav-actions">
                     <button
-                      class="action-btn"
-                      style="color: #f59e0b; background: rgba(245, 158, 11, 0.1);"
+                      class="action-icon star-active"
                       title="取消收藏"
                       @click="handleRemoveFavoriteById(favorite)"
                     >
@@ -311,8 +302,7 @@
                     </button>
                     <button
                       v-if="favorite.is_installed"
-                      class="action-btn"
-                      style="color: #f59e0b; background: rgba(245, 158, 11, 0.1);"
+                      class="action-icon installed"
                       title="重装"
                       :disabled="installingSkillId === favorite.key"
                       @click="handleInstallFavorite(favorite, true)"
@@ -321,8 +311,7 @@
                     </button>
                     <button
                       v-else
-                      class="action-btn"
-                      style="color: #0ea5e9; background: rgba(14, 165, 233, 0.1);"
+                      class="action-icon install"
                       title="安装技能"
                       :disabled="installingSkillId === favorite.key"
                       @click="handleInstallFavorite(favorite, false)"
@@ -408,6 +397,13 @@ const favoriteList = ref<SkillFavoriteItem[]>([])
 const loadingFavorites = ref(false)
 
 const favoriteKeys = computed(() => new Set(favoriteList.value.map(item => item.key)))
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null && 'message' in error) return String((error as any).message)
+  return String(error)
+}
 
 const sortedRepoSkillList = computed(() => {
   return [...repoSkillList.value].sort((a, b) => {
@@ -847,16 +843,28 @@ onMounted(() => {
 .skill-market { font-size: 12px; color: #64748b; font-weight: 500; }
 .skill-source { font-size: 12px; color: #94a3b8; }
 
-.card-actions { display: flex; gap: 4px; }
-.action-btn { 
-  background: transparent; border: none; color: #94a3b8; padding: 6px; border-radius: 6px; 
-  cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; 
+.card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.action-icon {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
   outline: none;
+  background: transparent;
+  border: none;
 }
-.action-btn:hover { background: #f1f5f9; color: #0f172a; }
-.action-btn.delete:hover { background: #fef2f2; color: #f43f5e; }
-.action-btn.star:disabled { cursor: not-allowed; opacity: 0.45; }
-.action-btn.star:disabled:hover { background: transparent; color: #94a3b8; }
+.action-icon:hover { background: #f1f5f9; color: #0f172a; }
+.action-icon.delete:hover { background: #fee2e2; color: #ef4444; }
+.action-icon.star:disabled { cursor: not-allowed; opacity: 0.45; }
+.action-icon.star:disabled:hover { background: transparent; color: #64748b; }
+.action-icon.star-active { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+.action-icon.installed { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+.action-icon.install { color: #0ea5e9; background: rgba(14, 165, 233, 0.1); }
 
 /* CLI Toggles */
 .cli-toggles { display: flex; flex-direction: column; gap: 12px; background: #f8fafc; padding: 16px; border-radius: 12px; }
@@ -918,28 +926,29 @@ onMounted(() => {
 .search-box { position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
 .c-input {
-  width: 100%; padding: 12px 16px; background: #ffffff; border: 1px solid #e2e8f0;
-  border-radius: 10px; font-size: 14px; color: #0f172a; outline: none; transition: all 0.2s;
+  width: 100%; padding: 10px 14px; background: #ffffff; border: 1px solid #e2e8f0;
+  border-radius: 8px; font-size: 14px; color: #0f172a; outline: none; transition: all 0.2s;
 }
-.c-input:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1); }
+.c-input:focus { border-color: #0ea5e9; }
 
 .b-button {
-  background: #0ea5e9; color: #ffffff; border: none; padding: 10px 20px; border-radius: 10px;
-  font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center;
+  background: #0ea5e9; color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px;
+  font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center;
   transition: all 0.2s; white-space: nowrap;
 }
-.b-button:hover { background: #0284c7; }.b-button:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; transform: none; }
+.b-button:hover { background: #0284c7; }
+.b-button:disabled { background: #94a3b8; cursor: not-allowed; }
 
-.b-button-outline { 
-  background: #ffffff; color: #475569; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px; 
-  font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; 
+.b-button-outline {
+  background: #ffffff; color: #0f172a; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px;
+  font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: flex; align-items: center;
 }
-.b-button-outline:hover { background: #f8fafc; color: #0f172a; border-color: #cbd5e1; }
+.b-button-outline:hover { background: #f8fafc; border-color: #cbd5e1; }
 
 .empty-state { padding: 80px 40px; text-align: center; color: #94a3b8; background: #ffffff; border-radius: 24px; border: 2px dashed #e2e8f0; }
 .empty-state p { margin-top: 16px; font-size: 15px; }
 
 .form-group { margin-bottom: 24px; }
-.c-label { display: block; font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 8px; }
+.c-label { display: block; font-size: 13px; font-weight: 500; color: #475569; margin-bottom: 12px; }
 .required { color: #f43f5e; }
 </style>
