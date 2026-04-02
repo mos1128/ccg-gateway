@@ -54,6 +54,11 @@ export const skillsApi = {
     return transformInstalledSkill(result)
   },
 
+  reinstallInstalled: async (directory: string): Promise<InstalledSkill> => {
+    const result = await invoke<InstalledSkillBackend>('reinstall_installed_skill', { directory })
+    return transformInstalledSkill(result)
+  },
+
   uninstall: async (id: string): Promise<void> => {
     await invoke('uninstall_skill', { id })
   },
@@ -75,6 +80,10 @@ export const skillsApi = {
 
   addFavorite: async (skill: DiscoverableSkill): Promise<void> => {
     await invoke('add_skill_favorite', { skillItem: skill })
+  },
+
+  toggleInstalledFavorite: async (directory: string): Promise<boolean> => {
+    return await invoke<boolean>('toggle_installed_skill_favorite', { directory })
   },
 
   removeFavorite: async (key: string): Promise<void> => {

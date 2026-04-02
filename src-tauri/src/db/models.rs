@@ -116,8 +116,12 @@ impl From<Provider> for ProviderResponse {
         let now = chrono::Utc::now().timestamp();
         let is_blacklisted = p.blacklisted_until.map(|t| t > now).unwrap_or(false);
         let blacklist_expired = p.blacklisted_until.map(|t| t <= now).unwrap_or(false);
-        let failures = if blacklist_expired { 0 } else { p.consecutive_failures };
-        
+        let failures = if blacklist_expired {
+            0
+        } else {
+            p.consecutive_failures
+        };
+
         Self {
             id: p.id,
             cli_type: p.cli_type,
@@ -363,8 +367,8 @@ pub struct PromptUpdate {
 // Skill Repo (仓库配置 - 对应数据库表)
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct SkillRepo {
-    pub name: String,    // 显示名称（从 source 提取）
-    pub source: String,  // 用户输入的原值（URL/repo/local path）
+    pub name: String,   // 显示名称（从 source 提取）
+    pub source: String, // 用户输入的原值（URL/repo/local path）
 }
 
 #[derive(Debug, Deserialize)]
@@ -389,13 +393,15 @@ pub struct SkillConfig {
 // 可发现的 Skill (来自仓库，未安装)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoverableSkill {
-    pub key: String,           // 唯一标识: "owner/repo:directory"
+    pub key: String,
     pub name: String,
     pub description: String,
-    pub directory: String,     // 目录路径
-    pub install_directory: String, // 安装后的目录名
+    pub directory: String,
+    pub install_directory: String,
     pub readme_url: Option<String>,
     pub repo: SkillRepo,
+    pub is_favorited: bool,
+    pub is_installed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -415,7 +421,11 @@ pub struct InstalledSkillResponse {
     pub readme_url: Option<String>,
     pub installed_at: i64,
     pub cli_flags: Vec<SkillCliFlag>,
-    pub exists_on_disk: bool, // skill 文件是否存在于本地
+    pub exists_on_disk: bool,
+    pub is_favorited: bool,
+    pub can_favorite: bool,
+    pub favorite_key: Option<String>,
+    pub market_display: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

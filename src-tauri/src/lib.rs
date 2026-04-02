@@ -7,9 +7,9 @@ pub mod services;
 use config::Config;
 use db::init_db;
 use sqlx::SqlitePool;
-use tauri::Manager;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use tauri::Manager;
 
 // Type wrappers for Tauri state
 pub struct LogDb(pub SqlitePool);
@@ -67,23 +67,23 @@ pub fn run() {
                 let router = api::create_router(state);
                 let addr = format!("{}:{}", config.server.host, config.server.port);
 
-            tokio::spawn(async move {
-                // Bind listener with better error handling
-                let listener = match tokio::net::TcpListener::bind(&addr).await {
-                    Ok(listener) => {
-                        tracing::info!("Gateway HTTP server listening on {}", addr);
-                        listener
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to bind to {}: {}", addr, e);
-                        std::process::exit(1);
-                    }
-                };
+                tokio::spawn(async move {
+                    // Bind listener with better error handling
+                    let listener = match tokio::net::TcpListener::bind(&addr).await {
+                        Ok(listener) => {
+                            tracing::info!("Gateway HTTP server listening on {}", addr);
+                            listener
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to bind to {}: {}", addr, e);
+                            std::process::exit(1);
+                        }
+                    };
 
-                if let Err(e) = axum::serve(listener, router).await {
-                    tracing::error!("Gateway server error: {}", e);
-                }
-            });
+                    if let Err(e) = axum::serve(listener, router).await {
+                        tracing::error!("Gateway server error: {}", e);
+                    }
+                });
             });
 
             // Setup tray icon with menu
@@ -101,7 +101,7 @@ pub fn run() {
                     std::process::exit(1);
                 }
             };
-            
+
             let _tray = TrayIconBuilder::new()
                 .icon(icon)
                 .tooltip("CCG Gateway")
@@ -120,28 +120,26 @@ pub fn run() {
                     }
                     _ => {}
                 })
-                .on_tray_icon_event(|tray, event| {
-                    match event {
-                        TrayIconEvent::Click {
-                            button: tauri::tray::MouseButton::Left,
-                            button_state: tauri::tray::MouseButtonState::Up,
-                            ..  
-                        } => {
-                            if let Some(window) = tray.app_handle().get_webview_window("main") {
-                                match (window.is_visible(), window.is_minimized()) {
-                                    (Ok(true), Ok(false)) => {
-                                        let _ = window.hide();
-                                    }
-                                    _ => {
-                                        let _ = window.show();
-                                        let _ = window.unminimize();
-                                        let _ = window.set_focus();
-                                    }
+                .on_tray_icon_event(|tray, event| match event {
+                    TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } => {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            match (window.is_visible(), window.is_minimized()) {
+                                (Ok(true), Ok(false)) => {
+                                    let _ = window.hide();
+                                }
+                                _ => {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
                                 }
                             }
                         }
-                        _ => {}
                     }
+                    _ => {}
                 })
                 .build(app)?;
 
@@ -198,11 +196,13 @@ pub fn run() {
             commands::discover_repo_skills,
             commands::refresh_repo_skills,
             commands::install_skill,
+            commands::reinstall_installed_skill,
             commands::uninstall_skill,
             commands::get_installed_skills,
             commands::toggle_skill_cli,
             commands::get_skill_favorites,
             commands::add_skill_favorite,
+            commands::toggle_installed_skill_favorite,
             commands::remove_skill_favorite,
             commands::install_favorite_skill,
             commands::get_daily_stats,

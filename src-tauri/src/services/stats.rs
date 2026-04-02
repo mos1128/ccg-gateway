@@ -1,5 +1,5 @@
-use sqlx::SqlitePool;
 use crate::db::models::RequestLogInfo;
+use sqlx::SqlitePool;
 
 /// Record a request in the daily usage statistics
 pub async fn record_request(
@@ -111,4 +111,3 @@ pub async fn record_system_log(
 
     Ok(())
 }
-

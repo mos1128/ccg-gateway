@@ -22,7 +22,7 @@ impl<'a> SchemaMigrator<'a> {
     pub async fn apply(&self, diff: SchemaDiff) -> Result<(), sqlx::Error> {
         // 开启事务
         let mut tx = self.pool.begin().await?;
-        
+
         // 处理所有变更
         for change in diff.changes {
             match change {
@@ -37,7 +37,7 @@ impl<'a> SchemaMigrator<'a> {
                 }
             }
         }
-        
+
         // 提交事务
         tx.commit().await?;
         Ok(())
@@ -76,13 +76,12 @@ impl<'a> SchemaMigrator<'a> {
         table: &str,
     ) -> Result<(), sqlx::Error> {
         tracing::info!("重建表: {}", table);
-        
+
         // 1. 获取期望的表定义
-        let expected_table = self
-            .expected_schema
-            .tables
-            .get(table)
-            .ok_or_else(|| sqlx::Error::Protocol(format!("表 {} 不在期望结构中", table).into()))?;
+        let expected_table =
+            self.expected_schema.tables.get(table).ok_or_else(|| {
+                sqlx::Error::Protocol(format!("表 {} 不在期望结构中", table).into())
+            })?;
 
         // 2. 获取当前表的列信息（用于数据复制）
         let inspector = SchemaInspector::new(self.pool);
@@ -94,7 +93,7 @@ impl<'a> SchemaMigrator<'a> {
             .iter()
             .map(|c| c.name.clone())
             .collect();
-        
+
         let keep_columns: Vec<String> = actual_columns
             .iter()
             .filter(|c| expected_column_names.contains(&c.name))

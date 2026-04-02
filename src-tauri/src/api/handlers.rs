@@ -4,19 +4,19 @@ use axum::{
     http::{Response, StatusCode},
 };
 use bytes::Bytes;
+use flate2::read::GzDecoder;
 use futures_util::StreamExt;
+use std::io::Read;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, Mutex};
-use flate2::read::GzDecoder;
-use std::io::Read;
 
 use super::AppState;
 use crate::db::models::RequestLogInfo;
 use crate::services::proxy::{
-    apply_body_model_mapping, apply_url_model_mapping, apply_useragent_override,
-    detect_cli_type, filter_headers, is_streaming, parse_token_usage, set_auth_header,
-    CliType, TimeoutConfig, TokenUsage, extract_model_from_body, extract_model_from_path,
+    apply_body_model_mapping, apply_url_model_mapping, apply_useragent_override, detect_cli_type,
+    extract_model_from_body, extract_model_from_path, filter_headers, is_streaming,
+    parse_token_usage, set_auth_header, CliType, TimeoutConfig, TokenUsage,
 };
 use crate::services::routing::select_provider;
 use crate::services::{provider as provider_service, stats as stats_service};
@@ -63,27 +63,31 @@ pub async fn proxy_handler_catchall(
     };
 
     // Select provider based on CLI type and model
-    let provider_with_maps = match select_provider(&state.db, cli_type.as_str(), extracted_model.as_deref()).await {
-        Ok(Some(p)) => p,
-        Ok(None) => {
-            tracing::warn!(cli_type = %cli_type, "No available provider");
-            // Log system event
-            let _ = stats_service::record_system_log(
-                &state.log_db,
-                "no_provider_available",
-                &format!("CLI 类型 {} 没有可用的服务商", cli_type),
-            ).await;
-            return Ok(Response::builder()
-                .status(StatusCode::SERVICE_UNAVAILABLE)
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"error": "No available provider configured"}"#))
-                .unwrap());
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to select provider");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+    let provider_with_maps =
+        match select_provider(&state.db, cli_type.as_str(), extracted_model.as_deref()).await {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                tracing::warn!(cli_type = %cli_type, "No available provider");
+                // Log system event
+                let _ = stats_service::record_system_log(
+                    &state.log_db,
+                    "no_provider_available",
+                    &format!("CLI 类型 {} 没有可用的服务商", cli_type),
+                )
+                .await;
+                return Ok(Response::builder()
+                    .status(StatusCode::SERVICE_UNAVAILABLE)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"error": "No available provider configured"}"#,
+                    ))
+                    .unwrap());
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to select provider");
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        };
 
     let provider = &provider_with_maps.provider;
     let provider_id = provider.id;
@@ -106,12 +110,26 @@ pub async fn proxy_handler_catchall(
     // Apply model mapping and extract model info
     let (final_body, final_path, source_model, target_model) = match cli_type {
         CliType::Gemini => {
-            let mapping = apply_url_model_mapping(&provider_with_maps, &full_path, &provider_with_maps.model_maps);
-            (body_bytes.clone(), mapping.path, mapping.source_model, mapping.target_model)
+            let mapping = apply_url_model_mapping(
+                &provider_with_maps,
+                &full_path,
+                &provider_with_maps.model_maps,
+            );
+            (
+                body_bytes.clone(),
+                mapping.path,
+                mapping.source_model,
+                mapping.target_model,
+            )
         }
         _ => {
             let mapping = apply_body_model_mapping(&provider_with_maps, &body_bytes, &full_path);
-            (mapping.body, mapping.path, mapping.source_model, mapping.target_model)
+            (
+                mapping.body,
+                mapping.path,
+                mapping.source_model,
+                mapping.target_model,
+            )
         }
     };
 
@@ -128,7 +146,8 @@ pub async fn proxy_handler_catchall(
     set_auth_header(&mut req_headers, &provider.api_key, cli_type);
 
     // Apply User-Agent override (per-provider)
-    let _original_ua = apply_useragent_override(&mut req_headers, provider.custom_useragent.as_deref());
+    let _original_ua =
+        apply_useragent_override(&mut req_headers, provider.custom_useragent.as_deref());
 
     // Set content-type if not present
     if !req_headers.contains_key(reqwest::header::CONTENT_TYPE) {
@@ -137,7 +156,7 @@ pub async fn proxy_handler_catchall(
             "application/json".parse().unwrap(),
         );
     }
-    
+
     // Explicitly set Content-Length to ensure correct body transmission
     // This is critical because we filtered out the original content-length header
     if !final_body.is_empty() {
@@ -162,7 +181,7 @@ pub async fn proxy_handler_catchall(
     };
 
     let request_builder = request_builder.headers(req_headers);
-    
+
     let request_builder = if !final_body.is_empty() {
         request_builder.body(final_body)
     } else {
@@ -180,7 +199,8 @@ pub async fn proxy_handler_catchall(
 
     // Log the actual request that will be sent
     let actual_forward_headers = serialize_reqwest_headers(request.headers());
-    let actual_forward_body = request.body()
+    let actual_forward_body = request
+        .body()
         .and_then(|b| b.as_bytes())
         .map(|bytes| truncate_body(bytes))
         .unwrap_or_default();
@@ -292,82 +312,87 @@ async fn handle_streaming_request(
     mut log_info: RequestLogInfo,
 ) -> Result<Response<Body>, StatusCode> {
     // Send request with timeout for first byte
-    let response = match tokio::time::timeout(
-        timeouts.first_byte_timeout,
-        client.execute(request),
-    )
-    .await
-    {
-        Ok(Ok(resp)) => resp,
-        Ok(Err(e)) => {
-            tracing::error!(error = %e, "Upstream request failed");
-            if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&state.db, provider_id).await {
-                if was_blacklisted {
-                    let _ = stats_service::record_system_log(
-                        &state.log_db,
-                        "provider_blacklisted",
-                        &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                    ).await;
+    let response =
+        match tokio::time::timeout(timeouts.first_byte_timeout, client.execute(request)).await {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                tracing::error!(error = %e, "Upstream request failed");
+                if let Ok((was_blacklisted, prov_name)) =
+                    provider_service::record_failure(&state.db, provider_id).await
+                {
+                    if was_blacklisted {
+                        let _ = stats_service::record_system_log(
+                            &state.log_db,
+                            "provider_blacklisted",
+                            &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
+                        )
+                        .await;
+                    }
                 }
+                log_info.error_message = Some(format!("Upstream error: {}", e));
+                record_request_stats(
+                    state,
+                    cli_type,
+                    provider_name,
+                    model_id,
+                    None,
+                    start_time.elapsed().as_millis() as i64,
+                    0,
+                    0,
+                    client_method,
+                    client_path,
+                    source_model,
+                    target_model,
+                    Some(log_info),
+                )
+                .await;
+                return Ok(Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"error": "Upstream error: {}"}}"#,
+                        e
+                    )))
+                    .unwrap());
             }
-            log_info.error_message = Some(format!("Upstream error: {}", e));
-            record_request_stats(
-                state,
-                cli_type,
-                provider_name,
-                model_id,
-                None,
-                start_time.elapsed().as_millis() as i64,
-                0,
-                0,
-                client_method,
-                client_path,
-                source_model,
-                target_model,
-                Some(log_info),
-            )
-            .await;
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .header("content-type", "application/json")
-                .body(Body::from(format!(r#"{{"error": "Upstream error: {}"}}"#, e)))
-                .unwrap());
-        }
-        Err(_) => {
-            tracing::error!("First byte timeout");
-            if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&state.db, provider_id).await {
-                if was_blacklisted {
-                    let _ = stats_service::record_system_log(
-                        &state.log_db,
-                        "provider_blacklisted",
-                        &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                    ).await;
+            Err(_) => {
+                tracing::error!("First byte timeout");
+                if let Ok((was_blacklisted, prov_name)) =
+                    provider_service::record_failure(&state.db, provider_id).await
+                {
+                    if was_blacklisted {
+                        let _ = stats_service::record_system_log(
+                            &state.log_db,
+                            "provider_blacklisted",
+                            &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
+                        )
+                        .await;
+                    }
                 }
+                log_info.error_message = Some("First byte timeout".to_string());
+                record_request_stats(
+                    state,
+                    cli_type,
+                    provider_name,
+                    model_id,
+                    None,
+                    start_time.elapsed().as_millis() as i64,
+                    0,
+                    0,
+                    client_method,
+                    client_path,
+                    source_model,
+                    target_model,
+                    Some(log_info),
+                )
+                .await;
+                return Ok(Response::builder()
+                    .status(StatusCode::GATEWAY_TIMEOUT)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"error": "First byte timeout"}"#))
+                    .unwrap());
             }
-            log_info.error_message = Some("First byte timeout".to_string());
-            record_request_stats(
-                state,
-                cli_type,
-                provider_name,
-                model_id,
-                None,
-                start_time.elapsed().as_millis() as i64,
-                0,
-                0,
-                client_method,
-                client_path,
-                source_model,
-                target_model,
-                Some(log_info),
-            )
-            .await;
-            return Ok(Response::builder()
-                .status(StatusCode::GATEWAY_TIMEOUT)
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"error": "First byte timeout"}"#))
-                .unwrap());
-        }
-    };
+        };
 
     let status = response.status();
     let resp_headers = response.headers().clone();
@@ -376,8 +401,8 @@ async fn handle_streaming_request(
     log_info.provider_headers = Some(serialize_reqwest_headers(&resp_headers));
 
     // Build response headers
-    let mut builder = Response::builder()
-        .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK));
+    let mut builder =
+        Response::builder().status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK));
 
     for (name, value) in resp_headers.iter() {
         if let Ok(header_name) = axum::http::HeaderName::from_bytes(name.as_str().as_bytes()) {
@@ -395,7 +420,7 @@ async fn handle_streaming_request(
     // 优化：只存储原始chunks，后台任务再解析（避免重复解析）
     let collected_chunks = Arc::new(Mutex::new(Vec::<Bytes>::new()));
     let collected_chunks_for_stream = collected_chunks.clone();
-    
+
     // 创建channel用于通知stream结束
     let (stream_end_tx, mut stream_end_rx) = mpsc::channel::<()>(1);
 
@@ -415,7 +440,7 @@ async fn handle_streaming_request(
                     chunk_count += 1;
                     let chunk_size = chunk.len();
                     total_bytes += chunk_size;
-                    
+
                     // 收集chunk用于解析token（限制10MB防止极端情况）
                     if collected_bytes < MAX_COLLECT_SIZE {
                         let mut chunks = collected_chunks_for_stream.lock().await;
@@ -423,12 +448,12 @@ async fn handle_streaming_request(
                         collected_bytes += chunk_size;
                         drop(chunks);  // 立即释放锁
                     }
-                    
+
                     tracing::debug!(
                         "[{}] Chunk #{}: size={} bytes, total={} bytes",
                         cli_type, chunk_count, chunk_size, total_bytes
                     );
-                    
+
                     yield Ok::<Bytes, std::io::Error>(chunk);
                 }
                 Ok(Some(Err(e))) => {
@@ -462,7 +487,7 @@ async fn handle_streaming_request(
 
         // Stream loop正常结束（无论是completed、error还是timeout）
         tracing::debug!("[{}] Stream loop ended naturally", cli_type);
-        
+
         // 通知后台任务stream已结束
         let _ = stream_end_tx.send(()).await;
     };
@@ -479,25 +504,27 @@ async fn handle_streaming_request(
     let log_is_success = is_success;
     let log_source_model = source_model.map(|s| s.to_string());
     let log_target_model = target_model.map(|s| s.to_string());
-    
+
     tokio::spawn(async move {
         // 等待stream结束通知（已验证可靠，无需超时兜底）
         let _ = stream_end_rx.recv().await;
         tracing::debug!("[{}] Received stream end notification", cli_type);
-        
+
         // 读取收集的chunks
         let chunks = collected_chunks.lock().await.clone();
-        drop(collected_chunks);  // 立即释放Arc引用
-        
+        drop(collected_chunks); // 立即释放Arc引用
+
         // 一次性解析（避免重复解析，提升性能）
         let full_body: Vec<u8> = chunks.iter().flat_map(|c| c.iter()).copied().collect();
         let chunk_count = chunks.len();
-        
+
         tracing::info!(
             "[{}] Processing stream log: {} chunks, {} bytes",
-            cli_type, chunk_count, full_body.len()
+            cli_type,
+            chunk_count,
+            full_body.len()
         );
-        
+
         // 解析token usage
         let mut usage = TokenUsage::default();
         if !full_body.is_empty() {
@@ -517,41 +544,50 @@ async fn handle_streaming_request(
                 }
             }
         }
-        
+
         tracing::debug!(
             "[{}] Parsed tokens: input={}, output={}",
-            cli_type, usage.input_tokens, usage.output_tokens
+            cli_type,
+            usage.input_tokens,
+            usage.output_tokens
         );
-        
+
         // Update log info with response body
-        let content_encoding = log_resp_headers.get("content-encoding")
+        let content_encoding = log_resp_headers
+            .get("content-encoding")
             .and_then(|v| v.to_str().ok());
         let decompressed_body = maybe_decompress(&full_body, content_encoding);
         let mut final_log_info = log_info;
         final_log_info.provider_body = Some(truncate_body(&decompressed_body));
-        
+
         // Record stats
         let elapsed = start_time.elapsed().as_millis() as i64;
         if log_is_success {
-            if let Ok(had_failures) = provider_service::record_success(&log_state.db, log_provider_id).await {
+            if let Ok(had_failures) =
+                provider_service::record_success(&log_state.db, log_provider_id).await
+            {
                 if had_failures {
                     let _ = stats_service::record_system_log(
                         &log_state.log_db,
                         "provider_recovered",
                         &format!("服务商 {} 已恢复正常", log_provider_name),
-                    ).await;
+                    )
+                    .await;
                 }
             }
-        } else if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&log_state.db, log_provider_id).await {
+        } else if let Ok((was_blacklisted, prov_name)) =
+            provider_service::record_failure(&log_state.db, log_provider_id).await
+        {
             if was_blacklisted {
                 let _ = stats_service::record_system_log(
                     &log_state.log_db,
                     "provider_blacklisted",
                     &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                ).await;
+                )
+                .await;
             }
         }
-        
+
         record_request_stats(
             &log_state,
             cli_type,
@@ -566,14 +602,13 @@ async fn handle_streaming_request(
             log_source_model.as_deref(),
             log_target_model.as_deref(),
             Some(final_log_info),
-        ).await;
-        
+        )
+        .await;
+
         tracing::info!("[{}] Delayed log recording completed", cli_type);
     });
 
-    Ok(builder
-        .body(Body::from_stream(stream))
-        .unwrap())
+    Ok(builder.body(Body::from_stream(stream)).unwrap())
 }
 
 async fn handle_non_streaming_request(
@@ -593,82 +628,87 @@ async fn handle_non_streaming_request(
     mut log_info: RequestLogInfo,
 ) -> Result<Response<Body>, StatusCode> {
     // Send request with timeout
-    let response = match tokio::time::timeout(
-        timeouts.non_stream_timeout,
-        client.execute(request),
-    )
-    .await
-    {
-        Ok(Ok(resp)) => resp,
-        Ok(Err(e)) => {
-            tracing::error!(error = %e, "Upstream request failed");
-            if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&state.db, provider_id).await {
-                if was_blacklisted {
-                    let _ = stats_service::record_system_log(
-                        &state.log_db,
-                        "provider_blacklisted",
-                        &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                    ).await;
+    let response =
+        match tokio::time::timeout(timeouts.non_stream_timeout, client.execute(request)).await {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(e)) => {
+                tracing::error!(error = %e, "Upstream request failed");
+                if let Ok((was_blacklisted, prov_name)) =
+                    provider_service::record_failure(&state.db, provider_id).await
+                {
+                    if was_blacklisted {
+                        let _ = stats_service::record_system_log(
+                            &state.log_db,
+                            "provider_blacklisted",
+                            &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
+                        )
+                        .await;
+                    }
                 }
+                log_info.error_message = Some(format!("Upstream error: {}", e));
+                record_request_stats(
+                    state,
+                    cli_type,
+                    provider_name,
+                    model_id,
+                    None,
+                    start_time.elapsed().as_millis() as i64,
+                    0,
+                    0,
+                    client_method,
+                    client_path,
+                    source_model,
+                    target_model,
+                    Some(log_info),
+                )
+                .await;
+                return Ok(Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"error": "Upstream error: {}"}}"#,
+                        e
+                    )))
+                    .unwrap());
             }
-            log_info.error_message = Some(format!("Upstream error: {}", e));
-            record_request_stats(
-                state,
-                cli_type,
-                provider_name,
-                model_id,
-                None,
-                start_time.elapsed().as_millis() as i64,
-                0,
-                0,
-                client_method,
-                client_path,
-                source_model,
-                target_model,
-                Some(log_info),
-            )
-            .await;
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .header("content-type", "application/json")
-                .body(Body::from(format!(r#"{{"error": "Upstream error: {}"}}"#, e)))
-                .unwrap());
-        }
-        Err(_) => {
-            tracing::error!("Request timeout");
-            if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&state.db, provider_id).await {
-                if was_blacklisted {
-                    let _ = stats_service::record_system_log(
-                        &state.log_db,
-                        "provider_blacklisted",
-                        &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                    ).await;
+            Err(_) => {
+                tracing::error!("Request timeout");
+                if let Ok((was_blacklisted, prov_name)) =
+                    provider_service::record_failure(&state.db, provider_id).await
+                {
+                    if was_blacklisted {
+                        let _ = stats_service::record_system_log(
+                            &state.log_db,
+                            "provider_blacklisted",
+                            &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
+                        )
+                        .await;
+                    }
                 }
+                log_info.error_message = Some("Request timeout".to_string());
+                record_request_stats(
+                    state,
+                    cli_type,
+                    provider_name,
+                    model_id,
+                    None,
+                    start_time.elapsed().as_millis() as i64,
+                    0,
+                    0,
+                    client_method,
+                    client_path,
+                    source_model,
+                    target_model,
+                    Some(log_info),
+                )
+                .await;
+                return Ok(Response::builder()
+                    .status(StatusCode::GATEWAY_TIMEOUT)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"error": "Request timeout"}"#))
+                    .unwrap());
             }
-            log_info.error_message = Some("Request timeout".to_string());
-            record_request_stats(
-                state,
-                cli_type,
-                provider_name,
-                model_id,
-                None,
-                start_time.elapsed().as_millis() as i64,
-                0,
-                0,
-                client_method,
-                client_path,
-                source_model,
-                target_model,
-                Some(log_info),
-            )
-            .await;
-            return Ok(Response::builder()
-                .status(StatusCode::GATEWAY_TIMEOUT)
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"error": "Request timeout"}"#))
-                .unwrap());
-        }
-    };
+        };
 
     let status = response.status();
     let resp_headers = response.headers().clone();
@@ -682,13 +722,16 @@ async fn handle_non_streaming_request(
         Ok(bytes) => bytes,
         Err(e) => {
             tracing::error!(error = %e, "Failed to read response body");
-            if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&state.db, provider_id).await {
+            if let Ok((was_blacklisted, prov_name)) =
+                provider_service::record_failure(&state.db, provider_id).await
+            {
                 if was_blacklisted {
                     let _ = stats_service::record_system_log(
                         &state.log_db,
                         "provider_blacklisted",
                         &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                    ).await;
+                    )
+                    .await;
                 }
             }
             log_info.error_message = Some(format!("Failed to read response body: {}", e));
@@ -713,7 +756,8 @@ async fn handle_non_streaming_request(
     };
 
     // Decompress if needed for logging and token parsing
-    let content_encoding = resp_headers.get("content-encoding")
+    let content_encoding = resp_headers
+        .get("content-encoding")
         .and_then(|v| v.to_str().ok());
     let decompressed_body = maybe_decompress(&body_bytes, content_encoding);
 
@@ -732,16 +776,20 @@ async fn handle_non_streaming_request(
                     &state.log_db,
                     "provider_recovered",
                     &format!("服务商 {} 已恢复正常", provider_name),
-                ).await;
+                )
+                .await;
             }
         }
-    } else if let Ok((was_blacklisted, prov_name)) = provider_service::record_failure(&state.db, provider_id).await {
+    } else if let Ok((was_blacklisted, prov_name)) =
+        provider_service::record_failure(&state.db, provider_id).await
+    {
         if was_blacklisted {
             let _ = stats_service::record_system_log(
                 &state.log_db,
                 "provider_blacklisted",
                 &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-            ).await;
+            )
+            .await;
         }
     }
 
@@ -765,8 +813,8 @@ async fn handle_non_streaming_request(
     .await;
 
     // Build response
-    let mut builder = Response::builder()
-        .status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK));
+    let mut builder =
+        Response::builder().status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK));
 
     for (name, value) in resp_headers.iter() {
         if let Ok(header_name) = axum::http::HeaderName::from_bytes(name.as_str().as_bytes()) {
@@ -796,7 +844,9 @@ async fn record_request_stats(
     log_info: Option<RequestLogInfo>,
 ) {
     // Derive success from status_code (200-299 = success)
-    let success = status_code.map(|code| (200..300).contains(&code)).unwrap_or(false);
+    let success = status_code
+        .map(|code| (200..300).contains(&code))
+        .unwrap_or(false);
 
     // Record to request_logs
     let _ = stats_service::record_request_log(

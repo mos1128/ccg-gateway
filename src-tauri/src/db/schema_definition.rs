@@ -24,7 +24,8 @@ impl TableDefinition {
         let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", self.name);
 
         // 列定义
-        let column_defs: Vec<String> = self.columns
+        let column_defs: Vec<String> = self
+            .columns
             .iter()
             .map(|col| {
                 let mut parts = vec![col.name.clone(), col.data_type.clone()];
@@ -88,7 +89,10 @@ impl DatabaseSchema {
 
     /// 生成所有表的 CREATE SQL
     pub fn to_create_all_sql(&self) -> Vec<String> {
-        self.tables.values().map(|table| table.to_create_sql()).collect()
+        self.tables
+            .values()
+            .map(|table| table.to_create_sql())
+            .collect()
     }
 
     /// 定义主数据库表

@@ -4,13 +4,12 @@ pub mod schema_diff;
 pub mod schema_inspector;
 pub mod schema_migrator;
 
-use crate::services::skill::{self, InstalledSkillManifestEntry};
+use crate::services::skill;
 use schema_definition::DatabaseSchema;
 use schema_diff::SchemaDiff;
 use schema_inspector::SchemaInspector;
 use schema_migrator::SchemaMigrator;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
-use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
@@ -71,11 +70,6 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
 
     // 10. 读取实际结构
     let actual_tables = inspector.get_tables().await?;
-
-    // 10.1 迁移旧版 skill 数据到文件存储
-    if !is_log_db {
-        migrate_legacy_skill_storage(&pool, &actual_tables).await?;
-    }
 
     // 11. 对比差异（通过 SQL 比较）
     let diff = SchemaDiff::compare_async(&expected_schema, actual_tables, &inspector).await?;
@@ -179,73 +173,4 @@ async fn init_default_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     let _ = skill::ensure_default_skill_repos();
 
     Ok(())
-}
-
-async fn migrate_legacy_skill_storage(
-    pool: &SqlitePool,
-    actual_tables: &HashSet<String>,
-) -> Result<(), sqlx::Error> {
-    if !actual_tables.contains("skill_repos") && !actual_tables.contains("skill_configs") {
-        return Ok(());
-    }
-
-    let legacy_repos = if actual_tables.contains("skill_repos") {
-        let repos = sqlx::query_as::<_, crate::db::models::SkillRepo>(
-            "SELECT name, source, branch FROM skill_repos ORDER BY name",
-        )
-        .fetch_all(pool)
-        .await?;
-
-        let _ = skill::migrate_legacy_skill_repos(&repos);
-        repos
-    } else {
-        Vec::new()
-    };
-
-    if actual_tables.contains("skill_configs") {
-        let repo_map: HashMap<String, crate::db::models::SkillRepo> = skill::repo_map(&legacy_repos);
-        let configs = sqlx::query_as::<_, crate::db::models::SkillConfig>(
-            "SELECT * FROM skill_configs ORDER BY name",
-        )
-        .fetch_all(pool)
-        .await?;
-
-        let manifest = configs
-            .into_iter()
-            .map(|skill_config| {
-                let repo = legacy_repo_to_file_repo(&skill_config, &repo_map);
-                InstalledSkillManifestEntry {
-                    directory: skill_config.directory.clone(),
-                    name: skill_config.name,
-                    description: skill_config.description,
-                    repo,
-                    readme_url: skill_config.readme_url,
-                    installed_at: skill_config.installed_at,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let _ = skill::migrate_legacy_installed_skill_manifest(&manifest);
-    }
-
-    Ok(())
-}
-
-fn legacy_repo_to_file_repo(
-    skill_config: &crate::db::models::SkillConfig,
-    repo_map: &HashMap<String, crate::db::models::SkillRepo>,
-) -> Option<crate::db::models::SkillRepo> {
-    let repo_name = skill_config.repo_name.clone()?;
-
-    if let Some(repo) = repo_map.get(&repo_name) {
-        return Some(repo.clone());
-    }
-
-    match skill_config.repo_owner.as_deref() {
-        Some(owner) if !owner.is_empty() => Some(crate::db::models::SkillRepo {
-            name: repo_name.clone(),
-            source: format!("{}/{}", owner, repo_name),
-        }),
-        _ => None,
-    }
 }

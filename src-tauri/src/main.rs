@@ -41,7 +41,7 @@ fn main() {
     // Check if file logging is enabled
     if ccg_gateway_lib::config::is_file_log_enabled() {
         let log_dir = ccg_gateway_lib::config::get_log_dir();
-        
+
         // Ensure log directory exists
         if let Err(e) = std::fs::create_dir_all(&log_dir) {
             eprintln!("Failed to create log directory: {}", e);

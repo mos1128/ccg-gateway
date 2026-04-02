@@ -45,7 +45,9 @@ pub fn wildcard_match(pattern: &str, value: &str) -> bool {
 /// Extract model name from request body (Claude/Codex)
 pub fn extract_model_from_body(body: &[u8]) -> Option<String> {
     let json = serde_json::from_slice::<Value>(body).ok()?;
-    json.get("model").and_then(|v| v.as_str()).map(|s| s.to_string())
+    json.get("model")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 /// Extract model name from URL path (Gemini)
@@ -109,7 +111,9 @@ pub fn is_streaming(body: &[u8], path: &str, cli_type: CliType) -> bool {
         CliType::ClaudeCode => {
             // Claude uses "stream": true in body
             if let Ok(json) = serde_json::from_slice::<Value>(body) {
-                json.get("stream").and_then(|v| v.as_bool()).unwrap_or(false)
+                json.get("stream")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
             } else {
                 false
             }
@@ -117,7 +121,9 @@ pub fn is_streaming(body: &[u8], path: &str, cli_type: CliType) -> bool {
         CliType::Codex => {
             // Codex uses "stream": true in body
             if let Ok(json) = serde_json::from_slice::<Value>(body) {
-                json.get("stream").and_then(|v| v.as_bool()).unwrap_or(false)
+                json.get("stream")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
             } else {
                 false
             }
@@ -339,7 +345,8 @@ pub fn filter_headers(headers: &HeaderMap) -> reqwest::header::HeaderMap {
     for (name, value) in headers.iter() {
         let name_str = name.as_str().to_lowercase();
         if !FILTERED_HEADERS.contains(&name_str.as_str()) {
-            if let Ok(header_name) = reqwest::header::HeaderName::from_bytes(name.as_str().as_bytes())
+            if let Ok(header_name) =
+                reqwest::header::HeaderName::from_bytes(name.as_str().as_bytes())
             {
                 if let Ok(header_value) = reqwest::header::HeaderValue::from_bytes(value.as_bytes())
                 {
@@ -353,22 +360,20 @@ pub fn filter_headers(headers: &HeaderMap) -> reqwest::header::HeaderMap {
 }
 
 /// Set authentication header based on CLI type
-pub fn set_auth_header(
-    headers: &mut reqwest::header::HeaderMap,
-    api_key: &str,
-    cli_type: CliType,
-) {
+pub fn set_auth_header(headers: &mut reqwest::header::HeaderMap, api_key: &str, cli_type: CliType) {
     match cli_type {
         CliType::ClaudeCode => {
             // Claude uses Authorization: Bearer
-            if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
+            if let Ok(value) =
+                reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
             {
                 headers.insert(reqwest::header::AUTHORIZATION, value);
             }
         }
         CliType::Codex => {
             // Codex uses Authorization: Bearer
-            if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
+            if let Ok(value) =
+                reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
             {
                 headers.insert(reqwest::header::AUTHORIZATION, value);
             }

@@ -129,13 +129,15 @@ impl<'a> SchemaInspector<'a> {
     }
 
     /// 获取表的 CREATE TABLE SQL 语句
-    pub async fn get_create_table_sql(&self, table_name: &str) -> Result<Option<String>, sqlx::Error> {
-        let row: Option<(String,)> = sqlx::query_as(
-            "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
-        )
-        .bind(table_name)
-        .fetch_optional(self.pool)
-        .await?;
+    pub async fn get_create_table_sql(
+        &self,
+        table_name: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
+                .bind(table_name)
+                .fetch_optional(self.pool)
+                .await?;
 
         Ok(row.map(|r| r.0))
     }

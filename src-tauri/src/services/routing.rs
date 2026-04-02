@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::db::models::{Provider, ProviderModelMap, ProviderModelBlacklist};
+use crate::db::models::{Provider, ProviderModelBlacklist, ProviderModelMap};
 use crate::services::proxy::wildcard_match;
 
 /// Provider with its model mappings and blacklist
@@ -13,7 +13,9 @@ pub struct ProviderWithMaps {
 
 /// Check if model matches any blacklist pattern
 fn is_model_blacklisted(model: &str, blacklist: &[ProviderModelBlacklist]) -> bool {
-    blacklist.iter().any(|item| wildcard_match(&item.model_pattern, model))
+    blacklist
+        .iter()
+        .any(|item| wildcard_match(&item.model_pattern, model))
 }
 
 /// Select an available provider for the given CLI type
@@ -63,7 +65,11 @@ pub async fn select_provider(
             }
         }
 
-        return Ok(Some(ProviderWithMaps { provider, model_maps, model_blacklist }));
+        return Ok(Some(ProviderWithMaps {
+            provider,
+            model_maps,
+            model_blacklist,
+        }));
     }
 
     Ok(None)
@@ -114,7 +120,11 @@ pub async fn get_available_providers(
             }
         }
 
-        result.push(ProviderWithMaps { provider, model_maps, model_blacklist });
+        result.push(ProviderWithMaps {
+            provider,
+            model_maps,
+            model_blacklist,
+        });
     }
 
     Ok(result)

@@ -200,9 +200,11 @@ export interface DiscoverableSkill {
   name: string
   description: string
   directory: string
-  install_directory: string // 安装后的目录名
+  install_directory: string
   readme_url: string | null
   repo: SkillRepo
+  is_favorited: boolean
+  is_installed: boolean
 }
 
 export interface InstalledSkill {
@@ -214,7 +216,11 @@ export interface InstalledSkill {
   readme_url: string | null
   installed_at: number
   cli_flags: Record<string, boolean>
-  exists_on_disk: boolean // skill 文件是否存在于本地
+  exists_on_disk: boolean
+  is_favorited: boolean
+  can_favorite: boolean
+  favorite_key: string | null
+  market_display: string
 }
 
 export interface SkillFavoriteItem {

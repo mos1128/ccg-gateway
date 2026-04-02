@@ -56,7 +56,7 @@
     </div>
 
     <!-- Main Content Area -->
-    <div class="view-content-wrapper">
+    <div class="view-content-wrapper" v-loading="operationLoading">
       
       <!-- TAB: INSTALLED -->
       <div v-if="activeTab === 'skills'" class="tab-pane">
@@ -79,21 +79,21 @@
                       <h3 class="skill-name">{{ skill.name }}</h3>
                       <div v-if="!skill.exists_on_disk" class="tag tag-red">缺失文件</div>
                     </div>
-                    <div class="skill-market" v-if="getInstalledSkillMarket(skill)">{{ getInstalledSkillMarket(skill) }}</div>
+                    <div class="skill-market" v-if="skill.market_display">{{ skill.market_display }}</div>
                     <div class="skill-source mono" v-else>本地安装</div>
                   </div>
                   <div class="card-actions">
                     <button
                       class="action-icon star"
-                      :class="{ 'star-active': isInstalledFavorited(skill) }"
-                      :title="isInstalledFavorited(skill) ? '取消收藏' : '收藏技能'"
-                      :disabled="!canFavoriteInstalledSkill(skill)"
+                      :class="{ 'star-active': skill.is_favorited }"
+                      :title="skill.is_favorited ? '取消收藏' : '收藏技能'"
+                      :disabled="!skill.can_favorite"
                       @click="toggleInstalledFavorite(skill)"
                     >
                       <svg
                         width="18"
                         height="18"
-                        :style="isInstalledFavorited(skill) ? 'fill: #f59e0b;' : ''"
+                        :style="skill.is_favorited ? 'fill: #f59e0b;' : ''"
                       ><use href="#icon-star"/></svg>
                     </button>
                     <button class="action-icon" title="重装/更新" :disabled="installingSkillId === `installed-${skill.id}`" @click="handleReinstallFromInstalled(skill)">
@@ -238,18 +238,18 @@
                   <div class="discover-actions">
                     <button
                       class="action-icon"
-                      :class="{ 'star-active': favoriteKeys.has(skill.key) }"
-                      :title="favoriteKeys.has(skill.key) ? '取消收藏' : '收藏技能'"
+                      :class="{ 'star-active': skill.is_favorited }"
+                      :title="skill.is_favorited ? '取消收藏' : '收藏技能'"
                       @click="toggleRepoFavorite(skill)"
                     >
                       <svg
                         width="18"
                         height="18"
-                        :style="favoriteKeys.has(skill.key) ? 'fill: #f59e0b;' : ''"
+                        :style="skill.is_favorited ? 'fill: #f59e0b;' : ''"
                       ><use href="#icon-star"/></svg>
                     </button>
                     <button
-                      v-if="isInstalled(skill.install_directory)"
+                      v-if="skill.is_installed"
                       class="action-icon installed"
                       title="重装"
                       :disabled="installingSkillId === skill.key"
@@ -378,6 +378,7 @@ const activeTab = ref<'skills' | 'repos' | 'favorites'>('skills')
 const installedList = ref<InstalledSkill[]>([])
 const loadingInstalled = ref(false)
 const installingSkillId = ref<string | null>(null)
+const operationLoading = ref(false)
 
 // Repos
 const repoList = ref<SkillRepo[]>([])
@@ -397,75 +398,15 @@ const skillSearchQuery = ref('')
 const favoriteList = ref<SkillFavoriteItem[]>([])
 const loadingFavorites = ref(false)
 
-const favoriteKeys = computed(() => new Set(favoriteList.value.map(item => item.key)))
-
-const sortedRepoSkillList = computed(() => {
-  return [...repoSkillList.value].sort((a, b) => {
-    const aFavorited = favoriteKeys.value.has(a.key)
-    const bFavorited = favoriteKeys.value.has(b.key)
-    if (aFavorited !== bFavorited) return aFavorited ? -1 : 1
-
-    const aInstalled = isInstalled(a.install_directory)
-    const bInstalled = isInstalled(b.install_directory)
-    if (aInstalled !== bInstalled) return aInstalled ? -1 : 1
-
-    return a.name.localeCompare(b.name, 'zh-CN')
-  })
-})
-
 const filteredSkillList = computed(() => {
-  if (!skillSearchQuery.value) return sortedRepoSkillList.value
+  if (!skillSearchQuery.value) return repoSkillList.value
   const query = skillSearchQuery.value.toLowerCase()
-  return sortedRepoSkillList.value.filter(s => 
-    s.name.toLowerCase().includes(query) || 
+  return repoSkillList.value.filter(s =>
+    s.name.toLowerCase().includes(query) ||
     s.directory.toLowerCase().includes(query) ||
     s.description?.toLowerCase().includes(query)
   )
 })
-
-const installedDirectories = computed(() => new Set(installedList.value.map(s => s.directory)))
-function isInstalled(installDirectory: string): boolean {
-  return installedDirectories.value.has(installDirectory)
-}
-
-function isLocalRepo(repo?: SkillRepo | null): boolean {
-  if (!repo) return true
-  return repo.source.includes(':\\') || repo.source.startsWith('/')
-}
-
-function getInstalledSkillMarket(skill: InstalledSkill): string {
-  if (!skill.repo || isLocalRepo(skill.repo)) return ''
-  return `@${skill.repo.source}`
-}
-
-function buildSkillKey(repo: SkillRepo, directory: string): string {
-  return `${isLocalRepo(repo) ? repo.name : repo.source}:${directory}`
-}
-
-function toDiscoverableSkill(installed: InstalledSkill): DiscoverableSkill | null {
-  if (!installed.repo) return null
-  const sourceDirectory = isLocalRepo(installed.repo) && installed.directory === installed.repo.name
-    ? '.'
-    : installed.directory
-  return {
-    key: buildSkillKey(installed.repo, sourceDirectory),
-    name: installed.name,
-    description: installed.description || '',
-    directory: sourceDirectory,
-    install_directory: installed.directory,
-    readme_url: installed.readme_url,
-    repo: installed.repo
-  }
-}
-
-function canFavoriteInstalledSkill(skill: InstalledSkill): boolean {
-  return Boolean(toDiscoverableSkill(skill))
-}
-
-function isInstalledFavorited(skill: InstalledSkill): boolean {
-  const discoverable = toDiscoverableSkill(skill)
-  return Boolean(discoverable && favoriteKeys.value.has(discoverable.key))
-}
 
 async function fetchInstalled() {
   loadingInstalled.value = true
@@ -501,7 +442,13 @@ async function fetchFavorites() {
 }
 
 async function refreshInstallationState() {
-  await Promise.all([fetchInstalled(), fetchFavorites()])
+  await Promise.all([fetchInstalled(), fetchFavorites(), fetchRepos()])
+}
+
+async function refreshCurrentRepoSkillsIfNeeded(repoName?: string) {
+  if (!currentRepo.value) return
+  if (repoName && currentRepo.value.name !== repoName) return
+  await fetchRepoSkills()
 }
 
 function handleRepoClick(repo: SkillRepo) {
@@ -541,29 +488,37 @@ function handleBackToRepos() {
 }
 
 async function handleCliToggle(skill: InstalledSkill, cliType: string, enabled: boolean) {
+  operationLoading.value = true
   try {
     await skillsApi.toggleCli(skill.id, cliType, enabled)
-    // Snappy UI update
     if (skill.cli_flags) {
       skill.cli_flags[cliType] = enabled
     }
     notify('已更新')
   } catch (error: any) {
     notify(getErrorMessage(error, '更新失败'), 'error')
-    await fetchInstalled() // Rollback
+    await fetchInstalled()
+  } finally {
+    operationLoading.value = false
   }
 }
 
 async function handleUninstall(skill: InstalledSkill) {
   try {
     await ElMessageBox.confirm(`确定卸载技能 "${skill.name}"?`, '确认卸载')
+    operationLoading.value = true
     await skillsApi.uninstall(skill.id)
     notify('已卸载')
-    await refreshInstallationState()
+    await Promise.all([
+      refreshInstallationState(),
+      refreshCurrentRepoSkillsIfNeeded(skill.repo?.name)
+    ])
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
       notify(getErrorMessage(error, '卸载失败'), 'error')
     }
+  } finally {
+    operationLoading.value = false
   }
 }
 
@@ -572,61 +527,53 @@ async function handleInstall(skill: DiscoverableSkill, reinstall: boolean = fals
     if (reinstall) {
       await ElMessageBox.confirm(`确定重装 "${skill.name}"? (将更新为最新版本)`, '确认重装')
     }
+    operationLoading.value = true
     installingSkillId.value = skill.key
     await skillsApi.install(skill, reinstall)
     notify(reinstall ? '重装成功' : '安装成功')
-    await refreshInstallationState()
+    await Promise.all([
+      refreshInstallationState(),
+      refreshCurrentRepoSkillsIfNeeded(skill.repo.name)
+    ])
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
       notify(getErrorMessage(error, '安装失败'), 'error')
     }
   } finally {
     installingSkillId.value = null
-  }
-}
-
-async function handleInstallFromInstalled(skill: InstalledSkill) {
-  const discoverable = toDiscoverableSkill(skill)
-  if (!discoverable) {
-    notify('缺少仓库信息，无法安装', 'error')
-    return
-  }
-  installingSkillId.value = `installed-${skill.id}`
-  try {
-    await skillsApi.install(discoverable, true)
-    notify('安装成功')
-    await refreshInstallationState()
-  } catch (error: any) {
-    notify(getErrorMessage(error, '安装失败'), 'error')
-  } finally {
-    installingSkillId.value = null
+    operationLoading.value = false
   }
 }
 
 async function handleReinstallFromInstalled(skill: InstalledSkill) {
-  const discoverable = toDiscoverableSkill(skill)
-  if (!discoverable) {
+  if (!skill.can_favorite) {
     notify('缺少仓库信息，无法重装', 'error')
     return
   }
   try {
     await ElMessageBox.confirm(`确定重装技能 "${skill.name}"?`, '确认重装')
+    operationLoading.value = true
     installingSkillId.value = `installed-${skill.id}`
-    await skillsApi.install(discoverable, true)
+    await skillsApi.reinstallInstalled(skill.id)
     notify('重装成功')
-    await refreshInstallationState()
+    await Promise.all([
+      refreshInstallationState(),
+      refreshCurrentRepoSkillsIfNeeded(skill.repo?.name)
+    ])
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
       notify(getErrorMessage(error, '重装失败'), 'error')
     }
   } finally {
     installingSkillId.value = null
+    operationLoading.value = false
   }
 }
 
 async function toggleFavorite(skill: DiscoverableSkill) {
+  operationLoading.value = true
   try {
-    if (favoriteKeys.value.has(skill.key)) {
+    if (skill.is_favorited) {
       await skillsApi.removeFavorite(skill.key)
       notify('已取消收藏')
     } else {
@@ -634,18 +581,29 @@ async function toggleFavorite(skill: DiscoverableSkill) {
       notify('已收藏')
     }
     await fetchFavorites()
+    const target = repoSkillList.value.find(s => s.key === skill.key)
+    if (target) {
+      target.is_favorited = !skill.is_favorited
+    }
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
+  } finally {
+    operationLoading.value = false
   }
 }
 
 async function toggleInstalledFavorite(skill: InstalledSkill) {
-  const discoverable = toDiscoverableSkill(skill)
-  if (!discoverable) {
-    notify('缺少仓库信息，无法收藏', 'error')
-    return
+  operationLoading.value = true
+  try {
+    const isFavorited = await skillsApi.toggleInstalledFavorite(skill.id)
+    notify(isFavorited ? '已收藏' : '已取消收藏')
+    await fetchInstalled()
+    await fetchFavorites()
+  } catch (error: any) {
+    notify(getErrorMessage(error, '操作失败'), 'error')
+  } finally {
+    operationLoading.value = false
   }
-  await toggleFavorite(discoverable)
 }
 
 async function toggleRepoFavorite(skill: DiscoverableSkill) {
@@ -653,30 +611,38 @@ async function toggleRepoFavorite(skill: DiscoverableSkill) {
 }
 
 async function handleInstallFavorite(favorite: SkillFavoriteItem, reinstall: boolean = false) {
-  installingSkillId.value = favorite.key
   try {
     if (reinstall) {
       await ElMessageBox.confirm(`确定重装 "${favorite.name}"? (将更新为最新版本)`, '确认重装')
     }
+    operationLoading.value = true
+    installingSkillId.value = favorite.key
     await skillsApi.installFavorite(favorite.key)
     notify(reinstall ? '重装成功' : '安装成功')
-    await refreshInstallationState()
+    await Promise.all([
+      refreshInstallationState(),
+      refreshCurrentRepoSkillsIfNeeded(favorite.repo.name)
+    ])
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
       notify(getErrorMessage(error, '安装失败'), 'error')
     }
   } finally {
     installingSkillId.value = null
+    operationLoading.value = false
   }
 }
 
 async function handleRemoveFavoriteById(favorite: SkillFavoriteItem) {
+  operationLoading.value = true
   try {
     await skillsApi.removeFavorite(favorite.key)
     favoriteList.value = await skillsApi.getFavorites()
     notify('已移除')
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
+  } finally {
+    operationLoading.value = false
   }
 }
 
@@ -714,11 +680,11 @@ async function handleAddRepo() {
 
 async function handleRemoveRepo(repo: SkillRepo) {
   try {
-    await ElMessageBox.confirm(`确定删除仓库 "${repo.name}"?`, '确认删除')
+    await ElMessageBox.confirm(`确定删除仓库 "${repo.name}" 并卸载该仓库下所有已安装技能？`, '确认删除')
     loadingRepos.value = true
     await skillsApi.removeRepo(repo.name)
     notify('已删除')
-    await fetchRepos()
+    await refreshInstallationState()
   } catch (error: any) {
     if (error !== 'cancel' && error?.toString() !== 'cancel') {
       notify(getErrorMessage(error, '删除失败'), 'error')

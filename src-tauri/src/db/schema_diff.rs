@@ -83,10 +83,9 @@ impl SchemaDiff {
 
     /// SQL 标准化：去除引号、标准化空白字符
     fn normalize_sql(sql: &str) -> String {
-        sql
-            .replace('"', "")        // 1. 去除双引号
-            .replace("IF NOT EXISTS", "")  // 2. 去除 IF NOT EXISTS
-            .split_whitespace()       // 3. 标准化空白字符
+        sql.replace('"', "") // 1. 去除双引号
+            .replace("IF NOT EXISTS", "") // 2. 去除 IF NOT EXISTS
+            .split_whitespace() // 3. 标准化空白字符
             .collect::<Vec<_>>()
             .join(" ")
             .trim()

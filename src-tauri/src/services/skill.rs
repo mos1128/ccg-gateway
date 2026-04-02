@@ -1,14 +1,12 @@
 use crate::config::get_data_dir;
 use crate::db::models::SkillRepo;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 type Result<T> = std::result::Result<T, String>;
 
-const DEFAULT_SKILL_REPOS_JSON: &str = "repos.json";
-const DEFAULT_SKILL_CACHE_DIR: &str = "cache";
-const INSTALLED_SKILL_MANIFEST_JSON: &str = "manifest.json";
+const SKILL_STORAGE_JSON: &str = "config.json";
+const DEFAULT_SKILL_CACHE_DIR: &str = ".cache";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstalledSkillManifestEntry {
@@ -18,6 +16,75 @@ pub struct InstalledSkillManifestEntry {
     pub repo: Option<SkillRepo>,
     pub readme_url: Option<String>,
     pub installed_at: i64,
+    pub source_directory: Option<String>, // 仓库中的原始相对路径，用于匹配收藏
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SkillStorage {
+    #[serde(default)]
+    repos: Vec<StoredSkillRepo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredSkillRepo {
+    name: String,
+    source: String,
+    #[serde(default)]
+    skills: Vec<StoredInstalledSkill>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredInstalledSkill {
+    directory: String,
+    name: String,
+    description: Option<String>,
+    readme_url: Option<String>,
+    installed_at: i64,
+    source_directory: Option<String>,
+}
+
+impl StoredSkillRepo {
+    fn new(repo: SkillRepo) -> Self {
+        Self {
+            name: repo.name,
+            source: repo.source,
+            skills: Vec::new(),
+        }
+    }
+
+    fn to_repo(&self) -> SkillRepo {
+        SkillRepo {
+            name: self.name.clone(),
+            source: self.source.clone(),
+        }
+    }
+}
+
+impl From<&InstalledSkillManifestEntry> for StoredInstalledSkill {
+    fn from(entry: &InstalledSkillManifestEntry) -> Self {
+        Self {
+            directory: entry.directory.clone(),
+            name: entry.name.clone(),
+            description: entry.description.clone(),
+            readme_url: entry.readme_url.clone(),
+            installed_at: entry.installed_at,
+            source_directory: entry.source_directory.clone(),
+        }
+    }
+}
+
+impl StoredInstalledSkill {
+    fn into_manifest(self, repo: SkillRepo) -> InstalledSkillManifestEntry {
+        InstalledSkillManifestEntry {
+            directory: self.directory,
+            name: self.name,
+            description: self.description,
+            repo: Some(repo),
+            readme_url: self.readme_url,
+            installed_at: self.installed_at,
+            source_directory: self.source_directory,
+        }
+    }
 }
 
 fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<()> {
@@ -51,100 +118,176 @@ pub fn get_ssot_dir() -> PathBuf {
     dir
 }
 
-pub fn get_skill_repo_dir() -> PathBuf {
-    let dir = get_data_dir().join("skill_repo");
-    std::fs::create_dir_all(&dir).ok();
-    dir
-}
-
 pub fn get_skill_cache_dir() -> PathBuf {
-    let dir = get_skill_repo_dir().join(DEFAULT_SKILL_CACHE_DIR);
+    let dir = get_ssot_dir().join(DEFAULT_SKILL_CACHE_DIR);
     std::fs::create_dir_all(&dir).ok();
     dir
 }
 
-fn get_skill_repos_path() -> PathBuf {
-    get_skill_repo_dir().join(DEFAULT_SKILL_REPOS_JSON)
-}
-
-fn get_installed_skill_manifest_path() -> PathBuf {
-    get_ssot_dir().join(INSTALLED_SKILL_MANIFEST_JSON)
+fn get_skill_storage_path() -> PathBuf {
+    get_ssot_dir().join(SKILL_STORAGE_JSON)
 }
 
 fn default_skill_repos() -> Vec<SkillRepo> {
-    vec![
-        SkillRepo {
-            name: "skills".to_string(),
-            source: "https://github.com/anthropics/skills".to_string(),
-        },
-    ]
+    vec![SkillRepo {
+        name: "skills".to_string(),
+        source: "https://github.com/anthropics/skills".to_string(),
+    }]
+}
+
+fn default_skill_storage() -> SkillStorage {
+    SkillStorage {
+        repos: default_skill_repos()
+            .into_iter()
+            .map(StoredSkillRepo::new)
+            .collect(),
+    }
+}
+
+fn sort_storage(storage: &mut SkillStorage) {
+    for repo in &mut storage.repos {
+        repo.skills
+            .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    }
+    storage
+        .repos
+        .sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+}
+
+fn save_skill_storage(mut storage: SkillStorage) -> Result<()> {
+    sort_storage(&mut storage);
+    write_json(&get_skill_storage_path(), &storage)
+}
+
+fn load_skill_storage() -> Result<SkillStorage> {
+    ensure_default_skill_repos()?;
+    let mut storage: SkillStorage = read_json_or_default(&get_skill_storage_path())?;
+    sort_storage(&mut storage);
+    Ok(storage)
+}
+
+fn merge_repo_skills(target: &mut Vec<StoredInstalledSkill>, incoming: Vec<StoredInstalledSkill>) {
+    for skill in incoming {
+        target.retain(|item| item.directory != skill.directory);
+        target.push(skill);
+    }
 }
 
 pub fn ensure_default_skill_repos() -> Result<()> {
-    let path = get_skill_repos_path();
+    let path = get_skill_storage_path();
     if path.exists() {
         return Ok(());
     }
 
-    write_json(&path, &default_skill_repos())
+    write_json(&path, &default_skill_storage())
 }
 
 pub fn load_skill_repos() -> Result<Vec<SkillRepo>> {
-    ensure_default_skill_repos()?;
-    let mut repos: Vec<SkillRepo> = read_json_or_default(&get_skill_repos_path())?;
-    repos.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    Ok(repos)
+    let storage = load_skill_storage()?;
+    Ok(storage.repos.into_iter().map(|repo| repo.to_repo()).collect())
 }
 
 pub fn get_skill_repo(name: &str) -> Result<Option<SkillRepo>> {
-    let repos = load_skill_repos()?;
-    Ok(repos.into_iter().find(|repo| repo.name == name))
+    let storage = load_skill_storage()?;
+    Ok(storage
+        .repos
+        .into_iter()
+        .find(|repo| repo.name == name)
+        .map(|repo| repo.to_repo()))
 }
 
 pub fn upsert_skill_repo(repo: SkillRepo) -> Result<()> {
-    let mut repos = load_skill_repos()?;
-    repos.retain(|item| item.name != repo.name);
-    repos.push(repo);
-    repos.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    write_json(&get_skill_repos_path(), &repos)
+    let mut storage = load_skill_storage()?;
+
+    if let Some(existing) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
+        existing.source = repo.source;
+    } else {
+        storage.repos.push(StoredSkillRepo::new(repo));
+    }
+
+    save_skill_storage(storage)
 }
 
 pub fn replace_skill_repo(old_name: &str, repo: SkillRepo) -> Result<()> {
-    let mut repos = load_skill_repos()?;
-    repos.retain(|item| item.name != old_name && item.name != repo.name);
-    repos.push(repo);
-    repos.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    write_json(&get_skill_repos_path(), &repos)
+    let mut storage = load_skill_storage()?;
+    let mut moved_skills = Vec::new();
+
+    if let Some(index) = storage.repos.iter().position(|item| item.name == old_name) {
+        moved_skills = storage.repos.remove(index).skills;
+    }
+
+    if let Some(existing) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
+        existing.source = repo.source;
+        merge_repo_skills(&mut existing.skills, moved_skills);
+    } else {
+        let mut repo_record = StoredSkillRepo::new(repo);
+        merge_repo_skills(&mut repo_record.skills, moved_skills);
+        storage.repos.push(repo_record);
+    }
+
+    save_skill_storage(storage)
 }
 
 pub fn remove_skill_repo(name: &str) -> Result<Option<SkillRepo>> {
-    let mut repos = load_skill_repos()?;
-    let removed = repos.iter().find(|repo| repo.name == name).cloned();
-    repos.retain(|repo| repo.name != name);
-    write_json(&get_skill_repos_path(), &repos)?;
-    Ok(removed)
+    let mut storage = load_skill_storage()?;
+    let Some(index) = storage.repos.iter().position(|repo| repo.name == name) else {
+        return Ok(None);
+    };
+
+    let removed = storage.repos.remove(index).to_repo();
+
+    save_skill_storage(storage)?;
+    Ok(Some(removed))
 }
 
 pub fn load_installed_skill_manifest() -> Result<Vec<InstalledSkillManifestEntry>> {
-    read_json_or_default(&get_installed_skill_manifest_path())
-}
+    let storage = load_skill_storage()?;
+    let mut entries = Vec::new();
 
-pub fn save_installed_skill_manifest(entries: &[InstalledSkillManifestEntry]) -> Result<()> {
-    write_json(&get_installed_skill_manifest_path(), entries)
+    for repo in storage.repos {
+        let repo_info = repo.to_repo();
+        for skill in repo.skills {
+            entries.push(skill.into_manifest(repo_info.clone()));
+        }
+    }
+
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(entries)
 }
 
 pub fn upsert_installed_skill_manifest_entry(entry: InstalledSkillManifestEntry) -> Result<()> {
-    let mut entries = load_installed_skill_manifest()?;
-    entries.retain(|item| item.directory != entry.directory);
-    entries.push(entry);
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    save_installed_skill_manifest(&entries)
+    let repo = entry
+        .repo
+        .clone()
+        .ok_or_else(|| "Skill missing repo info".to_string())?;
+    let mut storage = load_skill_storage()?;
+
+    for repo_entry in &mut storage.repos {
+        repo_entry
+            .skills
+            .retain(|item| item.directory != entry.directory);
+    }
+
+    if let Some(repo_entry) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
+        repo_entry.source = repo.source;
+        repo_entry.skills.push(StoredInstalledSkill::from(&entry));
+    } else {
+        let mut repo_entry = StoredSkillRepo::new(repo);
+        repo_entry.skills.push(StoredInstalledSkill::from(&entry));
+        storage.repos.push(repo_entry);
+    }
+
+    save_skill_storage(storage)
 }
 
 pub fn remove_installed_skill_manifest_entry(directory: &str) -> Result<()> {
-    let mut entries = load_installed_skill_manifest()?;
-    entries.retain(|item| item.directory != directory);
-    save_installed_skill_manifest(&entries)
+    let mut storage = load_skill_storage()?;
+
+    for repo in &mut storage.repos {
+        repo.skills.retain(|item| item.directory != directory);
+    }
+
+    save_skill_storage(storage)
 }
 
 pub fn list_installed_skill_directories() -> Result<Vec<String>> {
@@ -158,7 +301,9 @@ pub fn list_installed_skill_directories() -> Result<Vec<String>> {
         }
 
         if let Some(name) = entry.file_name().to_str() {
-            directories.push(name.to_string());
+            if name != DEFAULT_SKILL_CACHE_DIR {
+                directories.push(name.to_string());
+            }
         }
     }
 
@@ -187,37 +332,19 @@ pub fn delete_cached_repo_dir(source: &str) {
     }
 }
 
-pub fn migrate_legacy_skill_repos(repos: &[SkillRepo]) -> Result<()> {
-    let path = get_skill_repos_path();
-    if path.exists() || repos.is_empty() {
-        return Ok(());
-    }
-
-    let mut migrated = repos.to_vec();
-    migrated.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    write_json(&path, &migrated)
-}
-
-pub fn migrate_legacy_installed_skill_manifest(entries: &[InstalledSkillManifestEntry]) -> Result<()> {
-    let path = get_installed_skill_manifest_path();
-    if path.exists() || entries.is_empty() {
-        return Ok(());
-    }
-
-    let mut migrated = entries.to_vec();
-    migrated.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    write_json(&path, &migrated)
-}
-
 pub fn is_local_repo_source(source: &str) -> bool {
     let path = Path::new(source);
     path.is_absolute() || source.contains(":\\") || source.starts_with('/')
 }
 
-pub fn repo_map(repos: &[SkillRepo]) -> HashMap<String, SkillRepo> {
-    repos
-        .iter()
-        .cloned()
-        .map(|repo| (repo.name.clone(), repo))
-        .collect()
+pub fn ensure_repo_exists(repo: &SkillRepo) -> Result<()> {
+    let mut storage = load_skill_storage()?;
+
+    if let Some(existing) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
+        existing.source = repo.source.clone();
+    } else {
+        storage.repos.push(StoredSkillRepo::new(repo.clone()));
+    }
+
+    save_skill_storage(storage)
 }

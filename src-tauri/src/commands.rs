@@ -1,25 +1,20 @@
-use crate::config::{get_data_dir, get_default_cli_config_dir, expand_home_path, shrink_home_path};
+use crate::config::{expand_home_path, get_data_dir, get_default_cli_config_dir, shrink_home_path};
 use crate::db::models::{
-    Provider, ProviderCreate, ProviderResponse, ProviderUpdate,
-    GatewaySettings, TimeoutSettings, TimeoutSettingsUpdate,
-    CliSettingsResponse, CliSettingsUpdate,
-    RequestLogItem, RequestLogDetail, PaginatedLogs,
-    SystemLogItem, SystemLogListResponse,
-    DailyStats, ProviderStatsRow, ProviderStatsResponse,
-    McpConfig, McpCliFlag, McpResponse, McpCreate, McpUpdate,
-    PromptPreset, PromptCliFlag, PromptResponse, PromptCreate, PromptUpdate,
-    SkillRepo, SkillRepoCreate,
-    SkillCliFlag, DiscoverableSkill, InstalledSkillResponse, SkillFavorite, SkillFavoriteItem,
-    WebdavSettings, WebdavSettingsUpdate, WebdavBackup,
-    ProjectInfo, SessionInfo, PaginatedProjects, PaginatedSessions, SessionMessage,
-    SystemStatus,
-    OfficialCredential, OfficialCredentialCreate, OfficialCredentialUpdate, OfficialCredentialResponse,
-    MarketplaceInfo, PluginItem, PluginFavoriteItem,
+    CliSettingsResponse, CliSettingsUpdate, DailyStats, DiscoverableSkill, GatewaySettings,
+    InstalledSkillResponse, MarketplaceInfo, McpCliFlag, McpConfig, McpCreate, McpResponse,
+    McpUpdate, OfficialCredential, OfficialCredentialCreate, OfficialCredentialResponse,
+    OfficialCredentialUpdate, PaginatedLogs, PaginatedProjects, PaginatedSessions,
+    PluginFavoriteItem, PluginItem, ProjectInfo, PromptCliFlag, PromptCreate, PromptPreset,
+    PromptResponse, PromptUpdate, Provider, ProviderCreate, ProviderResponse,
+    ProviderStatsResponse, ProviderStatsRow, ProviderUpdate, RequestLogDetail, RequestLogItem,
+    SessionInfo, SessionMessage, SkillCliFlag, SkillFavorite, SkillFavoriteItem, SkillRepo,
+    SkillRepoCreate, SystemLogItem, SystemLogListResponse, SystemStatus, TimeoutSettings,
+    TimeoutSettingsUpdate, WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
 };
-use crate::services::skill::{self, InstalledSkillManifestEntry};
+use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestEntry};
 use crate::LogDb;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use std::collections::{BTreeMap, HashMap};
 use tauri::{Manager, State};
 
@@ -59,8 +54,10 @@ struct CodexModelProvider {
     requires_openai_auth: bool,
 }
 
-
-fn serialize_toml_document<T: Serialize>(value: &T, context: &str) -> Result<toml_edit::DocumentMut> {
+fn serialize_toml_document<T: Serialize>(
+    value: &T,
+    context: &str,
+) -> Result<toml_edit::DocumentMut> {
     toml_edit::ser::to_document(value)
         .map_err(|e| format!("Failed to serialize {}: {}", context, e))
 }
@@ -133,8 +130,14 @@ mod tests {
             .and_then(|value| value.get("auggie"))
             .expect("mcp server should exist");
 
-        assert_eq!(server.get("type").and_then(|value| value.as_str()), Some("stdio"));
-        assert_eq!(server.get("command").and_then(|value| value.as_str()), Some("auggie"));
+        assert_eq!(
+            server.get("type").and_then(|value| value.as_str()),
+            Some("stdio")
+        );
+        assert_eq!(
+            server.get("command").and_then(|value| value.as_str()),
+            Some("auggie")
+        );
         assert_eq!(
             server
                 .get("args")
@@ -178,7 +181,10 @@ mod tests {
             .and_then(|value| value.get("fetch"))
             .expect("mcp server should exist");
 
-        assert_eq!(server.get("type").and_then(|value| value.as_str()), Some("sse"));
+        assert_eq!(
+            server.get("type").and_then(|value| value.as_str()),
+            Some("sse")
+        );
         assert_eq!(
             server.get("url").and_then(|value| value.as_str()),
             Some("https://mcp.api-inference.modelscope.net/f3b382c4523044/sse")
@@ -220,10 +226,14 @@ fn map_db_error(e: sqlx::Error) -> String {
         if err_str.contains("providers.cli_type") && err_str.contains("providers.name") {
             return "同类型的服务商名称已存在".to_string();
         }
-        if err_str.contains("provider_model_map.provider_id") && err_str.contains("provider_model_map.source_model") {
+        if err_str.contains("provider_model_map.provider_id")
+            && err_str.contains("provider_model_map.source_model")
+        {
             return "该服务商已存在相同的模型映射".to_string();
         }
-        if err_str.contains("provider_model_blacklist.provider_id") && err_str.contains("provider_model_blacklist.model_pattern") {
+        if err_str.contains("provider_model_blacklist.provider_id")
+            && err_str.contains("provider_model_blacklist.model_pattern")
+        {
             return "该服务商已存在相同的黑名单模式".to_string();
         }
         if err_str.contains("mcp_configs.name") {
@@ -235,7 +245,9 @@ fn map_db_error(e: sqlx::Error) -> String {
         if err_str.contains("skill_configs.directory") {
             return "该目录已安装过 Skill".to_string();
         }
-        if err_str.contains("official_credentials.cli_type") && err_str.contains("official_credentials.name") {
+        if err_str.contains("official_credentials.cli_type")
+            && err_str.contains("official_credentials.name")
+        {
             return "同类型的凭证名称已存在".to_string();
         }
         if err_str.contains("plugin_favorites.plugin_id") {
@@ -286,23 +298,28 @@ pub async fn get_providers(
     .map_err(|e| e.to_string())?;
 
     // 按 provider_id 分组
-    let maps_by_provider: HashMap<i64, Vec<_>> = all_maps
-        .into_iter()
-        .fold(HashMap::new(), |mut acc, (id, provider_id, source_model, target_model, enabled)| {
-            acc.entry(provider_id)
-                .or_insert_with(Vec::new)
-                .push((id, source_model, target_model, enabled));
+    let maps_by_provider: HashMap<i64, Vec<_>> = all_maps.into_iter().fold(
+        HashMap::new(),
+        |mut acc, (id, provider_id, source_model, target_model, enabled)| {
+            acc.entry(provider_id).or_insert_with(Vec::new).push((
+                id,
+                source_model,
+                target_model,
+                enabled,
+            ));
             acc
-        });
+        },
+    );
 
-    let blacklist_by_provider: HashMap<i64, Vec<_>> = all_blacklist
-        .into_iter()
-        .fold(HashMap::new(), |mut acc, (id, provider_id, model_pattern)| {
+    let blacklist_by_provider: HashMap<i64, Vec<_>> = all_blacklist.into_iter().fold(
+        HashMap::new(),
+        |mut acc, (id, provider_id, model_pattern)| {
             acc.entry(provider_id)
                 .or_insert_with(Vec::new)
                 .push((id, model_pattern));
             acc
-        });
+        },
+    );
 
     // 组装结果
     let results: Vec<ProviderResponse> = providers
@@ -333,10 +350,12 @@ pub async fn get_providers(
                 .map(|blacklist| {
                     blacklist
                         .iter()
-                        .map(|(id, model_pattern)| crate::db::models::ModelBlacklistResponse {
-                            id: *id,
-                            model_pattern: model_pattern.clone(),
-                        })
+                        .map(
+                            |(id, model_pattern)| crate::db::models::ModelBlacklistResponse {
+                                id: *id,
+                                model_pattern: model_pattern.clone(),
+                            },
+                        )
                         .collect()
                 })
                 .unwrap_or_default();
@@ -370,12 +389,14 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
 
     response.model_maps = maps
         .into_iter()
-        .map(|(id, source_model, target_model, enabled)| crate::db::models::ModelMapResponse {
-            id,
-            source_model,
-            target_model,
-            enabled: enabled != 0,
-        })
+        .map(
+            |(id, source_model, target_model, enabled)| crate::db::models::ModelMapResponse {
+                id,
+                source_model,
+                target_model,
+                enabled: enabled != 0,
+            },
+        )
         .collect();
 
     // Load model blacklist
@@ -389,10 +410,7 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
 
     response.model_blacklist = blacklist
         .into_iter()
-        .map(|(id, model_pattern)| crate::db::models::ModelBlacklistResponse {
-            id,
-            model_pattern,
-        })
+        .map(|(id, model_pattern)| crate::db::models::ModelBlacklistResponse { id, model_pattern })
         .collect();
 
     Ok(response)
@@ -409,7 +427,8 @@ pub async fn create_provider(
     let provider_name = input.name.clone();
 
     // Normalize custom_useragent: treat empty string as None
-    let custom_ua = input.custom_useragent
+    let custom_ua = input
+        .custom_useragent
         .as_deref()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
@@ -472,7 +491,8 @@ pub async fn create_provider(
         &log_db.0,
         "provider_created",
         &format!("服务商 {} 已创建", provider_name),
-    ).await;
+    )
+    .await;
 
     get_provider(db, id).await
 }
@@ -487,15 +507,16 @@ pub async fn update_provider(
     let now = chrono::Utc::now().timestamp();
 
     // Get provider name for logging
-    let provider_name: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM providers WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
+    let provider_name: Option<(String,)> =
+        sqlx::query_as("SELECT name FROM providers WHERE id = ?")
+            .bind(id)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
-    let provider_name = provider_name.map(|(n,)| n).unwrap_or_else(|| format!("Provider#{}", id));
+    let provider_name = provider_name
+        .map(|(n,)| n)
+        .unwrap_or_else(|| format!("Provider#{}", id));
 
     // Check if model maps will be updated (before moving)
     let has_model_maps_update = input.model_maps.is_some();
@@ -566,10 +587,7 @@ pub async fn update_provider(
             }
         }
 
-        q.bind(id)
-            .execute(db.inner())
-            .await
-            .map_err(map_db_error)?;
+        q.bind(id).execute(db.inner()).await.map_err(map_db_error)?;
     }
 
     // Update model maps if provided
@@ -624,7 +642,8 @@ pub async fn update_provider(
             &log_db.0,
             "provider_updated",
             &format!("服务商 {} 已更新", provider_name),
-        ).await;
+        )
+        .await;
     }
 
     get_provider(db, id).await
@@ -637,15 +656,16 @@ pub async fn delete_provider(
     id: i64,
 ) -> Result<()> {
     // Get provider name before deletion
-    let provider_name: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM providers WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
+    let provider_name: Option<(String,)> =
+        sqlx::query_as("SELECT name FROM providers WHERE id = ?")
+            .bind(id)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
-    let provider_name = provider_name.map(|(n,)| n).unwrap_or_else(|| format!("Provider#{}", id));
+    let provider_name = provider_name
+        .map(|(n,)| n)
+        .unwrap_or_else(|| format!("Provider#{}", id));
 
     // Delete associated model maps first (cascade delete)
     sqlx::query("DELETE FROM provider_model_map WHERE provider_id = ?")
@@ -673,7 +693,8 @@ pub async fn delete_provider(
         &log_db.0,
         "provider_deleted",
         &format!("服务商 {} 已删除", provider_name),
-    ).await;
+    )
+    .await;
 
     Ok(())
 }
@@ -714,28 +735,32 @@ pub async fn reset_provider_failures(
     id: i64,
 ) -> Result<()> {
     // Get provider name for logging
-    let provider_name: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM providers WHERE id = ?",
+    let provider_name: Option<(String,)> =
+        sqlx::query_as("SELECT name FROM providers WHERE id = ?")
+            .bind(id)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let provider_name = provider_name
+        .map(|(n,)| n)
+        .unwrap_or_else(|| format!("Provider#{}", id));
+
+    sqlx::query(
+        "UPDATE providers SET consecutive_failures = 0, blacklisted_until = NULL WHERE id = ?",
     )
     .bind(id)
-    .fetch_optional(db.inner())
+    .execute(db.inner())
     .await
-    .map_err(|e| e.to_string())?;
-
-    let provider_name = provider_name.map(|(n,)| n).unwrap_or_else(|| format!("Provider#{}", id));
-
-    sqlx::query("UPDATE providers SET consecutive_failures = 0, blacklisted_until = NULL WHERE id = ?")
-        .bind(id)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
+    .map_err(map_db_error)?;
 
     // Log system event
     let _ = crate::services::stats::record_system_log(
         &log_db.0,
         "provider_reset",
         &format!("服务商 {} 状态已手动重置", provider_name),
-    ).await;
+    )
+    .await;
 
     Ok(())
 }
@@ -750,10 +775,7 @@ pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySe
 }
 
 #[tauri::command]
-pub async fn update_gateway_settings(
-    db: State<'_, SqlitePool>,
-    debug_log: bool,
-) -> Result<()> {
+pub async fn update_gateway_settings(db: State<'_, SqlitePool>, debug_log: bool) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
     let debug_log_val = if debug_log { 1i64 } else { 0 };
 
@@ -799,7 +821,10 @@ pub async fn update_timeout_settings(
 }
 
 #[tauri::command]
-pub async fn get_cli_settings(db: State<'_, SqlitePool>, cli_type: String) -> Result<CliSettingsResponse> {
+pub async fn get_cli_settings(
+    db: State<'_, SqlitePool>,
+    cli_type: String,
+) -> Result<CliSettingsResponse> {
     let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
         "SELECT cli_type, default_json_config, cli_mode, updated_at FROM cli_settings WHERE cli_type = ?",
     )
@@ -809,8 +834,13 @@ pub async fn get_cli_settings(db: State<'_, SqlitePool>, cli_type: String) -> Re
     .map_err(|e| e.to_string())?;
 
     // 获取配置目录
-    let config_dir = get_cli_config_dir_path(db.inner(), &cli_type).await.to_string_lossy().to_string();
-    let default_config_dir = get_default_cli_config_dir(&cli_type).to_string_lossy().to_string();
+    let config_dir = get_cli_config_dir_path(db.inner(), &cli_type)
+        .await
+        .to_string_lossy()
+        .to_string();
+    let default_config_dir = get_default_cli_config_dir(&cli_type)
+        .to_string_lossy()
+        .to_string();
 
     if let Some(row) = row {
         let enabled = check_cli_enabled(db.inner(), &cli_type).await;
@@ -867,7 +897,8 @@ pub async fn update_cli_settings(
                 }
                 "codex" => {
                     // Validate TOML format
-                    config_trimmed.parse::<toml_edit::DocumentMut>()
+                    config_trimmed
+                        .parse::<toml_edit::DocumentMut>()
                         .map_err(|e| format!("TOML 格式错误: {}", e))?;
                 }
                 _ => {}
@@ -885,15 +916,14 @@ pub async fn update_cli_settings(
         .map_err(map_db_error)?;
 
         // 配置更新后，自动同步到 CLI 配置文件
-        let mode: String = sqlx::query_as::<_, (String,)>(
-            "SELECT cli_mode FROM cli_settings WHERE cli_type = ?",
-        )
-        .bind(&cli_type)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?
-        .map(|r| r.0)
-        .unwrap_or_else(|| "proxy".to_string());
+        let mode: String =
+            sqlx::query_as::<_, (String,)>("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
+                .bind(&cli_type)
+                .fetch_optional(db.inner())
+                .await
+                .map_err(|e| e.to_string())?
+                .map(|r| r.0)
+                .unwrap_or_else(|| "proxy".to_string());
 
         if mode == "proxy" {
             // 中转模式：如果 CLI 已启用，重新同步配置
@@ -913,37 +943,40 @@ pub async fn update_cli_settings(
     if let Some(ref config_dir) = input.config_dir {
         // 收缩路径为 ~ 开头的相对路径，便于跨设备同步
         let shrunk_path = shrink_home_path(config_dir);
-        sqlx::query(
-            "UPDATE cli_settings SET config_dir = ?, updated_at = ? WHERE cli_type = ?",
-        )
-        .bind(&shrunk_path)
-        .bind(now)
-        .bind(&cli_type)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
+        sqlx::query("UPDATE cli_settings SET config_dir = ?, updated_at = ? WHERE cli_type = ?")
+            .bind(&shrunk_path)
+            .bind(now)
+            .bind(&cli_type)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
     }
 
     // Update CLI config file if enabled flag is provided
     if let Some(enabled) = input.enabled {
         // 检查当前模式
-        let current_mode: Option<(String,)> = sqlx::query_as(
-            "SELECT cli_mode FROM cli_settings WHERE cli_type = ?",
-        )
-        .bind(&cli_type)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
+        let current_mode: Option<(String,)> =
+            sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
+                .bind(&cli_type)
+                .fetch_optional(db.inner())
+                .await
+                .map_err(|e| e.to_string())?;
 
-        let mode = current_mode.map(|r| r.0).unwrap_or_else(|| "proxy".to_string());
+        let mode = current_mode
+            .map(|r| r.0)
+            .unwrap_or_else(|| "proxy".to_string());
 
         // 只有在中转模式下才处理 enabled 参数
         if mode == "proxy" {
             // 检查 CLI 当前是否已经处于目标状态
             let current_enabled = check_cli_enabled(db.inner(), &cli_type).await;
-            
+
             if current_enabled == enabled {
-                tracing::info!("{} CLI 已经处于目标状态（enabled={}），跳过操作", cli_type, enabled);
+                tracing::info!(
+                    "{} CLI 已经处于目标状态（enabled={}），跳过操作",
+                    cli_type,
+                    enabled
+                );
             } else {
                 // Get default_json_config from database (without config_dir to avoid column errors)
                 let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
@@ -1001,37 +1034,34 @@ async fn mcp_enabled_in_file_async(db: &SqlitePool, cli_type: &str, mcp_name: &s
     };
 
     match cli_type {
-        "claude_code" | "gemini" => {
-            match serde_json::from_str::<serde_json::Value>(&content) {
-                Ok(config) => {
-                    config.get("mcpServers")
-                        .and_then(|v| v.as_object())
-                        .map(|servers| servers.contains_key(mcp_name))
-                        .unwrap_or(false)
-                }
-                Err(_) => false,
-            }
-        }
-        "codex" => {
-            match content.parse::<toml_edit::DocumentMut>() {
-                Ok(doc) => {
-                    doc.get("mcp_servers")
-                        .and_then(|v| v.as_table())
-                        .map(|servers| servers.contains_key(mcp_name))
-                        .unwrap_or(false)
-                }
-                Err(_) => false,
-            }
-        }
+        "claude_code" | "gemini" => match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(config) => config
+                .get("mcpServers")
+                .and_then(|v| v.as_object())
+                .map(|servers| servers.contains_key(mcp_name))
+                .unwrap_or(false),
+            Err(_) => false,
+        },
+        "codex" => match content.parse::<toml_edit::DocumentMut>() {
+            Ok(doc) => doc
+                .get("mcp_servers")
+                .and_then(|v| v.as_table())
+                .map(|servers| servers.contains_key(mcp_name))
+                .unwrap_or(false),
+            Err(_) => false,
+        },
         _ => false,
     }
 }
 
-
 // Check if prompt content matches the file content - 异步版本，支持自定义配置目录
-async fn prompt_enabled_in_file_async(db: &SqlitePool, cli_type: &str, prompt_content: &str) -> bool {
+async fn prompt_enabled_in_file_async(
+    db: &SqlitePool,
+    cli_type: &str,
+    prompt_content: &str,
+) -> bool {
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
-    
+
     let prompt_path = match cli_type {
         "claude_code" => config_dir.join("CLAUDE.md"),
         "codex" => config_dir.join("AGENTS.md"),
@@ -1060,14 +1090,13 @@ async fn prompt_enabled_in_file_async(db: &SqlitePool, cli_type: &str, prompt_co
 /// 优先级：数据库配置 > 默认路径
 pub async fn get_cli_config_dir_path(db: &SqlitePool, cli_type: &str) -> std::path::PathBuf {
     // 1. 查询数据库
-    let result: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT config_dir FROM cli_settings WHERE cli_type = ?",
-    )
-    .bind(cli_type)
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten();
+    let result: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT config_dir FROM cli_settings WHERE cli_type = ?")
+            .bind(cli_type)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten();
 
     // 2. 有配置则展开路径，否则使用默认
     match result.and_then(|r| r.0) {
@@ -1111,7 +1140,8 @@ async fn check_claude_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
         Ok(data) => {
             if let Some(env) = data.get("env") {
                 if let Some(base_url) = env.get("ANTHROPIC_BASE_URL").and_then(|v| v.as_str()) {
-                    return base_url.contains("127.0.0.1:7788") || base_url.contains("localhost:7788");
+                    return base_url.contains("127.0.0.1:7788")
+                        || base_url.contains("localhost:7788");
                 }
             }
             false
@@ -1182,14 +1212,19 @@ async fn get_mcp_config_path(db: &SqlitePool, cli_type: &str) -> Option<std::pat
         "claude_code" => {
             // Claude Code MCP goes to ~/.claude.json (parent of config_dir)
             base_path.parent().map(|p| p.join(".claude.json"))
-        },
+        }
         "codex" => Some(base_path.join("config.toml")),
         "gemini" => Some(base_path.join("settings.json")),
         _ => None,
     }
 }
 
-async fn sync_cli_config(db: &SqlitePool, cli_type: &str, enabled: bool, default_config: &str) -> Result<()> {
+async fn sync_cli_config(
+    db: &SqlitePool,
+    cli_type: &str,
+    enabled: bool,
+    default_config: &str,
+) -> Result<()> {
     match cli_type {
         "claude_code" => sync_claude_code_config(db, enabled, default_config).await,
         "codex" => sync_codex_config(db, enabled, default_config).await,
@@ -1225,11 +1260,19 @@ fn restore_backup(path: &std::path::Path) -> Result<bool> {
         return Ok(false);
     }
     std::fs::copy(&backup_path, path).map_err(|e| {
-        tracing::error!("Failed to restore backup from {}: {}", backup_path.display(), e);
+        tracing::error!(
+            "Failed to restore backup from {}: {}",
+            backup_path.display(),
+            e
+        );
         e.to_string()
     })?;
     std::fs::remove_file(&backup_path).map_err(|e| {
-        tracing::warn!("Failed to remove backup file {}: {}", backup_path.display(), e);
+        tracing::warn!(
+            "Failed to remove backup file {}: {}",
+            backup_path.display(),
+            e
+        );
         e.to_string()
     })?;
     Ok(true)
@@ -1256,7 +1299,11 @@ fn deep_merge(base: &mut serde_json::Value, override_val: &serde_json::Value) {
 }
 
 // Sync Claude Code configuration (settings.json)
-async fn sync_claude_code_config(db: &SqlitePool, enabled: bool, default_config: &str) -> Result<()> {
+async fn sync_claude_code_config(
+    db: &SqlitePool,
+    enabled: bool,
+    default_config: &str,
+) -> Result<()> {
     let config_dir = get_cli_config_dir_path(db, "claude_code").await;
     let config_path = config_dir.join("settings.json");
 
@@ -1355,7 +1402,8 @@ async fn sync_codex_config(db: &SqlitePool, enabled: bool, default_config: &str)
         })?;
 
         // Build base config.toml pointing to gateway
-        let mut doc = serialize_toml_document(&CodexGatewayConfig::gateway(), "Codex gateway config")?;
+        let mut doc =
+            serialize_toml_document(&CodexGatewayConfig::gateway(), "Codex gateway config")?;
 
         // Merge user's custom config if provided (TOML format)
         if !default_config.is_empty() {
@@ -1429,7 +1477,9 @@ async fn sync_gemini_config(db: &SqlitePool, enabled: bool, default_config: &str
         })?;
 
         // Write .env file with gateway address
-        let env_content = "GEMINI_API_KEY=ccg-gateway\nGOOGLE_GEMINI_BASE_URL=http://127.0.0.1:7788\n".to_string();
+        let env_content =
+            "GEMINI_API_KEY=ccg-gateway\nGOOGLE_GEMINI_BASE_URL=http://127.0.0.1:7788\n"
+                .to_string();
         std::fs::write(&env_path, env_content).map_err(|e| {
             tracing::error!("Failed to write .env file: {}", e);
             e.to_string()
@@ -1533,9 +1583,7 @@ pub async fn get_request_logs(
 
     q = q.bind(page_size).bind(offset);
 
-    let items = q.fetch_all(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    let items = q.fetch_all(pool).await.map_err(|e| e.to_string())?;
 
     let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
     if let Some(ct) = &cli_type {
@@ -1545,9 +1593,7 @@ pub async fn get_request_logs(
         count_q = count_q.bind(pn);
     }
 
-    let (total,) = count_q.fetch_one(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    let (total,) = count_q.fetch_one(pool).await.map_err(|e| e.to_string())?;
 
     Ok(PaginatedLogs {
         items,
@@ -1598,7 +1644,8 @@ pub async fn get_system_logs(
     let offset = (page - 1) * page_size;
 
     // Build query
-    let mut sql = "SELECT id, created_at, event_type, message FROM system_logs WHERE 1=1".to_string();
+    let mut sql =
+        "SELECT id, created_at, event_type, message FROM system_logs WHERE 1=1".to_string();
     let mut count_sql = "SELECT COUNT(*) FROM system_logs WHERE 1=1".to_string();
 
     if event_type.is_some() {
@@ -1615,16 +1662,15 @@ pub async fn get_system_logs(
 
     q = q.bind(page_size).bind(offset);
 
-    let items = q.fetch_all(&log_db.0)
-        .await
-        .map_err(|e| e.to_string())?;
+    let items = q.fetch_all(&log_db.0).await.map_err(|e| e.to_string())?;
 
     // Get total count
     let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
     if let Some(et) = &event_type {
         count_q = count_q.bind(et);
     }
-    let (total,) = count_q.fetch_one(&log_db.0)
+    let (total,) = count_q
+        .fetch_one(&log_db.0)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1744,15 +1790,14 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
             .map_err(|e| format!("JSON 格式错误: {}", e))?;
     }
 
-    let result = sqlx::query(
-        "INSERT INTO mcp_configs (name, config_json, updated_at) VALUES (?, ?, ?)",
-    )
-    .bind(&input.name)
-    .bind(config_trimmed)
-    .bind(now)
-    .execute(db.inner())
-    .await
-    .map_err(map_db_error)?;
+    let result =
+        sqlx::query("INSERT INTO mcp_configs (name, config_json, updated_at) VALUES (?, ?, ?)")
+            .bind(&input.name)
+            .bind(config_trimmed)
+            .bind(now)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
 
     let id = result.last_insert_rowid();
 
@@ -1766,7 +1811,11 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
 }
 
 #[tauri::command]
-pub async fn update_mcp(db: State<'_, SqlitePool>, id: i64, input: McpUpdate) -> Result<McpResponse> {
+pub async fn update_mcp(
+    db: State<'_, SqlitePool>,
+    id: i64,
+    input: McpUpdate,
+) -> Result<McpResponse> {
     let now = chrono::Utc::now().timestamp();
 
     // Validate JSON format if config_json is provided and not empty
@@ -1787,7 +1836,10 @@ pub async fn update_mcp(db: State<'_, SqlitePool>, id: i64, input: McpUpdate) ->
             .ok_or_else(|| "MCP not found".to_string())?;
 
         let new_name = input.name.unwrap_or(current.name.clone());
-        let new_config = input.config_json.map(|c| c.trim().to_string()).unwrap_or(current.config_json.clone());
+        let new_config = input
+            .config_json
+            .map(|c| c.trim().to_string())
+            .unwrap_or(current.config_json.clone());
 
         sqlx::query(
             "UPDATE mcp_configs SET name = ?, config_json = ?, updated_at = ? WHERE id = ?",
@@ -1821,7 +1873,12 @@ pub async fn update_mcp(db: State<'_, SqlitePool>, id: i64, input: McpUpdate) ->
 }
 
 #[tauri::command]
-pub async fn toggle_mcp_cli(db: State<'_, SqlitePool>, id: i64, cli_type: String, enabled: bool) -> Result<McpResponse> {
+pub async fn toggle_mcp_cli(
+    db: State<'_, SqlitePool>,
+    id: i64,
+    cli_type: String,
+    enabled: bool,
+) -> Result<McpResponse> {
     let mcp = sqlx::query_as::<_, McpConfig>("SELECT * FROM mcp_configs WHERE id = ?")
         .bind(id)
         .fetch_optional(db.inner())
@@ -1881,7 +1938,8 @@ async fn sync_mcp_to_cli_async(
 
     let mut config = if path.exists() {
         let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        serde_json::from_str::<serde_json::Value>(&content).unwrap_or_else(|_| serde_json::json!({}))
+        serde_json::from_str::<serde_json::Value>(&content)
+            .unwrap_or_else(|_| serde_json::json!({}))
     } else {
         serde_json::json!({})
     };
@@ -1924,7 +1982,8 @@ async fn sync_single_mcp_to_cli(
 
     for cli_type in cli_types {
         // Check if this MCP is enabled for this CLI
-        let is_enabled = cli_flags.iter()
+        let is_enabled = cli_flags
+            .iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
 
         sync_mcp_to_cli_async(db, mcp_name, mcp_config_json, cli_type, is_enabled).await?;
@@ -1946,10 +2005,12 @@ fn sync_single_codex_mcp(
             tracing::error!("Failed to read config.toml: {}", e);
             e.to_string()
         })?;
-        content.parse::<toml_edit::DocumentMut>().unwrap_or_else(|e| {
-            tracing::warn!("Failed to parse config.toml, creating new: {}", e);
-            toml_edit::DocumentMut::new()
-        })
+        content
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to parse config.toml, creating new: {}", e);
+                toml_edit::DocumentMut::new()
+            })
     } else {
         toml_edit::DocumentMut::new()
     };
@@ -1998,7 +2059,9 @@ async fn delete_mcp_from_cli(db: &SqlitePool, mcp_name: &str) -> Result<()> {
             if cli_type == "codex" {
                 // Handle Codex TOML format
                 let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-                let mut doc = content.parse::<toml_edit::DocumentMut>().unwrap_or_else(|_| toml_edit::DocumentMut::new());
+                let mut doc = content
+                    .parse::<toml_edit::DocumentMut>()
+                    .unwrap_or_else(|_| toml_edit::DocumentMut::new());
 
                 if let Some(table) = doc["mcp_servers"].as_table_mut() {
                     table.remove(mcp_name);
@@ -2008,13 +2071,17 @@ async fn delete_mcp_from_cli(db: &SqlitePool, mcp_name: &str) -> Result<()> {
             } else {
                 // Handle Claude/Gemini JSON format
                 let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-                let mut config: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
+                let mut config: serde_json::Value =
+                    serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
 
-                if let Some(mcp_servers) = config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+                if let Some(mcp_servers) =
+                    config.get_mut("mcpServers").and_then(|v| v.as_object_mut())
+                {
                     mcp_servers.remove(mcp_name);
                 }
 
-                let config_str = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+                let config_str =
+                    serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
                 std::fs::write(&path, config_str).map_err(|e| e.to_string())?;
             }
         }
@@ -2084,18 +2151,20 @@ pub async fn get_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<PromptResp
 }
 
 #[tauri::command]
-pub async fn create_prompt(db: State<'_, SqlitePool>, input: PromptCreate) -> Result<PromptResponse> {
+pub async fn create_prompt(
+    db: State<'_, SqlitePool>,
+    input: PromptCreate,
+) -> Result<PromptResponse> {
     let now = chrono::Utc::now().timestamp();
 
-    let result = sqlx::query(
-        "INSERT INTO prompt_presets (name, content, updated_at) VALUES (?, ?, ?)",
-    )
-    .bind(&input.name)
-    .bind(&input.content)
-    .bind(now)
-    .execute(db.inner())
-    .await
-    .map_err(map_db_error)?;
+    let result =
+        sqlx::query("INSERT INTO prompt_presets (name, content, updated_at) VALUES (?, ?, ?)")
+            .bind(&input.name)
+            .bind(&input.content)
+            .bind(now)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
 
     let id = result.last_insert_rowid();
 
@@ -2109,40 +2178,44 @@ pub async fn create_prompt(db: State<'_, SqlitePool>, input: PromptCreate) -> Re
 }
 
 #[tauri::command]
-pub async fn update_prompt(db: State<'_, SqlitePool>, id: i64, input: PromptUpdate) -> Result<PromptResponse> {
+pub async fn update_prompt(
+    db: State<'_, SqlitePool>,
+    id: i64,
+    input: PromptUpdate,
+) -> Result<PromptResponse> {
     let now = chrono::Utc::now().timestamp();
 
     let content = if input.name.is_some() || input.content.is_some() {
-        let current = sqlx::query_as::<_, PromptPreset>("SELECT * FROM prompt_presets WHERE id = ?")
-            .bind(id)
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Prompt not found".to_string())?;
+        let current =
+            sqlx::query_as::<_, PromptPreset>("SELECT * FROM prompt_presets WHERE id = ?")
+                .bind(id)
+                .fetch_optional(db.inner())
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "Prompt not found".to_string())?;
 
         let new_name = input.name.unwrap_or(current.name.clone());
         let new_content = input.content.unwrap_or(current.content.clone());
 
-        sqlx::query(
-            "UPDATE prompt_presets SET name = ?, content = ?, updated_at = ? WHERE id = ?",
-        )
-        .bind(&new_name)
-        .bind(&new_content)
-        .bind(now)
-        .bind(id)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
+        sqlx::query("UPDATE prompt_presets SET name = ?, content = ?, updated_at = ? WHERE id = ?")
+            .bind(&new_name)
+            .bind(&new_content)
+            .bind(now)
+            .bind(id)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
 
         new_content
     } else {
         // Get current values if not updating
-        let current = sqlx::query_as::<_, PromptPreset>("SELECT * FROM prompt_presets WHERE id = ?")
-            .bind(id)
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Prompt not found".to_string())?;
+        let current =
+            sqlx::query_as::<_, PromptPreset>("SELECT * FROM prompt_presets WHERE id = ?")
+                .bind(id)
+                .fetch_optional(db.inner())
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "Prompt not found".to_string())?;
         current.content
     };
 
@@ -2155,7 +2228,12 @@ pub async fn update_prompt(db: State<'_, SqlitePool>, id: i64, input: PromptUpda
 }
 
 #[tauri::command]
-pub async fn toggle_prompt_cli(db: State<'_, SqlitePool>, id: i64, cli_type: String, enabled: bool) -> Result<PromptResponse> {
+pub async fn toggle_prompt_cli(
+    db: State<'_, SqlitePool>,
+    id: i64,
+    cli_type: String,
+    enabled: bool,
+) -> Result<PromptResponse> {
     let prompt = sqlx::query_as::<_, PromptPreset>("SELECT * FROM prompt_presets WHERE id = ?")
         .bind(id)
         .fetch_optional(db.inner())
@@ -2226,7 +2304,8 @@ async fn sync_single_prompt_to_cli(
 
     for cli_type in cli_types {
         // Check if this prompt is enabled for this CLI
-        let is_enabled = cli_flags.iter()
+        let is_enabled = cli_flags
+            .iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
 
         sync_prompt_to_cli_async(db, prompt_content, cli_type, is_enabled).await?;
@@ -2338,18 +2417,21 @@ pub async fn get_provider_stats(
 
     let rows = q.fetch_all(pool).await.map_err(|e| e.to_string())?;
 
-    let results = rows.into_iter().map(|row| ProviderStatsResponse {
-        provider_name: row.provider_name,
-        total_requests: row.total_requests,
-        total_success: row.total_success,
-        total_tokens: row.total_tokens,
-        total_elapsed_ms: row.total_elapsed_ms,
-        success_rate: if row.total_requests > 0 {
-            (row.total_success as f64 / row.total_requests as f64) * 100.0
-        } else {
-            0.0
-        },
-    }).collect();
+    let results = rows
+        .into_iter()
+        .map(|row| ProviderStatsResponse {
+            provider_name: row.provider_name,
+            total_requests: row.total_requests,
+            total_success: row.total_success,
+            total_tokens: row.total_tokens,
+            total_elapsed_ms: row.total_elapsed_ms,
+            success_rate: if row.total_requests > 0 {
+                (row.total_success as f64 / row.total_requests as f64) * 100.0
+            } else {
+                0.0
+            },
+        })
+        .collect();
 
     Ok(results)
 }
@@ -2361,64 +2443,63 @@ async fn get_cli_base_dir_async(db: &SqlitePool, cli_type: &str) -> std::path::P
     get_cli_config_dir_path(db, cli_type).await
 }
 
-
 /// Parse Claude Code session file to extract info (first_message, git_branch, summary)
 /// Returns (first_message, git_branch, summary)
 fn parse_claude_session_info(file_path: &std::path::Path) -> (String, String, String) {
     use std::io::{BufRead, BufReader};
-    
+
     let mut first_message = String::new();
     let mut git_branch = String::new();
     let mut summary = String::new();
-    
+
     // Check file size to avoid reading very large files entirely
     let file_size = file_path.metadata().map(|m| m.len()).unwrap_or(0);
     let should_limit_read = file_size > 10 * 1024 * 1024; // 10MB
-    
+
     let file = match std::fs::File::open(file_path) {
         Ok(f) => f,
         Err(_) => return (first_message, git_branch, summary),
     };
-    
+
     let reader = BufReader::new(file);
     let mut lines_read = 0;
     let max_lines = if should_limit_read { 50 } else { 200 };
-    
+
     for line in reader.lines() {
         if lines_read >= max_lines {
             break;
         }
         lines_read += 1;
-        
+
         let line = match line {
             Ok(l) => l,
             Err(_) => continue,
         };
-        
+
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        
+
         let data: serde_json::Value = match serde_json::from_str(line) {
             Ok(d) => d,
             Err(_) => continue,
         };
-        
+
         // Extract summary
         if data.get("type").and_then(|t| t.as_str()) == Some("summary") {
             if let Some(s) = data.get("summary").and_then(|s| s.as_str()) {
                 summary = s.to_string();
             }
         }
-        
+
         // Extract git branch
         if git_branch.is_empty() {
             if let Some(branch) = data.get("gitBranch").and_then(|b| b.as_str()) {
                 git_branch = branch.to_string();
             }
         }
-        
+
         // Extract first message from user type
         if first_message.is_empty() && data.get("type").and_then(|t| t.as_str()) == Some("user") {
             if let Some(message) = data.get("message") {
@@ -2449,7 +2530,7 @@ fn parse_claude_session_info(file_path: &std::path::Path) -> (String, String, St
                     } else {
                         String::new()
                     };
-                    
+
                     if !text.is_empty() {
                         first_message = text;
                     }
@@ -2457,7 +2538,7 @@ fn parse_claude_session_info(file_path: &std::path::Path) -> (String, String, St
             }
         }
     }
-    
+
     (first_message, git_branch, summary)
 }
 
@@ -2467,8 +2548,16 @@ fn decode_claude_project_name(encoded_name: &str) -> (String, String) {
     #[cfg(target_os = "windows")]
     {
         // Windows format: D--path-parts (drive letter + double dash + path with single dashes)
-        if encoded_name.len() >= 3 && encoded_name.chars().nth(1) == Some('-') && encoded_name.chars().nth(2) == Some('-') {
-            let drive = encoded_name.chars().next().unwrap().to_uppercase().to_string();
+        if encoded_name.len() >= 3
+            && encoded_name.chars().nth(1) == Some('-')
+            && encoded_name.chars().nth(2) == Some('-')
+        {
+            let drive = encoded_name
+                .chars()
+                .next()
+                .unwrap()
+                .to_uppercase()
+                .to_string();
             let path_part = &encoded_name[3..]; // Skip "D--"
             let path_parts: Vec<&str> = path_part.split('-').collect();
             let full_path = format!("{}:\\{}", drive, path_parts.join("\\"));
@@ -2494,13 +2583,15 @@ fn extract_codex_cwd(file_path: &std::path::Path) -> Option<String> {
     use std::io::{BufRead, BufReader};
     let file = std::fs::File::open(file_path).ok()?;
     let reader = BufReader::new(file);
-    
+
     for line in reader.lines().flatten().take(50) {
         if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
             if data.get("type").and_then(|t| t.as_str()) == Some("session_meta") {
-                if let Some(cwd) = data.get("payload")
+                if let Some(cwd) = data
+                    .get("payload")
                     .and_then(|p| p.get("cwd"))
-                    .and_then(|c| c.as_str()) {
+                    .and_then(|c| c.as_str())
+                {
                     return Some(cwd.to_string());
                 }
             }
@@ -2510,10 +2601,14 @@ fn extract_codex_cwd(file_path: &std::path::Path) -> Option<String> {
 }
 
 // Handle Codex projects (group sessions by cwd)
-fn get_codex_projects(sessions_dir: std::path::PathBuf, page: i64, page_size: i64) -> Result<PaginatedProjects> {
+fn get_codex_projects(
+    sessions_dir: std::path::PathBuf,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedProjects> {
     use std::collections::HashMap;
     use walkdir::WalkDir;
-    
+
     if !sessions_dir.exists() {
         return Ok(PaginatedProjects {
             items: vec![],
@@ -2522,10 +2617,11 @@ fn get_codex_projects(sessions_dir: std::path::PathBuf, page: i64, page_size: i6
             page_size,
         });
     }
-    
+
     // Group sessions by cwd (search recursively in date subdirectories)
-    let mut project_map: HashMap<String, Vec<(std::path::PathBuf, std::fs::Metadata)>> = HashMap::new();
-    
+    let mut project_map: HashMap<String, Vec<(std::path::PathBuf, std::fs::Metadata)>> =
+        HashMap::new();
+
     // Use WalkDir to recursively search all subdirectories
     for entry in WalkDir::new(&sessions_dir)
         .follow_links(false)
@@ -2534,57 +2630,72 @@ fn get_codex_projects(sessions_dir: std::path::PathBuf, page: i64, page_size: i6
     {
         let path = entry.path();
         if path.is_file() {
-            let filename = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
             if filename.starts_with("rollout-") && filename.ends_with(".jsonl") {
                 if let Some(cwd) = extract_codex_cwd(path) {
                     if let Ok(meta) = path.metadata() {
-                        project_map.entry(cwd).or_insert_with(Vec::new).push((path.to_path_buf(), meta));
+                        project_map
+                            .entry(cwd)
+                            .or_insert_with(Vec::new)
+                            .push((path.to_path_buf(), meta));
                     }
                 }
             }
         }
     }
-    
+
     // Build project list
     let mut projects_data: Vec<(String, String, usize, i64, f64)> = Vec::new();
     for (cwd, files) in project_map {
         let total_size: i64 = files.iter().map(|(_, m)| m.len() as i64).sum();
-        let last_modified = files.iter()
+        let last_modified = files
+            .iter()
             .filter_map(|(_, m)| m.modified().ok())
-            .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0))
+            .map(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs_f64())
+                    .unwrap_or(0.0)
+            })
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(0.0);
-        
+
         let display_name = std::path::Path::new(&cwd)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown")
             .to_string();
-        
-        projects_data.push((cwd.clone(), display_name, files.len(), total_size, last_modified));
-    }
-    
-    // Sort by last_modified descending
-    projects_data.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal));
-    
-    let total = projects_data.len() as i64;
-    let start = ((page - 1) * page_size) as usize;
-    let items: Vec<_> = projects_data.into_iter()
-        .skip(start)
-        .take(page_size as usize)
-        .map(|(cwd, display_name, session_count, total_size, last_modified)| ProjectInfo {
-            name: cwd.clone(),
+
+        projects_data.push((
+            cwd.clone(),
             display_name,
-            full_path: cwd,
-            session_count: session_count as i64,
+            files.len(),
             total_size,
             last_modified,
-        })
+        ));
+    }
+
+    // Sort by last_modified descending
+    projects_data.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal));
+
+    let total = projects_data.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = projects_data
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .map(
+            |(cwd, display_name, session_count, total_size, last_modified)| ProjectInfo {
+                name: cwd.clone(),
+                display_name,
+                full_path: cwd,
+                session_count: session_count as i64,
+                total_size,
+                last_modified,
+            },
+        )
         .collect();
-    
+
     Ok(PaginatedProjects {
         items,
         total,
@@ -2595,19 +2706,21 @@ fn get_codex_projects(sessions_dir: std::path::PathBuf, page: i64, page_size: i6
 
 /// Calculate SHA256 hash of a path (same as Gemini CLI)
 fn get_path_hash(path: &str) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(path.as_bytes());
     format!("{:x}", hasher.finalize())
 }
 
 /// Build hash -> path mapping for Gemini projects using rainbow table method
-fn build_gemini_path_mapping(target_hashes: &std::collections::HashSet<String>) -> std::collections::HashMap<String, String> {
+fn build_gemini_path_mapping(
+    target_hashes: &std::collections::HashSet<String>,
+) -> std::collections::HashMap<String, String> {
     use std::collections::HashMap;
-    
+
     let mut results: HashMap<String, String> = HashMap::new();
     let home = dirs::home_dir().unwrap_or_default();
-    
+
     // Define search paths with max depth
     let mut search_paths: Vec<(std::path::PathBuf, usize)> = vec![
         (home.clone(), 0),
@@ -2623,12 +2736,12 @@ fn build_gemini_path_mapping(target_hashes: &std::collections::HashSet<String>) 
         (home.join("repos"), 4),
         (home.join("github"), 4),
     ];
-    
+
     // Windows specific paths
     #[cfg(target_os = "windows")]
     {
         for drive in ["C:", "D:", "E:", "F:"] {
-            let drive_path = std::path::PathBuf::from(format!("{}\\" , drive));
+            let drive_path = std::path::PathBuf::from(format!("{}\\", drive));
             if drive_path.exists() {
                 search_paths.extend(vec![
                     (drive_path.join("Projects"), 4),
@@ -2640,7 +2753,7 @@ fn build_gemini_path_mapping(target_hashes: &std::collections::HashSet<String>) 
             }
         }
     }
-    
+
     fn scan_dir(
         dir_path: &std::path::Path,
         max_depth: usize,
@@ -2651,18 +2764,18 @@ fn build_gemini_path_mapping(target_hashes: &std::collections::HashSet<String>) 
         if current_depth > max_depth || results.len() >= target_hashes.len() {
             return;
         }
-        
+
         // Calculate hash for current directory
         let path_str = dir_path.to_string_lossy().to_string();
         let path_hash = get_path_hash(&path_str);
         if target_hashes.contains(&path_hash) && !results.contains_key(&path_hash) {
             results.insert(path_hash, path_str);
         }
-        
+
         if results.len() >= target_hashes.len() {
             return;
         }
-        
+
         // Scan subdirectories
         if let Ok(entries) = std::fs::read_dir(dir_path) {
             for entry in entries.flatten() {
@@ -2670,32 +2783,37 @@ fn build_gemini_path_mapping(target_hashes: &std::collections::HashSet<String>) 
                 if !item_path.is_dir() {
                     continue;
                 }
-                
-                let name = item_path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
-                
+
+                let name = item_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
                 // Skip hidden and common irrelevant directories
-                if name.starts_with('.') || 
-                   name == "node_modules" || 
-                   name == "venv" || 
-                   name == "__pycache__" ||
-                   name == "Library" ||
-                   name == "Applications" ||
-                   name == "target" ||
-                   name == "dist" ||
-                   name == "build" {
+                if name.starts_with('.')
+                    || name == "node_modules"
+                    || name == "venv"
+                    || name == "__pycache__"
+                    || name == "Library"
+                    || name == "Applications"
+                    || name == "target"
+                    || name == "dist"
+                    || name == "build"
+                {
                     continue;
                 }
-                
-                scan_dir(&item_path, max_depth, current_depth + 1, target_hashes, results);
+
+                scan_dir(
+                    &item_path,
+                    max_depth,
+                    current_depth + 1,
+                    target_hashes,
+                    results,
+                );
                 if results.len() >= target_hashes.len() {
                     return;
                 }
             }
         }
     }
-    
+
     for (search_path, depth) in search_paths {
         if search_path.exists() {
             scan_dir(&search_path, depth, 0, target_hashes, &mut results);
@@ -2704,14 +2822,18 @@ fn build_gemini_path_mapping(target_hashes: &std::collections::HashSet<String>) 
             break;
         }
     }
-    
+
     results
 }
 
 // Handle Gemini projects (from hash directories with chats subfolder)
-fn get_gemini_projects(tmp_dir: std::path::PathBuf, page: i64, page_size: i64) -> Result<PaginatedProjects> {
+fn get_gemini_projects(
+    tmp_dir: std::path::PathBuf,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedProjects> {
     use std::collections::HashSet;
-    
+
     if !tmp_dir.exists() {
         return Ok(PaginatedProjects {
             items: vec![],
@@ -2720,30 +2842,32 @@ fn get_gemini_projects(tmp_dir: std::path::PathBuf, page: i64, page_size: i64) -
             page_size,
         });
     }
-    
+
     let mut project_dirs: Vec<(std::path::PathBuf, f64)> = Vec::new();
     let mut all_hashes: HashSet<String> = HashSet::new();
-    
+
     if let Ok(entries) = std::fs::read_dir(&tmp_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_dir() {
                 continue;
             }
-            
-            let name = path.file_name()
+
+            let name = path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_string();
-            
+
             let chats_dir = path.join("chats");
             if chats_dir.exists() {
                 if let Ok(meta) = path.metadata() {
                     if let Ok(mtime) = meta.modified() {
-                        let secs = mtime.duration_since(std::time::UNIX_EPOCH)
+                        let secs = mtime
+                            .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_secs_f64())
                             .unwrap_or(0.0);
-                        
+
                         // Check if it's a valid 64-char hex hash
                         if name.len() == 64 && name.chars().all(|c| c.is_ascii_hexdigit()) {
                             all_hashes.insert(name.clone());
@@ -2754,42 +2878,46 @@ fn get_gemini_projects(tmp_dir: std::path::PathBuf, page: i64, page_size: i64) -
             }
         }
     }
-    
+
     // Sort by last_modified descending
     project_dirs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    
+
     let total = project_dirs.len() as i64;
     let start = ((page - 1) * page_size) as usize;
-    let page_dirs: Vec<_> = project_dirs.into_iter().skip(start).take(page_size as usize).collect();
-    
+    let page_dirs: Vec<_> = project_dirs
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+
     // Build path mapping using rainbow table method
     let path_mapping = build_gemini_path_mapping(&all_hashes);
-    
+
     let mut projects = Vec::new();
     for (path, _) in page_dirs {
-        let hash_name = path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        
+        let hash_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
         let chats_dir = path.join("chats");
         let mut session_count = 0i64;
         let mut total_size = 0i64;
         let mut last_modified = 0f64;
-        
+
         if let Ok(entries) = std::fs::read_dir(&chats_dir) {
             for entry in entries.flatten() {
                 let session_path = entry.path();
                 if session_path.is_file() {
-                    let filename = session_path.file_name()
+                    let filename = session_path
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("");
-                    
+
                     if filename.starts_with("session-") && filename.ends_with(".json") {
                         session_count += 1;
                         if let Ok(meta) = session_path.metadata() {
                             total_size += meta.len() as i64;
                             if let Ok(mtime) = meta.modified() {
-                                let secs = mtime.duration_since(std::time::UNIX_EPOCH)
+                                let secs = mtime
+                                    .duration_since(std::time::UNIX_EPOCH)
                                     .map(|d| d.as_secs_f64())
                                     .unwrap_or(0.0);
                                 if secs > last_modified {
@@ -2801,10 +2929,10 @@ fn get_gemini_projects(tmp_dir: std::path::PathBuf, page: i64, page_size: i64) -
                 }
             }
         }
-        
+
         if session_count > 0 {
             let is_hash = hash_name.len() == 64 && hash_name.chars().all(|c| c.is_ascii_hexdigit());
-            
+
             // Try to get project path from rainbow table
             let (display_name, full_path) = if is_hash {
                 if let Some(real_path) = path_mapping.get(hash_name) {
@@ -2815,12 +2943,15 @@ fn get_gemini_projects(tmp_dir: std::path::PathBuf, page: i64, page_size: i64) -
                         .to_string();
                     (name, real_path.clone())
                 } else {
-                    (format!("Project {}", &hash_name[..8]), hash_name.to_string())
+                    (
+                        format!("Project {}", &hash_name[..8]),
+                        hash_name.to_string(),
+                    )
                 }
             } else {
                 (hash_name.to_string(), hash_name.to_string())
             };
-            
+
             projects.push(ProjectInfo {
                 name: hash_name.to_string(),
                 display_name,
@@ -2831,7 +2962,7 @@ fn get_gemini_projects(tmp_dir: std::path::PathBuf, page: i64, page_size: i64) -
             });
         }
     }
-    
+
     Ok(PaginatedProjects {
         items: projects,
         total,
@@ -2841,13 +2972,18 @@ fn get_gemini_projects(tmp_dir: std::path::PathBuf, page: i64, page_size: i64) -
 }
 
 // Handle Codex sessions (find by cwd) - 异步版本，支持自定义配置目录
-async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64, page_size: i64) -> Result<PaginatedSessions> {
+async fn get_codex_sessions_async(
+    db: &SqlitePool,
+    project_name: &str,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedSessions> {
     use std::io::{BufRead, BufReader};
     use walkdir::WalkDir;
-    
+
     let config_dir = get_cli_config_dir_path(db, "codex").await;
     let sessions_dir = config_dir.join("sessions");
-    
+
     if !sessions_dir.exists() {
         return Ok(PaginatedSessions {
             items: vec![],
@@ -2856,9 +2992,9 @@ async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64
             page_size,
         });
     }
-    
+
     let mut session_files: Vec<(std::path::PathBuf, std::fs::Metadata)> = Vec::new();
-    
+
     // Use WalkDir to recursively search all subdirectories
     for entry in WalkDir::new(&sessions_dir)
         .follow_links(false)
@@ -2867,10 +3003,8 @@ async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64
     {
         let path = entry.path();
         if path.is_file() {
-            let filename = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
             if filename.starts_with("rollout-") && filename.ends_with(".jsonl") {
                 if let Some(cwd) = extract_codex_cwd(path) {
                     if cwd == project_name {
@@ -2882,37 +3016,50 @@ async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64
             }
         }
     }
-    
+
     // Sort by mtime descending
     session_files.sort_by(|a, b| {
-        let a_mtime = a.1.modified().ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
-        let b_mtime = b.1.modified().ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
-        b_mtime.partial_cmp(&a_mtime).unwrap_or(std::cmp::Ordering::Equal)
+        let a_mtime =
+            a.1.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+        let b_mtime =
+            b.1.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+        b_mtime
+            .partial_cmp(&a_mtime)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
-    
+
     let total = session_files.len() as i64;
     let start = ((page - 1) * page_size) as usize;
-    let page_files: Vec<_> = session_files.into_iter().skip(start).take(page_size as usize).collect();
-    
+    let page_files: Vec<_> = session_files
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+
     let mut sessions = Vec::new();
     for (path, meta) in page_files {
-        let session_id = path.file_stem()
+        let session_id = path
+            .file_stem()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
-        
+
         let size = meta.len() as i64;
-        let mtime = meta.modified().ok()
+        let mtime = meta
+            .modified()
+            .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
-        
+
         // Try to extract first message
         let mut first_message = String::new();
         if let Ok(file) = std::fs::File::open(&path) {
@@ -2921,14 +3068,19 @@ async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64
                 if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
                     if data.get("type").and_then(|t| t.as_str()) == Some("event_msg") {
                         if let Some(payload) = data.get("payload") {
-                            if payload.get("type").and_then(|t| t.as_str()) == Some("user_message") {
+                            if payload.get("type").and_then(|t| t.as_str()) == Some("user_message")
+                            {
                                 if let Some(msg) = payload.get("message").and_then(|m| m.as_str()) {
                                     first_message = msg.chars().take(200).collect();
                                     break;
-                                } else if let Some(arr) = payload.get("message").and_then(|m| m.as_array()) {
+                                } else if let Some(arr) =
+                                    payload.get("message").and_then(|m| m.as_array())
+                                {
                                     let mut text_parts = Vec::new();
                                     for item in arr {
-                                        if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                        if let Some(text) =
+                                            item.get("text").and_then(|t| t.as_str())
+                                        {
                                             text_parts.push(text);
                                         }
                                     }
@@ -2944,7 +3096,7 @@ async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64
                 }
             }
         }
-        
+
         sessions.push(SessionInfo {
             session_id,
             size,
@@ -2954,7 +3106,7 @@ async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64
             summary: String::new(),
         });
     }
-    
+
     Ok(PaginatedSessions {
         items: sessions,
         total,
@@ -2964,10 +3116,15 @@ async fn get_codex_sessions_async(db: &SqlitePool, project_name: &str, page: i64
 }
 
 // Handle Gemini sessions - 异步版本，支持自定义配置目录
-async fn get_gemini_sessions_async(db: &SqlitePool, project_name: &str, page: i64, page_size: i64) -> Result<PaginatedSessions> {
+async fn get_gemini_sessions_async(
+    db: &SqlitePool,
+    project_name: &str,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedSessions> {
     let config_dir = get_cli_config_dir_path(db, "gemini").await;
     let chats_dir = config_dir.join("tmp").join(project_name).join("chats");
-    
+
     if !chats_dir.exists() {
         return Ok(PaginatedSessions {
             items: vec![],
@@ -2976,17 +3133,15 @@ async fn get_gemini_sessions_async(db: &SqlitePool, project_name: &str, page: i6
             page_size,
         });
     }
-    
+
     let mut session_files: Vec<(std::path::PathBuf, std::fs::Metadata)> = Vec::new();
-    
+
     if let Ok(entries) = std::fs::read_dir(&chats_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file() {
-                let filename = path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
-                
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
                 if filename.starts_with("session-") && filename.ends_with(".json") {
                     if let Ok(meta) = path.metadata() {
                         session_files.push((path, meta));
@@ -2995,37 +3150,50 @@ async fn get_gemini_sessions_async(db: &SqlitePool, project_name: &str, page: i6
             }
         }
     }
-    
+
     // Sort by mtime descending
     session_files.sort_by(|a, b| {
-        let a_mtime = a.1.modified().ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
-        let b_mtime = b.1.modified().ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
-        b_mtime.partial_cmp(&a_mtime).unwrap_or(std::cmp::Ordering::Equal)
+        let a_mtime =
+            a.1.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+        let b_mtime =
+            b.1.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0);
+        b_mtime
+            .partial_cmp(&a_mtime)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
-    
+
     let total = session_files.len() as i64;
     let start = ((page - 1) * page_size) as usize;
-    let page_files: Vec<_> = session_files.into_iter().skip(start).take(page_size as usize).collect();
-    
+    let page_files: Vec<_> = session_files
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+
     let mut sessions = Vec::new();
     for (path, meta) in page_files {
-        let session_id = path.file_stem()
+        let session_id = path
+            .file_stem()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
-        
+
         let size = meta.len() as i64;
-        let mtime = meta.modified().ok()
+        let mtime = meta
+            .modified()
+            .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
-        
+
         // Try to extract first message
         let mut first_message = String::new();
         if let Ok(content) = std::fs::read_to_string(&path) {
@@ -3039,7 +3207,9 @@ async fn get_gemini_sessions_async(db: &SqlitePool, project_name: &str, page: i6
                                     break;
                                 } else if let Some(arr) = content_val.as_array() {
                                     for item in arr {
-                                        if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                        if let Some(text) =
+                                            item.get("text").and_then(|t| t.as_str())
+                                        {
                                             first_message = text.chars().take(200).collect();
                                             break;
                                         }
@@ -3054,7 +3224,7 @@ async fn get_gemini_sessions_async(db: &SqlitePool, project_name: &str, page: i6
                 }
             }
         }
-        
+
         sessions.push(SessionInfo {
             session_id,
             size,
@@ -3064,7 +3234,7 @@ async fn get_gemini_sessions_async(db: &SqlitePool, project_name: &str, page: i6
             summary: String::new(),
         });
     }
-    
+
     Ok(PaginatedSessions {
         items: sessions,
         total,
@@ -3074,13 +3244,16 @@ async fn get_gemini_sessions_async(db: &SqlitePool, project_name: &str, page: i6
 }
 
 // Parse Codex messages from JSONL file - 异步版本，支持自定义配置目录
-async fn get_codex_messages_async(db: &SqlitePool, session_id: &str) -> Result<Vec<SessionMessage>> {
+async fn get_codex_messages_async(
+    db: &SqlitePool,
+    session_id: &str,
+) -> Result<Vec<SessionMessage>> {
     use std::io::{BufRead, BufReader};
     use walkdir::WalkDir;
-    
+
     let config_dir = get_cli_config_dir_path(db, "codex").await;
     let sessions_dir = config_dir.join("sessions");
-    
+
     // Find the session file by searching recursively
     let mut session_file_path: Option<std::path::PathBuf> = None;
     for entry in WalkDir::new(&sessions_dir)
@@ -3099,33 +3272,41 @@ async fn get_codex_messages_async(db: &SqlitePool, session_id: &str) -> Result<V
             }
         }
     }
-    
-    let session_file = session_file_path.ok_or_else(|| format!("Session file not found: {}", session_id))?;
-    
+
+    let session_file =
+        session_file_path.ok_or_else(|| format!("Session file not found: {}", session_id))?;
+
     let file = std::fs::File::open(&session_file)
         .map_err(|e| format!("Failed to open session file: {}", e))?;
     let reader = BufReader::new(file);
-    
+
     let mut messages = Vec::new();
-    
+
     for line in reader.lines().flatten() {
         if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
             let msg_type = data.get("type").and_then(|t| t.as_str());
-            
+
             // Only process response_item for structured messages
             if msg_type == Some("response_item") {
                 if let Some(payload) = data.get("payload") {
                     let item_type = payload.get("type").and_then(|t| t.as_str());
                     let role = payload.get("role").and_then(|r| r.as_str());
                     let timestamp = data.get("timestamp").and_then(|t| t.as_i64());
-                    
+
                     // User messages
                     if role == Some("user") && item_type == Some("message") {
-                        if let Some(content_list) = payload.get("content").and_then(|c| c.as_array()) {
-                            let text_parts: Vec<String> = content_list.iter()
+                        if let Some(content_list) =
+                            payload.get("content").and_then(|c| c.as_array())
+                        {
+                            let text_parts: Vec<String> = content_list
+                                .iter()
                                 .filter_map(|item| {
-                                    if item.get("type").and_then(|t| t.as_str()) == Some("input_text") {
-                                        item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                                    if item.get("type").and_then(|t| t.as_str())
+                                        == Some("input_text")
+                                    {
+                                        item.get("text")
+                                            .and_then(|t| t.as_str())
+                                            .map(|s| s.to_string())
                                     } else {
                                         None
                                     }
@@ -3142,12 +3323,18 @@ async fn get_codex_messages_async(db: &SqlitePool, session_id: &str) -> Result<V
                     }
                     // Assistant messages
                     else if role == Some("assistant") && item_type == Some("message") {
-                        if let Some(content_list) = payload.get("content").and_then(|c| c.as_array()) {
-                            let text_parts: Vec<String> = content_list.iter()
+                        if let Some(content_list) =
+                            payload.get("content").and_then(|c| c.as_array())
+                        {
+                            let text_parts: Vec<String> = content_list
+                                .iter()
                                 .filter_map(|item| {
                                     let item_type = item.get("type").and_then(|t| t.as_str());
-                                    if item_type == Some("output_text") || item_type == Some("text") {
-                                        item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                                    if item_type == Some("output_text") || item_type == Some("text")
+                                    {
+                                        item.get("text")
+                                            .and_then(|t| t.as_str())
+                                            .map(|s| s.to_string())
                                     } else {
                                         None
                                     }
@@ -3166,10 +3353,15 @@ async fn get_codex_messages_async(db: &SqlitePool, session_id: &str) -> Result<V
                     else if item_type == Some("reasoning") {
                         let summary = payload.get("summary").and_then(|s| s.as_array());
                         if let Some(summary_arr) = summary {
-                            let text_parts: Vec<String> = summary_arr.iter()
+                            let text_parts: Vec<String> = summary_arr
+                                .iter()
                                 .filter_map(|item| {
-                                    if item.get("type").and_then(|t| t.as_str()) == Some("summary_text") {
-                                        item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                                    if item.get("type").and_then(|t| t.as_str())
+                                        == Some("summary_text")
+                                    {
+                                        item.get("text")
+                                            .and_then(|t| t.as_str())
+                                            .map(|s| s.to_string())
                                     } else {
                                         None
                                     }
@@ -3186,27 +3378,31 @@ async fn get_codex_messages_async(db: &SqlitePool, session_id: &str) -> Result<V
                     }
                     // Function call (tool use)
                     else if item_type == Some("function_call") {
-                        let name = payload.get("name")
+                        let name = payload
+                            .get("name")
                             .and_then(|n| n.as_str())
                             .unwrap_or("unknown");
-                        let arguments = payload.get("arguments")
+                        let arguments = payload
+                            .get("arguments")
                             .and_then(|a| a.as_str())
                             .unwrap_or("{}");
                         let args_str = match serde_json::from_str::<serde_json::Value>(arguments) {
-                            Ok(args_obj) => serde_json::to_string_pretty(&args_obj).unwrap_or_else(|_| arguments.to_string()),
+                            Ok(args_obj) => serde_json::to_string_pretty(&args_obj)
+                                .unwrap_or_else(|_| arguments.to_string()),
                             Err(_) => arguments.to_string(),
                         };
                         messages.push(SessionMessage {
                             role: "assistant".to_string(),
-                            content: format!("**[调用工具: {}]**\n```json\n{}\n```", name, args_str),
+                            content: format!(
+                                "**[调用工具: {}]**\n```json\n{}\n```",
+                                name, args_str
+                            ),
                             timestamp,
                         });
                     }
                     // Function call output (tool result)
                     else if item_type == Some("function_call_output") {
-                        let output = payload.get("output")
-                            .and_then(|o| o.as_str())
-                            .unwrap_or("");
+                        let output = payload.get("output").and_then(|o| o.as_str()).unwrap_or("");
                         if !output.is_empty() {
                             messages.push(SessionMessage {
                                 role: "user".to_string(),
@@ -3219,54 +3415,61 @@ async fn get_codex_messages_async(db: &SqlitePool, session_id: &str) -> Result<V
             }
         }
     }
-    
+
     Ok(messages)
 }
 
 // Parse Claude Code messages from JSONL content
 fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
     use std::io::{BufRead, BufReader};
-    
+
     let mut messages = Vec::new();
     let reader = BufReader::new(content.as_bytes());
-    
+
     for line in reader.lines().flatten() {
         if line.trim().is_empty() {
             continue;
         }
-        
+
         if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
             let msg_type = data.get("type").and_then(|t| t.as_str());
-            
+
             if msg_type == Some("user") || msg_type == Some("assistant") {
                 let role = msg_type.unwrap();
                 let timestamp = data.get("timestamp").and_then(|t| t.as_i64());
-                
+
                 if let Some(message) = data.get("message") {
                     let content_val = message.get("content");
-                    
+
                     let content = if let Some(arr) = content_val.and_then(|c| c.as_array()) {
                         let mut text_parts = Vec::new();
                         for item in arr {
                             if let Some(item_type) = item.get("type").and_then(|t| t.as_str()) {
                                 match item_type {
                                     "text" => {
-                                        if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                        if let Some(text) =
+                                            item.get("text").and_then(|t| t.as_str())
+                                        {
                                             text_parts.push(text.to_string());
                                         }
                                     }
                                     "tool_use" if role == "assistant" => {
                                         // Tool call from assistant
-                                        let tool_name = item.get("name")
+                                        let tool_name = item
+                                            .get("name")
                                             .and_then(|n| n.as_str())
                                             .unwrap_or("unknown");
                                         let tool_input = item.get("input");
                                         let input_str = if let Some(input) = tool_input {
-                                            serde_json::to_string_pretty(input).unwrap_or_else(|_| "{}".to_string())
+                                            serde_json::to_string_pretty(input)
+                                                .unwrap_or_else(|_| "{}".to_string())
                                         } else {
                                             "{}".to_string()
                                         };
-                                        text_parts.push(format!("**[调用工具: {}]**\n```json\n{}\n```", tool_name, input_str));
+                                        text_parts.push(format!(
+                                            "**[调用工具: {}]**\n```json\n{}\n```",
+                                            tool_name, input_str
+                                        ));
                                     }
                                     "tool_result" if role == "user" => {
                                         // Tool result from user
@@ -3275,20 +3478,27 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                                             if let Some(s) = content.as_str() {
                                                 s.to_string()
                                             } else {
-                                                serde_json::to_string_pretty(content).unwrap_or_else(|_| "".to_string())
+                                                serde_json::to_string_pretty(content)
+                                                    .unwrap_or_else(|_| "".to_string())
                                             }
                                         } else {
                                             String::new()
                                         };
                                         if !result_str.is_empty() {
-                                            text_parts.push(format!("**[工具结果]**\n```\n{}\n```", result_str));
+                                            text_parts.push(format!(
+                                                "**[工具结果]**\n```\n{}\n```",
+                                                result_str
+                                            ));
                                         }
                                     }
                                     "thinking" if role == "assistant" => {
                                         // Thinking from assistant
-                                        if let Some(thinking) = item.get("thinking").and_then(|t| t.as_str()) {
+                                        if let Some(thinking) =
+                                            item.get("thinking").and_then(|t| t.as_str())
+                                        {
                                             if !thinking.is_empty() {
-                                                text_parts.push(format!("**[思考]**\n{}", thinking));
+                                                text_parts
+                                                    .push(format!("**[思考]**\n{}", thinking));
                                             }
                                         }
                                     }
@@ -3305,7 +3515,7 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                     } else {
                         continue;
                     };
-                    
+
                     if !content.is_empty() && content != "Warmup" {
                         messages.push(SessionMessage {
                             role: role.to_string(),
@@ -3317,7 +3527,7 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
             }
         }
     }
-    
+
     Ok(messages)
 }
 
@@ -3356,7 +3566,8 @@ pub async fn get_session_projects(
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    let name = path.file_name()
+                    let name = path
+                        .file_name()
                         .and_then(|n| n.to_str())
                         .unwrap_or("")
                         .to_string();
@@ -3375,22 +3586,27 @@ pub async fn get_session_projects(
                             let session_path = session.path();
                             if session_path.is_file() {
                                 // Only count .jsonl files, exclude index and agent files
-                                let ext = session_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                                let ext = session_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("");
                                 if ext != "jsonl" {
                                     continue;
                                 }
-                                let stem = session_path.file_stem()
+                                let stem = session_path
+                                    .file_stem()
                                     .and_then(|s| s.to_str())
                                     .unwrap_or("");
                                 if stem == "sessions-index" || stem.starts_with("agent-") {
                                     continue;
                                 }
-                                
+
                                 session_count += 1;
                                 if let Ok(meta) = session_path.metadata() {
                                     total_size += meta.len() as i64;
                                     if let Ok(mtime) = meta.modified() {
-                                        let secs = mtime.duration_since(std::time::UNIX_EPOCH)
+                                        let secs = mtime
+                                            .duration_since(std::time::UNIX_EPOCH)
                                             .map(|d| d.as_secs_f64())
                                             .unwrap_or(0.0);
                                         if secs > last_modified {
@@ -3423,11 +3639,19 @@ pub async fn get_session_projects(
     }
 
     // Sort by last_modified descending
-    projects.sort_by(|a, b| b.last_modified.partial_cmp(&a.last_modified).unwrap_or(std::cmp::Ordering::Equal));
+    projects.sort_by(|a, b| {
+        b.last_modified
+            .partial_cmp(&a.last_modified)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let total = projects.len() as i64;
     let start = ((page - 1) * page_size) as usize;
-    let items: Vec<_> = projects.into_iter().skip(start).take(page_size as usize).collect();
+    let items: Vec<_> = projects
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
 
     Ok(PaginatedProjects {
         items,
@@ -3474,16 +3698,18 @@ pub async fn get_project_sessions(
                     if ext != "jsonl" {
                         continue;
                     }
-                    
-                    let session_id = path.file_stem()
+
+                    let session_id = path
+                        .file_stem()
                         .and_then(|n| n.to_str())
                         .unwrap_or("")
                         .to_string();
 
                     // Skip empty, index files, and agent files
-                    if session_id.is_empty() 
-                        || session_id == "sessions-index" 
-                        || session_id.starts_with("agent-") {
+                    if session_id.is_empty()
+                        || session_id == "sessions-index"
+                        || session_id.starts_with("agent-")
+                    {
                         continue;
                     }
 
@@ -3493,7 +3719,8 @@ pub async fn get_project_sessions(
                     if let Ok(meta) = path.metadata() {
                         size = meta.len() as i64;
                         if let Ok(mt) = meta.modified() {
-                            mtime = mt.duration_since(std::time::UNIX_EPOCH)
+                            mtime = mt
+                                .duration_since(std::time::UNIX_EPOCH)
                                 .map(|d| d.as_secs_f64())
                                 .unwrap_or(0.0);
                         }
@@ -3516,11 +3743,19 @@ pub async fn get_project_sessions(
     }
 
     // Sort by mtime descending
-    sessions.sort_by(|a, b| b.mtime.partial_cmp(&a.mtime).unwrap_or(std::cmp::Ordering::Equal));
+    sessions.sort_by(|a, b| {
+        b.mtime
+            .partial_cmp(&a.mtime)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let total = sessions.len() as i64;
     let start = ((page - 1) * page_size) as usize;
-    let items: Vec<_> = sessions.into_iter().skip(start).take(page_size as usize).collect();
+    let items: Vec<_> = sessions
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
 
     Ok(PaginatedSessions {
         items,
@@ -3541,11 +3776,18 @@ pub async fn get_session_messages(
     if cli_type == "codex" {
         return get_codex_messages_async(db.inner(), &session_id).await;
     }
-    
+
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
     let session_file = match cli_type.as_str() {
-        "gemini" => base_dir.join("tmp").join(&project_name).join("chats").join(format!("{}.json", session_id)),
-        _ => base_dir.join("projects").join(&project_name).join(format!("{}.jsonl", session_id)),
+        "gemini" => base_dir
+            .join("tmp")
+            .join(&project_name)
+            .join("chats")
+            .join(format!("{}.json", session_id)),
+        _ => base_dir
+            .join("projects")
+            .join(&project_name)
+            .join(format!("{}.jsonl", session_id)),
     };
 
     let content = std::fs::read_to_string(&session_file)
@@ -3555,7 +3797,7 @@ pub async fn get_session_messages(
     if cli_type == "claude_code" {
         return parse_claude_jsonl(&content);
     }
-    
+
     // For Gemini JSON format
     let json: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse session JSON: {}", e))?;
@@ -3567,13 +3809,17 @@ pub async fn get_session_messages(
         // Standard format with messages array
         for msg in msgs {
             let msg_type = msg.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            
-            let timestamp = msg.get("timestamp").and_then(|t| t.as_str()).map(|s| {
-                chrono::DateTime::parse_from_rfc3339(s)
-                    .ok()
-                    .map(|dt| dt.timestamp())
-            }).flatten();
-            
+
+            let timestamp = msg
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .map(|s| {
+                    chrono::DateTime::parse_from_rfc3339(s)
+                        .ok()
+                        .map(|dt| dt.timestamp())
+                })
+                .flatten();
+
             if msg_type == "user" {
                 // User message
                 let mut text_parts = Vec::new();
@@ -3588,9 +3834,9 @@ pub async fn get_session_messages(
                         }
                     }
                 }
-                
+
                 let content = text_parts.join("\n\n");
-                
+
                 if !content.is_empty() {
                     messages.push(SessionMessage {
                         role: "user".to_string(),
@@ -3601,7 +3847,7 @@ pub async fn get_session_messages(
             } else if msg_type == "gemini" || msg_type == "assistant" || msg_type == "ai" {
                 // Gemini/Assistant message - may contain content, thoughts, and toolCalls
                 let mut text_parts = Vec::new();
-                
+
                 // Get main content
                 if let Some(content_val) = msg.get("content") {
                     if let Some(text) = content_val.as_str() {
@@ -3610,7 +3856,7 @@ pub async fn get_session_messages(
                         }
                     }
                 }
-                
+
                 // Handle thoughts
                 if let Some(thoughts) = msg.get("thoughts").and_then(|t| t.as_array()) {
                     for thought in thoughts {
@@ -3621,23 +3867,26 @@ pub async fn get_session_messages(
                         }
                     }
                 }
-                
+
                 // Handle tool calls
                 if let Some(tool_calls) = msg.get("toolCalls").and_then(|t| t.as_array()) {
                     for tool_call in tool_calls {
-                        let tool_name = tool_call.get("displayName")
+                        let tool_name = tool_call
+                            .get("displayName")
                             .or_else(|| tool_call.get("name"))
                             .and_then(|n| n.as_str())
                             .unwrap_or("unknown");
-                        let result_display = tool_call.get("resultDisplay")
+                        let result_display = tool_call
+                            .get("resultDisplay")
                             .and_then(|r| r.as_str())
                             .unwrap_or("");
                         if !result_display.is_empty() {
-                            text_parts.push(format!("**[工具: {}]**\n{}", tool_name, result_display));
+                            text_parts
+                                .push(format!("**[工具: {}]**\n{}", tool_name, result_display));
                         }
                     }
                 }
-                
+
                 let final_content = text_parts.join("\n\n");
                 if !final_content.is_empty() {
                     messages.push(SessionMessage {
@@ -3683,7 +3932,7 @@ pub async fn delete_session(
     session_id: String,
 ) -> Result<()> {
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
-    
+
     // Special handling for Codex - need to search recursively
     if cli_type == "codex" {
         use walkdir::WalkDir;
@@ -3711,18 +3960,33 @@ pub async fn delete_session(
         }
         return Err("Session file not found".to_string());
     }
-    
+
     let session_file = match cli_type.as_str() {
-        "gemini" => base_dir.join("tmp").join(&project_name).join("chats").join(format!("{}.json", session_id)),
-        _ => base_dir.join("projects").join(&project_name).join(format!("{}.jsonl", session_id)),
+        "gemini" => base_dir
+            .join("tmp")
+            .join(&project_name)
+            .join("chats")
+            .join(format!("{}.json", session_id)),
+        _ => base_dir
+            .join("projects")
+            .join(&project_name)
+            .join(format!("{}.jsonl", session_id)),
     };
 
     if !session_file.exists() {
-        return Err(format!("Session file not found: {}", session_file.display()));
+        return Err(format!(
+            "Session file not found: {}",
+            session_file.display()
+        ));
     }
 
-    std::fs::remove_file(&session_file)
-        .map_err(|e| format!("Failed to delete session '{}': {}", session_file.display(), e))?;
+    std::fs::remove_file(&session_file).map_err(|e| {
+        format!(
+            "Failed to delete session '{}': {}",
+            session_file.display(),
+            e
+        )
+    })?;
 
     Ok(())
 }
@@ -3734,7 +3998,7 @@ pub async fn delete_project(
     project_name: String,
 ) -> Result<()> {
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
-    
+
     if cli_type == "codex" {
         // For Codex, delete all session files matching the project cwd
         use walkdir::WalkDir;
@@ -3748,9 +4012,7 @@ pub async fn delete_project(
             {
                 let path = entry.path();
                 if path.is_file() {
-                    let filename = path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+                    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                     if filename.starts_with("rollout-") && filename.ends_with(".jsonl") {
                         if let Some(cwd) = extract_codex_cwd(path) {
                             if cwd == project_name {
@@ -3763,7 +4025,7 @@ pub async fn delete_project(
         }
         return Ok(());
     }
-    
+
     // For Claude Code and Gemini, delete the project directory
     let project_dir = match cli_type.as_str() {
         "gemini" => base_dir.join("tmp").join(&project_name),
@@ -3792,7 +4054,7 @@ async fn exit_application() -> Result<()> {
 pub async fn get_webdav_settings(db: State<'_, SqlitePool>) -> Result<WebdavSettings> {
     // Try to get existing settings
     let settings = sqlx::query_as::<_, WebdavSettings>(
-        "SELECT url, username, password FROM webdav_settings WHERE id = 1"
+        "SELECT url, username, password FROM webdav_settings WHERE id = 1",
     )
     .fetch_optional(db.inner())
     .await
@@ -3868,8 +4130,7 @@ pub async fn export_to_local() -> Result<Vec<u8>> {
     let db_path = get_data_dir().join("ccg_gateway.db");
 
     // Read the database file
-    let content = std::fs::read(&db_path)
-        .map_err(|e| format!("Failed to read database: {}", e))?;
+    let content = std::fs::read(&db_path).map_err(|e| format!("Failed to read database: {}", e))?;
 
     Ok(content)
 }
@@ -3879,8 +4140,7 @@ pub async fn import_from_local(data: Vec<u8>) -> Result<()> {
     let db_path = get_data_dir().join("ccg_gateway.db");
 
     // Write the database file
-    std::fs::write(&db_path, &data)
-        .map_err(|e| format!("Failed to write database: {}", e))?;
+    std::fs::write(&db_path, &data).map_err(|e| format!("Failed to write database: {}", e))?;
 
     // 退出应用，用户需手动重启
     exit_application().await?;
@@ -3899,8 +4159,7 @@ pub async fn export_to_webdav(db: State<'_, SqlitePool>) -> Result<String> {
 
     // Read database file
     let db_path = get_data_dir().join("ccg_gateway.db");
-    let content = std::fs::read(&db_path)
-        .map_err(|e| format!("Failed to read database: {}", e))?;
+    let content = std::fs::read(&db_path).map_err(|e| format!("Failed to read database: {}", e))?;
 
     // Generate filename
     let filename = format!(
@@ -3949,17 +4208,22 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
     let remote_dir = format!("{}/ccg-gateway-backup", settings.url.trim_end_matches('/'));
 
     let response = client
-        .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &remote_dir)
+        .request(
+            reqwest::Method::from_bytes(b"PROPFIND").unwrap(),
+            &remote_dir,
+        )
         .basic_auth(&settings.username, Some(&settings.password))
         .header("Depth", "1")
         .header("Content-Type", "application/xml")
-        .body(r#"<?xml version="1.0" encoding="utf-8"?>
+        .body(
+            r#"<?xml version="1.0" encoding="utf-8"?>
             <propfind xmlns="DAV:">
                 <prop>
                     <getcontentlength/>
                     <getlastmodified/>
                 </prop>
-            </propfind>"#)
+            </propfind>"#,
+        )
         .send()
         .await
         .map_err(|e| format!("Failed to list backups: {}", e))?;
@@ -4002,9 +4266,13 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
                 if in_response && !text.is_empty() {
                     if current_tag.ends_with(":href") || current_tag == "href" {
                         current_href = text;
-                    } else if current_tag.ends_with(":getcontentlength") || current_tag == "getcontentlength" {
+                    } else if current_tag.ends_with(":getcontentlength")
+                        || current_tag == "getcontentlength"
+                    {
                         current_size = text.parse::<i64>().unwrap_or(0);
-                    } else if current_tag.ends_with(":getlastmodified") || current_tag == "getlastmodified" {
+                    } else if current_tag.ends_with(":getlastmodified")
+                        || current_tag == "getlastmodified"
+                    {
                         current_modified = text;
                     }
                 }
@@ -4013,7 +4281,7 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
                 let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
                 if name.ends_with(":response") || name == "response" {
                     in_response = false;
-                    
+
                     // Check if this is a .db file we care about
                     if current_href.contains("ccg_gateway_") && current_href.ends_with(".db") {
                         // Extract filename from href
@@ -4031,7 +4299,13 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(format!("XML parse error at position {}: {}", reader.buffer_position(), e)),
+            Err(e) => {
+                return Err(format!(
+                    "XML parse error at position {}: {}",
+                    reader.buffer_position(),
+                    e
+                ))
+            }
             _ => {}
         }
         buf.clear();
@@ -4044,10 +4318,7 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
 }
 
 #[tauri::command]
-pub async fn import_from_webdav(
-    db: State<'_, SqlitePool>,
-    filename: String,
-) -> Result<()> {
+pub async fn import_from_webdav(db: State<'_, SqlitePool>, filename: String) -> Result<()> {
     use reqwest::Client;
 
     let settings = get_webdav_settings(db).await?;
@@ -4070,7 +4341,10 @@ pub async fn import_from_webdav(
         .map_err(|e| format!("Download failed: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Download failed with status: {}", response.status()));
+        return Err(format!(
+            "Download failed with status: {}",
+            response.status()
+        ));
     }
 
     let content = response.bytes().await.map_err(|e| e.to_string())?;
@@ -4078,8 +4352,7 @@ pub async fn import_from_webdav(
     // Write to database file
     let db_path = get_data_dir().join("ccg_gateway.db");
 
-    std::fs::write(&db_path, &content)
-        .map_err(|e| format!("Failed to write database: {}", e))?;
+    std::fs::write(&db_path, &content).map_err(|e| format!("Failed to write database: {}", e))?;
 
     // 退出应用，用户需手动重启
     exit_application().await?;
@@ -4088,10 +4361,7 @@ pub async fn import_from_webdav(
 }
 
 #[tauri::command]
-pub async fn delete_webdav_backup(
-    db: State<'_, SqlitePool>,
-    filename: String,
-) -> Result<()> {
+pub async fn delete_webdav_backup(db: State<'_, SqlitePool>, filename: String) -> Result<()> {
     use reqwest::Client;
 
     let settings = get_webdav_settings(db).await?;
@@ -4138,7 +4408,7 @@ async fn skill_enabled_in_cli_async(db: &SqlitePool, cli_type: &str, directory: 
         Some(d) => d,
         None => return false,
     };
-    
+
     let skill_path = cli_dir.join(directory);
     skill_path.exists()
 }
@@ -4267,7 +4537,11 @@ async fn sync_skill_to_cli_async(db: &SqlitePool, directory: &str, cli_type: &st
 }
 
 // 从 CLI 目录移除 skill（异步版本）
-async fn remove_skill_from_cli_async(db: &SqlitePool, directory: &str, cli_type: &str) -> Result<()> {
+async fn remove_skill_from_cli_async(
+    db: &SqlitePool,
+    directory: &str,
+    cli_type: &str,
+) -> Result<()> {
     let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
         Some(d) => d,
         None => return Ok(()),
@@ -4288,7 +4562,41 @@ async fn remove_skill_from_all_cli_async(db: &SqlitePool, directory: &str) -> Re
     Ok(())
 }
 
+async fn uninstall_skill_directory_async(
+    db: &SqlitePool,
+    directory: &str,
+    error_if_missing: bool,
+) -> Result<()> {
+    let ssot_dir = get_ssot_dir();
+    let skill_path = ssot_dir.join(directory);
+    let manifest_exists = skill::load_installed_skill_manifest()?
+        .iter()
+        .any(|entry| entry.directory == directory);
+
+    if !manifest_exists && !skill_path.exists() {
+        if error_if_missing {
+            return Err("Skill not found".to_string());
+        }
+        return Ok(());
+    }
+
+    remove_skill_from_all_cli_async(db, directory).await?;
+
+    if skill_path.exists() {
+        std::fs::remove_dir_all(&skill_path).map_err(|e| e.to_string())?;
+    }
+
+    if manifest_exists {
+        skill::remove_installed_skill_manifest_entry(directory)?;
+    }
+
+    tracing::info!("Uninstalled skill: {}", directory);
+    Ok(())
+}
+
 async fn load_installed_skill_responses(db: &SqlitePool) -> Result<Vec<InstalledSkillResponse>> {
+    let favorite_keys = get_skill_favorite_keys(db).await?;
+
     let manifest_entries = skill::load_installed_skill_manifest()?;
     let mut manifest_map = manifest_entries
         .into_iter()
@@ -4299,14 +4607,18 @@ async fn load_installed_skill_responses(db: &SqlitePool) -> Result<Vec<Installed
     let mut results = Vec::new();
 
     for directory in skill::list_installed_skill_directories()? {
-        let mut entry = manifest_map.remove(&directory).unwrap_or_else(|| InstalledSkillManifestEntry {
-            directory: directory.clone(),
-            name: directory.clone(),
-            description: None,
-            repo: None,
-            readme_url: None,
-            installed_at: file_modified_at(&ssot_dir.join(&directory)),
-        });
+        let mut entry =
+            manifest_map
+                .remove(&directory)
+                .unwrap_or_else(|| InstalledSkillManifestEntry {
+                    directory: directory.clone(),
+                    name: directory.clone(),
+                    description: None,
+                    repo: None,
+                    readme_url: None,
+                    installed_at: file_modified_at(&ssot_dir.join(&directory)),
+                    source_directory: None,
+                });
 
         let (disk_name, disk_description) = read_installed_skill_metadata(&directory);
         if let Some(name) = normalize_optional_text(disk_name) {
@@ -4318,6 +4630,8 @@ async fn load_installed_skill_responses(db: &SqlitePool) -> Result<Vec<Installed
             entry.description = normalize_optional_text(entry.description);
         }
 
+        let (is_favorited, can_favorite, favorite_key, market_display) =
+            build_skill_favorite_info(&entry, &favorite_keys);
         let cli_flags = build_skill_cli_flags(db, &directory).await;
         results.push(InstalledSkillResponse {
             id: directory.clone(),
@@ -4329,11 +4643,17 @@ async fn load_installed_skill_responses(db: &SqlitePool) -> Result<Vec<Installed
             installed_at: entry.installed_at,
             cli_flags,
             exists_on_disk: true,
+            is_favorited,
+            can_favorite,
+            favorite_key,
+            market_display,
         });
     }
 
     for (directory, mut entry) in manifest_map {
         entry.description = normalize_optional_text(entry.description);
+        let (is_favorited, can_favorite, favorite_key, market_display) =
+            build_skill_favorite_info(&entry, &favorite_keys);
         let cli_flags = build_skill_cli_flags(db, &directory).await;
         results.push(InstalledSkillResponse {
             id: directory.clone(),
@@ -4345,11 +4665,47 @@ async fn load_installed_skill_responses(db: &SqlitePool) -> Result<Vec<Installed
             installed_at: entry.installed_at,
             cli_flags,
             exists_on_disk: false,
+            is_favorited,
+            can_favorite,
+            favorite_key,
+            market_display,
         });
     }
 
     results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(results)
+}
+
+fn build_skill_favorite_info(
+    entry: &InstalledSkillManifestEntry,
+    favorite_keys: &std::collections::HashSet<String>,
+) -> (bool, bool, Option<String>, String) {
+    if let (Some(repo), Some(source_dir)) = (&entry.repo, &entry.source_directory) {
+        let key = format!("{}:{}", repo.name, source_dir);
+        let is_favorited = favorite_keys.contains(&key);
+        let market_display = if is_local_repo_source(&repo.source) {
+            String::new()
+        } else {
+            format!("@{}", repo.source)
+        };
+        (is_favorited, true, Some(key), market_display)
+    } else if let Some(repo) = &entry.repo {
+        // 本地仓库且未保存 source_directory 的旧数据
+        if is_local_repo_source(&repo.source) {
+            let source_dir = if entry.directory == repo.name {
+                "."
+            } else {
+                &entry.directory
+            };
+            let key = format!("{}:{}", repo.name, source_dir);
+            let is_favorited = favorite_keys.contains(&key);
+            (is_favorited, true, Some(key), String::new())
+        } else {
+            (false, false, None, String::new())
+        }
+    } else {
+        (false, false, None, String::new())
+    }
 }
 
 // ==================== 仓库管理命令 ====================
@@ -4372,7 +4728,12 @@ fn extract_repo_name(source: &str) -> String {
     }
 
     // URL：取最后一段路径
-    source.split('/').filter(|s| !s.is_empty()).last().unwrap_or(source).to_string()
+    source
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .last()
+        .unwrap_or(source)
+        .to_string()
 }
 
 /// 执行 git clone（浅克隆，自动使用主分支）
@@ -4394,7 +4755,13 @@ fn git_clone_repo(source: &str) -> Result<std::path::PathBuf> {
     };
 
     let output = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", &git_url, cache_dir.to_str().unwrap_or("")])
+        .args([
+            "clone",
+            "--depth",
+            "1",
+            &git_url,
+            cache_dir.to_str().unwrap_or(""),
+        ])
         .output()
         .map_err(|e| format!("git clone 执行失败: {}", e))?;
 
@@ -4434,7 +4801,17 @@ pub async fn add_skill_repo(input: SkillRepoCreate) -> Result<SkillRepo> {
 }
 
 #[tauri::command]
-pub async fn remove_skill_repo(name: String) -> Result<()> {
+pub async fn remove_skill_repo(db: State<'_, SqlitePool>, name: String) -> Result<()> {
+    let installed_directories = skill::load_installed_skill_manifest()?
+        .into_iter()
+        .filter(|entry| entry.repo.as_ref().map(|repo| repo.name.as_str()) == Some(name.as_str()))
+        .map(|entry| entry.directory)
+        .collect::<Vec<_>>();
+
+    for directory in installed_directories {
+        uninstall_skill_directory_async(db.inner(), &directory, false).await?;
+    }
+
     if let Some(repo) = skill::remove_skill_repo(&name)? {
         if !skill::is_local_repo_source(&repo.source) {
             skill::delete_cached_repo_dir(&repo.source);
@@ -4443,8 +4820,50 @@ pub async fn remove_skill_repo(name: String) -> Result<()> {
     Ok(())
 }
 
+async fn sync_skill_favorites_repo(
+    db: &SqlitePool,
+    old_name: &str,
+    repo: &SkillRepo,
+) -> Result<()> {
+    let favorites = sqlx::query_as::<_, SkillFavorite>(
+        "SELECT * FROM skill_favorites WHERE repo_name = ? ORDER BY created_at DESC",
+    )
+    .bind(old_name)
+    .fetch_all(db)
+    .await
+    .map_err(map_db_error)?;
+
+    for favorite in favorites {
+        let new_key = format!("{}:{}", repo.name, favorite.directory);
+
+        sqlx::query("DELETE FROM skill_favorites WHERE skill_key = ? AND id != ?")
+            .bind(&new_key)
+            .bind(favorite.id)
+            .execute(db)
+            .await
+            .map_err(map_db_error)?;
+
+        sqlx::query(
+            "UPDATE skill_favorites SET skill_key = ?, repo_name = ?, repo_source = ? WHERE id = ?",
+        )
+        .bind(&new_key)
+        .bind(&repo.name)
+        .bind(&repo.source)
+        .bind(favorite.id)
+        .execute(db)
+        .await
+        .map_err(map_db_error)?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
-pub async fn update_skill_repo(old_name: String, new_url: String) -> Result<SkillRepo> {
+pub async fn update_skill_repo(
+    db: State<'_, SqlitePool>,
+    old_name: String,
+    new_url: String,
+) -> Result<SkillRepo> {
     let old_repo = skill::get_skill_repo(&old_name)?;
 
     // 清理旧缓存
@@ -4462,6 +4881,7 @@ pub async fn update_skill_repo(old_name: String, new_url: String) -> Result<Skil
             source: new_url.to_string(),
         };
         skill::replace_skill_repo(&old_name, repo.clone())?;
+        sync_skill_favorites_repo(db.inner(), &old_name, &repo).await?;
         return Ok(repo);
     }
 
@@ -4473,44 +4893,66 @@ pub async fn update_skill_repo(old_name: String, new_url: String) -> Result<Skil
         source: new_url.to_string(),
     };
     skill::replace_skill_repo(&old_name, repo.clone())?;
+    sync_skill_favorites_repo(db.inner(), &old_name, &repo).await?;
     Ok(repo)
 }
 
 // ==================== Skill 发现命令 ====================
 
 #[tauri::command]
-pub async fn discover_repo_skills(name: String) -> Result<Vec<DiscoverableSkill>> {
-    let repo = skill::get_skill_repo(&name)?
-        .ok_or_else(|| format!("未找到仓库 '{}'", name))?;
+pub async fn discover_repo_skills(
+    db: State<'_, SqlitePool>,
+    name: String,
+) -> Result<Vec<DiscoverableSkill>> {
+    let repo = skill::get_skill_repo(&name)?.ok_or_else(|| format!("未找到仓库 '{}'", name))?;
+
+    let favorite_keys = get_skill_favorite_keys(db.inner()).await?;
 
     // 1. 本地目录
     if skill::is_local_repo_source(&repo.source) {
-        return scan_local_repo_skills(&repo).await;
+        return scan_local_repo_skills(&repo, &favorite_keys).await;
     }
 
     // 2. 远程仓库：git clone 或使用缓存
     let cache_dir = git_clone_repo(&repo.source)?;
-    scan_cached_repo_skills(&cache_dir, &repo)
+    scan_cached_repo_skills(&cache_dir, &repo, &favorite_keys)
 }
 
 #[tauri::command]
-pub async fn refresh_repo_skills(name: String) -> Result<Vec<DiscoverableSkill>> {
-    let repo = skill::get_skill_repo(&name)?
-        .ok_or_else(|| format!("未找到仓库 '{}'", name))?;
+pub async fn refresh_repo_skills(
+    db: State<'_, SqlitePool>,
+    name: String,
+) -> Result<Vec<DiscoverableSkill>> {
+    let repo = skill::get_skill_repo(&name)?.ok_or_else(|| format!("未找到仓库 '{}'", name))?;
+
+    let favorite_keys = get_skill_favorite_keys(db.inner()).await?;
 
     // 1. 本地目录
     if skill::is_local_repo_source(&repo.source) {
-        return scan_local_repo_skills(&repo).await;
+        return scan_local_repo_skills(&repo, &favorite_keys).await;
     }
 
     // 2. 远程仓库：删除缓存后重新 clone
     skill::delete_cached_repo_dir(&repo.source);
     let cache_dir = git_clone_repo(&repo.source)?;
-    scan_cached_repo_skills(&cache_dir, &repo)
+    scan_cached_repo_skills(&cache_dir, &repo, &favorite_keys)
+}
+
+async fn get_skill_favorite_keys(db: &SqlitePool) -> Result<std::collections::HashSet<String>> {
+    let keys: Vec<String> = sqlx::query("SELECT skill_key FROM skill_favorites")
+        .map(|row: sqlx::sqlite::SqliteRow| row.get::<String, _>(0))
+        .fetch_all(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(keys.into_iter().collect())
 }
 
 /// 扫描缓存的仓库目录
-fn scan_cached_repo_skills(cache_dir: &std::path::Path, repo: &SkillRepo) -> Result<Vec<DiscoverableSkill>> {
+fn scan_cached_repo_skills(
+    cache_dir: &std::path::Path,
+    repo: &SkillRepo,
+    favorite_keys: &std::collections::HashSet<String>,
+) -> Result<Vec<DiscoverableSkill>> {
     let mut skills = Vec::new();
 
     for entry in walkdir::WalkDir::new(cache_dir)
@@ -4542,33 +4984,53 @@ fn scan_cached_repo_skills(cache_dir: &std::path::Path, repo: &SkillRepo) -> Res
                     .unwrap_or_else(|| relative_path.clone())
             };
 
-            let directory_str = if relative_path.is_empty() { ".".to_string() } else { relative_path };
+            let directory_str = if relative_path.is_empty() {
+                ".".to_string()
+            } else {
+                relative_path
+            };
             let install_dir = skill_install_directory_name_from_parts(&directory_str, &repo.name);
+            let key = format!("{}:{}", repo.name, &directory_str);
+            let is_installed = get_ssot_dir().join(&install_dir).exists();
             skills.push(DiscoverableSkill {
-                key: format!("{}:{}", repo.name, &directory_str),
+                key: key.clone(),
                 name: skill_name.unwrap_or_else(|| directory_name.clone()),
                 description: description.unwrap_or_default(),
                 directory: directory_str,
                 install_directory: install_dir,
                 readme_url: None,
                 repo: repo.clone(),
+                is_favorited: favorite_keys.contains(&key),
+                is_installed,
             });
         }
     }
 
-    skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    // 排序：收藏优先，已安装次之，最后按名称
+    skills.sort_by(|a, b| {
+        if a.is_favorited != b.is_favorited {
+            return a.is_favorited.cmp(&b.is_favorited).reverse();
+        }
+        if a.is_installed != b.is_installed {
+            return a.is_installed.cmp(&b.is_installed).reverse();
+        }
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+    });
     Ok(skills)
 }
 
 /// 扫描本地仓库目录
-async fn scan_local_repo_skills(repo: &SkillRepo) -> Result<Vec<DiscoverableSkill>> {
+async fn scan_local_repo_skills(
+    repo: &SkillRepo,
+    favorite_keys: &std::collections::HashSet<String>,
+) -> Result<Vec<DiscoverableSkill>> {
     let root_path = std::path::Path::new(&repo.source);
 
     if !root_path.exists() || !root_path.is_dir() {
         return Err(format!("本地目录 {} 不存在", repo.source));
     }
 
-    scan_cached_repo_skills(root_path, repo)
+    scan_cached_repo_skills(root_path, repo, favorite_keys)
 }
 
 // ==================== Skill 安装/卸载命令 ====================
@@ -4584,6 +5046,8 @@ async fn install_skill_inner(
     let existing = skill::load_installed_skill_manifest()?
         .into_iter()
         .find(|entry| entry.directory == directory_name);
+
+    skill::ensure_repo_exists(&skill_item.repo)?;
 
     if (existing.is_some() || skill_path.exists()) && !reinstall {
         return Err(format!("Skill '{}' is already installed", directory_name));
@@ -4634,6 +5098,7 @@ async fn install_skill_inner(
         repo: Some(skill_item.repo.clone()),
         readme_url: skill_item.readme_url.clone(),
         installed_at: now,
+        source_directory: Some(skill_item.directory.clone()),
     })?;
 
     let mut cli_flags = build_skill_cli_flags(db, &directory_name).await;
@@ -4647,11 +5112,19 @@ async fn install_skill_inner(
         name: skill_item.name,
         description: normalize_skill_text(&skill_item.description),
         directory: directory_name,
-        repo: Some(skill_item.repo),
+        repo: Some(skill_item.repo.clone()),
         readme_url: skill_item.readme_url,
         installed_at: now,
         cli_flags,
         exists_on_disk: true,
+        is_favorited: skill_item.is_favorited,
+        can_favorite: true,
+        favorite_key: Some(skill_item.key.clone()),
+        market_display: if is_local_repo_source(&skill_item.repo.source) {
+            String::new()
+        } else {
+            format!("@{}", skill_item.repo.source)
+        },
     })
 }
 
@@ -4665,39 +5138,71 @@ pub async fn install_skill(
 }
 
 #[tauri::command]
-pub async fn uninstall_skill(db: State<'_, SqlitePool>, id: String) -> Result<()> {
-    let directory = id;
-    let ssot_dir = get_ssot_dir();
-    let skill_path = ssot_dir.join(&directory);
-    let manifest_exists = skill::load_installed_skill_manifest()?
+pub async fn reinstall_installed_skill(
+    db: State<'_, SqlitePool>,
+    directory: String,
+) -> Result<InstalledSkillResponse> {
+    let manifest_entries = skill::load_installed_skill_manifest()?;
+    let entry = manifest_entries
         .iter()
-        .any(|entry| entry.directory == directory);
+        .find(|e| e.directory == directory)
+        .ok_or_else(|| format!("Skill '{}' not found in manifest", directory))?;
 
-    if !manifest_exists && !skill_path.exists() {
-        return Err("Skill not found".to_string());
-    }
+    let repo = entry
+        .repo
+        .as_ref()
+        .ok_or_else(|| "Skill missing repo info, cannot reinstall".to_string())?;
 
-    remove_skill_from_all_cli_async(db.inner(), &directory).await?;
+    let source_dir = entry
+        .source_directory
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or_else(|| {
+            if skill::is_local_repo_source(&repo.source) && directory == repo.name {
+                "."
+            } else {
+                &directory
+            }
+        });
 
-    if skill_path.exists() {
-        std::fs::remove_dir_all(&skill_path).map_err(|e| e.to_string())?;
-    }
+    let key = format!("{}:{}", repo.name, source_dir);
 
-    skill::remove_installed_skill_manifest_entry(&directory)?;
+    let discoverable = DiscoverableSkill {
+        key,
+        name: entry.name.clone(),
+        description: entry.description.clone().unwrap_or_default(),
+        directory: source_dir.to_string(),
+        install_directory: directory.clone(),
+        readme_url: entry.readme_url.clone(),
+        repo: repo.clone(),
+        is_favorited: false,
+        is_installed: true,
+    };
 
-    tracing::info!("Uninstalled skill: {}", directory);
-    Ok(())
+    install_skill_inner(db.inner(), discoverable, true).await
+}
+
+#[tauri::command]
+pub async fn uninstall_skill(db: State<'_, SqlitePool>, id: String) -> Result<()> {
+    uninstall_skill_directory_async(db.inner(), &id, true).await
 }
 
 // ==================== 已安装 Skill 管理命令 ====================
 
 #[tauri::command]
-pub async fn get_installed_skills(db: State<'_, SqlitePool>) -> Result<Vec<InstalledSkillResponse>> {
+pub async fn get_installed_skills(
+    db: State<'_, SqlitePool>,
+) -> Result<Vec<InstalledSkillResponse>> {
     load_installed_skill_responses(db.inner()).await
 }
 
 #[tauri::command]
-pub async fn toggle_skill_cli(db: State<'_, SqlitePool>, id: String, cli_type: String, enabled: bool) -> Result<()> {
+pub async fn toggle_skill_cli(
+    db: State<'_, SqlitePool>,
+    id: String,
+    cli_type: String,
+    enabled: bool,
+) -> Result<()> {
     let directory = id;
     if enabled {
         sync_skill_to_cli_async(db.inner(), &directory, &cli_type).await?;
@@ -4713,7 +5218,7 @@ pub async fn toggle_skill_cli(db: State<'_, SqlitePool>, id: String, cli_type: S
 #[tauri::command]
 pub async fn get_skill_favorites(db: State<'_, SqlitePool>) -> Result<Vec<SkillFavoriteItem>> {
     let favorites = sqlx::query_as::<_, SkillFavorite>(
-        "SELECT * FROM skill_favorites ORDER BY created_at DESC"
+        "SELECT * FROM skill_favorites ORDER BY created_at DESC",
     )
     .fetch_all(db.inner())
     .await
@@ -4727,7 +5232,8 @@ pub async fn get_skill_favorites(db: State<'_, SqlitePool>) -> Result<Vec<SkillF
                 name: favorite.repo_name,
                 source: favorite.repo_source,
             };
-            let installed_directory = skill_install_directory_name_from_parts(&favorite.directory, &repo.name);
+            let installed_directory =
+                skill_install_directory_name_from_parts(&favorite.directory, &repo.name);
             SkillFavoriteItem {
                 key: favorite.skill_key,
                 name: favorite.name,
@@ -4742,7 +5248,10 @@ pub async fn get_skill_favorites(db: State<'_, SqlitePool>) -> Result<Vec<SkillF
 }
 
 #[tauri::command]
-pub async fn add_skill_favorite(db: State<'_, SqlitePool>, skill_item: DiscoverableSkill) -> Result<()> {
+pub async fn add_skill_favorite(
+    db: State<'_, SqlitePool>,
+    skill_item: DiscoverableSkill,
+) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
     sqlx::query(
         "INSERT OR REPLACE INTO skill_favorites (skill_key, name, description, directory, readme_url, repo_name, repo_source, repo_branch, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -4763,6 +5272,70 @@ pub async fn add_skill_favorite(db: State<'_, SqlitePool>, skill_item: Discovera
 }
 
 #[tauri::command]
+pub async fn toggle_installed_skill_favorite(
+    db: State<'_, SqlitePool>,
+    directory: String,
+) -> Result<bool> {
+    let manifest_entries = skill::load_installed_skill_manifest()?;
+    let entry = manifest_entries
+        .iter()
+        .find(|e| e.directory == directory)
+        .ok_or_else(|| format!("Skill '{}' not found in manifest", directory))?;
+
+    let (repo, source_dir) = match (&entry.repo, &entry.source_directory) {
+        (Some(r), Some(s)) => (r, s),
+        (Some(r), None) => {
+            // 旧数据，尝试推断 source_directory
+            if is_local_repo_source(&r.source) && entry.directory == r.name {
+                static DOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+                (r, DOT.get_or_init(|| ".".to_string()))
+            } else {
+                return Err("Skill missing source_directory info".to_string());
+            }
+        }
+        _ => return Err("Skill missing repo info".to_string()),
+    };
+
+    let key = format!("{}:{}", repo.name, source_dir);
+
+    // 检查是否已收藏
+    let existing = sqlx::query("SELECT 1 FROM skill_favorites WHERE skill_key = ?")
+        .bind(&key)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if existing.is_some() {
+        // 已收藏，删除
+        sqlx::query("DELETE FROM skill_favorites WHERE skill_key = ?")
+            .bind(&key)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
+        Ok(false)
+    } else {
+        // 未收藏，添加
+        let now = chrono::Utc::now().timestamp();
+        sqlx::query(
+            "INSERT INTO skill_favorites (skill_key, name, description, directory, readme_url, repo_name, repo_source, repo_branch, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&key)
+        .bind(&entry.name)
+        .bind(&entry.description)
+        .bind(source_dir)
+        .bind(&entry.readme_url)
+        .bind(&repo.name)
+        .bind(&repo.source)
+        .bind(None::<String>)
+        .bind(now)
+        .execute(db.inner())
+        .await
+        .map_err(map_db_error)?;
+        Ok(true)
+    }
+}
+
+#[tauri::command]
 pub async fn remove_skill_favorite(db: State<'_, SqlitePool>, key: String) -> Result<()> {
     sqlx::query("DELETE FROM skill_favorites WHERE skill_key = ?")
         .bind(&key)
@@ -4777,28 +5350,70 @@ pub async fn install_favorite_skill(
     db: State<'_, SqlitePool>,
     key: String,
 ) -> Result<InstalledSkillResponse> {
-    let favorite = sqlx::query_as::<_, SkillFavorite>(
-        "SELECT * FROM skill_favorites WHERE skill_key = ?"
-    )
-    .bind(&key)
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?
-    .ok_or_else(|| "Skill favorite not found".to_string())?;
+    let favorite =
+        sqlx::query_as::<_, SkillFavorite>("SELECT * FROM skill_favorites WHERE skill_key = ?")
+            .bind(&key)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Skill favorite not found".to_string())?;
+
+    let repo = SkillRepo {
+        name: favorite.repo_name.clone(),
+        source: favorite.repo_source.clone(),
+    };
+
+    // 确保仓库缓存存在
+    let cache_dir = if skill::is_local_repo_source(&repo.source) {
+        std::path::Path::new(&repo.source).to_path_buf()
+    } else {
+        git_clone_repo(&repo.source)?
+    };
+
+    // 检查 directory 是否有效，无效则从仓库扫描修复
+    let skill_path = if favorite.directory == "." {
+        cache_dir.to_path_buf()
+    } else {
+        cache_dir.join(&favorite.directory)
+    };
+
+    let (directory, skill_key) = if skill_path.exists() {
+        (favorite.directory.clone(), favorite.skill_key.clone())
+    } else {
+        // 扫描仓库找到正确的 skill
+        let skills = scan_cached_repo_skills(&cache_dir, &repo, &std::collections::HashSet::new())?;
+        let skill = skills
+            .iter()
+            .find(|s| s.name == favorite.name)
+            .ok_or_else(|| format!("未在仓库中找到技能: {}", favorite.name))?;
+
+        // 更新数据库中的 directory 和 key
+        sqlx::query("UPDATE skill_favorites SET directory = ?, skill_key = ? WHERE skill_key = ?")
+            .bind(&skill.directory)
+            .bind(&skill.key)
+            .bind(&favorite.skill_key)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
+
+        (skill.directory.clone(), skill.key.clone())
+    };
 
     install_skill_inner(
         db.inner(),
         DiscoverableSkill {
-            key: favorite.skill_key,
+            key: skill_key,
             name: favorite.name,
             description: favorite.description.unwrap_or_default(),
-            directory: favorite.directory.clone(),
-            install_directory: skill_install_directory_name_from_parts(&favorite.directory, &favorite.repo_name),
+            directory: directory.clone(),
+            install_directory: skill_install_directory_name_from_parts(
+                &directory,
+                &favorite.repo_name,
+            ),
             readme_url: favorite.readme_url,
-            repo: SkillRepo {
-                name: favorite.repo_name,
-                source: favorite.repo_source,
-            },
+            repo,
+            is_favorited: true,
+            is_installed: false,
         },
         false,
     )
@@ -4871,15 +5486,19 @@ fn parse_display_info(cli_type: &str, credential_json: &str) -> String {
             "claude_code" => {
                 // 查找 settings.json 文件
                 if let Some(file) = files.iter().find(|f| {
-                    f.get("path").and_then(|p| p.as_str()).map(|p| p.contains("settings.json")).unwrap_or(false)
+                    f.get("path")
+                        .and_then(|p| p.as_str())
+                        .map(|p| p.contains("settings.json"))
+                        .unwrap_or(false)
                 }) {
                     if let Some(content) = file.get("content").and_then(|c| c.as_str()) {
                         if let Ok(data) = serde_json::from_str::<serde_json::Value>(content) {
-                            return data.get("ANTHROPIC_API_KEY")
+                            return data
+                                .get("ANTHROPIC_API_KEY")
                                 .and_then(|v| v.as_str())
                                 .map(|key| {
                                     if key.len() > 12 {
-                                        format!("sk-ant-...{}", &key[key.len()-8..])
+                                        format!("sk-ant-...{}", &key[key.len() - 8..])
                                     } else {
                                         "已配置".to_string()
                                     }
@@ -4893,11 +5512,15 @@ fn parse_display_info(cli_type: &str, credential_json: &str) -> String {
             "codex" => {
                 // 查找 auth.json 文件
                 if let Some(file) = files.iter().find(|f| {
-                    f.get("path").and_then(|p| p.as_str()).map(|p| p.contains("auth.json")).unwrap_or(false)
+                    f.get("path")
+                        .and_then(|p| p.as_str())
+                        .map(|p| p.contains("auth.json"))
+                        .unwrap_or(false)
                 }) {
                     if let Some(content) = file.get("content").and_then(|c| c.as_str()) {
                         if let Ok(data) = serde_json::from_str::<serde_json::Value>(content) {
-                            return data.get("tokens")
+                            return data
+                                .get("tokens")
                                 .and_then(|t| t.get("access_token"))
                                 .and_then(|v| v.as_str())
                                 .map(|_| "已配置".to_string())
@@ -4910,11 +5533,15 @@ fn parse_display_info(cli_type: &str, credential_json: &str) -> String {
             "gemini" => {
                 // 查找 google_accounts.json 文件
                 if let Some(file) = files.iter().find(|f| {
-                    f.get("path").and_then(|p| p.as_str()).map(|p| p.contains("google_accounts.json")).unwrap_or(false)
+                    f.get("path")
+                        .and_then(|p| p.as_str())
+                        .map(|p| p.contains("google_accounts.json"))
+                        .unwrap_or(false)
                 }) {
                     if let Some(content) = file.get("content").and_then(|c| c.as_str()) {
                         if let Ok(data) = serde_json::from_str::<serde_json::Value>(content) {
-                            return data.get("active")
+                            return data
+                                .get("active")
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string())
                                 .unwrap_or_else(|| "已配置".to_string());
@@ -4923,43 +5550,38 @@ fn parse_display_info(cli_type: &str, credential_json: &str) -> String {
                 }
                 "未配置".to_string()
             }
-            _ => "未知".to_string()
+            _ => "未知".to_string(),
         }
     } else {
         // 兼容旧格式：直接解析为 JSON 对象
         match serde_json::from_str::<serde_json::Value>(credential_json) {
-            Ok(creds) => {
-                match cli_type {
-                    "claude_code" => {
-                        creds.get("ANTHROPIC_API_KEY")
-                            .and_then(|v| v.as_str())
-                            .map(|key| {
-                                if key.len() > 12 {
-                                    format!("sk-ant-...{}", &key[key.len()-8..])
-                                } else {
-                                    "已配置".to_string()
-                                }
-                            })
-                            .unwrap_or_else(|| "未知".to_string())
-                    }
-                    "codex" => {
-                        creds.get("tokens")
-                            .and_then(|t| t.get("active_email"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| "已配置".to_string())
-                    }
-                    "gemini" => {
-                        creds.get("google_accounts")
-                            .and_then(|g| g.get("active"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string())
-                            .unwrap_or_else(|| "已配置".to_string())
-                    }
-                    _ => "未知".to_string()
-                }
-            }
-            Err(_) => "无效 JSON".to_string()
+            Ok(creds) => match cli_type {
+                "claude_code" => creds
+                    .get("ANTHROPIC_API_KEY")
+                    .and_then(|v| v.as_str())
+                    .map(|key| {
+                        if key.len() > 12 {
+                            format!("sk-ant-...{}", &key[key.len() - 8..])
+                        } else {
+                            "已配置".to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| "未知".to_string()),
+                "codex" => creds
+                    .get("tokens")
+                    .and_then(|t| t.get("active_email"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "已配置".to_string()),
+                "gemini" => creds
+                    .get("google_accounts")
+                    .and_then(|g| g.get("active"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "已配置".to_string()),
+                _ => "未知".to_string(),
+            },
+            Err(_) => "无效 JSON".to_string(),
         }
     }
 }
@@ -4971,52 +5593,44 @@ async fn read_cli_credential_impl_async(db: &SqlitePool, cli_type: &str) -> Resu
     match cli_type {
         "claude_code" => {
             let config_path = config_dir.join("settings.json");
-            
+
             // 如果文件不存在，返回空内容（而不是报错）
             if !config_path.exists() {
-                let files = vec![
-                    serde_json::json!({
-                        "path": format!("{}/settings.json", config_dir.display()),
-                        "content": ""
-                    })
-                ];
+                let files = vec![serde_json::json!({
+                    "path": format!("{}/settings.json", config_dir.display()),
+                    "content": ""
+                })];
                 return Ok(serde_json::to_string(&files).unwrap());
             }
-            
-            let content = std::fs::read_to_string(&config_path)
-                .map_err(|e| format!("读取失败: {}", e))?;
-            
-            let files = vec![
-                serde_json::json!({
-                    "path": format!("{}/settings.json", config_dir.display()),
-                    "content": content
-                })
-            ];
+
+            let content =
+                std::fs::read_to_string(&config_path).map_err(|e| format!("读取失败: {}", e))?;
+
+            let files = vec![serde_json::json!({
+                "path": format!("{}/settings.json", config_dir.display()),
+                "content": content
+            })];
             Ok(serde_json::to_string(&files).unwrap())
         }
         "codex" => {
             let auth_path = config_dir.join("auth.json");
-            
+
             // 如果文件不存在，返回空的文件列表（而不是报错）
             if !auth_path.exists() {
-                let files = vec![
-                    serde_json::json!({
-                        "path": format!("{}/auth.json", config_dir.display()),
-                        "content": ""
-                    })
-                ];
+                let files = vec![serde_json::json!({
+                    "path": format!("{}/auth.json", config_dir.display()),
+                    "content": ""
+                })];
                 return Ok(serde_json::to_string(&files).unwrap());
             }
-            
-            let content = std::fs::read_to_string(&auth_path)
-                .map_err(|e| format!("读取失败: {}", e))?;
-            
-            let files = vec![
-                serde_json::json!({
-                    "path": format!("{}/auth.json", config_dir.display()),
-                    "content": content
-                })
-            ];
+
+            let content =
+                std::fs::read_to_string(&auth_path).map_err(|e| format!("读取失败: {}", e))?;
+
+            let files = vec![serde_json::json!({
+                "path": format!("{}/auth.json", config_dir.display()),
+                "content": content
+            })];
             Ok(serde_json::to_string(&files).unwrap())
         }
         "gemini" => {
@@ -5040,7 +5654,7 @@ async fn read_cli_credential_impl_async(db: &SqlitePool, cli_type: &str) -> Resu
                     "content": ""
                 }));
             }
-            
+
             if accounts_path.exists() {
                 let content = std::fs::read_to_string(&accounts_path)
                     .map_err(|e| format!("读取 google_accounts.json 失败: {}", e))?;
@@ -5054,7 +5668,7 @@ async fn read_cli_credential_impl_async(db: &SqlitePool, cli_type: &str) -> Resu
                     "content": ""
                 }));
             }
-            
+
             if settings_path.exists() {
                 let content = std::fs::read_to_string(&settings_path)
                     .map_err(|e| format!("读取 settings.json 失败: {}", e))?;
@@ -5076,11 +5690,16 @@ async fn read_cli_credential_impl_async(db: &SqlitePool, cli_type: &str) -> Resu
 }
 
 /// 同步凭证到 CLI 配置文件（异步版本，支持自定义配置目录）
-async fn sync_credential_to_cli_async(db: &SqlitePool, cli_type: &str, credential_json: &str, default_config: &str) -> Result<()> {
+async fn sync_credential_to_cli_async(
+    db: &SqlitePool,
+    cli_type: &str,
+    credential_json: &str,
+    default_config: &str,
+) -> Result<()> {
     // 解析文件列表
     let files: Vec<serde_json::Value> = serde_json::from_str(credential_json)
         .map_err(|e| format!("解析凭证文件列表失败: {}", e))?;
-    
+
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
 
     match cli_type {
@@ -5096,20 +5715,23 @@ async fn sync_credential_to_cli_async(db: &SqlitePool, cli_type: &str, credentia
             std::fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
 
             // 查找 auth.json 文件
-            let auth_file = files.iter()
-                .find(|f| f.get("path")
+            let auth_file = files.iter().find(|f| {
+                f.get("path")
                     .and_then(|p| p.as_str())
                     .map(|p| p.contains("auth.json"))
-                    .unwrap_or(false));
-            
+                    .unwrap_or(false)
+            });
+
             if let Some(file) = auth_file {
-                let content = file.get("content")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("");
-                
+                let content = file.get("content").and_then(|c| c.as_str()).unwrap_or("");
+
                 // 只有当内容不为空时才写入
                 if !content.is_empty() {
-                    tracing::info!("写入 Codex auth.json，内容长度: {}，路径: {:?}", content.len(), auth_path);
+                    tracing::info!(
+                        "写入 Codex auth.json，内容长度: {}，路径: {:?}",
+                        content.len(),
+                        auth_path
+                    );
                     std::fs::write(&auth_path, content).map_err(|e| {
                         tracing::error!("写入 auth.json 失败: {}", e);
                         e.to_string()
@@ -5124,7 +5746,8 @@ async fn sync_credential_to_cli_async(db: &SqlitePool, cli_type: &str, credentia
 
             // 处理 config.toml：直接使用全局配置（如果有）
             if !default_config.is_empty() {
-                let doc = default_config.parse::<toml_edit::DocumentMut>()
+                let doc = default_config
+                    .parse::<toml_edit::DocumentMut>()
                     .unwrap_or_else(|_| toml_edit::DocumentMut::new());
                 tracing::info!("写入 Codex config.toml，路径: {:?}", config_path);
                 std::fs::write(&config_path, doc.to_string()).map_err(|e| {
@@ -5150,22 +5773,26 @@ async fn sync_credential_to_cli_async(db: &SqlitePool, cli_type: &str, credentia
 
             // 写入各个文件
             for file in files.iter() {
-                let path_str = file.get("path")
-                    .and_then(|p| p.as_str())
-                    .unwrap_or("");
-                let content = file.get("content")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("");
-                
+                let path_str = file.get("path").and_then(|p| p.as_str()).unwrap_or("");
+                let content = file.get("content").and_then(|c| c.as_str()).unwrap_or("");
+
                 if path_str.contains("oauth_creds.json") && !content.is_empty() {
-                    tracing::info!("写入 Gemini oauth_creds.json，内容长度: {}，路径: {:?}", content.len(), oauth_path);
+                    tracing::info!(
+                        "写入 Gemini oauth_creds.json，内容长度: {}，路径: {:?}",
+                        content.len(),
+                        oauth_path
+                    );
                     std::fs::write(&oauth_path, content).map_err(|e| {
                         tracing::error!("写入 oauth_creds.json 失败: {}", e);
                         e.to_string()
                     })?;
                     tracing::info!("Gemini oauth_creds.json 写入成功");
                 } else if path_str.contains("google_accounts.json") && !content.is_empty() {
-                    tracing::info!("写入 Gemini google_accounts.json，内容长度: {}，路径: {:?}", content.len(), accounts_path);
+                    tracing::info!(
+                        "写入 Gemini google_accounts.json，内容长度: {}，路径: {:?}",
+                        content.len(),
+                        accounts_path
+                    );
                     std::fs::write(&accounts_path, content).map_err(|e| {
                         tracing::error!("写入 google_accounts.json 失败: {}", e);
                         e.to_string()
@@ -5177,14 +5804,17 @@ async fn sync_credential_to_cli_async(db: &SqlitePool, cli_type: &str, credentia
             }
 
             // 删除 .env 文件（如果存在）
-            if env_path.exists() { 
-                let _ = std::fs::remove_file(&env_path); 
+            if env_path.exists() {
+                let _ = std::fs::remove_file(&env_path);
             }
 
             // 处理 settings.json：合并凭证配置和全局配置（不读取现有文件）
             // 1. 从凭证中的 settings.json 开始
             let mut config = if let Some(ref user_settings) = settings_content {
-                tracing::info!("Gemini 凭证中包含 settings.json，内容长度: {}", user_settings.len());
+                tracing::info!(
+                    "Gemini 凭证中包含 settings.json，内容长度: {}",
+                    user_settings.len()
+                );
                 serde_json::from_str::<serde_json::Value>(user_settings)
                     .unwrap_or_else(|_| serde_json::json!({}))
             } else {
@@ -5210,17 +5840,20 @@ async fn sync_credential_to_cli_async(db: &SqlitePool, cli_type: &str, credentia
             // 只有当配置不为空对象时才写入
             if !is_empty {
                 tracing::info!("写入 Gemini settings.json，路径: {:?}", settings_path);
-                std::fs::write(&settings_path, serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?)
-                    .map_err(|e| {
-                        tracing::error!("写入 settings.json 失败: {}", e);
-                        e.to_string()
-                    })?;
+                std::fs::write(
+                    &settings_path,
+                    serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| {
+                    tracing::error!("写入 settings.json 失败: {}", e);
+                    e.to_string()
+                })?;
                 tracing::info!("Gemini settings.json 写入成功");
             } else {
                 tracing::warn!("Gemini settings.json 配置为空对象，跳过写入");
             }
         }
-        _ => return Err("不支持的 CLI 类型".to_string())
+        _ => return Err("不支持的 CLI 类型".to_string()),
     }
 
     Ok(())
@@ -5228,20 +5861,24 @@ async fn sync_credential_to_cli_async(db: &SqlitePool, cli_type: &str, credentia
 
 /// 在直连模式下，自动同步第一个凭证到 CLI 配置文件
 async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) -> Result<()> {
-    tracing::info!("auto_sync_credential_in_direct_mode 被调用，cli_type: {}", cli_type);
-    
-    // 检查当前是否为直连模式
-    let current_mode: Option<(String,)> = sqlx::query_as(
-        "SELECT cli_mode FROM cli_settings WHERE cli_type = ?",
-    )
-    .bind(cli_type)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| e.to_string())?;
+    tracing::info!(
+        "auto_sync_credential_in_direct_mode 被调用，cli_type: {}",
+        cli_type
+    );
 
-    let mode = current_mode.map(|r| r.0).unwrap_or_else(|| "proxy".to_string());
+    // 检查当前是否为直连模式
+    let current_mode: Option<(String,)> =
+        sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
+            .bind(cli_type)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let mode = current_mode
+        .map(|r| r.0)
+        .unwrap_or_else(|| "proxy".to_string());
     tracing::info!("{} 当前模式: {}", cli_type, mode);
-    
+
     if mode != "direct" {
         tracing::debug!("{} 当前不是直连模式，跳过自动同步", cli_type);
         return Ok(());
@@ -5258,7 +5895,7 @@ async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) ->
 
     if let Some(cred) = cred {
         tracing::info!("{} 找到凭证 ID: {}, 名称: {}", cli_type, cred.id, cred.name);
-        
+
         // 获取全局配置
         let default_config = sqlx::query_as::<_, (Option<String>,)>(
             "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
@@ -5272,8 +5909,10 @@ async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) ->
 
         tracing::info!("{} 全局配置长度: {}", cli_type, default_config.len());
         tracing::info!("{} 开始同步凭证到文件", cli_type);
-        
-        match sync_credential_to_cli_async(db, cli_type, &cred.credential_json, &default_config).await {
+
+        match sync_credential_to_cli_async(db, cli_type, &cred.credential_json, &default_config)
+            .await
+        {
             Ok(_) => {
                 tracing::info!("{} 凭证同步成功", cli_type);
                 Ok(())
@@ -5292,7 +5931,7 @@ async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) ->
 /// 删除直连模式写入的所有文件（异步版本，支持自定义配置目录）
 async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Result<()> {
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
-    
+
     match cli_type {
         "claude_code" => {
             // TODO: Claude Code 的具体实现待完善
@@ -5302,7 +5941,7 @@ async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Resu
         "codex" => {
             let auth_path = config_dir.join("auth.json");
             let config_path = config_dir.join("config.toml");
-            
+
             if auth_path.exists() {
                 tracing::info!("删除直连模式文件: {:?}", auth_path);
                 std::fs::remove_file(&auth_path).map_err(|e| {
@@ -5323,7 +5962,7 @@ async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Resu
             let oauth_path = config_dir.join("oauth_creds.json");
             let accounts_path = config_dir.join("google_accounts.json");
             let settings_path = config_dir.join("settings.json");
-            
+
             if oauth_path.exists() {
                 tracing::info!("删除直连模式文件: {:?}", oauth_path);
                 std::fs::remove_file(&oauth_path).map_err(|e| {
@@ -5347,7 +5986,7 @@ async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Resu
             }
             Ok(())
         }
-        _ => Err("不支持的 CLI 类型".to_string())
+        _ => Err("不支持的 CLI 类型".to_string()),
     }
 }
 
@@ -5364,18 +6003,22 @@ pub async fn get_credentials(
     .await
     .map_err(|e| e.to_string())?;
 
-    let results = creds.into_iter().enumerate().map(|(i, c)| {
-        let display_info = parse_display_info(&c.cli_type, &c.credential_json);
-        OfficialCredentialResponse {
-            is_active: i == 0,
-            id: c.id,
-            cli_type: c.cli_type,
-            name: c.name,
-            credential_json: c.credential_json,
-            sort_order: c.sort_order,
-            display_info,
-        }
-    }).collect();
+    let results = creds
+        .into_iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let display_info = parse_display_info(&c.cli_type, &c.credential_json);
+            OfficialCredentialResponse {
+                is_active: i == 0,
+                id: c.id,
+                cli_type: c.cli_type,
+                name: c.name,
+                credential_json: c.credential_json,
+                sort_order: c.sort_order,
+                display_info,
+            }
+        })
+        .collect();
 
     Ok(results)
 }
@@ -5389,13 +6032,12 @@ pub async fn create_credential(
     let now = chrono::Utc::now().timestamp();
 
     // Check if this is the first credential for this cli_type
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM official_credentials WHERE cli_type = ?",
-    )
-    .bind(&input.cli_type)
-    .fetch_one(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM official_credentials WHERE cli_type = ?")
+            .bind(&input.cli_type)
+            .fetch_one(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
     let sort_order = if count.0 == 0 { 0i64 } else { count.0 };
 
@@ -5418,7 +6060,8 @@ pub async fn create_credential(
         &log_db.0,
         "credential_created",
         &format!("凭证 {} 已创建", input.name),
-    ).await;
+    )
+    .await;
 
     // 如果是直连模式，自动同步到文件
     if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &input.cli_type).await {
@@ -5433,12 +6076,13 @@ pub async fn get_credential(
     db: State<'_, SqlitePool>,
     id: i64,
 ) -> Result<OfficialCredentialResponse> {
-    let cred = sqlx::query_as::<_, OfficialCredential>("SELECT * FROM official_credentials WHERE id = ?")
-        .bind(id)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "凭证不存在".to_string())?;
+    let cred =
+        sqlx::query_as::<_, OfficialCredential>("SELECT * FROM official_credentials WHERE id = ?")
+            .bind(id)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "凭证不存在".to_string())?;
 
     Ok(OfficialCredentialResponse {
         is_active: cred.sort_order == 0,
@@ -5460,40 +6104,50 @@ pub async fn update_credential(
 ) -> Result<OfficialCredentialResponse> {
     let now = chrono::Utc::now().timestamp();
 
-    let cred_name: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM official_credentials WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
+    let cred_name: Option<(String,)> =
+        sqlx::query_as("SELECT name FROM official_credentials WHERE id = ?")
+            .bind(id)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
     let cred_name = cred_name.ok_or_else(|| "凭证不存在".to_string())?.0;
 
     let mut updates = vec!["updated_at = ?".to_string()];
-    if input.name.is_some() { updates.push("name = ?".to_string()); }
-    if input.credential_json.is_some() { updates.push("credential_json = ?".to_string()); }
+    if input.name.is_some() {
+        updates.push("name = ?".to_string());
+    }
+    if input.credential_json.is_some() {
+        updates.push("credential_json = ?".to_string());
+    }
 
-    let query = format!("UPDATE official_credentials SET {} WHERE id = ?", updates.join(", "));
+    let query = format!(
+        "UPDATE official_credentials SET {} WHERE id = ?",
+        updates.join(", ")
+    );
     let mut q = sqlx::query(&query).bind(now);
-    if let Some(ref name) = input.name { q = q.bind(name); }
-    if let Some(ref json) = input.credential_json { q = q.bind(json); }
+    if let Some(ref name) = input.name {
+        q = q.bind(name);
+    }
+    if let Some(ref json) = input.credential_json {
+        q = q.bind(json);
+    }
     q.bind(id).execute(db.inner()).await.map_err(map_db_error)?;
 
     let _ = crate::services::stats::record_system_log(
         &log_db.0,
         "credential_updated",
         &format!("凭证 {} 已更新", cred_name),
-    ).await;
+    )
+    .await;
 
     // 获取更新后的凭证信息
-    let updated_cred: Option<OfficialCredential> = sqlx::query_as(
-        "SELECT * FROM official_credentials WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
+    let updated_cred: Option<OfficialCredential> =
+        sqlx::query_as("SELECT * FROM official_credentials WHERE id = ?")
+            .bind(id)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
     // 如果是直连模式，自动同步到文件
     if let Some(cred) = updated_cred {
@@ -5511,20 +6165,20 @@ pub async fn delete_credential(
     log_db: State<'_, LogDb>,
     id: i64,
 ) -> Result<()> {
-    let cred_info: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM official_credentials WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
+    let cred_info: Option<(String,)> =
+        sqlx::query_as("SELECT name FROM official_credentials WHERE id = ?")
+            .bind(id)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
     if let Some((name,)) = cred_info {
         let _ = crate::services::stats::record_system_log(
             &log_db.0,
             "credential_deleted",
             &format!("凭证 {} 已删除", name),
-        ).await;
+        )
+        .await;
     }
 
     sqlx::query("DELETE FROM official_credentials WHERE id = ?")
@@ -5537,20 +6191,18 @@ pub async fn delete_credential(
 }
 
 #[tauri::command]
-pub async fn reorder_credentials(
-    db: State<'_, SqlitePool>,
-    ids: Vec<i64>,
-) -> Result<()> {
+pub async fn reorder_credentials(db: State<'_, SqlitePool>, ids: Vec<i64>) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
     }
 
     // 获取第一个凭证的 cli_type（用于后续同步）
-    let cli_type: Option<(String,)> = sqlx::query_as("SELECT cli_type FROM official_credentials WHERE id = ?")
-        .bind(ids[0])
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
+    let cli_type: Option<(String,)> =
+        sqlx::query_as("SELECT cli_type FROM official_credentials WHERE id = ?")
+            .bind(ids[0])
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
     // 使用 CASE WHEN 批量更新（避免 N 次单独更新）
     let case_clauses: Vec<String> = ids
@@ -5589,13 +6241,12 @@ pub async fn read_cli_credential(db: State<'_, SqlitePool>, cli_type: String) ->
 
 #[tauri::command]
 pub async fn get_cli_mode(db: State<'_, SqlitePool>, cli_type: String) -> Result<String> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT cli_mode FROM cli_settings WHERE cli_type = ?",
-    )
-    .bind(&cli_type)
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
+            .bind(&cli_type)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
     Ok(row.map(|r| r.0).unwrap_or_else(|| "proxy".to_string()))
 }
@@ -5609,15 +6260,16 @@ pub async fn set_cli_mode(
 ) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
 
-    let current_mode: Option<(String,)> = sqlx::query_as(
-        "SELECT cli_mode FROM cli_settings WHERE cli_type = ?",
-    )
-    .bind(&cli_type)
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?;
+    let current_mode: Option<(String,)> =
+        sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
+            .bind(&cli_type)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
 
-    let current_mode = current_mode.map(|r| r.0).unwrap_or_else(|| "proxy".to_string());
+    let current_mode = current_mode
+        .map(|r| r.0)
+        .unwrap_or_else(|| "proxy".to_string());
 
     if current_mode == mode {
         return Ok(());
@@ -5636,7 +6288,7 @@ pub async fn set_cli_mode(
         if current_mode == "proxy" {
             // 检查是否真的有中转配置（通过检查配置文件）
             let has_gateway_config = check_cli_enabled(db.inner(), &cli_type).await;
-            
+
             if has_gateway_config {
                 let default_config = sqlx::query_as::<_, (Option<String>,)>(
                     "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
@@ -5676,7 +6328,14 @@ pub async fn set_cli_mode(
             .unwrap_or_default();
 
             tracing::info!("开始同步 {} 凭证到文件", cli_type);
-            match sync_credential_to_cli_async(db.inner(), &cli_type, &cred.credential_json, &default_config).await {
+            match sync_credential_to_cli_async(
+                db.inner(),
+                &cli_type,
+                &cred.credential_json,
+                &default_config,
+            )
+            .await
+            {
                 Ok(_) => {
                     tracing::info!("{} 凭证同步成功", cli_type);
                 }
@@ -5693,16 +6352,17 @@ pub async fn set_cli_mode(
             &log_db.0,
             "cli_mode_changed",
             &format!("{} 已切换到直连模式", cli_type),
-        ).await;
+        )
+        .await;
     } else {
         // 切换到中转模式
-        
+
         // 步骤1: 如果从直连模式切换过来，先删除直连模式的文件
         if current_mode == "direct" {
             tracing::info!("{} 从直连模式切换到中转模式，先删除直连模式文件", cli_type);
             remove_direct_mode_files_async(db.inner(), &cli_type).await?;
         }
-        
+
         // 步骤2: 开启中转模式
         let default_config = sqlx::query_as::<_, (Option<String>,)>(
             "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
@@ -5720,7 +6380,8 @@ pub async fn set_cli_mode(
             &log_db.0,
             "cli_mode_changed",
             &format!("{} 已切换到中转模式", cli_type),
-        ).await;
+        )
+        .await;
     }
 
     Ok(())
@@ -5728,7 +6389,7 @@ pub async fn set_cli_mode(
 
 // ==================== 插件管理命令 ====================
 
-use crate::services::plugin::{PluginActionResult, MarketplaceActionResult};
+use crate::services::plugin::{MarketplaceActionResult, PluginActionResult};
 use std::collections::HashSet;
 
 /// 获取收藏 ID 集合
@@ -5741,9 +6402,11 @@ async fn get_favorite_ids(db: &SqlitePool) -> Result<HashSet<String>> {
 }
 
 /// 获取收藏列表
-async fn get_favorites_raw(db: &SqlitePool) -> Result<Vec<(String, String, String, Option<String>)>> {
+async fn get_favorites_raw(
+    db: &SqlitePool,
+) -> Result<Vec<(String, String, String, Option<String>)>> {
     let favorites: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT plugin_id, plugin_name, marketplace_name, marketplace_source FROM plugin_favorites"
+        "SELECT plugin_id, plugin_name, marketplace_name, marketplace_source FROM plugin_favorites",
     )
     .fetch_all(db)
     .await
@@ -5797,8 +6460,10 @@ pub async fn add_plugin_favorite(
     marketplace_name: String,
 ) -> Result<String> {
     let config_dir = get_cli_config_dir_path(db.inner(), "claude_code").await;
-    let marketplace_source = crate::services::plugin::get_marketplace_source_info(&config_dir, &marketplace_name);
-    let source_type = crate::services::plugin::get_marketplace_source_type(&config_dir, &marketplace_name);
+    let marketplace_source =
+        crate::services::plugin::get_marketplace_source_info(&config_dir, &marketplace_name);
+    let source_type =
+        crate::services::plugin::get_marketplace_source_type(&config_dir, &marketplace_name);
 
     let now = chrono::Utc::now().timestamp();
 
@@ -5826,10 +6491,7 @@ pub async fn add_plugin_favorite(
 }
 
 #[tauri::command]
-pub async fn remove_plugin_favorite(
-    db: State<'_, SqlitePool>,
-    plugin_id: String,
-) -> Result<()> {
+pub async fn remove_plugin_favorite(db: State<'_, SqlitePool>, plugin_id: String) -> Result<()> {
     sqlx::query("DELETE FROM plugin_favorites WHERE plugin_id = ?")
         .bind(&plugin_id)
         .execute(db.inner())
@@ -5870,5 +6532,6 @@ pub async fn install_favorite_plugin(
         marketplace_source.as_deref(),
         &config_dir,
         favorite_ids,
-    ).await
+    )
+    .await
 }

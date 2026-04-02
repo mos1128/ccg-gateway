@@ -78,7 +78,10 @@ pub fn expand_home_path(path: &str) -> String {
     if path.starts_with('~') {
         let home = dirs::home_dir().unwrap_or_default();
         let remaining = &path[1..];
-        let remaining = remaining.strip_prefix('/').or_else(|| remaining.strip_prefix('\\')).unwrap_or(remaining);
+        let remaining = remaining
+            .strip_prefix('/')
+            .or_else(|| remaining.strip_prefix('\\'))
+            .unwrap_or(remaining);
         home.join(remaining).to_string_lossy().to_string()
     } else {
         path.to_string()

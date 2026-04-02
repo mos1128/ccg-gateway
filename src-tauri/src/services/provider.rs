@@ -7,12 +7,11 @@ pub async fn record_success(db: &SqlitePool, provider_id: i64) -> Result<bool, s
     let now = chrono::Utc::now().timestamp();
 
     // Check if provider had previous failures
-    let had_failures: Option<(i64,)> = sqlx::query_as(
-        "SELECT consecutive_failures FROM providers WHERE id = ?",
-    )
-    .bind(provider_id)
-    .fetch_optional(db)
-    .await?;
+    let had_failures: Option<(i64,)> =
+        sqlx::query_as("SELECT consecutive_failures FROM providers WHERE id = ?")
+            .bind(provider_id)
+            .fetch_optional(db)
+            .await?;
 
     let had_previous_failures = had_failures.map(|(cf,)| cf > 0).unwrap_or(false);
 
@@ -38,7 +37,10 @@ pub async fn record_success(db: &SqlitePool, provider_id: i64) -> Result<bool, s
 /// If the provider was blacklisted but blacklist has expired, resets count before incrementing
 /// Uses atomic UPDATE to avoid race conditions with concurrent requests
 /// Returns (was_blacklisted, provider_name) tuple
-pub async fn record_failure(db: &SqlitePool, provider_id: i64) -> Result<(bool, String), sqlx::Error> {
+pub async fn record_failure(
+    db: &SqlitePool,
+    provider_id: i64,
+) -> Result<(bool, String), sqlx::Error> {
     let now = chrono::Utc::now().timestamp();
 
     // Get provider state including current blacklist status
@@ -49,7 +51,14 @@ pub async fn record_failure(db: &SqlitePool, provider_id: i64) -> Result<(bool, 
     .fetch_optional(db)
     .await?;
 
-    let Some((consecutive_failures, failure_threshold, blacklist_minutes, blacklisted_until, provider_name)) = provider else {
+    let Some((
+        consecutive_failures,
+        failure_threshold,
+        blacklist_minutes,
+        blacklisted_until,
+        provider_name,
+    )) = provider
+    else {
         return Ok((false, String::new()));
     };
 
