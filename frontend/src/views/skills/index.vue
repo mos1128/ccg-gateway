@@ -243,18 +243,6 @@
                   </div>
                   <div class="discover-actions">
                     <button
-                      class="action-icon"
-                      :class="{ 'star-active': skill.is_favorited }"
-                      :title="skill.is_favorited ? '取消收藏' : '收藏技能'"
-                      @click="toggleRepoFavorite(skill)"
-                    >
-                      <svg
-                        width="18"
-                        height="18"
-                        :style="skill.is_favorited ? 'fill: #f59e0b;' : ''"
-                      ><use href="#icon-star"/></svg>
-                    </button>
-                    <button
                       v-if="skill.is_installed"
                       class="action-icon installed"
                       title="重装"

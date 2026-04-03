@@ -125,7 +125,7 @@ fn get_skill_storage_path() -> PathBuf {
 fn default_skill_repos() -> Vec<SkillRepo> {
     vec![SkillRepo {
         name: "skills".to_string(),
-        source: "https://github.com/anthropics/skills".to_string(),
+        source: "anthropics/skills".to_string(),
     }]
 }
 
