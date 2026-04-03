@@ -42,6 +42,36 @@
       <div v-if="validationError" class="error-text">{{ validationError }}</div>
       <div class="hint-text">{{ tip }}</div>
     </div>
+
+    <div class="form-section write-mode-section">
+      <div class="write-mode-row">
+        <div class="frost-segmented write-mode-segmented">
+          <div class="seg-item" :class="{ active: form.config_write_mode === 'merge' }" @click="form.config_write_mode = 'merge'">增量合并</div>
+          <div class="seg-item" :class="{ active: form.config_write_mode === 'overwrite' }" @click="form.config_write_mode = 'overwrite'">全量写入</div>
+        </div>
+        <div class="help-icon-wrapper" @mouseenter="showHelp = true" @mouseleave="showHelp = false">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
+            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <div v-show="showHelp" class="help-tooltip">
+            <div class="tooltip-title">配置写入模式</div>
+            <div class="tooltip-item">
+              <strong>增量合并</strong>
+              <span>只写入需要变更的字段，保留配置文件中已有的其他配置（如 MCP / plugin 开关等配置）。</span>
+            </div>
+            <div class="tooltip-item">
+              <strong>全量写入</strong>
+              <span>每次写入时完全覆盖配置文件。中转模式会备份原始文件，关闭时自动恢复。保持配置干净，强迫症适用。</span>
+            </div>
+          </div>
+        </div>
+        <div style="flex: 1;"></div>
+        <button class="save-button" @click="handleSave">
+          <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
+          保存
+        </button>
+      </div>
+    </div>
     
     </div>
 </template>
@@ -58,16 +88,18 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  save: [cliType: string, data: { default_json_config: string; config_dir: string }]
+  save: [cliType: string, data: { default_json_config: string; config_dir: string; config_write_mode: string }]
 }>()
 
 const form = ref({
   default_json_config: '',
-  config_dir: ''
+  config_dir: '',
+  config_write_mode: 'merge' as 'overwrite' | 'merge'
 })
 
 const defaultConfigDir = ref('')
 const validationError = ref('')
+const showHelp = ref(false)
 
 const placeholder = computed(() => {
   switch (props.cliType) {
@@ -101,7 +133,8 @@ watch(() => props.settings, (settings) => {
   if (settings) {
     form.value = {
       default_json_config: settings.default_json_config,
-      config_dir: settings.config_dir
+      config_dir: settings.config_dir,
+      config_write_mode: settings.config_write_mode || 'merge'
     }
     defaultConfigDir.value = settings.default_config_dir
   }
@@ -194,4 +227,120 @@ defineExpose({ handleSave })
 .f-button.ghost-plain { background: transparent; color: #64748b; padding: 8px 12px; font-size: 13px; font-weight: 600; border-radius: 8px; }
 .f-button.ghost-plain:hover { color: #0f172a; background: #f1f5f9; }
 .f-button.ghost-plain.sm { padding: 4px 8px; font-size: 12px; }
+
+/* Write mode section */
+.write-mode-section { margin-top: 4px; margin-bottom: 0; flex-shrink: 0; }
+
+.write-mode-row { display: flex; align-items: center; gap: 10px; }
+
+.frost-segmented {
+  display: inline-flex;
+  background: #f1f5f9;
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.frost-segmented .seg-item {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.frost-segmented .seg-item:hover { color: #0f172a; }
+
+.frost-segmented .seg-item.active {
+  background: #ffffff;
+  color: #0ea5e9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.write-mode-segmented { flex-shrink: 0; }
+
+/* Help icon */
+.help-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: help;
+}
+
+.help-icon {
+  color: #94a3b8;
+  transition: color 0.2s;
+}
+
+.help-icon-wrapper:hover .help-icon { color: #64748b; }
+
+/* Tooltip */
+.help-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+}
+
+.help-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #ffffff;
+}
+
+.help-tooltip::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: #e2e8f0;
+}
+
+.tooltip-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.tooltip-item {
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.tooltip-item:last-child { margin-bottom: 0; }
+
+.tooltip-item strong {
+  display: block;
+  color: #334155;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* Save button */
+.save-button {
+  background: #0ea5e9; color: #ffffff; border: none; padding: 6px 14px; border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center;
+  transition: all 0.2s; flex-shrink: 0;
+}
+.save-button:hover { background: #0284c7; }
 </style>

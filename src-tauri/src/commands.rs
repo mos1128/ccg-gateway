@@ -15,44 +15,10 @@ use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestE
 use crate::LogDb;
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap, HashSet};
 use tauri::{Manager, State};
 
 type Result<T> = std::result::Result<T, String>;
-
-#[derive(Debug, Serialize)]
-struct CodexGatewayConfig {
-    model_provider: String,
-    model_providers: BTreeMap<String, CodexModelProvider>,
-}
-
-impl CodexGatewayConfig {
-    fn gateway() -> Self {
-        let mut model_providers = BTreeMap::new();
-        model_providers.insert(
-            "ccg-gateway".to_string(),
-            CodexModelProvider {
-                name: "ccg-gateway".to_string(),
-                base_url: "http://127.0.0.1:7788".to_string(),
-                wire_api: "responses".to_string(),
-                requires_openai_auth: false,
-            },
-        );
-
-        Self {
-            model_provider: "ccg-gateway".to_string(),
-            model_providers,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct CodexModelProvider {
-    name: String,
-    base_url: String,
-    wire_api: String,
-    requires_openai_auth: bool,
-}
 
 fn serialize_toml_document<T: Serialize>(
     value: &T,
@@ -64,6 +30,80 @@ fn serialize_toml_document<T: Serialize>(
 
 fn serialize_toml_table<T: Serialize>(value: &T, context: &str) -> Result<toml_edit::Table> {
     Ok(serialize_toml_document(value, context)?.as_table().clone())
+}
+
+fn codex_gateway_document() -> Result<toml_edit::DocumentMut> {
+    r#"model_provider = "ccg-gateway"
+
+[model_providers.ccg-gateway]
+name = "ccg-gateway"
+base_url = "http://127.0.0.1:7788"
+wire_api = "responses"
+requires_openai_auth = false
+"#
+    .parse::<toml_edit::DocumentMut>()
+    .map_err(|e| format!("Failed to build Codex gateway config: {}", e))
+}
+
+fn render_toml_document(document: &toml_edit::DocumentMut) -> Option<String> {
+    let rendered = document.to_string();
+    let trimmed = rendered.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn filter_toml_document_content(content: &str, keys_to_remove: &HashSet<String>) -> Option<String> {
+    let mut doc = content.parse::<toml_edit::DocumentMut>().ok()?;
+    for key in keys_to_remove {
+        doc.remove(key.as_str());
+    }
+    render_toml_document(&doc)
+}
+
+fn remove_file_if_exists(path: &std::path::Path, label: &str) -> Result<()> {
+    if path.exists() {
+        tracing::info!("删除直连模式文件: {:?}", path);
+        std::fs::remove_file(path).map_err(|e| {
+            tracing::error!("删除 {} 失败: {}", label, e);
+            e.to_string()
+        })?;
+    }
+    Ok(())
+}
+
+fn remove_codex_direct_mode_files(config_dir: &std::path::Path, use_merge: bool) -> Result<()> {
+    let auth_path = config_dir.join("auth.json");
+    let config_path = config_dir.join("config.toml");
+
+    remove_file_if_exists(&auth_path, "auth.json")?;
+
+    if use_merge {
+        tracing::info!("Codex 增量模式切换到中转时保留 config.toml，供后续合并");
+    } else {
+        remove_file_if_exists(&config_path, "config.toml")?;
+    }
+
+    Ok(())
+}
+
+fn remove_gemini_direct_mode_files(config_dir: &std::path::Path, use_merge: bool) -> Result<()> {
+    let oauth_path = config_dir.join("oauth_creds.json");
+    let accounts_path = config_dir.join("google_accounts.json");
+    let settings_path = config_dir.join("settings.json");
+
+    remove_file_if_exists(&oauth_path, "oauth_creds.json")?;
+    remove_file_if_exists(&accounts_path, "google_accounts.json")?;
+
+    if use_merge {
+        tracing::info!("Gemini 增量模式切换到中转时保留 settings.json，供后续合并");
+    } else {
+        remove_file_if_exists(&settings_path, "settings.json")?;
+    }
+
+    Ok(())
 }
 
 fn parse_codex_mcp_toml_table(mcp_config_json: &str) -> Result<toml_edit::Table> {
@@ -217,6 +257,229 @@ mod tests {
         .expect_err("null value should fail");
 
         assert!(err.contains("null"));
+    }
+
+    #[test]
+    fn claude_gateway_fields_are_protected_from_custom_config() {
+        let custom_config = serde_json::json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "https://example.com",
+                "ANTHROPIC_AUTH_TOKEN": "user-token",
+                "FOO": "bar"
+            },
+            "other": 1
+        });
+
+        let sanitized = sanitize_json_config(custom_config, &claude_gateway_json_template());
+
+        assert_eq!(sanitized["env"]["FOO"], "bar");
+        assert_eq!(sanitized["other"], 1);
+        assert!(sanitized["env"].get("ANTHROPIC_BASE_URL").is_none());
+        assert!(sanitized["env"].get("ANTHROPIC_AUTH_TOKEN").is_none());
+    }
+
+    #[test]
+    fn gemini_gateway_fields_are_protected_from_custom_config() {
+        let custom_config = serde_json::json!({
+            "security": {
+                "auth": {
+                    "selectedType": "oauth-personal"
+                }
+            },
+            "theme": "dark"
+        });
+
+        let sanitized = sanitize_json_config(custom_config, &gemini_gateway_json_template());
+
+        assert_eq!(sanitized["theme"], "dark");
+        assert!(
+            sanitized["security"]["auth"].get("selectedType").is_none(),
+            "selectedType should be stripped from custom config"
+        );
+    }
+
+    #[test]
+    fn removing_claude_gateway_content_preserves_other_fields() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+
+        let config_path = temp_dir.join("settings.json");
+        std::fs::write(
+            &config_path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:7788",
+                    "ANTHROPIC_AUTH_TOKEN": "ccg-gateway",
+                    "KEEP": "yes"
+                },
+                "theme": "solarized",
+                "custom_flag": true
+            }))
+            .expect("json should serialize"),
+        )
+        .expect("settings.json should be written");
+
+        let gateway_config = claude_gateway_json_template();
+        remove_json_config_content(
+            &config_path,
+            &gateway_config,
+            r#"{"theme":"solarized","env":{"ANTHROPIC_BASE_URL":"https://should-be-ignored"}}"#,
+            &gateway_config,
+        )
+        .expect("gateway content removal should succeed");
+
+        let result: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&config_path).expect("settings.json should be readable"),
+        )
+        .expect("settings.json should remain valid JSON");
+
+        assert_eq!(result["env"]["KEEP"], "yes");
+        assert_eq!(result["custom_flag"], true);
+        assert!(result.get("theme").is_none());
+        assert!(result["env"].get("ANTHROPIC_BASE_URL").is_none());
+        assert!(result["env"].get("ANTHROPIC_AUTH_TOKEN").is_none());
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn removing_codex_gateway_content_preserves_other_tables() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+
+        let config_path = temp_dir.join("config.toml");
+        std::fs::write(
+            &config_path,
+            r#"model_provider = "ccg-gateway"
+model = "gpt-5.4"
+
+[model_providers.ccg-gateway]
+name = "ccg-gateway"
+base_url = "http://127.0.0.1:7788"
+wire_api = "responses"
+requires_openai_auth = false
+
+[mcp_servers.universal-db]
+command = "cmd"
+"#,
+        )
+        .expect("config.toml should be written");
+
+        remove_codex_gateway_config_content(&config_path, "model = \"gpt-5.4\"\n")
+            .expect("gateway config removal should succeed");
+
+        let result = std::fs::read_to_string(&config_path).expect("config.toml should be readable");
+        assert!(!result.contains("model_provider = "));
+        assert!(!result.contains("[model_providers.ccg-gateway]"));
+        assert!(!result.contains("model = \"gpt-5.4\""));
+        assert!(result.contains("[mcp_servers.universal-db]"));
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn removing_codex_gateway_auth_preserves_other_keys() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+
+        let auth_path = temp_dir.join("auth.json");
+        std::fs::write(
+            &auth_path,
+            serde_json::to_string_pretty(&serde_json::json!({
+                "OPENAI_API_KEY": "ccg-gateway",
+                "EXTRA": "keep"
+            }))
+            .expect("json should serialize"),
+        )
+        .expect("auth.json should be written");
+
+        remove_codex_gateway_auth_content(&auth_path).expect("auth cleanup should succeed");
+
+        let result: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(&auth_path).expect("auth.json should be readable"),
+        )
+        .expect("auth.json should remain valid JSON");
+
+        assert_eq!(result["EXTRA"], "keep");
+        assert!(result.get("OPENAI_API_KEY").is_none());
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn removing_gemini_gateway_env_preserves_other_lines() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+
+        let env_path = temp_dir.join(".env");
+        std::fs::write(
+            &env_path,
+            "GEMINI_API_KEY=ccg-gateway\nGOOGLE_GEMINI_BASE_URL=http://127.0.0.1:7788\nEXTRA=keep\n",
+        )
+        .expect(".env should be written");
+
+        remove_gemini_gateway_env_content(&env_path).expect(".env cleanup should succeed");
+
+        let result = std::fs::read_to_string(&env_path).expect(".env should be readable");
+        assert_eq!(result, "EXTRA=keep\n");
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn codex_direct_to_proxy_merge_preserves_config_toml() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+
+        let auth_path = temp_dir.join("auth.json");
+        let config_path = temp_dir.join("config.toml");
+        std::fs::write(&auth_path, r#"{"OPENAI_API_KEY":"official"}"#)
+            .expect("auth.json should be written");
+        std::fs::write(&config_path, "model = \"legacy\"\n")
+            .expect("config.toml should be written");
+
+        remove_codex_direct_mode_files(&temp_dir, true).expect("merge cleanup should succeed");
+
+        assert!(!auth_path.exists(), "auth.json should be removed");
+        assert!(
+            config_path.exists(),
+            "config.toml should be preserved in merge mode"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&config_path).expect("config.toml should be readable"),
+            "model = \"legacy\"\n"
+        );
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn codex_direct_to_proxy_overwrite_removes_config_toml() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+
+        let auth_path = temp_dir.join("auth.json");
+        let config_path = temp_dir.join("config.toml");
+        std::fs::write(&auth_path, r#"{"OPENAI_API_KEY":"official"}"#)
+            .expect("auth.json should be written");
+        std::fs::write(&config_path, "model = \"legacy\"\n")
+            .expect("config.toml should be written");
+
+        remove_codex_direct_mode_files(&temp_dir, false).expect("overwrite cleanup should succeed");
+
+        assert!(!auth_path.exists(), "auth.json should be removed");
+        assert!(
+            !config_path.exists(),
+            "config.toml should be removed in overwrite mode"
+        );
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
     }
 }
 
@@ -826,7 +1089,7 @@ pub async fn get_cli_settings(
     cli_type: String,
 ) -> Result<CliSettingsResponse> {
     let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
-        "SELECT cli_type, default_json_config, cli_mode, updated_at FROM cli_settings WHERE cli_type = ?",
+        "SELECT cli_type, default_json_config, cli_mode, config_write_mode, updated_at FROM cli_settings WHERE cli_type = ?",
     )
     .bind(&cli_type)
     .fetch_optional(db.inner())
@@ -852,6 +1115,7 @@ pub async fn get_cli_settings(
             cli_mode: row.cli_mode,
             config_dir,
             default_config_dir,
+            config_write_mode: row.config_write_mode,
         })
     } else {
         Ok(CliSettingsResponse {
@@ -861,6 +1125,7 @@ pub async fn get_cli_settings(
             cli_mode: "proxy".to_string(),
             config_dir,
             default_config_dir,
+            config_write_mode: "merge".to_string(),
         })
     }
 }
@@ -872,6 +1137,7 @@ struct CliSettingsRowWithoutConfigDir {
     pub cli_type: String,
     pub default_json_config: Option<String>,
     pub cli_mode: String,
+    pub config_write_mode: String,
     pub updated_at: i64,
 }
 
@@ -939,6 +1205,22 @@ pub async fn update_cli_settings(
         }
     }
 
+    // Update config_write_mode if provided
+    if let Some(ref write_mode) = input.config_write_mode {
+        if write_mode != "overwrite" && write_mode != "merge" {
+            return Err("config_write_mode 只能是 'overwrite' 或 'merge'".to_string());
+        }
+        sqlx::query(
+            "UPDATE cli_settings SET config_write_mode = ?, updated_at = ? WHERE cli_type = ?",
+        )
+        .bind(write_mode)
+        .bind(now)
+        .bind(&cli_type)
+        .execute(db.inner())
+        .await
+        .map_err(map_db_error)?;
+    }
+
     // Update config_dir if provided
     if let Some(ref config_dir) = input.config_dir {
         // 收缩路径为 ~ 开头的相对路径，便于跨设备同步
@@ -980,14 +1262,17 @@ pub async fn update_cli_settings(
             } else {
                 // Get default_json_config from database (without config_dir to avoid column errors)
                 let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
-                    "SELECT cli_type, default_json_config, cli_mode, updated_at FROM cli_settings WHERE cli_type = ?",
+                    "SELECT cli_type, default_json_config, cli_mode, config_write_mode, updated_at FROM cli_settings WHERE cli_type = ?",
                 )
                 .bind(&cli_type)
                 .fetch_optional(db.inner())
                 .await
                 .map_err(|e| e.to_string())?;
 
-                let default_config = row.and_then(|r| r.default_json_config).unwrap_or_default();
+                let default_config = row
+                    .as_ref()
+                    .and_then(|r| r.default_json_config.clone())
+                    .unwrap_or_default();
                 tracing::info!("{} 执行 CLI 状态切换：enabled={}", cli_type, enabled);
                 sync_cli_config(db.inner(), &cli_type, enabled, &default_config).await?;
             }
@@ -1219,67 +1504,229 @@ async fn get_mcp_config_path(db: &SqlitePool, cli_type: &str) -> Option<std::pat
     }
 }
 
+async fn get_config_write_mode(db: &SqlitePool, cli_type: &str) -> String {
+    sqlx::query_as::<_, (String,)>("SELECT config_write_mode FROM cli_settings WHERE cli_type = ?")
+        .bind(cli_type)
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| r.0)
+        .unwrap_or_else(|| "merge".to_string())
+}
+
 async fn sync_cli_config(
     db: &SqlitePool,
     cli_type: &str,
     enabled: bool,
     default_config: &str,
 ) -> Result<()> {
+    let write_mode = get_config_write_mode(db, cli_type).await;
     match cli_type {
-        "claude_code" => sync_claude_code_config(db, enabled, default_config).await,
-        "codex" => sync_codex_config(db, enabled, default_config).await,
-        "gemini" => sync_gemini_config(db, enabled, default_config).await,
+        "claude_code" => sync_claude_code_config(db, enabled, default_config, &write_mode).await,
+        "codex" => sync_codex_config(db, enabled, default_config, &write_mode).await,
+        "gemini" => sync_gemini_config(db, enabled, default_config, &write_mode).await,
         _ => Err("Invalid CLI type".to_string()),
     }
 }
 
-fn get_backup_path(original_path: &std::path::Path) -> std::path::PathBuf {
-    let file_name = original_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
-    let parent = original_path.parent().unwrap_or(original_path);
-    parent.join(format!("{}.ccg-backup", file_name))
+fn claude_gateway_json_template() -> serde_json::Value {
+    serde_json::json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": "",
+            "ANTHROPIC_AUTH_TOKEN": ""
+        }
+    })
 }
 
-fn backup_file(path: &std::path::Path) -> Result<()> {
-    if !path.exists() {
+fn gemini_gateway_json_template() -> serde_json::Value {
+    serde_json::json!({
+        "security": {
+            "auth": {
+                "selectedType": ""
+            }
+        }
+    })
+}
+
+fn sanitize_json_config(
+    config: serde_json::Value,
+    protected_template: &serde_json::Value,
+) -> serde_json::Value {
+    let mut sanitized = config;
+    deep_remove(&mut sanitized, protected_template);
+    sanitized
+}
+
+fn remove_json_config_content(
+    config_path: &std::path::Path,
+    gateway_template: &serde_json::Value,
+    default_config: &str,
+    protected_template: &serde_json::Value,
+) -> Result<()> {
+    if !config_path.exists() {
         return Ok(());
     }
-    let backup_path = get_backup_path(path);
-    std::fs::copy(path, &backup_path).map_err(|e| {
-        tracing::error!("Failed to backup {}: {}", path.display(), e);
+
+    let content = std::fs::read_to_string(config_path).map_err(|e| {
+        tracing::error!("Failed to read {}: {}", config_path.display(), e);
+        e.to_string()
+    })?;
+
+    let mut config = match serde_json::from_str::<serde_json::Value>(&content) {
+        Ok(config) => config,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to parse JSON config {}, leaving file untouched: {}",
+                config_path.display(),
+                e
+            );
+            return Ok(());
+        }
+    };
+
+    deep_remove(&mut config, gateway_template);
+
+    if !default_config.is_empty() {
+        if let Ok(preset) = serde_json::from_str::<serde_json::Value>(default_config) {
+            let sanitized_preset = sanitize_json_config(preset, protected_template);
+            deep_remove(&mut config, &sanitized_preset);
+        }
+    }
+
+    let config_str = serde_json::to_string_pretty(&config).map_err(|e| {
+        tracing::error!(
+            "Failed to serialize config {}: {}",
+            config_path.display(),
+            e
+        );
+        e.to_string()
+    })?;
+    std::fs::write(config_path, config_str).map_err(|e| {
+        tracing::error!("Failed to write {}: {}", config_path.display(), e);
         e.to_string()
     })?;
     Ok(())
 }
 
-fn restore_backup(path: &std::path::Path) -> Result<bool> {
-    let backup_path = get_backup_path(path);
-    if !backup_path.exists() {
-        return Ok(false);
+fn remove_codex_gateway_auth_content(auth_path: &std::path::Path) -> Result<()> {
+    if !auth_path.exists() {
+        return Ok(());
     }
-    std::fs::copy(&backup_path, path).map_err(|e| {
-        tracing::error!(
-            "Failed to restore backup from {}: {}",
-            backup_path.display(),
-            e
-        );
+
+    let content = std::fs::read_to_string(auth_path).map_err(|e| {
+        tracing::error!("Failed to read auth.json: {}", e);
         e.to_string()
     })?;
-    std::fs::remove_file(&backup_path).map_err(|e| {
-        tracing::warn!(
-            "Failed to remove backup file {}: {}",
-            backup_path.display(),
-            e
-        );
+
+    let mut auth = match serde_json::from_str::<serde_json::Value>(&content) {
+        Ok(auth) => auth,
+        Err(e) => {
+            tracing::warn!("Failed to parse auth.json, leaving file untouched: {}", e);
+            return Ok(());
+        }
+    };
+
+    if let Some(object) = auth.as_object_mut() {
+        let should_remove = object
+            .get("OPENAI_API_KEY")
+            .and_then(|value| value.as_str())
+            .map(|value| value == "ccg-gateway")
+            .unwrap_or(false);
+        if should_remove {
+            object.remove("OPENAI_API_KEY");
+        }
+    }
+
+    let auth_str = serde_json::to_string_pretty(&auth).map_err(|e| {
+        tracing::error!("Failed to serialize auth.json: {}", e);
         e.to_string()
     })?;
-    Ok(true)
+    std::fs::write(auth_path, auth_str).map_err(|e| {
+        tracing::error!("Failed to write auth.json: {}", e);
+        e.to_string()
+    })?;
+    Ok(())
 }
 
-fn has_backup(path: &std::path::Path) -> bool {
-    get_backup_path(path).exists()
+fn remove_gemini_gateway_env_content(env_path: &std::path::Path) -> Result<()> {
+    if !env_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(env_path).map_err(|e| {
+        tracing::error!("Failed to read .env file: {}", e);
+        e.to_string()
+    })?;
+
+    let filtered_lines = content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            if trimmed == "GEMINI_API_KEY=ccg-gateway" {
+                return false;
+            }
+            if let Some(url) = trimmed.strip_prefix("GOOGLE_GEMINI_BASE_URL=") {
+                if url.contains("127.0.0.1:7788") || url.contains("localhost:7788") {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect::<Vec<_>>();
+
+    let new_content = if filtered_lines.is_empty() {
+        String::new()
+    } else {
+        filtered_lines.join("\n") + "\n"
+    };
+
+    std::fs::write(env_path, new_content).map_err(|e| {
+        tracing::error!("Failed to write .env file: {}", e);
+        e.to_string()
+    })?;
+    Ok(())
+}
+
+fn remove_codex_gateway_config_content(
+    config_path: &std::path::Path,
+    default_config: &str,
+) -> Result<()> {
+    if !config_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(config_path).map_err(|e| {
+        tracing::error!("Failed to read config.toml: {}", e);
+        e.to_string()
+    })?;
+
+    let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+        Ok(doc) => doc,
+        Err(e) => {
+            tracing::warn!("Failed to parse config.toml, leaving file untouched: {}", e);
+            return Ok(());
+        }
+    };
+
+    doc.remove("model_provider");
+    doc.remove("model_providers");
+
+    if !default_config.is_empty() {
+        if let Ok(mut preset_doc) = default_config.parse::<toml_edit::DocumentMut>() {
+            preset_doc.remove("model_provider");
+            preset_doc.remove("model_providers");
+            for (key, _) in preset_doc.iter() {
+                doc.remove(key);
+            }
+        }
+    }
+
+    std::fs::write(config_path, doc.to_string()).map_err(|e| {
+        tracing::error!("Failed to write config.toml: {}", e);
+        e.to_string()
+    })?;
+    Ok(())
 }
 
 fn deep_merge(base: &mut serde_json::Value, override_val: &serde_json::Value) {
@@ -1298,21 +1745,40 @@ fn deep_merge(base: &mut serde_json::Value, override_val: &serde_json::Value) {
     }
 }
 
+/// 从 base 中移除 template 中出现的所有叶子节点 key，自底向上清理空的中间对象
+fn deep_remove(base: &mut serde_json::Value, template: &serde_json::Value) {
+    if let (Some(base_obj), Some(tmpl_obj)) = (base.as_object_mut(), template.as_object()) {
+        for (key, tmpl_val) in tmpl_obj {
+            if tmpl_val.is_object() {
+                // 递归移除子节点
+                if let Some(base_val) = base_obj.get_mut(key) {
+                    deep_remove(base_val, tmpl_val);
+                    // 如果子对象变空了，移除这个键
+                    if base_val.as_object().map(|o| o.is_empty()).unwrap_or(false) {
+                        base_obj.remove(key);
+                    }
+                }
+            } else {
+                // 叶子节点：直接移除
+                base_obj.remove(key);
+            }
+        }
+    }
+}
+
 // Sync Claude Code configuration (settings.json)
 async fn sync_claude_code_config(
     db: &SqlitePool,
     enabled: bool,
     default_config: &str,
+    write_mode: &str,
 ) -> Result<()> {
     let config_dir = get_cli_config_dir_path(db, "claude_code").await;
     let config_path = config_dir.join("settings.json");
 
-    if enabled {
-        // Backup existing config if not already backed up
-        if config_path.exists() && !has_backup(&config_path) {
-            backup_file(&config_path)?;
-        }
+    let use_merge = write_mode == "merge";
 
+    if enabled {
         // Create config directory if it doesn't exist
         if let Some(parent) = config_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
@@ -1321,19 +1787,39 @@ async fn sync_claude_code_config(
             })?;
         }
 
-        // Build base config with gateway address
-        let mut config = serde_json::json!({
+        // Build gateway config
+        let gateway_config = serde_json::json!({
             "env": {
                 "ANTHROPIC_BASE_URL": "http://127.0.0.1:7788",
                 "ANTHROPIC_AUTH_TOKEN": "ccg-gateway"
             }
         });
+        let protected_gateway_fields = claude_gateway_json_template();
+
+        let mut config = if use_merge {
+            // merge 模式：先读取现有文件作为基础
+            if config_path.exists() {
+                std::fs::read_to_string(&config_path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .unwrap_or_else(|| serde_json::json!({}))
+            } else {
+                serde_json::json!({})
+            }
+        } else {
+            serde_json::json!({})
+        };
+
+        // 合并 gateway 配置
+        deep_merge(&mut config, &gateway_config);
 
         // Merge user's custom config if provided
         if !default_config.is_empty() {
             match serde_json::from_str::<serde_json::Value>(default_config) {
                 Ok(custom_config) => {
-                    deep_merge(&mut config, &custom_config);
+                    let sanitized_config =
+                        sanitize_json_config(custom_config, &protected_gateway_fields);
+                    deep_merge(&mut config, &sanitized_config);
                 }
                 Err(e) => {
                     tracing::warn!("Failed to parse custom config (invalid JSON): {}", e);
@@ -1351,37 +1837,33 @@ async fn sync_claude_code_config(
             e.to_string()
         })?;
     } else {
-        // When disabling, restore backup or remove config file
-        if restore_backup(&config_path)? {
-            tracing::info!("已恢复 Claude Code settings.json 备份");
-        } else if config_path.exists() {
-            tracing::info!("删除 Claude Code settings.json（无备份）");
-            // No backup, remove the config file
-            std::fs::remove_file(&config_path).map_err(|e| {
-                tracing::error!("Failed to remove config file: {}", e);
-                e.to_string()
-            })?;
-        }
+        let gateway_config = claude_gateway_json_template();
+        remove_json_config_content(
+            &config_path,
+            &gateway_config,
+            default_config,
+            &gateway_config,
+        )?;
+        tracing::info!("已从 Claude Code settings.json 中移除 gateway 及预设配置");
     }
 
     Ok(())
 }
 
 // Sync Codex configuration (auth.json + config.toml)
-async fn sync_codex_config(db: &SqlitePool, enabled: bool, default_config: &str) -> Result<()> {
+async fn sync_codex_config(
+    db: &SqlitePool,
+    enabled: bool,
+    default_config: &str,
+    write_mode: &str,
+) -> Result<()> {
     let codex_dir = get_cli_config_dir_path(db, "codex").await;
     let auth_path = codex_dir.join("auth.json");
     let config_path = codex_dir.join("config.toml");
 
-    if enabled {
-        // Backup existing configs if not already backed up
-        if auth_path.exists() && !has_backup(&auth_path) {
-            backup_file(&auth_path)?;
-        }
-        if config_path.exists() && !has_backup(&config_path) {
-            backup_file(&config_path)?;
-        }
+    let use_merge = write_mode == "merge";
 
+    if enabled {
         // Create config directory if it doesn't exist
         std::fs::create_dir_all(&codex_dir).map_err(|e| {
             tracing::error!("Failed to create Codex directory: {}", e);
@@ -1401,19 +1883,32 @@ async fn sync_codex_config(db: &SqlitePool, enabled: bool, default_config: &str)
             e.to_string()
         })?;
 
-        // Build base config.toml pointing to gateway
-        let mut doc =
-            serialize_toml_document(&CodexGatewayConfig::gateway(), "Codex gateway config")?;
+        // merge 模式下保留现有文件中未被 gateway / 预设覆盖的顶层 key。
+        let existing_content = if use_merge && config_path.exists() {
+            std::fs::read_to_string(&config_path).ok()
+        } else {
+            None
+        };
 
-        // Merge user's custom config if provided (TOML format)
+        let gateway_doc = codex_gateway_document()?;
+        let mut parts =
+            vec![render_toml_document(&gateway_doc)
+                .expect("Codex gateway config should never be empty")];
+        let mut existing_keys_to_remove: HashSet<String> = ["model_provider", "model_providers"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
         if !default_config.is_empty() {
             match default_config.parse::<toml_edit::DocumentMut>() {
-                Ok(custom_doc) => {
-                    // Merge custom config into base config
-                    for (key, value) in custom_doc.iter() {
-                        if key != "model_provider" && key != "model_providers" {
-                            doc[key] = value.clone();
-                        }
+                Ok(mut custom_doc) => {
+                    custom_doc.remove("model_provider");
+                    custom_doc.remove("model_providers");
+                    existing_keys_to_remove
+                        .extend(custom_doc.iter().map(|(key, _)| key.to_string()));
+
+                    if let Some(section) = render_toml_document(&custom_doc) {
+                        parts.push(section);
                     }
                 }
                 Err(e) => {
@@ -1422,54 +1917,47 @@ async fn sync_codex_config(db: &SqlitePool, enabled: bool, default_config: &str)
             }
         }
 
-        std::fs::write(&config_path, doc.to_string()).map_err(|e| {
+        if let Some(ref content) = existing_content {
+            match filter_toml_document_content(content, &existing_keys_to_remove) {
+                Some(section) => parts.push(section),
+                None if !content.trim().is_empty() => {
+                    tracing::warn!(
+                        "Failed to parse existing Codex config.toml, preserving only generated sections"
+                    );
+                }
+                None => {}
+            }
+        }
+
+        let final_content = parts.join("\n\n") + "\n";
+
+        std::fs::write(&config_path, final_content).map_err(|e| {
             tracing::error!("Failed to write config.toml: {}", e);
             e.to_string()
         })?;
     } else {
-        // When disabling, restore backups or remove config files
-        let auth_restored = restore_backup(&auth_path)?;
-        let config_restored = restore_backup(&config_path)?;
-
-        if auth_restored {
-            tracing::info!("已恢复 Codex auth.json 备份");
-        } else if auth_path.exists() {
-            tracing::info!("删除 Codex auth.json（无备份）");
-            std::fs::remove_file(&auth_path).map_err(|e| {
-                tracing::error!("Failed to remove auth.json: {}", e);
-                e.to_string()
-            })?;
-        }
-
-        if config_restored {
-            tracing::info!("已恢复 Codex config.toml 备份");
-        } else if config_path.exists() {
-            tracing::info!("删除 Codex config.toml（无备份）");
-            std::fs::remove_file(&config_path).map_err(|e| {
-                tracing::error!("Failed to remove config.toml: {}", e);
-                e.to_string()
-            })?;
-        }
+        remove_codex_gateway_auth_content(&auth_path)?;
+        remove_codex_gateway_config_content(&config_path, default_config)?;
+        tracing::info!("已从 Codex 配置中移除 gateway 及预设配置");
     }
 
     Ok(())
 }
 
 // Sync Gemini configuration (settings.json + .env)
-async fn sync_gemini_config(db: &SqlitePool, enabled: bool, default_config: &str) -> Result<()> {
+async fn sync_gemini_config(
+    db: &SqlitePool,
+    enabled: bool,
+    default_config: &str,
+    write_mode: &str,
+) -> Result<()> {
     let gemini_dir = get_cli_config_dir_path(db, "gemini").await;
     let config_path = gemini_dir.join("settings.json");
     let env_path = gemini_dir.join(".env");
 
-    if enabled {
-        // Backup existing configs if not already backed up
-        if config_path.exists() && !has_backup(&config_path) {
-            backup_file(&config_path)?;
-        }
-        if env_path.exists() && !has_backup(&env_path) {
-            backup_file(&env_path)?;
-        }
+    let use_merge = write_mode == "merge";
 
+    if enabled {
         // Create config directory if it doesn't exist
         std::fs::create_dir_all(&gemini_dir).map_err(|e| {
             tracing::error!("Failed to create Gemini directory: {}", e);
@@ -1485,20 +1973,40 @@ async fn sync_gemini_config(db: &SqlitePool, enabled: bool, default_config: &str
             e.to_string()
         })?;
 
-        // Build base config with security.auth.selectedType
-        let mut config = serde_json::json!({
+        // Build gateway config
+        let gateway_config = serde_json::json!({
             "security": {
                 "auth": {
                     "selectedType": "gemini-api-key"
                 }
             }
         });
+        let protected_gateway_fields = gemini_gateway_json_template();
+
+        let mut config = if use_merge {
+            // merge 模式：先读取现有文件作为基础
+            if config_path.exists() {
+                std::fs::read_to_string(&config_path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .unwrap_or_else(|| serde_json::json!({}))
+            } else {
+                serde_json::json!({})
+            }
+        } else {
+            serde_json::json!({})
+        };
+
+        // 合并 gateway 配置
+        deep_merge(&mut config, &gateway_config);
 
         // Merge user's custom config if provided
         if !default_config.is_empty() {
             match serde_json::from_str::<serde_json::Value>(default_config) {
                 Ok(custom_config) => {
-                    deep_merge(&mut config, &custom_config);
+                    let sanitized_config =
+                        sanitize_json_config(custom_config, &protected_gateway_fields);
+                    deep_merge(&mut config, &sanitized_config);
                 }
                 Err(e) => {
                     tracing::warn!("Failed to parse custom config (invalid JSON): {}", e);
@@ -1516,29 +2024,15 @@ async fn sync_gemini_config(db: &SqlitePool, enabled: bool, default_config: &str
             e.to_string()
         })?;
     } else {
-        // When disabling, restore backups or remove config files
-        let env_restored = restore_backup(&env_path)?;
-        let config_restored = restore_backup(&config_path)?;
-
-        if env_restored {
-            tracing::info!("已恢复 Gemini .env 备份");
-        } else if env_path.exists() {
-            tracing::info!("删除 Gemini .env（无备份）");
-            std::fs::remove_file(&env_path).map_err(|e| {
-                tracing::error!("Failed to remove .env file: {}", e);
-                e.to_string()
-            })?;
-        }
-
-        if config_restored {
-            tracing::info!("已恢复 Gemini settings.json 备份");
-        } else if config_path.exists() {
-            tracing::info!("删除 Gemini settings.json（无备份）");
-            std::fs::remove_file(&config_path).map_err(|e| {
-                tracing::error!("Failed to remove config.json: {}", e);
-                e.to_string()
-            })?;
-        }
+        let gateway_config = gemini_gateway_json_template();
+        remove_gemini_gateway_env_content(&env_path)?;
+        remove_json_config_content(
+            &config_path,
+            &gateway_config,
+            default_config,
+            &gateway_config,
+        )?;
+        tracing::info!("已从 Gemini 配置中移除 gateway 及预设配置");
     }
 
     Ok(())
@@ -5705,6 +6199,8 @@ async fn sync_credential_to_cli_async(
         .map_err(|e| format!("解析凭证文件列表失败: {}", e))?;
 
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
+    let write_mode = get_config_write_mode(db, cli_type).await;
+    let use_merge = write_mode == "merge";
 
     match cli_type {
         "claude_code" => {
@@ -5748,13 +6244,52 @@ async fn sync_credential_to_cli_async(
                 tracing::warn!("未找到 Codex auth.json 文件配置");
             }
 
-            // 处理 config.toml：直接使用全局配置（如果有）
+            // 处理 config.toml
             if !default_config.is_empty() {
-                let doc = default_config
-                    .parse::<toml_edit::DocumentMut>()
-                    .unwrap_or_else(|_| toml_edit::DocumentMut::new());
-                tracing::info!("写入 Codex config.toml，路径: {:?}", config_path);
-                std::fs::write(&config_path, doc.to_string()).map_err(|e| {
+                let mut parts = Vec::new();
+                let mut existing_keys_to_remove = HashSet::new();
+
+                match default_config.parse::<toml_edit::DocumentMut>() {
+                    Ok(doc) => {
+                        existing_keys_to_remove.extend(doc.iter().map(|(key, _)| key.to_string()));
+                        if let Some(section) = render_toml_document(&doc) {
+                            parts.push(section);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to parse Codex default_config (invalid TOML): {}",
+                            e
+                        );
+                    }
+                }
+
+                if use_merge && config_path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&config_path) {
+                        match filter_toml_document_content(&content, &existing_keys_to_remove) {
+                            Some(section) => parts.push(section),
+                            None if !content.trim().is_empty() => {
+                                tracing::warn!(
+                                    "Failed to parse existing Codex config.toml, preserving only preset sections"
+                                );
+                            }
+                            None => {}
+                        }
+                    }
+                }
+
+                let final_content = if parts.is_empty() {
+                    String::new()
+                } else {
+                    parts.join("\n\n") + "\n"
+                };
+
+                tracing::info!(
+                    "写入 Codex config.toml（{}模式），路径: {:?}",
+                    write_mode,
+                    config_path
+                );
+                std::fs::write(&config_path, final_content).map_err(|e| {
                     tracing::error!("写入 config.toml 失败: {}", e);
                     e.to_string()
                 })?;
@@ -5812,21 +6347,32 @@ async fn sync_credential_to_cli_async(
                 let _ = std::fs::remove_file(&env_path);
             }
 
-            // 处理 settings.json：合并凭证配置和全局配置（不读取现有文件）
-            // 1. 从凭证中的 settings.json 开始
-            let mut config = if let Some(ref user_settings) = settings_content {
+            // 处理 settings.json
+            // 1. 根据写入模式决定是否读取现有文件作为基础
+            let mut config = if use_merge && settings_path.exists() {
+                std::fs::read_to_string(&settings_path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                    .unwrap_or_else(|| serde_json::json!({}))
+            } else {
+                serde_json::json!({})
+            };
+
+            // 2. 合并凭证中的 settings.json（凭证配置覆盖现有配置）
+            if let Some(ref user_settings) = settings_content {
                 tracing::info!(
                     "Gemini 凭证中包含 settings.json，内容长度: {}",
                     user_settings.len()
                 );
-                serde_json::from_str::<serde_json::Value>(user_settings)
-                    .unwrap_or_else(|_| serde_json::json!({}))
+                if let Ok(cred_val) = serde_json::from_str::<serde_json::Value>(user_settings) {
+                    deep_merge(&mut config, &cred_val);
+                    tracing::info!("Gemini 凭证配置合并成功");
+                }
             } else {
                 tracing::info!("Gemini 凭证中不包含 settings.json");
-                serde_json::json!({})
-            };
+            }
 
-            // 2. 合并全局配置（全局配置优先）
+            // 3. 合并全局配置（全局配置优先级最高）
             if !default_config.is_empty() {
                 tracing::info!("Gemini 全局配置不为空，长度: {}", default_config.len());
                 if let Ok(default_val) = serde_json::from_str::<serde_json::Value>(default_config) {
@@ -5843,7 +6389,11 @@ async fn sync_credential_to_cli_async(
 
             // 只有当配置不为空对象时才写入
             if !is_empty {
-                tracing::info!("写入 Gemini settings.json，路径: {:?}", settings_path);
+                tracing::info!(
+                    "写入 Gemini settings.json（{}模式），路径: {:?}",
+                    write_mode,
+                    settings_path
+                );
                 std::fs::write(
                     &settings_path,
                     serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
@@ -5935,6 +6485,7 @@ async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) ->
 /// 删除直连模式写入的所有文件（异步版本，支持自定义配置目录）
 async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Result<()> {
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
+    let use_merge = get_config_write_mode(db, cli_type).await == "merge";
 
     match cli_type {
         "claude_code" => {
@@ -5942,54 +6493,8 @@ async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Resu
             tracing::warn!("Claude Code 的直连模式文件删除功能尚未实现");
             Ok(())
         }
-        "codex" => {
-            let auth_path = config_dir.join("auth.json");
-            let config_path = config_dir.join("config.toml");
-
-            if auth_path.exists() {
-                tracing::info!("删除直连模式文件: {:?}", auth_path);
-                std::fs::remove_file(&auth_path).map_err(|e| {
-                    tracing::error!("删除 auth.json 失败: {}", e);
-                    e.to_string()
-                })?;
-            }
-            if config_path.exists() {
-                tracing::info!("删除直连模式文件: {:?}", config_path);
-                std::fs::remove_file(&config_path).map_err(|e| {
-                    tracing::error!("删除 config.toml 失败: {}", e);
-                    e.to_string()
-                })?;
-            }
-            Ok(())
-        }
-        "gemini" => {
-            let oauth_path = config_dir.join("oauth_creds.json");
-            let accounts_path = config_dir.join("google_accounts.json");
-            let settings_path = config_dir.join("settings.json");
-
-            if oauth_path.exists() {
-                tracing::info!("删除直连模式文件: {:?}", oauth_path);
-                std::fs::remove_file(&oauth_path).map_err(|e| {
-                    tracing::error!("删除 oauth_creds.json 失败: {}", e);
-                    e.to_string()
-                })?;
-            }
-            if accounts_path.exists() {
-                tracing::info!("删除直连模式文件: {:?}", accounts_path);
-                std::fs::remove_file(&accounts_path).map_err(|e| {
-                    tracing::error!("删除 google_accounts.json 失败: {}", e);
-                    e.to_string()
-                })?;
-            }
-            if settings_path.exists() {
-                tracing::info!("删除直连模式文件: {:?}", settings_path);
-                std::fs::remove_file(&settings_path).map_err(|e| {
-                    tracing::error!("删除 settings.json 失败: {}", e);
-                    e.to_string()
-                })?;
-            }
-            Ok(())
-        }
+        "codex" => remove_codex_direct_mode_files(&config_dir, use_merge),
+        "gemini" => remove_gemini_direct_mode_files(&config_dir, use_merge),
         _ => Err("不支持的 CLI 类型".to_string()),
     }
 }
@@ -6394,7 +6899,6 @@ pub async fn set_cli_mode(
 // ==================== 插件管理命令 ====================
 
 use crate::services::plugin::{MarketplaceActionResult, PluginActionResult};
-use std::collections::HashSet;
 
 /// 获取收藏 ID 集合
 async fn get_favorite_ids(db: &SqlitePool) -> Result<HashSet<String>> {

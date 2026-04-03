@@ -35,11 +35,6 @@
             <div class="card-header-simple">
               <svg width="20" height="20" class="header-icon"><use href="#icon-terminal"/></svg>
               <span class="card-label">CLI 运行配置</span>
-              <div style="flex: 1;"></div>
-              <button class="b-button" style="padding: 6px 14px;" @click="cliFormRef?.handleSave()">
-                <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
-                保存
-              </button>
             </div>
             <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
               <div class="frost-segmented" style="margin-bottom: 24px;">

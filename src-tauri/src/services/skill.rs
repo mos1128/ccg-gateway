@@ -140,7 +140,8 @@ fn default_skill_storage() -> SkillStorage {
 
 fn sort_storage(storage: &mut SkillStorage) {
     for repo in &mut storage.repos {
-        repo.skills.sort_by(|a, b| a.installed_at.cmp(&b.installed_at));
+        repo.skills
+            .sort_by(|a, b| a.installed_at.cmp(&b.installed_at));
     }
     storage
         .repos
@@ -177,7 +178,11 @@ pub fn ensure_default_skill_repos() -> Result<()> {
 
 pub fn load_skill_repos() -> Result<Vec<SkillRepo>> {
     let storage = load_skill_storage()?;
-    Ok(storage.repos.into_iter().map(|repo| repo.to_repo()).collect())
+    Ok(storage
+        .repos
+        .into_iter()
+        .map(|repo| repo.to_repo())
+        .collect())
 }
 
 pub fn get_skill_repo(name: &str) -> Result<Option<SkillRepo>> {

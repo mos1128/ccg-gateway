@@ -190,6 +190,7 @@ pub struct CliSettingsRow {
     pub default_json_config: Option<String>,
     pub cli_mode: String,
     pub config_dir: Option<String>,
+    pub config_write_mode: String,
     pub updated_at: i64,
 }
 
@@ -201,6 +202,7 @@ pub struct CliSettingsResponse {
     pub cli_mode: String,
     pub config_dir: String,
     pub default_config_dir: String,
+    pub config_write_mode: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -208,6 +210,7 @@ pub struct CliSettingsUpdate {
     pub enabled: Option<bool>,
     pub default_json_config: Option<String>,
     pub config_dir: Option<String>,
+    pub config_write_mode: Option<String>,
 }
 
 // WebDAV Settings
