@@ -528,8 +528,8 @@ function resetCredentialForm() {
 // ==================== Model Detection ====================
 const DEFAULT_DETECT_MODELS: Record<string, string> = {
   claude_code: 'claude-opus-4-6',
-  codex: 'o3',
-  gemini: 'gemini-2.5-pro',
+  codex: 'gpt-5.4',
+  gemini: 'gemini-3.1-pro-preview',
 }
 
 const showDetectDialog = ref(false)

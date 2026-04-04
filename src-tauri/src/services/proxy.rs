@@ -6,6 +6,61 @@ use std::time::Duration;
 use crate::db::models::ProviderModelMap;
 use crate::services::routing::ProviderWithMaps;
 
+pub struct CapturedHeaders {
+    pub headers: Vec<(String, String)>,
+}
+
+static CLAUDE_HEADERS: std::sync::OnceLock<std::sync::RwLock<CapturedHeaders>> = std::sync::OnceLock::new();
+static CODEX_HEADERS: std::sync::OnceLock<std::sync::RwLock<CapturedHeaders>> = std::sync::OnceLock::new();
+static GEMINI_HEADERS: std::sync::OnceLock<std::sync::RwLock<CapturedHeaders>> = std::sync::OnceLock::new();
+
+fn extract_safe_headers(headers: &HeaderMap) -> Vec<(String, String)> {
+    let mut safe = Vec::new();
+    let skip_keys = [
+        "host", "content-length", "content-type", "accept", "accept-encoding", 
+        "authorization", "x-api-key", "x-goog-api-key", "connection", "keep-alive"
+    ];
+    for (k, v) in headers.iter() {
+        let key_str = k.as_str().to_lowercase();
+        if !skip_keys.contains(&key_str.as_str()) {
+            if let Ok(val_str) = v.to_str() {
+                safe.push((key_str, val_str.to_string()));
+            }
+        }
+    }
+    safe
+}
+
+pub fn get_captured_claude_headers() -> std::sync::RwLockReadGuard<'static, CapturedHeaders> {
+    CLAUDE_HEADERS.get_or_init(|| std::sync::RwLock::new(CapturedHeaders { headers: Vec::new() })).read().unwrap()
+}
+
+pub fn update_captured_claude_headers(headers: &HeaderMap) {
+    if let Some(mut guard) = CLAUDE_HEADERS.get_or_init(|| std::sync::RwLock::new(CapturedHeaders { headers: Vec::new() })).write().ok() {
+        guard.headers = extract_safe_headers(headers);
+    }
+}
+
+pub fn get_captured_codex_headers() -> std::sync::RwLockReadGuard<'static, CapturedHeaders> {
+    CODEX_HEADERS.get_or_init(|| std::sync::RwLock::new(CapturedHeaders { headers: Vec::new() })).read().unwrap()
+}
+
+pub fn update_captured_codex_headers(headers: &HeaderMap) {
+    if let Some(mut guard) = CODEX_HEADERS.get_or_init(|| std::sync::RwLock::new(CapturedHeaders { headers: Vec::new() })).write().ok() {
+        guard.headers = extract_safe_headers(headers);
+    }
+}
+
+pub fn get_captured_gemini_headers() -> std::sync::RwLockReadGuard<'static, CapturedHeaders> {
+    GEMINI_HEADERS.get_or_init(|| std::sync::RwLock::new(CapturedHeaders { headers: Vec::new() })).read().unwrap()
+}
+
+pub fn update_captured_gemini_headers(headers: &HeaderMap) {
+    if let Some(mut guard) = GEMINI_HEADERS.get_or_init(|| std::sync::RwLock::new(CapturedHeaders { headers: Vec::new() })).write().ok() {
+        guard.headers = extract_safe_headers(headers);
+    }
+}
+
 /// Wildcard pattern matching: * matches any characters, ? matches single character
 pub fn wildcard_match(pattern: &str, value: &str) -> bool {
     let pattern_chars: Vec<char> = pattern.chars().collect();

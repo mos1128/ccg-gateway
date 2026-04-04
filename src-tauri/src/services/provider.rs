@@ -242,9 +242,9 @@ pub async fn test_provider_model(
             let url = format!("{}/v1/messages", base_url);
             let body = serde_json::json!({
                 "model": actual_model,
-                "max_tokens": 1,
-                "messages": [{"role": "user", "content": "hi"}],
-                "stream": true
+                "messages": [{"role": "user", "content": [{"type": "text", "text": "今天天气不错"}]}],
+                "stream": true,
+                "max_tokens": 1024
             });
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
                 headers.insert(reqwest::header::AUTHORIZATION, v);
@@ -253,6 +253,20 @@ pub async fn test_provider_model(
                 headers.insert("x-api-key", v);
             }
             headers.insert("anthropic-version", "2023-06-01".parse().unwrap());
+
+            // Apply captured headers or defaults
+            let captured_headers = crate::services::proxy::get_captured_claude_headers();
+            if captured_headers.headers.is_empty() {
+                headers.insert(reqwest::header::USER_AGENT, "claude-cli/2.1.91 (external, cli)".parse().unwrap());
+                headers.insert("anthropic-beta", "claude-code-20250219,context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24".parse().unwrap());
+            } else {
+                for (k, v) in &captured_headers.headers {
+                    if let (Ok(h_name), Ok(h_val)) = (reqwest::header::HeaderName::from_bytes(k.as_bytes()), reqwest::header::HeaderValue::from_str(v)) {
+                        headers.insert(h_name, h_val);
+                    }
+                }
+            }
+
             (url, body)
         }
         "codex" => {
@@ -260,13 +274,27 @@ pub async fn test_provider_model(
             let url = format!("{}/chat/completions", base_url);
             let body = serde_json::json!({
                 "model": actual_model,
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 1,
-                "stream": true
+                "messages": [{"role": "user", "content": "今天天气不错"}],
+                "stream": true,
+                "max_tokens": 1024
             });
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
                 headers.insert(reqwest::header::AUTHORIZATION, v);
             }
+
+            // Apply captured headers or defaults
+            let captured_headers = crate::services::proxy::get_captured_codex_headers();
+            if captured_headers.headers.is_empty() {
+                headers.insert(reqwest::header::USER_AGENT, "codex-tui/0.118.0 (Windows 10.0.26200; x86_64) unknown (codex-tui; 0.118.0)".parse().unwrap());
+                headers.insert("originator", "codex-tui".parse().unwrap());
+            } else {
+                for (k, v) in &captured_headers.headers {
+                    if let (Ok(h_name), Ok(h_val)) = (reqwest::header::HeaderName::from_bytes(k.as_bytes()), reqwest::header::HeaderValue::from_str(v)) {
+                        headers.insert(h_name, h_val);
+                    }
+                }
+            }
+
             (url, body)
         }
         "gemini" => {
@@ -276,12 +304,31 @@ pub async fn test_provider_model(
                 base_url, actual_model
             );
             let body = serde_json::json!({
-                "contents": [{"parts": [{"text": "hi"}]}],
-                "generationConfig": {"maxOutputTokens": 1}
+                "contents": [{
+                    "role": "user",
+                    "parts": [{"text": "今天天气不错"}]
+                }],
+                "generationConfig": {
+                    "maxOutputTokens": 1024
+                }
             });
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&api_key) {
                 headers.insert("x-goog-api-key", v);
             }
+
+            // Apply captured headers or defaults
+            let captured_headers = crate::services::proxy::get_captured_gemini_headers();
+            if captured_headers.headers.is_empty() {
+                headers.insert(reqwest::header::USER_AGENT, "GeminiCLI/0.33.1/gemini-3.1-pro-preview (win32; x64)".parse().unwrap());
+                headers.insert("x-goog-api-client", "google-genai-sdk/1.30.0 gl-node/v24.14.0".parse().unwrap());
+            } else {
+                for (k, v) in &captured_headers.headers {
+                    if let (Ok(h_name), Ok(h_val)) = (reqwest::header::HeaderName::from_bytes(k.as_bytes()), reqwest::header::HeaderValue::from_str(v)) {
+                        headers.insert(h_name, h_val);
+                    }
+                }
+            }
+
             (url, body)
         }
         _ => {
@@ -289,9 +336,9 @@ pub async fn test_provider_model(
             let url = format!("{}/v1/chat/completions", base_url);
             let body = serde_json::json!({
                 "model": actual_model,
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 1,
-                "stream": true
+                "messages": [{"role": "user", "content": "今天天气不错"}],
+                "stream": true,
+                "max_tokens": 1024
             });
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
                 headers.insert(reqwest::header::AUTHORIZATION, v);
@@ -439,13 +486,22 @@ fn extract_stream_summary(chunk: &str) -> String {
 fn extract_error_summary(body: &str) -> String {
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
         if let Some(msg) = json.pointer("/error/message").and_then(|v| v.as_str()) {
-            return truncate_string(msg, 200);
+            return truncate_string(msg, 1000);
         }
         if let Some(msg) = json.pointer("/error/error/message").and_then(|v| v.as_str()) {
-            return truncate_string(msg, 200);
+            return truncate_string(msg, 1000);
+        }
+        // FastAPI/Pydantic validation errors use "detail" field
+        if let Some(detail) = json.get("detail") {
+            if detail.is_array() {
+                return truncate_string(&detail.to_string(), 1000);
+            }
+            if let Some(msg) = detail.as_str() {
+                return truncate_string(msg, 1000);
+            }
         }
     }
-    truncate_string(body, 200)
+    truncate_string(body, 1000)
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {

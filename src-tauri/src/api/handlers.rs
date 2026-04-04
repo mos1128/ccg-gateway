@@ -56,6 +56,18 @@ pub async fn proxy_handler_catchall(
     // Store client body for logging
     let client_body_str = truncate_body(&body_bytes);
 
+    // Check if streaming
+    let streaming = is_streaming(&body_bytes, &full_path, cli_type);
+
+    // Only learn from streaming requests since our test is streaming
+    if streaming {
+        match cli_type {
+            CliType::ClaudeCode => crate::services::proxy::update_captured_claude_headers(&headers),
+            CliType::Codex => crate::services::proxy::update_captured_codex_headers(&headers),
+            CliType::Gemini => crate::services::proxy::update_captured_gemini_headers(&headers),
+        }
+    }
+
     // Extract model name before selecting provider (for blacklist filtering)
     let extracted_model = match cli_type {
         CliType::Gemini => extract_model_from_path(&full_path),
@@ -105,7 +117,7 @@ pub async fn proxy_handler_catchall(
     };
 
     // Check if streaming
-    let streaming = is_streaming(&body_bytes, &full_path, cli_type);
+    // (streaming flag already determined above)
 
     // Apply model mapping and extract model info
     let (final_body, final_path, source_model, target_model) = match cli_type {
