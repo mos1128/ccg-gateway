@@ -82,7 +82,7 @@
 
       <!-- Super Clean Flat Table -->
       <div class="table-container" v-loading="requestLoading">
-        <div class="fixed-table-header">
+        <div class="table-wrapper">
           <table class="flat-table">
             <colgroup>
               <col style="width: 60px;">
@@ -106,20 +106,6 @@
                 <th style="text-align: right;">操作</th>
               </tr>
             </thead>
-          </table>
-        </div>
-        <div class="table-wrapper">
-          <table class="flat-table">
-            <colgroup>
-              <col style="width: 60px;">
-              <col style="width: 160px;">
-              <col style="width: 100px;">
-              <col style="width: 130px;">
-              <col style="width: 70px;">
-              <col style="width: 80px;">
-              <col style="width: 120px;">
-              <col style="width: 60px;">
-            </colgroup>
             <tbody>
               <tr v-for="row in requestLogs" :key="row.id">
                 <td class="mono">{{ row.id }}</td>
@@ -194,7 +180,7 @@
 
       <!-- Super Clean Flat Table -->
       <div class="table-container" v-loading="systemLoading">
-        <div class="fixed-table-header">
+        <div class="table-wrapper">
           <table class="flat-table">
             <colgroup>
               <col style="width: 70px;">
@@ -210,16 +196,6 @@
                 <th>消息脉络</th>
               </tr>
             </thead>
-          </table>
-        </div>
-        <div class="table-wrapper">
-          <table class="flat-table">
-            <colgroup>
-              <col style="width: 70px;">
-              <col style="width: 170px;">
-              <col style="width: 160px;">
-              <col>
-            </colgroup>
             <tbody>
               <tr v-for="row in systemLogs" :key="row.id">
                 <td class="mono">{{ row.id }}</td>
@@ -682,17 +658,12 @@ watch(activeTab, (tab) => {
   min-height: 0;
   margin: 0 40px 16px 40px;
 }
-.fixed-table-header {
-  flex-shrink: 0;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
-}
 .table-wrapper {
   flex: 1;
   overflow-y: auto;
 }
-.flat-table { width: 100%; border-collapse: collapse; text-align: left; table-layout: fixed; }
-.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+.flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; table-layout: fixed; }
+.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
 
 .flat-table th { 
   padding: 12px 20px; 
@@ -701,6 +672,10 @@ watch(activeTab, (tab) => {
   color: #64748b; 
   text-transform: uppercase; 
   background: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-bottom: 1px solid #e2e8f0;
 }
 .flat-table td { padding: 12px 20px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9; }
 .flat-table tr:last-child td { border-bottom: none; }

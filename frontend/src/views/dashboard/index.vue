@@ -62,17 +62,17 @@
                   <span style="color: #475569; font-size: 14px; font-weight: 500;">{{ scope.row.provider_name }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="total_requests" label="请求" width="90" align="right">
+              <el-table-column prop="total_requests" label="请求" width="90">
                 <template #default="scope">
                   <span class="mono" style="color: #64748b; font-size: 14px;">{{ scope.row.total_requests }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="成功率" width="100" align="right">
+              <el-table-column label="成功率" width="100">
                 <template #default="scope">
                   <span class="mono" style="color: #64748b; font-size: 14px;">{{ scope.row.success_rate.toFixed(1) }}%</span>
                 </template>
               </el-table-column>
-              <el-table-column label="Token" width="110" align="right">
+              <el-table-column label="Token" width="110">
                 <template #default="scope">
                   <span class="mono" style="color: #64748b; font-size: 14px; font-weight: 500;">{{ formatTokens(scope.row.total_tokens) }}</span>
                 </template>

@@ -384,11 +384,11 @@
       <div v-if="detectResults.length > 0 || detectLoading" style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.02);">
         <table class="flat-table">
           <colgroup>
-            <col style="width: 22%;"><col style="width: 18%;"><col style="width: 10%;"><col style="width: 10%;"><col style="width: 30%;"><col style="width: 10%;">
+            <col style="width: 20%;"><col style="width: 25%;"><col style="width: 12%;"><col style="width: 13%;"><col style="width: 30%;">
           </colgroup>
           <thead>
             <tr>
-              <th>服务商</th><th>测试模型</th><th>状态码</th><th>耗时</th><th>响应</th><th style="text-align: right;">详情</th>
+              <th>服务商</th><th>测试模型</th><th>状态码</th><th>耗时</th><th>响应</th>
             </tr>
           </thead>
           <tbody>
@@ -404,59 +404,26 @@
                 <span v-if="r.status_code === null && r.elapsed_ms === 0">-</span>
                 <span v-else>{{ r.elapsed_ms }}ms</span>
               </td>
-              <td :style="{ color: r.status_code !== null && r.status_code >= 200 && r.status_code < 300 ? '#64748b' : (r.status_code === null && r.elapsed_ms === 0 ? '#94a3b8' : '#f43f5e') }" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="r.response_text">
+              <td :style="{ color: r.status_code !== null && r.status_code >= 200 && r.status_code < 300 ? '#64748b' : (r.status_code === null && r.elapsed_ms === 0 ? '#94a3b8' : '#f43f5e') }" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                 <span v-if="r.status_code === null && r.elapsed_ms === 0" style="font-style: italic;">Testing...</span>
-                <span v-else>{{ r.response_text }}</span>
-              </td>
-              <td style="text-align: right;">
-                <a v-if="r.request_url" class="table-link" @click="showDetectDetail(r)">查看</a>
-                <span v-else style="color: #94a3b8;">-</span>
+                <el-tooltip
+                  v-else
+                  effect="light"
+                  placement="top"
+                  :enterable="true"
+                  :show-after="200"
+                >
+                  <template #content>
+                    <div style="max-width: 350px; line-height: 1.6; font-size: 13px; word-break: break-word; user-select: text; color: #334155;">
+                      {{ r.response_text }}
+                    </div>
+                  </template>
+                  <span style="cursor: pointer;" @click="copyResponseText(r.response_text)">{{ r.response_text }}</span>
+                </el-tooltip>
               </td>
             </tr>
           </tbody>
         </table>
-      </div>
-    </AppModal>
-
-    <!-- Detection Detail Modal -->
-    <AppModal v-model="detectDetailVisible" :title="detectDetailData?.provider_name + ' - 检测详情'" width="800px" :show-footer="false">
-      <div v-if="detectDetailData" style="display: flex; flex-direction: column; gap: 16px;">
-        <!-- Request -->
-        <div style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
-          <div style="padding: 12px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-weight: 600; font-size: 14px; color: #0f172a;">请求</span>
-            <span class="pill pill-grey">POST</span>
-          </div>
-          <div style="padding: 16px 20px;">
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #0ea5e9; word-break: break-all; padding: 8px 12px; background: #f0f9ff; border-radius: 6px; margin-bottom: 12px;">{{ detectDetailData.request_url }}</div>
-            <el-collapse>
-              <el-collapse-item title="Headers">
-                <pre class="code-block" @click="handleCopyDetect(detectDetailData.request_headers)">{{ formatDetectJson(detectDetailData.request_headers) }}</pre>
-              </el-collapse-item>
-              <el-collapse-item title="Body">
-                <pre class="code-block" @click="handleCopyDetect(detectDetailData.request_body)">{{ formatDetectJson(detectDetailData.request_body) }}</pre>
-              </el-collapse-item>
-            </el-collapse>
-          </div>
-        </div>
-
-        <!-- Response -->
-        <div style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
-          <div style="padding: 12px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-weight: 600; font-size: 14px; color: #0f172a;">响应</span>
-            <span :class="['pill', getDetectPill(detectDetailData.status_code)]">{{ detectDetailData.status_code || 'ERR' }}</span>
-          </div>
-          <div style="padding: 16px 20px;">
-            <el-collapse>
-              <el-collapse-item title="Headers">
-                <pre class="code-block" @click="handleCopyDetect(detectDetailData.response_headers)">{{ formatDetectJson(detectDetailData.response_headers) }}</pre>
-              </el-collapse-item>
-              <el-collapse-item title="Body">
-                <pre class="code-block" @click="handleCopyDetect(detectDetailData.response_body)">{{ formatDetectJson(detectDetailData.response_body) }}</pre>
-              </el-collapse-item>
-            </el-collapse>
-          </div>
-        </div>
       </div>
     </AppModal>
   </div>
@@ -651,29 +618,11 @@ function getDetectPill(code: number | null): string {
   return 'pill-grey'
 }
 
-const detectDetailVisible = ref(false)
-const detectDetailData = ref<TestProviderResult | null>(null)
-
-function showDetectDetail(r: TestProviderResult) {
-  if (!r.response_body && !r.request_url) return
-  detectDetailData.value = r
-  detectDetailVisible.value = true
-}
-
-function formatDetectJson(str: string): string {
-  if (!str) return ''
+async function copyResponseText(text: string) {
+  if (!text) return
   try {
-    return JSON.stringify(JSON.parse(str), null, 2)
-  } catch {
-    return str
-  }
-}
-
-async function handleCopyDetect(content: string) {
-  if (!content) return
-  try {
-    await navigator.clipboard.writeText(formatDetectJson(content))
-    notify('已复制到剪贴板')
+    await navigator.clipboard.writeText(text)
+    notify('响应已复制到剪贴板')
   } catch {
     notify('复制失败', 'error')
   }
@@ -975,9 +924,9 @@ onUnmounted(() => {
 }
 
 /* Detection Table */
-.flat-table { width: 100%; border-collapse: collapse; text-align: left; table-layout: fixed; }
-.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
-.flat-table th { padding: 12px 20px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; table-layout: fixed; }
+.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
+.flat-table th { padding: 12px 20px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10; }
 .flat-table td { padding: 12px 20px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9; }
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: #f8fafc; }
