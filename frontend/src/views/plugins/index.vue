@@ -29,6 +29,9 @@
         <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
         </symbol>
+        <symbol id="icon-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
+        </symbol>
       </defs>
     </svg>
 
@@ -36,97 +39,61 @@
     <div class="top-tabs">
       <div class="tab-item" :class="{ active: activeTab === 'plugins' }" @click="activeTab = 'plugins'">插件</div>
       <div class="tab-item" :class="{ active: activeTab === 'marketplaces' }" @click="activeTab = 'marketplaces'">市场</div>
-      <div class="tab-item" :class="{ active: activeTab === 'favorites' }" @click="activeTab = 'favorites'">收藏夹</div>
+      <div class="tab-item" :class="{ active: activeTab === 'favorites' }" @click="activeTab = 'favorites'">收藏</div>
     </div>
 
     <!-- Main Content Area -->
-    <div class="view-content-wrapper">
+    <div class="view-content-wrapper" v-loading="operationLoading">
       
-      <!-- TAB: PLUGINS -->
+      <!-- TAB: INSTALLED PLUGINS -->
       <div v-if="activeTab === 'plugins'" class="tab-pane">
-        <div class="page-header">
-          <p class="page-subtitle">选择插件安装到Claude Code</p>
-          <div style="display: flex; gap: 12px; align-items: center;">
-            <div class="search-box" style="width: 260px; position: relative;">
-              <svg class="search-icon" width="16" height="16" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; z-index: 1;"><use href="#icon-search"/></svg>
-              <input type="text" v-model="pluginSearchQuery" class="c-input" placeholder="搜索..." style="height: 38px; padding: 0 12px 0 36px; margin: 0; box-shadow: none;">
-            </div>
-            <button class="b-button-outline" style="padding: 0; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; margin: 0; box-shadow: none; flex-shrink: 0;" :disabled="loading" @click="handleRefresh" title="同步刷新">
-              <svg width="20" height="20" :class="{ 'spin': loading }"><use href="#icon-refresh"/></svg>
-            </button>
-          </div>
-        </div>
-
         <div v-loading="loading" class="list-container">
-          <template v-if="filteredPlugins.length === 0">
+          <template v-if="installedPlugins.length === 0">
             <div class="empty-state">
               <svg width="64" height="64" color="#e2e8f0"><use href="#icon-puzzle"/></svg>
-              <p>暂无插件，尝试刷新或添加新市场</p>
+              <p>暂无已安装插件</p>
             </div>
           </template>
           <div v-else class="scroll-area">
-            <div class="plugin-grid">
-              <div v-for="plugin in filteredPlugins" :key="getPluginId(plugin)" class="plugin-card" :class="{ 'not-installed': !plugin.is_installed }">
-                <div class="card-header">
-                  <div class="plugin-icon-box" :class="{ disabled: plugin.is_installed && !plugin.is_enabled }">
-                    <svg width="20" height="20"><use href="#icon-puzzle"/></svg>
+            <div class="skill-grid">
+              <div v-for="plugin in installedPlugins" :key="getPluginId(plugin)" class="skill-card">
+                <div class="card-top">
+                  <div class="skill-icon">
+                    <svg width="24" height="24"><use href="#icon-puzzle"/></svg>
                   </div>
-                  <div class="header-main">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                      <h3 class="plugin-name">{{ plugin.name }}</h3>
+                  <div class="skill-info">
+                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+                      <h3 class="skill-name">{{ plugin.name }}</h3>
                       <span v-if="plugin.version" class="plugin-ver mono">v{{ plugin.version }}</span>
                     </div>
-                    <div class="plugin-market">@{{ plugin.marketplace_name }}</div>
+                    <div class="skill-market">@{{ plugin.marketplace_name }}</div>
                   </div>
-                  <div class="header-star" @click="favoriteIds.has(getPluginId(plugin)) ? handleRemoveFavorite(plugin) : handleAddFavorite(plugin)">
-                    <svg width="18" height="18" :style="favoriteIds.has(getPluginId(plugin)) ? 'fill: #f59e0b; color: #f59e0b;' : 'color: #cbd5e1;'"><use href="#icon-star"/></svg>
-                  </div>
-                </div>
-
-                <div class="plugin-body">
-                  <el-tooltip
-                    v-if="plugin.description"
-                    effect="light"
-                    placement="top"
-                    :enterable="true"
-                    :show-after="200"
-                  >
-                    <template #content>
-                      <div style="max-width: 350px; line-height: 1.6; font-size: 13px; word-break: break-word; user-select: text; color: #334155;">
-                        {{ plugin.description }}
-                      </div>
-                    </template>
-                    <div class="plugin-desc" @click="copyDescription(plugin.description)">
-                      {{ plugin.description }}
-                    </div>
-                  </el-tooltip>
-                  <div v-else class="plugin-desc">
-                    该插件暂无详细描述信息。
+                  <div class="card-actions">
+                    <button
+                      class="action-icon star"
+                      :class="{ 'star-active': favoriteIds.has(getPluginId(plugin)) }"
+                      title="收藏/取消"
+                      @click="favoriteIds.has(getPluginId(plugin)) ? handleRemoveFavorite(plugin) : handleAddFavorite(plugin)"
+                    >
+                      <svg width="18" height="18" :style="favoriteIds.has(getPluginId(plugin)) ? 'fill: #f59e0b;' : ''"><use href="#icon-star"/></svg>
+                    </button>
+                    <button class="action-icon" title="更新" :disabled="operationLoading" @click="handleUpdate(plugin)">
+                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+                    </button>
+                    <button class="action-icon delete" title="卸载" :disabled="operationLoading" @click="handleUninstall(plugin)">
+                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
+                    </button>
                   </div>
                 </div>
 
-                <div class="plugin-footer">
-                  <div class="status-zone">
-                    <div v-if="plugin.is_installed" class="status-pill" :class="plugin.is_enabled ? 'active' : 'inactive'">
-                      {{ plugin.is_enabled ? '已启用' : '已停用' }}
-                    </div>
-                    <div v-else class="status-pill none">未安装</div>
-                  </div>
-                  
-                  <div class="actions-zone">
-                    <template v-if="plugin.is_installed">
-                      <button class="btn-sm" :class="plugin.is_enabled ? 'danger' : 'primary'" @click="plugin.is_enabled ? handleDisable(plugin) : handleEnable(plugin)">
-                        {{ plugin.is_enabled ? '停用' : '启用' }}
-                      </button>
-                      <button class="btn-sm outline" @click="handleUpdate(plugin)">更新</button>
-                      <button class="btn-sm outline danger-text" @click="handleUninstall(plugin)">卸载</button>
-                    </template>
-                    <template v-else>
-                      <button class="btn-sm primary" @click="handleInstall(plugin)">
-                        <svg width="14" height="14" style="margin-right: 4px;"><use href="#icon-download"/></svg>
-                        安装
-                      </button>
-                    </template>
+                <div class="cli-toggles">
+                  <div class="toggle-item">
+                    <span class="toggle-label">Claude Code</span>
+                    <el-switch
+                      size="small"
+                      :model-value="plugin.is_enabled"
+                      @change="handleToggleEnable(plugin, $event as boolean)"
+                    />
                   </div>
                 </div>
               </div>
@@ -137,47 +104,117 @@
 
       <!-- TAB: MARKETPLACES -->
       <div v-else-if="activeTab === 'marketplaces'" class="tab-pane">
-        <div class="page-header">
-          <p class="page-subtitle">插件市场</p>
-          <button class="b-button" style="padding: 10px;" @click="showAddMarketDialog = true" title="添加市场">
-            <svg width="20" height="20"><use href="#icon-plus"/></svg>
-          </button>
+        <!-- Market List View -->
+        <div v-if="!currentMarket" class="repo-list-view">
+          <div class="page-header">
+            <p class="page-subtitle">从市场发现并安装插件</p>
+            <button class="b-button" style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;" @click="showAddMarketDialog = true" title="添加市场">
+              <svg width="20" height="20"><use href="#icon-plus"/></svg>
+            </button>
+          </div>
+
+          <div v-loading="loadingMarketplaces" class="list-container">
+            <div v-if="marketplaceList.length === 0" class="empty-state">
+               <svg width="64" height="64" color="#e2e8f0"><use href="#icon-store"/></svg>
+               <p>暂无配置市场，请点击上方按钮添加</p>
+            </div>
+            <div v-else class="scroll-area">
+              <div class="repo-grid">
+                <div v-for="market in marketplaceList" :key="market.name" class="repo-card" @click="handleMarketClick(market)">
+                  <div class="repo-icon-box">
+                    <svg width="24" height="24"><use href="#icon-store"/></svg>
+                  </div>
+                  <div class="repo-info-main">
+                    <div class="repo-name-title">{{ market.name }}</div>
+                    <div class="repo-source-subtitle mono">{{ market.marketplace_source || '内建市场' }}</div>
+                  </div>
+                  <div class="repo-actions-overlay" @click.stop>
+                    <button class="action-icon" title="同步市场" @click="handleUpdateMarketplace(market)">
+                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+                    </button>
+                    <button class="action-icon delete" title="删除市场" @click="handleRemoveMarketplace(market)">
+                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div v-loading="loadingMarketplaces" class="list-container">
-          <div v-if="marketplaceList.length === 0" class="empty-state">
-             <svg width="64" height="64" color="#e2e8f0"><use href="#icon-store"/></svg>
-             <p>暂无配置市场，请点击上方按钮添加</p>
+        <!-- Market Plugins List View -->
+        <div v-else class="repo-skills-view">
+          <div class="page-header">
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <button class="action-icon" @click="handleBackToMarkets" title="返回">
+                <svg width="18" height="18"><use href="#icon-back"/></svg>
+              </button>
+              <div>
+                <h2 class="page-title" style="font-size: 20px; margin-bottom: 2px;">{{ currentMarket.name }}</h2>
+                <div class="mono" style="font-size: 13px; color: #94a3b8;">{{ currentMarket.marketplace_source || '内建市场' }}</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <div class="search-box" style="width: 240px; position: relative;">
+                <svg class="search-icon" width="16" height="16" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; z-index: 1;"><use href="#icon-search"/></svg>
+                <input type="text" v-model="pluginSearchQuery" class="c-input" placeholder="搜索..." style="height: 38px; padding: 0 12px 0 36px; margin: 0;">
+              </div>
+              <button class="action-icon" :disabled="loading" @click="handleUpdateMarketplace(currentMarket)" title="刷新市场">
+                <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+              </button>
+            </div>
           </div>
-          <div v-else class="scroll-area">
-            <div class="market-grid">
-              <div v-for="market in marketplaceList" :key="market.name" class="market-card">
-                <div class="market-icon">
-                  <svg width="24" height="24"><use href="#icon-store"/></svg>
-                </div>
-                <div class="market-info">
-                  <div class="market-name">{{ market.name }}</div>
-                  <el-tooltip
-                    effect="light"
-                    placement="top"
-                    :enterable="true"
-                    :show-after="200"
-                  >
-                    <template #content>
-                      <div style="max-width: 350px; line-height: 1.6; font-size: 13px; word-break: break-all; user-select: text; color: #334155;">
-                        {{ market.marketplace_source || '内建市场' }}
+
+          <div v-loading="loading || operationLoading" class="list-container">
+            <template v-if="marketPlugins.length === 0">
+              <el-empty :description="pluginSearchQuery ? '无匹配结果' : '该市场暂无插件'" />
+            </template>
+            <div v-else class="scroll-area">
+              <div class="discover-list">
+                <div v-for="plugin in marketPlugins" :key="getPluginId(plugin)" class="discover-item">
+                  <div class="discover-info">
+                    <div class="discover-name-row">
+                      <span class="discover-name">{{ plugin.name }}</span>
+                      <span v-if="plugin.version" class="mono" style="font-size: 11px; color: #94a3b8;">v{{ plugin.version }}</span>
+                    </div>
+                    <el-tooltip
+                      v-if="plugin.description"
+                      effect="light"
+                      placement="top"
+                      :enterable="true"
+                      :show-after="200"
+                    >
+                      <template #content>
+                        <div style="max-width: 350px; line-height: 1.6; font-size: 13px; word-break: break-word; user-select: text; color: #334155;">
+                          {{ plugin.description }}
+                        </div>
+                      </template>
+                      <div class="discover-desc" @click="copyDescription(plugin.description)">
+                        {{ plugin.description }}
                       </div>
-                    </template>
-                    <div class="market-url mono" @click="copyDescription(market.marketplace_source || '内建市场')" style="cursor: pointer;">{{ market.marketplace_source || '内建市场' }}</div>
-                  </el-tooltip>
-                </div>
-                <div class="market-actions">
-                  <button class="btn-icon" title="同步市场" @click="handleUpdateMarketplace(market)">
-                    <svg width="16" height="16"><use href="#icon-refresh"/></svg>
-                  </button>
-                  <button class="btn-icon danger" title="删除市场" @click="handleRemoveMarketplace(market)">
-                    <svg width="16" height="16"><use href="#icon-trash"/></svg>
-                  </button>
+                    </el-tooltip>
+                    <div v-else class="discover-desc">暂无描述</div>
+                  </div>
+                  <div class="discover-actions">
+                    <button
+                      v-if="plugin.is_installed"
+                      class="action-icon installed"
+                      title="更新"
+                      :disabled="installingPluginId === getPluginId(plugin)"
+                      @click="handleUpdate(plugin)"
+                    >
+                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+                    </button>
+                    <button
+                      v-else
+                      class="action-icon install"
+                      title="安装插件"
+                      :disabled="installingPluginId === getPluginId(plugin)"
+                      @click="handleInstall(plugin)"
+                    >
+                      <svg width="18" height="18"><use href="#icon-plus"/></svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -188,10 +225,10 @@
       <!-- TAB: FAVORITES -->
       <div v-else class="tab-pane">
         <div class="page-header">
-          <p class="page-subtitle">收藏的插件会同步到云端或随数据库备份，方便快速安装</p>
+          <p class="page-subtitle">收藏的插件会保留市场信息，方便后续快速安装</p>
         </div>
 
-        <div v-loading="loading" class="list-container">
+        <div v-loading="loading || operationLoading" class="list-container">
           <div v-if="favoriteList.length === 0" class="empty-state">
             <svg width="64" height="64" color="#e2e8f0"><use href="#icon-star"/></svg>
             <p>暂无收藏插件</p>
@@ -199,21 +236,39 @@
           <div v-else class="scroll-area">
             <div class="favorite-grid">
               <div v-for="fav in favoriteList" :key="fav.plugin_id" class="fav-card">
-                  <div class="fav-main">
-                    <div class="fav-info">
-                      <div class="fav-name">{{ fav.plugin_name }}</div>
-                      <div class="fav-market">来自市场: {{ fav.marketplace_name }}</div>
-                    </div>
-                    <div class="fav-status">
-                      <span class="pill" :class="fav.is_installed ? 'pill-green' : 'pill-grey'">
-                        {{ fav.is_installed ? '已安装' : '未安装' }}
-                      </span>
-                    </div>
+                <div class="fav-main">
+                  <div class="fav-info">
+                    <div class="fav-name">{{ fav.plugin_name }}</div>
+                    <div class="fav-market" :title="fav.marketplace_source">来自市场: {{ fav.marketplace_name }}</div>
                   </div>
-                  <div class="fav-footer">
-                    <button v-if="!fav.is_installed" class="btn-sm primary" @click="handleInstallFavorite(fav)">立即安装</button>
-                    <button class="btn-sm outline danger-text" @click="handleRemoveFavoriteById(fav)">移除收藏</button>
+                  <div class="fav-actions">
+                    <button
+                      class="action-icon star-active"
+                      title="取消收藏"
+                      @click="handleRemoveFavoriteById(fav)"
+                    >
+                      <svg width="18" height="18" style="fill: #f59e0b;"><use href="#icon-star"/></svg>
+                    </button>
+                    <button
+                      v-if="fav.is_installed"
+                      class="action-icon installed"
+                      title="已安装(点击更新)"
+                      :disabled="installingPluginId === fav.plugin_id"
+                      @click="handleInstallFavorite(fav)"
+                    >
+                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+                    </button>
+                    <button
+                      v-else
+                      class="action-icon install"
+                      title="安装插件"
+                      :disabled="installingPluginId === fav.plugin_id"
+                      @click="handleInstallFavorite(fav)"
+                    >
+                      <svg width="18" height="18"><use href="#icon-plus"/></svg>
+                    </button>
                   </div>
+                </div>
               </div>
             </div>
           </div>
@@ -262,26 +317,29 @@ const marketplaceList = ref<MarketplaceInfo[]>([])
 const loadingMarketplaces = ref(false)
 const showAddMarketDialog = ref(false)
 const marketForm = ref({ url: '' })
-const savingMarket = ref(false)
 
 // Favorites State
 const favoriteList = ref<PluginFavoriteItem[]>([])
 
-// Logic
-const sortedPlugins = computed(() => {
-  const installed = allPlugins.value.filter(p => p.is_installed)
-  const notInstalled = allPlugins.value.filter(p => !p.is_installed)
-  return [...installed, ...notInstalled]
-})
+// Operation State
+const currentMarket = ref<MarketplaceInfo | null>(null)
+const operationLoading = ref(false)
+const installingPluginId = ref<string | null>(null)
 
-const filteredPlugins = computed(() => {
-  if (!pluginSearchQuery.value) return sortedPlugins.value
-  const query = pluginSearchQuery.value.toLowerCase()
-  return sortedPlugins.value.filter(p =>
-    p.name.toLowerCase().includes(query) ||
-    p.description?.toLowerCase().includes(query) ||
-    p.marketplace_name.toLowerCase().includes(query)
-  )
+// Logic
+const installedPlugins = computed(() => allPlugins.value.filter(p => p.is_installed))
+
+const marketPlugins = computed(() => {
+  if (!currentMarket.value) return []
+  let list = allPlugins.value.filter(p => p.marketplace_name === currentMarket.value?.name)
+  if (pluginSearchQuery.value) {
+    const q = pluginSearchQuery.value.toLowerCase()
+    list = list.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.description?.toLowerCase().includes(q)
+    )
+  }
+  return list
 })
 
 const favoriteIds = computed(() => new Set(favoriteList.value.map(f => f.plugin_id)))
@@ -322,22 +380,36 @@ async function loadAll() {
   }
 }
 
-async function handleRefresh() {
-  loading.value = true
+function handleMarketClick(market: MarketplaceInfo) {
+  currentMarket.value = market
+  pluginSearchQuery.value = ''
+}
+
+function handleBackToMarkets() {
+  currentMarket.value = null
+  pluginSearchQuery.value = ''
+}
+
+async function handleToggleEnable(plugin: PluginItem, enabled: boolean) {
+  operationLoading.value = true
+  const pluginId = getPluginId(plugin)
   try {
-    allPlugins.value = await pluginsApi.refresh()
-    favoriteList.value = await pluginsApi.getFavorites()
-    showCliOutput('刷新同步成功')
+    const result = enabled
+      ? await pluginsApi.enable(pluginId)
+      : await pluginsApi.disable(pluginId)
+    allPlugins.value = result.plugins
+    showCliOutput(result.cli_output)
   } catch (error: any) {
-    showCliOutput(getErrorMessage(error, '刷新失败'), true)
+    showCliOutput(getErrorMessage(error, '操作失败'), true)
   } finally {
-    loading.value = false
+    operationLoading.value = false
   }
 }
 
 async function handleInstall(plugin: PluginItem) {
   const pluginId = getPluginId(plugin)
-  loading.value = true
+  operationLoading.value = true
+  installingPluginId.value = pluginId
   try {
     const result = await pluginsApi.install(pluginId)
     allPlugins.value = result.plugins
@@ -346,7 +418,8 @@ async function handleInstall(plugin: PluginItem) {
   } catch (error: any) {
     showCliOutput(getErrorMessage(error, '安装失败'), true)
   } finally {
-    loading.value = false
+    operationLoading.value = false
+    installingPluginId.value = null
   }
 }
 
@@ -354,7 +427,7 @@ async function handleUninstall(plugin: PluginItem) {
   const pluginId = getPluginId(plugin)
   try {
     await ElMessageBox.confirm(`确定卸载插件 "${plugin.name}"?`, '确认卸载')
-    loading.value = true
+    operationLoading.value = true
     const result = await pluginsApi.uninstall(pluginId)
     allPlugins.value = result.plugins
     favoriteList.value = await pluginsApi.getFavorites()
@@ -364,41 +437,14 @@ async function handleUninstall(plugin: PluginItem) {
       showCliOutput(getErrorMessage(error, '卸载失败'), true)
     }
   } finally {
-    loading.value = false
-  }
-}
-
-async function handleEnable(plugin: PluginItem) {
-  const pluginId = getPluginId(plugin)
-  loading.value = true
-  try {
-    const result = await pluginsApi.enable(pluginId)
-    allPlugins.value = result.plugins
-    showCliOutput(result.cli_output)
-  } catch (error: any) {
-    showCliOutput(getErrorMessage(error, '操作失败'), true)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function handleDisable(plugin: PluginItem) {
-  const pluginId = getPluginId(plugin)
-  loading.value = true
-  try {
-    const result = await pluginsApi.disable(pluginId)
-    allPlugins.value = result.plugins
-    showCliOutput(result.cli_output)
-  } catch (error: any) {
-    showCliOutput(getErrorMessage(error, '操作失败'), true)
-  } finally {
-    loading.value = false
+    operationLoading.value = false
   }
 }
 
 async function handleUpdate(plugin: PluginItem) {
   const pluginId = getPluginId(plugin)
-  loading.value = true
+  operationLoading.value = true
+  installingPluginId.value = pluginId
   try {
     const result = await pluginsApi.update(pluginId)
     allPlugins.value = result.plugins
@@ -406,11 +452,13 @@ async function handleUpdate(plugin: PluginItem) {
   } catch (error: any) {
     showCliOutput(getErrorMessage(error, '更新失败'), true)
   } finally {
-    loading.value = false
+    operationLoading.value = false
+    installingPluginId.value = null
   }
 }
 
 async function handleAddFavorite(plugin: PluginItem) {
+  operationLoading.value = true
   const pluginId = getPluginId(plugin)
   try {
     await pluginsApi.addFavorite(pluginId, plugin.name, plugin.marketplace_name)
@@ -418,10 +466,13 @@ async function handleAddFavorite(plugin: PluginItem) {
     notify('已收藏')
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
+  } finally {
+    operationLoading.value = false
   }
 }
 
 async function handleRemoveFavorite(plugin: PluginItem) {
+  operationLoading.value = true
   const pluginId = getPluginId(plugin)
   try {
     await pluginsApi.removeFavorite(pluginId)
@@ -429,11 +480,14 @@ async function handleRemoveFavorite(plugin: PluginItem) {
     notify('已取消收藏')
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
+  } finally {
+    operationLoading.value = false
   }
 }
 
 async function handleInstallFavorite(favorite: PluginFavoriteItem) {
-  loading.value = true
+  operationLoading.value = true
+  installingPluginId.value = favorite.plugin_id
   try {
     const result = await pluginsApi.installFavorite(
       favorite.plugin_id,
@@ -447,17 +501,21 @@ async function handleInstallFavorite(favorite: PluginFavoriteItem) {
   } catch (error: any) {
     showCliOutput(getErrorMessage(error, '安装失败'), true)
   } finally {
-    loading.value = false
+    operationLoading.value = false
+    installingPluginId.value = null
   }
 }
 
 async function handleRemoveFavoriteById(favorite: PluginFavoriteItem) {
+  operationLoading.value = true
   try {
     await pluginsApi.removeFavorite(favorite.plugin_id)
     favoriteList.value = await pluginsApi.getFavorites()
     notify('已移除')
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
+  } finally {
+    operationLoading.value = false
   }
 }
 
@@ -570,6 +628,13 @@ onMounted(loadAll)
   min-height: 0;
 }
 
+.repo-list-view, .repo-skills-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .list-container {
   flex: 1;
   display: flex;
@@ -587,113 +652,139 @@ onMounted(loadAll)
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-shrink: 0; }
 .page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
 
-/* Plugin Grid & Cards */
-.plugin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 24px; }
-.plugin-card { 
-  background: #ffffff; border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.8); 
-  padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); transition: all 0.2s; 
-  display: flex; flex-direction: column; gap: 16px; 
+/* Grid & Cards (Installed) */
+.skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 24px; }
+.skill-card { 
+  background: #ffffff; border-radius: 16px; border: 1px solid rgba(226, 232, 240, 0.8); padding: 24px; 
+  box-shadow: 0 4px 12px rgba(0,0,0,0.03); transition: all 0.2s; display: flex; flex-direction: column; gap: 20px; 
 }
-.plugin-card:hover { border-color: #0ea5e9; box-shadow: 0 10px 20px -5px rgba(0,0,0,0.05); }
-.plugin-card.not-installed { opacity: 0.95; }
+.skill-card:hover { border-color: #0ea5e9; box-shadow: 0 10px 20px -5px rgba(0,0,0,0.05); }
 
-.card-header { display: flex; gap: 14px; align-items: flex-start; }
-.plugin-icon-box { 
-  width: 44px; height: 44px; border-radius: 12px; background: #e0f2fe; color: #0ea5e9; 
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s;
+.card-top { display: flex; gap: 16px; align-items: flex-start; }
+.skill-icon { 
+  width: 48px; height: 48px; border-radius: 12px; background: #e0f2fe; color: #0ea5e9; 
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; 
 }
-.plugin-icon-box.disabled { background: #f1f5f9; color: #94a3b8; }
-.header-main { flex: 1; min-width: 0; }
-.plugin-name { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skill-info { flex: 1; min-width: 0; }
+.skill-name { 
+  font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 4px 0; 
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
+}
 .plugin-ver { font-size: 11px; color: #94a3b8; }
-.plugin-market { font-size: 12px; color: #64748b; font-weight: 500; }
-.header-star { cursor: pointer; padding: 4px; border-radius: 4px; transition: background 0.2s; }
-.header-star:hover { background: #f8fafc; }
+.skill-market { 
+  font-size: 12px; color: #64748b; font-weight: 500; 
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
+}
 
-.plugin-body { flex: 1; }
-.plugin-desc { 
-  font-size: 13px; color: #475569; line-height: 1.6; cursor: pointer;
+.card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.action-icon {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+  outline: none;
+  background: transparent;
+  border: none;
+}
+.action-icon:hover { background: #f1f5f9; color: #0f172a; }
+.action-icon.delete:hover { background: #fee2e2; color: #ef4444; }
+.action-icon.star:disabled { cursor: not-allowed; opacity: 0.45; }
+.action-icon.star:disabled:hover { background: transparent; color: #64748b; }
+.action-icon.star-active { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+.action-icon.installed { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+.action-icon.install { color: #0ea5e9; background: rgba(14, 165, 233, 0.1); }
+
+/* CLI Toggles */
+.cli-toggles { display: flex; flex-direction: column; gap: 12px; background: #f8fafc; padding: 16px; border-radius: 12px; }
+.toggle-item { display: flex; justify-content: space-between; align-items: center; }
+.toggle-label { font-size: 13px; font-weight: 500; color: #475569; }
+
+/* Repo Grid (Available) */
+.repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
+.repo-card { 
+  background: #ffffff; border-radius: 16px; border: 1px solid #f1f5f9; padding: 20px; 
+  cursor: pointer; position: relative; transition: all 0.2s; display: flex; align-items: center; gap: 16px; 
+}
+.repo-card:hover { border-color: #0ea5e9; background: #f8fafc; }
+
+.repo-icon-box { 
+  width: 40px; height: 40px; border-radius: 10px; background: #f1f5f9; color: #64748b; 
+  display: flex; align-items: center; justify-content: center; 
+}
+.repo-info-main { flex: 1; min-width: 0; }
+.repo-name-title { font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; }
+.repo-source-subtitle { font-size: 12px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-actions-overlay { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* Discover List */
+.discover-list { background: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #f1f5f9; }
+.discover-item { 
+  display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; 
+  border-bottom: 1px solid #f1f5f9; transition: background 0.2s; 
+}
+.discover-item:last-child { border-bottom: none; }
+.discover-item:hover { background: #f8fafc; }
+.discover-info { flex: 1; min-width: 0; padding-right: 40px; }
+.discover-name-row { margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.discover-name { font-weight: 700; font-size: 15px; color: #0f172a; }
+.discover-desc { 
+  font-size: 13px; color: #64748b; line-height: 1.5; cursor: pointer; 
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.plugin-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 1px dashed #f1f5f9; }
-.status-pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 99px; text-transform: uppercase; }
-.status-pill.active { background: #ecfdf5; color: #10b981; }
-.status-pill.inactive { background: #f1f5f9; color: #64748b; }
-.status-pill.none { background: #fffbeb; color: #f59e0b; }
-
-.actions-zone { display: flex; gap: 8px; }
-.btn-sm { 
-  border: none; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; 
-  cursor: pointer; transition: all 0.2s; display: flex; align-items: center; 
-}
-.btn-sm.primary { background: #0ea5e9; color: white; }
-.btn-sm.primary:hover { background: #0284c7; }
-.btn-sm.outline { background: white; border: 1px solid #e2e8f0; color: #475569; }
-.btn-sm.outline:hover { background: #f8fafc; color: #0f172a; }
-.btn-sm.danger { background: #fef2f2; color: #f43f5e; }
-.btn-sm.danger:hover { background: #fee2e2; }
-.btn-sm.danger-text { color: #f43f5e; }
-.btn-sm.danger-text:hover { background: #fef2f2; }
-
-/* Market List */
-.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
-.market-card { 
-  background: white; border-radius: 16px; border: 1px solid #f1f5f9; padding: 20px; 
-  display: flex; align-items: center; gap: 16px; transition: all 0.2s; 
-}
-.market-card:hover { border-color: #0ea5e9; background: #f8fafc; }
-.market-icon { width: 44px; height: 44px; border-radius: 12px; background: #f8fafc; color: #64748b; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.market-info { flex: 1; min-width: 0; }
-.market-name { font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.market-url { font-size: 12px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.market-actions { display: flex; gap: 4px; flex-shrink: 0; }
-.btn-icon { background: white; border: 1px solid #f1f5f9; color: #64748b; padding: 8px; border-radius: 8px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
-.btn-icon:hover { background: #f1f5f9; color: #0f172a; border-color: #cbd5e1; }
-.btn-icon.danger:hover { background: #fef2f2; color: #f43f5e; border-color: #fca5a5; }
+.discover-actions { flex-shrink: 0; display: flex; gap: 4px; }
 
 /* Favorites */
 .favorite-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
-.fav-card { background: white; border-radius: 16px; border: 1px solid #f1f5f9; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-.fav-main { display: flex; justify-content: space-between; align-items: flex-start; }
-.fav-name { font-weight: 700; font-size: 16px; color: #0f172a; margin-bottom: 4px; }
-.fav-market { font-size: 12px; color: #94a3b8; }
-.fav-footer { display: flex; gap: 10px; padding-top: 12px; border-top: 1px dashed #f1f5f9; }
+.fav-card { background: white; border-radius: 16px; border: 1px solid #f1f5f9; padding: 20px; }
+.fav-main { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.fav-info { min-width: 0; flex: 1; }
+.fav-name { 
+  font-weight: 700; font-size: 16px; color: #0f172a; margin-bottom: 4px; 
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
+}
+.fav-market { 
+  font-size: 12px; color: #94a3b8; 
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
+}
+.fav-actions { flex-shrink: 0; display: flex; gap: 4px; }
 
-/* Shared Global styles */
+/* Shared styles */
 .mono { font-family: "JetBrains Mono", monospace; }
-.pill { padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
-.pill-green { background: #ecfdf5; color: #10b981; }
-.pill-grey { background: #f1f5f9; color: #64748b; }
-
 .search-box { position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
 .c-input {
-  width: 100%; padding: 12px 16px; background: #ffffff; border: 1px solid #e2e8f0;
-  border-radius: 10px; font-size: 14px; color: #0f172a; outline: none; transition: all 0.2s;
+  width: 100%; padding: 10px 14px; background: #ffffff; border: 1px solid #e2e8f0;
+  border-radius: 8px; font-size: 14px; color: #0f172a; outline: none; transition: all 0.2s;
 }
-.c-input:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1); }
+.c-input:focus { border-color: #0ea5e9; }
 
 .b-button {
-  background: #0ea5e9; color: #ffffff; border: none; padding: 10px 20px; border-radius: 10px;
-  font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center;
-  transition: all 0.2s;
+  background: #0ea5e9; color: #ffffff; border: none; padding: 8px 16px; border-radius: 8px;
+  font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center;
+  transition: all 0.2s; white-space: nowrap;
 }
 .b-button:hover { background: #0284c7; }
-.b-button-outline { 
-  background: #ffffff; color: #475569; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px; 
-  font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; 
+.b-button:disabled { background: #94a3b8; cursor: not-allowed; }
+
+.b-button-outline {
+  background: #ffffff; color: #0f172a; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px;
+  font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; display: flex; align-items: center;
 }
-.b-button-outline:hover { background: #f8fafc; color: #0f172a; border-color: #cbd5e1; }
+.b-button-outline:hover { background: #f8fafc; border-color: #cbd5e1; }
 
 .empty-state { padding: 80px 40px; text-align: center; color: #94a3b8; background: #ffffff; border-radius: 24px; border: 2px dashed #e2e8f0; }
 .empty-state p { margin-top: 16px; font-size: 15px; }
 
 .form-group { margin-bottom: 24px; }
-.c-label { display: block; font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 8px; }
+.c-label { display: block; font-size: 13px; font-weight: 500; color: #475569; margin-bottom: 12px; }
 .required { color: #f43f5e; }
 </style>
