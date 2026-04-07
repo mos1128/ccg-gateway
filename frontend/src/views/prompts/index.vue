@@ -255,7 +255,7 @@ onMounted(fetchList)
 /* Grid & Cards */
 .prompt-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
   gap: 24px;
 }
 .prompt-card {
@@ -302,7 +302,9 @@ onMounted(fetchList)
   font-weight: 700;
   color: #0f172a;
   margin: 0;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   padding-right: 8px;

@@ -398,7 +398,7 @@ onMounted(() => {
 
 .project-icon-box { width: 48px; height: 48px; border-radius: 12px; background: #f1f5f9; color: #0284c7; display: flex; align-items: center; justify-content: center; margin-right: 16px; flex-shrink: 0; }
 .project-info { flex: 1; min-width: 0; padding-right: 28px; }
-.project-name { font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.project-name { font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
 .project-path { font-size: 12px; color: #64748b; font-family: "JetBrains Mono", monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 8px; }
 .project-meta { display: flex; align-items: center; gap: 12px; }
 

@@ -774,7 +774,7 @@ onMounted(() => {
 .page-subtitle { font-size: 14px; color: #64748b; margin: 0; }
 
 /* Grid & Cards (Installed) */
-.skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 24px; }
+.skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 24px; }
 .skill-card { 
   background: #ffffff; border-radius: 16px; border: 1px solid rgba(226, 232, 240, 0.8); padding: 24px; 
   box-shadow: 0 4px 12px rgba(0,0,0,0.03); transition: all 0.2s; display: flex; flex-direction: column; gap: 20px; 
@@ -787,11 +787,11 @@ onMounted(() => {
   display: flex; align-items: center; justify-content: center; flex-shrink: 0; 
 }
 .skill-info { flex: 1; min-width: 0; }
-.skill-name { 
-  font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 4px 0; 
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
-}
-.skill-market { 
+.skill-name {
+  font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 4px 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; text-overflow: ellipsis;
+}.skill-market { 
   font-size: 12px; color: #64748b; font-weight: 500; 
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
 }
@@ -826,7 +826,7 @@ onMounted(() => {
 .toggle-label { font-size: 13px; font-weight: 500; color: #475569; }
 
 /* Repo Grid (Available) */
-.repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
+.repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
 .repo-card { 
   background: #ffffff; border-radius: 16px; border: 1px solid #f1f5f9; padding: 20px; 
   cursor: pointer; position: relative; transition: all 0.2s; display: flex; align-items: center; gap: 16px; 
@@ -838,7 +838,7 @@ onMounted(() => {
   display: flex; align-items: center; justify-content: center; 
 }
 .repo-info-main { flex: 1; min-width: 0; }
-.repo-name-title { font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; }
+.repo-name-title { font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .repo-source-subtitle { font-size: 12px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-actions-overlay { display: flex; gap: 4px; flex-shrink: 0; }
 
@@ -864,15 +864,15 @@ onMounted(() => {
 .discover-actions { flex-shrink: 0; display: flex; gap: 4px; }
 
 /* Favorites */
-.favorite-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 20px; }
+.favorite-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
 .fav-card { background: white; border-radius: 16px; border: 1px solid #f1f5f9; padding: 20px; }
 .fav-main { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .fav-info { min-width: 0; flex: 1; }
-.fav-name { 
-  font-weight: 700; font-size: 16px; color: #0f172a; margin-bottom: 4px; 
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
-}
-.fav-market { 
+.fav-name {
+  font-weight: 700; font-size: 16px; color: #0f172a; margin-bottom: 4px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; text-overflow: ellipsis;
+}.fav-market { 
   font-size: 12px; color: #94a3b8; 
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; 
 }
