@@ -4,7 +4,6 @@ import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { fileURLToPath, URL } from 'node:url'
-import webfontDl from 'vite-plugin-webfont-dl'
 
 export default defineConfig(() => {
   return {
@@ -12,13 +11,6 @@ export default defineConfig(() => {
     clearScreen: false,
     plugins: [
       vue(),
-      webfontDl([
-        'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap'
-      ], {
-        injectAsStyleTag: true,
-        minify: true,
-        async: false,
-      }),
       AutoImport({
         resolvers: [ElementPlusResolver()],
         imports: ['vue', 'vue-router', 'pinia'],
