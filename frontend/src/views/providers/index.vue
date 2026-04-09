@@ -118,13 +118,13 @@
                 <div style="display: flex; gap: 24px;">
                   <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
                     <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#94a3b8' }">失败次数</div>
-                    <div class="text-16" style="font-weight: 500;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#0f172a' }">
+                    <div class="mono text-16" style="font-weight: 500;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#0f172a' }">
                       {{ element.consecutive_failures }}
                     </div>
                   </div>
                   <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
                     <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败阈值</div>
-                    <div class="text-16 text-secondary" style="font-weight: 500;">{{ element.failure_threshold }}</div>
+                    <div class="mono text-16 text-secondary" style="font-weight: 500;">{{ element.failure_threshold }}</div>
                   </div>
                 </div>
                 
@@ -918,7 +918,6 @@ onUnmounted(() => {
 .flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: #0f172a; border-bottom: 1px solid #f1f5f9; }
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: #f8fafc; }
-.mono { color: #64748b; font-size: var(--fs-12); }
 .pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-600); display: inline-flex; align-items: center; letter-spacing: 0.3px; }
 .pill-green { background: #ecfdf5; color: #10b981; }
 .pill-red { background: #fff1f2; color: #f43f5e; }

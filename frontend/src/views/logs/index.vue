@@ -108,7 +108,7 @@
             </thead>
             <tbody>
               <tr v-for="row in requestLogs" :key="row.id">
-                <td>{{ row.id }}</td>
+                <td class="mono">{{ row.id }}</td>
                 <td>{{ formatTime(row.created_at) }}</td>
                 <td>{{ row.cli_type }}</td>
                 <td>{{ row.provider_name }}</td>
@@ -116,10 +116,10 @@
                   <span v-if="row.status_code" :class="['pill', getStatusCodePill(row.status_code)]">{{ row.status_code }}</span>
                   <span v-else>-</span>
                 </td>
-                <td :class="{'text-danger': row.status_code && row.status_code >= 500}">
+                <td class="mono" :class="{'text-danger': row.status_code && row.status_code >= 500}">
                   {{ row.elapsed_ms }}ms
                 </td>
-                <td>
+                <td class="mono">
                   <span v-if="row.input_tokens || row.output_tokens">{{ formatTokens(row.input_tokens) }} / {{ formatTokens(row.output_tokens) }}</span>
                   <span v-else>-</span>
                 </td>

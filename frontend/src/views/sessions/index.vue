@@ -59,10 +59,10 @@
                 <svg width="24" height="24"><use href="#icon-folder"/></svg>
               </div>
               <div class="project-info">
-                <div class="project-path-title">{{ project.full_path }}</div>
+                <div class="project-path-title mono">{{ project.full_path }}</div>
                 <div class="project-meta">
                   <div class="text-12 text-muted">{{ project.session_count }} 个会话</div>
-                  <span class="text-12 text-muted">{{ formatSize(project.total_size) }}</span>
+                  <span class="mono text-12 text-muted">{{ formatSize(project.total_size) }}</span>
                 </div>
               </div>
               <div class="ghost-delete" @click.stop="handleDeleteProject(project)">
@@ -110,7 +110,7 @@
               
               <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px;">
                 <div style="display: flex; align-items: center; gap: 12px; margin-top: 2px;">
-                  <span class="fw-medium text-md text-primary">{{ session.session_id }}</span>
+                  <span class="mono fw-medium text-md text-primary">{{ session.session_id }}</span>
                   <div v-if="session.git_branch" class="pill pill-blue">
                     <svg width="12" height="12"><use href="#icon-branch"/></svg> {{ session.git_branch }}
                   </div>
@@ -122,7 +122,7 @@
 
                 <div class="text-12 text-muted" style="display: flex; gap: 20px;">
                   <span>{{ formatTime(session.mtime) }}</span>
-                  <span>{{ formatSize(session.size) }}</span>
+                  <span class="mono">{{ formatSize(session.size) }}</span>
                 </div>
               </div>
               
@@ -141,7 +141,7 @@
       <div class="drawer-header">
         <div>
           <div class="text-12 fw-bold text-muted text-upper">会话详情</div>
-          <div class="text-2xl fw-bold text-primary">{{ currentSessionId }}</div>
+          <div class="mono text-2xl fw-bold text-primary">{{ currentSessionId }}</div>
         </div>
         <div class="drawer-close" @click="closeDrawer">
           <svg width="20" height="20"><use href="#icon-close"/></svg>

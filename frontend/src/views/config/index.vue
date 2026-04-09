@@ -508,7 +508,6 @@ onMounted(() => {
 .flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: #0f172a; border-bottom: 1px solid #f1f5f9; }
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: #f8fafc; }
-.mono { color: #64748b; font-size: var(--fs-12); }
 .table-link { color: #0ea5e9; cursor: pointer; text-decoration: none; font-weight: var(--fw-400); font-size: var(--fs-14); }
 .table-link:hover { text-decoration: underline; }
 .table-link.danger { color: #ef4444; }
