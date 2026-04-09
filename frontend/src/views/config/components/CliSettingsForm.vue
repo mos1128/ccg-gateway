@@ -338,9 +338,9 @@ defineExpose({ handleSave })
 
 /* Save button */
 .save-button {
-  background: #0ea5e9; color: #ffffff; border: none; padding: 6px 14px; border-radius: 10px;
+  background: rgba(14, 165, 233, 0.1); color: #0ea5e9; border: none; padding: 6px 14px; border-radius: 10px;
   font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center;
   transition: all 0.2s; flex-shrink: 0;
 }
-.save-button:hover { background: #0284c7; }
+.save-button:hover { background: rgba(14, 165, 233, 0.2); }
 </style>

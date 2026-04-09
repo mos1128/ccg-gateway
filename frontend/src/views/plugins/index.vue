@@ -108,7 +108,7 @@
         <div v-if="!currentMarket" class="repo-list-view">
           <div class="page-header">
             <p class="page-subtitle">从市场发现并安装插件</p>
-            <button class="b-button" style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;" @click="showAddMarketDialog = true" title="添加市场">
+            <button class="action-icon add-btn" @click="showAddMarketDialog = true" title="添加市场">
               <svg width="20" height="20"><use href="#icon-plus"/></svg>
             </button>
           </div>
@@ -824,4 +824,15 @@ onMounted(() => {
 .form-group { margin-bottom: 24px; }
 .c-label { display: block; font-size: 13px; font-weight: 500; color: #475569; margin-bottom: 12px; }
 .required { color: #f43f5e; }
+
+.action-icon.add-btn {
+  width: 36px;
+  height: 36px;
+  color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.1);
+}
+.action-icon.add-btn:hover {
+  background: rgba(14, 165, 233, 0.2);
+  color: #0ea5e9;
+}
 </style>

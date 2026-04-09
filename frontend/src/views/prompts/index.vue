@@ -21,7 +21,7 @@
 
     <div class="page-header">
       <p class="page-subtitle">预设常用提示词，快速注入</p>
-      <button class="b-button" style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;" @click="handleAdd" title="添加提示词">
+      <button class="action-icon add-btn" @click="handleAdd" title="添加提示词">
         <svg width="20" height="20"><use href="#icon-plus"/></svg>
       </button>
     </div>
@@ -440,5 +440,16 @@ textarea.c-input {
 .empty-state p {
   margin-top: 16px;
   font-size: 15px;
+}
+
+.action-icon.add-btn {
+  width: 36px;
+  height: 36px;
+  color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.1);
+}
+.action-icon.add-btn:hover {
+  background: rgba(14, 165, 233, 0.2);
+  color: #0ea5e9;
 }
 </style>

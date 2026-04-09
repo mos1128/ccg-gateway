@@ -33,10 +33,9 @@
         <div class="b-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方模式</div>
       </div>
       
-      <div v-if="viewMode === 'proxy'" style="display: flex; gap: 8px;">
+      <div v-if="viewMode === 'proxy'" style="display: flex; align-items: center; gap: 8px;">
         <button
-          class="b-button-outline"
-          style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;"
+          class="action-icon detect-btn"
           @click="showDetectDialog = true"
           title="检测模型可用性"
         >
@@ -45,8 +44,7 @@
           </svg>
         </button>
         <button
-          class="b-button"
-          style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;"
+          class="action-icon add-btn"
           @click="showAddDialog = true"
           title="添加服务商"
         >
@@ -57,8 +55,7 @@
       </div>
       <div v-else>
         <button
-          class="b-button"
-          style="padding: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;"
+          class="action-icon add-btn"
           @click="showAddCredentialDialog = true"
           title="添加凭证"
         >
@@ -905,6 +902,9 @@ onUnmounted(() => {
   cursor: pointer;
   transition: all 0.2s;
   background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
 }
 .action-icon:hover {
   background: #f1f5f9;
@@ -929,4 +929,27 @@ onUnmounted(() => {
 .pill-grey { background: #f1f5f9; color: #64748b; font-weight: normal; }
 .code-block { background: #f8fafc; padding: 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
 .code-block:hover { border-color: #cbd5e1; }
+
+.action-icon.detect-btn {
+  width: 36px;
+  height: 36px;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+.action-icon.detect-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.action-icon.add-btn {
+  width: 36px;
+  height: 36px;
+  color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.1);
+}
+.action-icon.add-btn:hover {
+  background: rgba(14, 165, 233, 0.2);
+  color: #0ea5e9;
+}
 </style>

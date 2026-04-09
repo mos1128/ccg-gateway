@@ -541,9 +541,10 @@ onMounted(() => {
 .webdav-settings-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
 
 .b-button {
-  background: #0ea5e9; color: #ffffff; border: none; padding: 10px 20px; border-radius: 10px;
+  background: rgba(14, 165, 233, 0.1); color: #0ea5e9; border: none; padding: 10px 20px; border-radius: 10px;
   font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center;
   transition: all 0.2s;
 }
-.b-button:hover { background: #0284c7; }
+.b-button:hover { background: rgba(14, 165, 233, 0.2); }
+.b-button:disabled { background: rgba(14, 165, 233, 0.05); color: #7dd3fc; cursor: not-allowed; }
 </style>
