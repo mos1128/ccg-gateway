@@ -9,19 +9,18 @@
 /* ========== 字体规范 ========== */
 :root {
   /* 字体权重 */
-  --fw-normal: 400;
-  --fw-medium: 600;
-  --fw-bold: 700;
+  --fw-400: 400;
+  --fw-500: 500;
+  --fw-600: 600;
+  --fw-700: 700;
 
   /* 字体大小 */
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-base: 13px;
-  --fs-md: 14px;
-  --fs-lg: 15px;
-  --fs-xl: 16px;
-  --fs-2xl: 22px;
-  --fs-3xl: 28px;
+  --fs-12: 12px;
+  --fs-14: 14px;
+  --fs-16: 16px;
+  --fs-20: 20px;
+  --fs-24: 24px;
+  --fs-32: 32px;
 }
 
 *, *::before, *::after {
@@ -33,8 +32,8 @@ html, body, #app {
   padding: 0;
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-400);
 }
 
 /* 等宽字体 */
@@ -43,34 +42,19 @@ html, body, #app {
 }
 
 /* ========== 字体大小类 ========== */
-.text-xs { font-size: var(--fs-xs); }
-.text-sm { font-size: var(--fs-sm); }
-.text-base { font-size: var(--fs-base); }
-.text-md { font-size: var(--fs-md); }
-.text-lg { font-size: var(--fs-lg); }
-.text-xl { font-size: var(--fs-xl); }
-.text-2xl { font-size: var(--fs-2xl); }
-.text-3xl { font-size: var(--fs-3xl); }
+.text-12 { font-size: var(--fs-12); }
+.text-14 { font-size: var(--fs-14); }
+.text-16 { font-size: var(--fs-16); }
+.text-20 { font-size: var(--fs-20); }
+.text-24 { font-size: var(--fs-24); }
+.text-32 { font-size: var(--fs-32); }
 
 /* ========== 字体权重类 ========== */
-.fw-normal { font-weight: var(--fw-normal); }
-.fw-medium { font-weight: var(--fw-medium); }
-.fw-bold { font-weight: var(--fw-bold); }
+.fw-normal { font-weight: var(--fw-400); }
+.fw-medium { font-weight: var(--fw-600); }
+.fw-bold { font-weight: var(--fw-700); }
 
-/* ========== 语义化文本类 ========== */
-.text-body { font-size: var(--fs-base); font-weight: var(--fw-normal); }
-.text-label { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
-.text-button { font-size: var(--fs-md); font-weight: var(--fw-normal); }
-.text-nav { font-size: var(--fs-md); font-weight: var(--fw-normal); }
-.text-nav-active { font-size: var(--fs-md); font-weight: var(--fw-medium); }
-.text-card-title { font-size: var(--fs-lg); font-weight: var(--fw-medium); }
-.text-section-title { font-size: var(--fs-xl); font-weight: var(--fw-bold); }
-.text-page-title { font-size: var(--fs-2xl); font-weight: var(--fw-bold); }
-.text-page-title-lg { font-size: var(--fs-3xl); font-weight: var(--fw-bold); }
-.text-tag { font-size: var(--fs-xs); font-weight: var(--fw-medium); }
-.text-mono { font-size: var(--fs-sm); font-weight: var(--fw-normal); }
-.text-mono-medium { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
-.text-mono-md { font-size: var(--fs-md); font-weight: var(--fw-normal); }
+/* ========== 颜色类 ========== */
 .text-muted { color: #94a3b8; }
 .text-secondary { color: #64748b; }
 .text-primary { color: #0f172a; }

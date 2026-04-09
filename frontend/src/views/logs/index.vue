@@ -108,18 +108,18 @@
             </thead>
             <tbody>
               <tr v-for="row in requestLogs" :key="row.id">
-                <td class="mono">{{ row.id }}</td>
-                <td class="mono">{{ formatTime(row.created_at) }}</td>
-                <td class="mono">{{ row.cli_type }}</td>
-                <td class="mono">{{ row.provider_name }}</td>
+                <td>{{ row.id }}</td>
+                <td>{{ formatTime(row.created_at) }}</td>
+                <td>{{ row.cli_type }}</td>
+                <td>{{ row.provider_name }}</td>
                 <td>
                   <span v-if="row.status_code" :class="['pill', getStatusCodePill(row.status_code)]">{{ row.status_code }}</span>
                   <span v-else>-</span>
                 </td>
-                <td class="mono" :class="{'text-danger': row.status_code && row.status_code >= 500}">
+                <td :class="{'text-danger': row.status_code && row.status_code >= 500}">
                   {{ row.elapsed_ms }}ms
                 </td>
-                <td class="mono">
+                <td>
                   <span v-if="row.input_tokens || row.output_tokens">{{ formatTokens(row.input_tokens) }} / {{ formatTokens(row.output_tokens) }}</span>
                   <span v-else>-</span>
                 </td>
@@ -133,7 +133,7 @@
         </div>
 
         <div class="pagination-footer">
-          <span class="text-base text-secondary">总计 {{ requestTotal }}</span>
+          <span class="text-14 text-secondary">总计 {{ requestTotal }}</span>
           <!-- Still fallback to el-pagination for functionally complex pagers while removing background blocks -->
           <el-pagination
             v-model:current-page="requestPage"
@@ -198,8 +198,8 @@
             </thead>
             <tbody>
               <tr v-for="row in systemLogs" :key="row.id">
-                <td class="mono">{{ row.id }}</td>
-                <td class="mono">{{ formatTime(row.created_at) }}</td>
+                <td>{{ row.id }}</td>
+                <td>{{ formatTime(row.created_at) }}</td>
                 <td style="width: 160px;">{{ formatEventType(row.event_type) }}</td>
                 <td>{{ row.message }}</td>
               </tr>
@@ -211,7 +211,7 @@
         </div>
 
         <div class="pagination-footer">
-          <span class="text-base text-secondary">总计 {{ systemTotal }}</span>
+          <span class="text-14 text-secondary">总计 {{ systemTotal }}</span>
           <el-pagination
             v-model:current-page="systemPage"
             v-model:page-size="systemPageSize"
@@ -596,9 +596,9 @@ watch(activeTab, (tab) => {
 
 /* Tab Underlines */
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
-.tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: var(--fw-normal); font-size: var(--fs-lg); cursor: pointer; position: relative; transition: color 0.2s; }
+.tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
 .tab-item:hover { color: #475569; }
-.tab-item.active { color: #0f172a; font-weight: var(--fw-medium); border-bottom: 2px solid #0f172a; }
+.tab-item.active { color: #0f172a; font-weight: var(--fw-600); border-bottom: 2px solid #0f172a; }
 
 .tab-content {
   flex: 1;
@@ -610,7 +610,7 @@ watch(activeTab, (tab) => {
 /* Filter Container */
 .filters-row { display: flex; gap: 8px; margin: 0 40px 20px 40px; align-items: center; flex-shrink: 0; }
 .filter-group { display: flex; align-items: center; gap: 10px; margin-right: 8px; }
-.filter-label { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: #94a3b8; text-transform: uppercase; }
+.filter-label { font-size: var(--fs-12); font-weight: var(--fw-600); color: #94a3b8; text-transform: uppercase; }
 
 /* Action Icon Buttons */
 .action-icon {
@@ -643,10 +643,10 @@ watch(activeTab, (tab) => {
 }
 
 /* Pills */
-.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-xs); font-weight: var(--fw-medium); display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px; }
+.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-600); display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px; }
 .pill-green { background: #ecfdf5; color: #10b981; }
 .pill-red { background: #fff1f2; color: #f43f5e; }
-.pill-grey { background: #f1f5f9; color: #64748b; font-weight: var(--fw-normal); }
+.pill-grey { background: #f1f5f9; color: #64748b; font-weight: var(--fw-400); }
 
 /* Flat Glass Table - 1 Line Strict */
 .table-container {
@@ -671,8 +671,8 @@ watch(activeTab, (tab) => {
 
 .flat-table th {
   padding: 12px 20px;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-600);
   color: #64748b;
   text-transform: uppercase;
   background: #f8fafc;
@@ -681,19 +681,18 @@ watch(activeTab, (tab) => {
   z-index: 10;
   border-bottom: 1px solid #e2e8f0;
 }
-.flat-table td { padding: 12px 20px; font-size: var(--fs-base); color: #0f172a; border-bottom: 1px solid #f1f5f9; }
+.flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: #0f172a; border-bottom: 1px solid #f1f5f9; }
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: #f8fafc; }
 
-.mono { color: #64748b; font-size: var(--fs-sm); }
-.text-danger { color: #f43f5e; font-weight: var(--fw-medium); }
-.table-link { color: #0ea5e9; cursor: pointer; text-decoration: none; font-weight: var(--fw-normal); }
+.text-danger { color: #f43f5e; font-weight: var(--fw-600); }
+.table-link { color: #0ea5e9; cursor: pointer; text-decoration: none; font-weight: var(--fw-400); }
 .table-link:hover { text-decoration: underline; }
 
 .pagination-footer { padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed rgba(226, 232, 240, 0.8); flex-shrink: 0; }
 .pagination-footer :deep(.el-pagination) { justify-content: flex-end; }
 .pagination-footer :deep(.el-pager li) { background: transparent !important; }
-.pagination-footer :deep(.el-pager li.is-active) { color: #0ea5e9; background: #f0f9ff !important; font-weight: var(--fw-bold); border-radius: 6px; }
+.pagination-footer :deep(.el-pager li.is-active) { color: #0ea5e9; background: #f0f9ff !important; font-weight: var(--fw-700); border-radius: 6px; }
 .pagination-footer :deep(.btn-prev), .pagination-footer :deep(.btn-next) { background: transparent !important; }
 
 .pagination-footer :deep(.el-select__wrapper) { padding: 4px 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: rgba(255,255,255,0.8); box-shadow: 0 1px 3px rgba(0,0,0,0.02); min-height: auto; transition: all 0.2s; }
@@ -702,7 +701,7 @@ watch(activeTab, (tab) => {
 
 /* Custom HTML Select (Headless UI Clone) */
 .custom-select { position: relative; width: 150px; }
-.custom-select-trigger { padding: 9px 36px 9px 16px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: var(--fs-base); font-weight: var(--fw-normal); color: #0f172a; background: rgba(255,255,255,0.8); box-shadow: 0 1px 3px rgba(0,0,0,0.02); cursor: pointer; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+.custom-select-trigger { padding: 9px 36px 9px 16px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); color: #0f172a; background: rgba(255,255,255,0.8); box-shadow: 0 1px 3px rgba(0,0,0,0.02); cursor: pointer; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
 .custom-select:hover .custom-select-trigger { border-color: #cbd5e1; background: #ffffff; }
 .custom-select.open .custom-select-trigger { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1); background: #ffffff; }
 .custom-select .chevron { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
@@ -710,16 +709,16 @@ watch(activeTab, (tab) => {
 
 .custom-select-options { position: absolute; top: calc(100% + 6px); left: 0; right: auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1); padding: 4px; z-index: 50; opacity: 0; transform: translateY(-5px); pointer-events: none; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); min-width: 100%; max-height: 250px; overflow-y: auto; }
 .custom-select.open .custom-select-options { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-base); color: #475569; cursor: pointer; transition: all 0.1s; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: #475569; cursor: pointer; transition: all 0.1s; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
 .custom-option:hover { background: #f1f5f9; color: #0f172a; }
-.custom-option.selected { font-weight: var(--fw-medium); color: #0ea5e9; background: #f0f9ff; }
+.custom-option.selected { font-weight: var(--fw-600); color: #0ea5e9; background: #f0f9ff; }
 .check { color:#0ea5e9; font-weight: bold; font-size:14px; margin-left:8px; }
 
 /* Keep el-dialog styles clean to match ethereal frost inside detail view */
 .detail-content { max-height: 60vh; overflow-y: auto; }
 .cards-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .detail-card { margin: 0; }
-.detail-card-header { display: flex; justify-content: space-between; font-weight: var(--fw-medium); }
+.detail-card-header { display: flex; justify-content: space-between; font-weight: var(--fw-600); }
 .url-line { font-size: 12px; color: #0ea5e9; word-break: break-all; margin-bottom: 12px; padding: 8px 12px; background: #f0f9ff; border-radius: 6px; }
 .code-block { background: #f8fafc; padding: 12px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
 .code-block:hover { border-color: #cbd5e1; }

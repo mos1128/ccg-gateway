@@ -246,7 +246,7 @@ onMounted(fetchList)
 }
 
 .page-subtitle {
-  font-size: 14px;
+  font-size: var(--fs-14);
   color: #64748b;
   margin: 0;
 }
@@ -297,8 +297,8 @@ onMounted(fetchList)
   align-items: center;
 }
 .prompt-name {
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
+  font-size: var(--fs-16);
+  font-weight: var(--fw-700);
   color: #0f172a;
   margin: 0;
   display: -webkit-box;
@@ -351,8 +351,8 @@ onMounted(fetchList)
   align-items: center;
 }
 .toggle-label {
-  font-size: var(--fs-base);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-400);
   color: #64748b;
 }
 
@@ -362,8 +362,8 @@ onMounted(fetchList)
 }
 .c-label {
   display: block;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-400);
   color: #475569;
   margin-bottom: 12px;
 }
@@ -376,7 +376,7 @@ onMounted(fetchList)
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   color: #0f172a;
   outline: none;
   transition: all 0.2s;
@@ -397,8 +397,8 @@ textarea.c-input {
   border: none;
   padding: 8px 16px;
   border-radius: 8px;
-  font-size: var(--fs-md);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-400);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -413,8 +413,8 @@ textarea.c-input {
   border: 1px solid #e2e8f0;
   padding: 8px 16px;
   border-radius: 8px;
-  font-size: var(--fs-md);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-400);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -435,7 +435,7 @@ textarea.c-input {
 }
 .empty-state p {
   margin-top: 16px;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-14);
 }
 
 .action-icon.add-btn {

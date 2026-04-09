@@ -59,11 +59,10 @@
                 <svg width="24" height="24"><use href="#icon-folder"/></svg>
               </div>
               <div class="project-info">
-                <div class="project-name">{{ project.display_name }}</div>
-                <div class="project-path">{{ project.full_path }}</div>
+                <div class="project-path-title">{{ project.full_path }}</div>
                 <div class="project-meta">
-                  <div class="mono text-xs text-muted">{{ project.session_count }} 个会话</div>
-                  <span class="mono text-xs text-muted">{{ formatSize(project.total_size) }}</span>
+                  <div class="text-12 text-muted">{{ project.session_count }} 个会话</div>
+                  <span class="text-12 text-muted">{{ formatSize(project.total_size) }}</span>
                 </div>
               </div>
               <div class="ghost-delete" @click.stop="handleDeleteProject(project)">
@@ -83,8 +82,8 @@
             <svg width="20" height="20"><use href="#icon-back"/></svg>
           </button>
           <div>
-            <h2 class="page-title text-xl">{{ sessionStore.currentProjectInfo?.display_name }}</h2>
-            <div class="text-base text-muted">{{ sessionStore.sessionTotal }} 个会话</div>
+            <div class="page-title">{{ sessionStore.currentProjectInfo?.full_path }}</div>
+            <div class="text-14 text-muted">{{ sessionStore.sessionTotal }} 个会话</div>
           </div>
         </div>
         <div class="search-box" style="width: 260px; position: relative;">
@@ -111,17 +110,17 @@
               
               <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px;">
                 <div style="display: flex; align-items: center; gap: 12px; margin-top: 2px;">
-                  <span class="mono fw-medium text-md text-primary">{{ session.session_id }}</span>
-                  <div v-if="session.git_branch" class="pill pill-blue mono">
+                  <span class="fw-medium text-md text-primary">{{ session.session_id }}</span>
+                  <div v-if="session.git_branch" class="pill pill-blue">
                     <svg width="12" height="12"><use href="#icon-branch"/></svg> {{ session.git_branch }}
                   </div>
                 </div>
 
-                <div v-if="session.first_message" class="text-base text-secondary" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 32px;">
+                <div v-if="session.first_message" class="text-14 text-secondary" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 32px;">
                   "{{ truncateText(session.first_message, 200) }}"
                 </div>
 
-                <div class="mono text-sm text-muted" style="display: flex; gap: 20px;">
+                <div class="text-12 text-muted" style="display: flex; gap: 20px;">
                   <span>{{ formatTime(session.mtime) }}</span>
                   <span>{{ formatSize(session.size) }}</span>
                 </div>
@@ -141,8 +140,8 @@
     <div :class="['drawer', { active: showSessionDrawer }]">
       <div class="drawer-header">
         <div>
-          <div class="text-sm fw-bold text-muted text-upper">会话详情</div>
-          <div class="mono text-2xl fw-bold text-primary">{{ currentSessionId }}</div>
+          <div class="text-12 fw-bold text-muted text-upper">会话详情</div>
+          <div class="text-2xl fw-bold text-primary">{{ currentSessionId }}</div>
         </div>
         <div class="drawer-close" @click="closeDrawer">
           <svg width="20" height="20"><use href="#icon-close"/></svg>
@@ -347,9 +346,9 @@ onMounted(() => {
 
 /* Tab Underlines */
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
-.tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: var(--fw-normal); font-size: var(--fs-lg); cursor: pointer; position: relative; transition: color 0.2s; }
+.tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
 .tab-item:hover { color: #475569; }
-.tab-item.active { color: #0f172a; font-weight: var(--fw-medium); border-bottom: 2px solid #0f172a; }
+.tab-item.active { color: #0f172a; font-weight: var(--fw-600); border-bottom: 2px solid #0f172a; }
 
 .project-list, .session-list {
   flex: 1;
@@ -374,19 +373,19 @@ onMounted(() => {
 
 /* Headers & Inputs */
 .page-header { display: flex; justify-content: space-between; align-items: center; margin: 0 40px 32px 40px; flex-shrink: 0; }
-.page-title { font-size: var(--fs-2xl); font-weight: var(--fw-bold); margin: 0; letter-spacing: -0.5px; color: #0f172a; }
+.page-title { font-size: var(--fs-14); font-weight: var(--fw-500); margin: 0; color: #0f172a; }
 
 .search-box { position: relative; width: 320px; }
 .search-box input { width: 100%; padding-left: 36px; border-radius: 10px; background: #ffffff; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
 
-.c-input { padding: 8px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: var(--fs-base); outline: none; background: rgba(255,255,255,0.8); color: #0f172a; transition: all 0.2s; }
+.c-input { padding: 8px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: var(--fs-14); outline: none; background: rgba(255,255,255,0.8); color: #0f172a; transition: all 0.2s; }
 .c-input:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1); background: #ffffff; }
 
-.b-button-outline { background: white; color: #0f172a; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-base); font-weight: var(--fw-normal); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: all 0.2s;}
+.b-button-outline { background: white; color: #0f172a; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: all 0.2s;}
 .b-button-outline:hover { background: #f8fafc; border-color: #cbd5e1; }
 
-.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-xs); font-weight: var(--fw-medium); display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px; }
+.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-600); display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px; }
 .pill-grey { background: #f1f5f9; color: #64748b; }
 .pill-blue { background: #f0f9ff; color: #0ea5e9; }
 
@@ -397,8 +396,7 @@ onMounted(() => {
 
 .project-icon-box { width: 48px; height: 48px; border-radius: 12px; background: #f1f5f9; color: #0284c7; display: flex; align-items: center; justify-content: center; margin-right: 16px; flex-shrink: 0; }
 .project-info { flex: 1; min-width: 0; padding-right: 28px; }
-.project-name { font-weight: var(--fw-bold); font-size: var(--fs-lg); color: #0f172a; margin-bottom: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
-.project-path { font-size: var(--fs-sm); color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 8px; }
+.project-path-title { font-weight: var(--fw-500); font-size: var(--fs-14); color: #0f172a; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
 .project-meta { display: flex; align-items: center; gap: 12px; }
 
 .ghost-delete { position: absolute; right: 16px; top: 50%; transform: translateY(-50%) !important; color: #cbd5e1; padding: 6px; border-radius: 6px; z-index: 10; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.2s, background-color 0.2s, color 0.2s; }
@@ -421,15 +419,15 @@ onMounted(() => {
 .drawer-body { flex: 1; overflow-y: auto; padding: 32px; display: flex; flex-direction: column; gap: 24px; background: #ffffff; }
 
 /* Chat Bubbles */
-.bubble { max-width: 92%; line-height: 1.6; font-size: var(--fs-md); position: relative; display: flex; flex-direction: column; gap: 6px; }
-.bubble-role { font-size: var(--fs-sm); font-weight: var(--fw-medium); color: #94a3b8; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.bubble { max-width: 92%; line-height: 1.6; font-size: var(--fs-14); position: relative; display: flex; flex-direction: column; gap: 6px; }
+.bubble-role { font-size: var(--fs-12); font-weight: var(--fw-600); color: #94a3b8; display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
 .bubble-user { align-self: flex-end; }
 .bubble-user .bubble-content { background: #f1f5f9; color: #0f172a; padding: 14px 20px; padding-right: 44px; border-radius: 12px; border-bottom-right-radius: 2px; word-break: break-word; white-space: pre-wrap; position: relative; }
 .bubble-user .bubble-role { justify-content: flex-end; }
 .bubble-bot { align-self: flex-start; }
 .bubble-bot .bubble-content { background: #f8fafc; color: #334155; padding: 14px 20px; padding-right: 44px; border-radius: 12px; border-bottom-left-radius: 2px; border: 1px solid #f1f5f9; word-break: break-word; white-space: pre-wrap; position: relative; }
 
-.expand-btn { margin-top: 12px; border-top: 1px dashed #e2e8f0; padding-top: 8px; color: #64748b; font-size: var(--fs-sm); font-weight: var(--fw-medium); text-align: center; cursor: pointer; }
+.expand-btn { margin-top: 12px; border-top: 1px dashed #e2e8f0; padding-top: 8px; color: #64748b; font-size: var(--fs-12); font-weight: var(--fw-600); text-align: center; cursor: pointer; }
 .expand-btn:hover { color: #0f172a; }
 
 .copy-btn { 

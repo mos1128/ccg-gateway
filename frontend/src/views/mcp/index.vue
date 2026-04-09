@@ -97,8 +97,8 @@
         <div class="form-group">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <label class="c-label" style="margin-bottom: 0;">配置 JSON <span class="required">*</span></label>
-            <button class="b-button-outline text-sm" style="padding: 4px 10px;" @click="formatJson">
-              <svg width="14" height="14" style="margin-right: 4px;"><use href="#icon-code"/></svg>
+            <button class="f-button ghost-plain sm" @click="formatJson">
+              <svg width="12" height="12" style="margin-right: 4px;"><use href="#icon-code"/></svg>
               格式化
             </button>
           </div>
@@ -327,8 +327,8 @@ onMounted(fetchList)
   justify-content: space-between;
   align-items: center;
 .mcp-name {
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
+  font-size: var(--fs-16);
+  font-weight: var(--fw-700);
   color: #0f172a;
   margin: 0;
   display: -webkit-box;
@@ -383,8 +383,8 @@ onMounted(fetchList)
   align-items: center;
 }
 .toggle-label {
-  font-size: var(--fs-base);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-500);
   color: #64748b;
 }
 
@@ -394,8 +394,8 @@ onMounted(fetchList)
 }
 .c-label {
   display: block;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-400);
   color: #475569;
   margin-bottom: 12px;
 }
@@ -408,7 +408,7 @@ onMounted(fetchList)
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  font-size: var(--fs-md);
+  font-size: var(--fs-14);
   color: #0f172a;
   outline: none;
   transition: all 0.2s;
@@ -423,43 +423,42 @@ textarea.c-input {
 }
 .error-tip {
   color: #f43f5e;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-12);
   margin-top: 6px;
 }
 
 /* Buttons */
-.b-button {
+.f-button {
   background: #0ea5e9;
   color: #ffffff;
   border: none;
   padding: 8px 16px;
   border-radius: 8px;
-  font-size: var(--fs-md);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-400);
   cursor: pointer;
   display: flex;
   align-items: center;
   transition: all 0.2s;
 }
-.b-button:hover {
+.f-button:hover {
   background: #0284c7;
 }
-.b-button-outline {
-  background: #ffffff;
-  color: #0f172a;
-  border: 1px solid #e2e8f0;
-  padding: 8px 16px;
+.f-button.ghost-plain {
+  background: transparent;
+  color: #64748b;
+  padding: 8px 12px;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-600);
   border-radius: 8px;
-  font-size: var(--fs-md);
-  font-weight: var(--fw-normal);
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
 }
-.b-button-outline:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+.f-button.ghost-plain:hover {
+  color: #0f172a;
+  background: #f1f5f9;
+}
+.f-button.ghost-plain.sm {
+  padding: 4px 8px;
+  font-size: var(--fs-12);
 }
 
 .empty-state {
@@ -472,7 +471,7 @@ textarea.c-input {
 }
 .empty-state p {
   margin-top: 16px;
-  font-size: 15px;
+  font-size: var(--fs-14);
 }
 
 .action-icon.add-btn {

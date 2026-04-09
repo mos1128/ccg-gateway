@@ -95,7 +95,7 @@
                 
                 <div style="flex: 1; min-width: 0;">
                   <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <div class="text-xl fw-normal text-primary" style="white-space: nowrap;" :style="{ color: !element.enabled ? '#94a3b8' : '#0f172a' }">
+                    <div class="text-16 fw-medium text-primary" style="white-space: nowrap;" :style="{ color: !element.enabled ? '#94a3b8' : '#0f172a' }">
                       {{ element.name }}
                     </div>
                     <div v-if="element.is_blacklisted" class="tag" style="background: rgba(244, 63, 94, 0.1); color: #f43f5e; white-space: nowrap;">
@@ -117,14 +117,14 @@
               <div style="display: flex; align-items: center; gap: 40px; flex-shrink: 0; margin-left: 24px;">
                 <div style="display: flex; gap: 24px;">
                   <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
-                    <div class="text-sm text-muted" style="margin-bottom: 2px; white-space: nowrap;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#94a3b8' }">失败次数</div>
-                    <div class="text-lg fw-normal" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#0f172a' }">
+                    <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#94a3b8' }">失败次数</div>
+                    <div class="text-16" style="font-weight: 500;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#0f172a' }">
                       {{ element.consecutive_failures }}
                     </div>
                   </div>
                   <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
-                    <div class="text-sm text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败阈值</div>
-                    <div class="text-lg fw-normal text-secondary">{{ element.failure_threshold }}</div>
+                    <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败阈值</div>
+                    <div class="text-16 text-secondary" style="font-weight: 500;">{{ element.failure_threshold }}</div>
                   </div>
                 </div>
                 
@@ -181,7 +181,7 @@
                 
                 <div>
                   <div style="display: flex; align-items: center; gap: 12px;">
-                    <div class="text-xl fw-normal text-primary">{{ element.name }}</div>
+                    <div class="text-16 fw-medium text-primary">{{ element.name }}</div>
                     <div v-if="element.is_active" class="tag" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">激活中</div>
                   </div>
                 </div>
@@ -224,17 +224,14 @@
             <div style="flex: 1;">
               <label class="c-label">失败鉴权阈值 (次)</label>
               <input type="number" v-model.number="form.failure_threshold" class="c-input">
-              <div class="text-xs text-muted" style="margin-top: 10px;">连续失败次数达到此值后拉黑。</div>
             </div>
             <div style="flex: 1;">
               <label class="c-label">拉黑时长 (分钟)</label>
               <input type="number" v-model.number="form.blacklist_minutes" class="c-input">
-              <div class="text-xs text-muted" style="margin-top: 10px;">被拉黑后这段时间不再转发请求。</div>
             </div>
             <div style="flex: 1;">
               <label class="c-label">自定义 UA (选填)</label>
               <input type="text" v-model="form.custom_useragent" class="c-input" placeholder="留空则使用原始">
-              <div class="text-xs text-muted" style="margin-top: 10px;">强制替换转发请求的 User-Agent。</div>
             </div>
           </div>
 
@@ -242,10 +239,10 @@
           <div style="margin-bottom: 40px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
               <div>
-                <div class="text-lg fw-normal text-primary">模型转发配置 (映射)</div>
-                <div class="text-sm text-secondary" style="margin-top: 6px;">将 CLI 请求的源模型名称，转译为该服务商真正的目标模型名称。</div>
+                <div class="text-16 fw-normal text-primary">模型映射</div>
+                <div class="text-12 text-secondary" style="margin-top: 6px;">映射 CLI 请求的源模型名称为服务商模型</div>
               </div>
-              <button class="b-button-outline text-base" style="padding: 6px 12px;" @click="addModelMap">+ 添加映射</button>
+              <button class="b-button-outline text-14" style="padding: 6px 12px;" @click="addModelMap">+ 添加</button>
             </div>
 
             <div style="display: flex; flex-direction: column; gap: 20px;">
@@ -262,10 +259,10 @@
           <div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
               <div>
-                <div class="text-lg fw-normal text-primary">模型黑名单</div>
-                <div class="text-sm text-secondary" style="margin-top: 6px;">配置该服务商不支持的模型正则/通配符 (如: claude-opus-*)。</div>
+                <div class="text-16 fw-normal text-primary">模型黑名单</div>
+                <div class="text-12 text-secondary" style="margin-top: 6px;">配置服务商不支持的模型名称</div>
               </div>
-              <button class="b-button-outline text-base" style="padding: 6px 12px;" @click="addModelBlacklist">+ 加黑名单</button>
+              <button class="b-button-outline text-14" style="padding: 6px 12px;" @click="addModelBlacklist">+ 添加</button>
             </div>
 
             <div style="display: flex; flex-direction: column; gap: 20px;">
@@ -286,35 +283,35 @@
           </div>
 
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-            <div class="text-lg fw-normal text-primary">配置文件</div>
-            <button class="b-button-outline text-base" style="padding: 6px 12px;" @click="handleReadFromCli">读取当前 CLI 配置</button>
+            <div class="text-16 fw-normal text-primary">配置文件</div>
+            <button class="b-button-outline text-14" style="padding: 6px 12px;" @click="handleReadFromCli">读取当前 CLI 配置</button>
           </div>
 
           <template v-if="activeCliType === 'claude_code'">
              <div style="margin-bottom: 24px;">
-               <div class="text-sm text-secondary" style="margin-bottom: 8px;">~/.claude/settings.json</div>
+               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.claude/settings.json</div>
                <el-input type="textarea" :rows="10" v-model="credentialForm.claude_settings" placeholder='{"ANTHROPIC_API_KEY": "..."}' />
              </div>
           </template>
 
           <template v-if="activeCliType === 'codex'">
             <div style="margin-bottom: 24px;">
-               <div class="text-sm text-secondary" style="margin-bottom: 8px;">~/.codex/auth.json</div>
+               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.codex/auth.json</div>
                <el-input type="textarea" :rows="10" v-model="credentialForm.codex_auth" />
              </div>
           </template>
 
           <template v-if="activeCliType === 'gemini'">
              <div style="margin-bottom: 24px;">
-               <div class="text-sm text-secondary" style="margin-bottom: 8px;">~/.gemini/oauth_creds.json</div>
+               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.gemini/oauth_creds.json</div>
                <el-input type="textarea" :rows="4" v-model="credentialForm.gemini_oauth" />
              </div>
              <div style="margin-bottom: 24px;">
-               <div class="text-sm text-secondary" style="margin-bottom: 8px;">~/.gemini/google_accounts.json</div>
+               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.gemini/google_accounts.json</div>
                <el-input type="textarea" :rows="3" v-model="credentialForm.gemini_accounts" />
              </div>
              <div style="margin-bottom: 24px;">
-               <div class="text-sm text-secondary" style="margin-bottom: 8px;">~/.gemini/settings.json</div>
+               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.gemini/settings.json</div>
                <el-input type="textarea" :rows="4" v-model="credentialForm.gemini_settings" />
              </div>
           </template>
@@ -334,7 +331,7 @@
       <div style="margin-bottom: 24px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
           <label class="c-label" style="margin-bottom: 0;">选择服务商</label>
-          <span class="text-sm text-info fw-normal" style="cursor: pointer;" @click="toggleAllDetectProviders">
+          <span class="text-12 text-info fw-normal" style="cursor: pointer;" @click="toggleAllDetectProviders">
             {{ isAllDetectSelected ? '取消全选' : '全选' }}
           </span>
         </div>
@@ -342,7 +339,7 @@
           <label
             v-for="p in detectProviderList"
             :key="p.id"
-            class="text-base"
+            class="text-14"
             style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border-radius: 8px; transition: all 0.2s; user-select: none;"
             :style="{
               color: detectSelectedIds.includes(p.id) ? '#0f172a' : '#94a3b8',
@@ -358,12 +355,12 @@
                 background: detectSelectedIds.includes(p.id) ? '#0ea5e9' : 'transparent'
               }"
             >
-              <span v-if="detectSelectedIds.includes(p.id)" class="text-xs fw-bold" style="color: #fff;">✓</span>
+              <span v-if="detectSelectedIds.includes(p.id)" class="text-12 fw-bold" style="color: #fff;">✓</span>
             </div>
             {{ p.name }}
           </label>
         </div>
-        <div v-if="detectProviderList.length === 0" class="text-muted text-base" style="padding: 8px 0;">
+        <div v-if="detectProviderList.length === 0" class="text-muted text-14" style="padding: 8px 0;">
           当前 CLI 类型无已启用的服务商
         </div>
       </div>
@@ -402,7 +399,7 @@
                   :show-after="200"
                 >
                   <template #content>
-                    <div class="text-base" style="max-width: 350px; line-height: 1.6; word-break: break-word; user-select: text; color: #334155;">
+                    <div class="text-14" style="max-width: 350px; line-height: 1.6; word-break: break-word; user-select: text; color: #334155;">
                       {{ r.response_text }}
                     </div>
                   </template>
@@ -845,9 +842,9 @@ onUnmounted(() => {
 
 /* Tab Underlines */
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
-.tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: var(--fw-normal); font-size: var(--fs-lg); cursor: pointer; position: relative; transition: color 0.2s; }
+.tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
 .tab-item:hover { color: #475569; }
-.tab-item.active { color: #0f172a; font-weight: var(--fw-medium); border-bottom: 2px solid #0f172a; }
+.tab-item.active { color: #0f172a; font-weight: var(--fw-600); border-bottom: 2px solid #0f172a; }
 
 .page-header { flex-shrink: 0; margin: 0 40px 32px 40px; }
 
@@ -868,23 +865,23 @@ onUnmounted(() => {
 .b-card:hover { border-color: #e2e8f0; }
 
 .b-segmented { display: inline-flex; background: #e2e8f0; padding: 4px; border-radius: 10px; flex-shrink: 0; }
-.b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-md); color: #475569; border-radius: 8px; cursor: pointer; font-weight: var(--fw-normal); transition: all 0.2s ease; }
+.b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: #475569; border-radius: 8px; cursor: pointer; font-weight: var(--fw-500); transition: all 0.2s ease; }
 .b-seg-btn.active { background: #ffffff; color: #0f172a; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
-.b-button { background: #0ea5e9; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-md); font-weight: var(--fw-normal); cursor: pointer; transition: background 0.2s; }
+.b-button { background: #0ea5e9; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
 .b-button:hover { background: #0284c7; }
 
-.b-button-outline { background: white; color: #0f172a; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-md); font-weight: var(--fw-normal); cursor: pointer; transition: background 0.2s; }
+.b-button-outline { background: white; color: #0f172a; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
 .b-button-outline:hover { background: #f8fafc; }
 
 .b-button-icon { background: white; border: 1px solid #e2e8f0; color: #64748b; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; }
 .b-button-icon:hover { background: #fee2e2; color: #ef4444; border-color: #fca5a5; }
 
-.tag { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: var(--fw-normal); }
+.tag { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-400); }
 
-.c-input { width: 100%; padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: var(--fs-md); outline: none; transition: border-color 0.2s; }
+.c-input { width: 100%; padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: var(--fs-14); outline: none; transition: border-color 0.2s; }
 .c-input:focus { border-color: #0ea5e9; }
-.c-label { font-size: var(--fs-base); font-weight: var(--fw-normal); color: #475569; margin-bottom: 12px; display: block; }
+.c-label { font-size: var(--fs-14); font-weight: var(--fw-400); color: #475569; margin-bottom: 12px; display: block; }
 
 .drag-handle { display: flex; flex-direction: column; gap: 3px; cursor: grab; padding: 8px; margin-left: -8px; opacity: 0.3; transition: opacity 0.2s; }
 .drag-handle:hover { opacity: 0.8; }
@@ -917,16 +914,16 @@ onUnmounted(() => {
 /* Detection Table */
 .flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; table-layout: fixed; }
 .flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
-.flat-table th { padding: 12px 20px; font-size: var(--fs-sm); font-weight: var(--fw-medium); color: #64748b; text-transform: uppercase; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10; }
-.flat-table td { padding: 12px 20px; font-size: var(--fs-base); color: #0f172a; border-bottom: 1px solid #f1f5f9; }
+.flat-table th { padding: 12px 20px; font-size: var(--fs-12); font-weight: var(--fw-600); color: #64748b; text-transform: uppercase; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10; }
+.flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: #0f172a; border-bottom: 1px solid #f1f5f9; }
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: #f8fafc; }
-.mono { color: #64748b; font-size: var(--fs-sm); }
-.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-xs); font-weight: var(--fw-medium); display: inline-flex; align-items: center; letter-spacing: 0.3px; }
+.mono { color: #64748b; font-size: var(--fs-12); }
+.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-600); display: inline-flex; align-items: center; letter-spacing: 0.3px; }
 .pill-green { background: #ecfdf5; color: #10b981; }
 .pill-red { background: #fff1f2; color: #f43f5e; }
-.pill-grey { background: #f1f5f9; color: #64748b; font-weight: var(--fw-normal); }
-.code-block { background: #f8fafc; padding: 12px; border-radius: 6px; font-size: var(--fs-sm); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
+.pill-grey { background: #f1f5f9; color: #64748b; font-weight: var(--fw-400); }
+.code-block { background: #f8fafc; padding: 12px; border-radius: 6px; font-size: var(--fs-12); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
 .code-block:hover { border-color: #cbd5e1; }
 
 .action-icon.detect-btn {

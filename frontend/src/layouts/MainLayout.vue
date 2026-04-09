@@ -200,8 +200,8 @@ body {
 }
 
 .logo {
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
+  font-size: var(--fs-20);
+  font-weight: var(--fw-700);
   margin-bottom: 24px;
   color: #0ea5e9;
   padding-left: 16px;
@@ -221,8 +221,8 @@ body {
 .nav-group { margin-bottom: 24px; }
 
 .nav-group-title {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-600);
   color: #94a3b8;
   margin-bottom: 12px;
   letter-spacing: 1px;
@@ -234,8 +234,8 @@ body {
   border-radius: 8px;
   margin-bottom: 4px;
   cursor: pointer;
-  font-size: var(--fs-md);
-  font-weight: var(--fw-normal);
+  font-size: var(--fs-14);
+  font-weight: var(--fw-500);
   color: #0f172a;
   transition: all 0.2s;
 }
@@ -248,7 +248,7 @@ body {
   background: #ffffff;
   color: #0ea5e9;
   box-shadow: 0 2px 8px rgba(0,0,0,0.03);
-  font-weight: var(--fw-medium);
+  font-weight: var(--fw-600);
 }
 
 /* Footer stats */
@@ -290,8 +290,8 @@ body {
 .footer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .version-tag {
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-700);
   color: #cbd5e1;
   letter-spacing: 0.5px;
 }
