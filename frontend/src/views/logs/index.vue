@@ -407,7 +407,11 @@ async function updateLogSettings() {
   try {
     // using the toggled value
     await logsApi.updateSettings({ debug_log: logEnabled.value })
-    notify('日志设置已更新')
+    if (logEnabled.value) {
+      notify('已开启日志记录', 'success')
+    } else {
+      notify('已关闭日志记录', 'info')
+    }
   } catch {}
 }
 

@@ -45,7 +45,7 @@
       <!-- 底部图表与日志 -->
       <div style="display: flex; gap: 24px; flex-wrap: wrap;">
         <!-- 图表区 -->
-        <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; min-width: 450px;">
+        <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; min-width: 400px;">
           <div class="b-card-title">请求统计趋势</div>
           <div style="height: 240px; width: 100%;">
             <v-chart class="chart" :option="chartOption" autoresize />
@@ -57,24 +57,24 @@
           <div class="b-card-title" style="margin-bottom: 16px;">服务商统计</div>
           <div style="flex: 1; min-height: 240px;">
             <el-table :data="providerStats" style="width: 100%" :max-height="240">
-              <el-table-column prop="provider_name" label="服务商" min-width="120" show-overflow-tooltip>
+              <el-table-column prop="provider_name" label="服务商" min-width="100" show-overflow-tooltip>
                 <template #default="scope">
-                  <span style="color: #475569; font-size: 14px; font-weight: 500;">{{ scope.row.provider_name }}</span>
+                  <span class="mono" style="color: #475569; font-size: 14px;">{{ scope.row.provider_name }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="total_requests" label="请求" width="90">
+              <el-table-column prop="total_requests" label="请求" min-width="100">
                 <template #default="scope">
-                  <span class="mono" style="color: #64748b; font-size: 14px;">{{ scope.row.total_requests }}</span>
+                  <span class="mono" style="color: #475569; font-size: 14px;">{{ scope.row.total_requests }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="成功率" width="100">
+              <el-table-column label="成功率" min-width="100">
                 <template #default="scope">
-                  <span class="mono" style="color: #64748b; font-size: 14px;">{{ scope.row.success_rate.toFixed(1) }}%</span>
+                  <span class="mono" style="color: #475569; font-size: 14px;">{{ scope.row.success_rate.toFixed(1) }}%</span>
                 </template>
               </el-table-column>
-              <el-table-column label="Token" width="110">
+              <el-table-column label="Token" min-width="100">
                 <template #default="scope">
-                  <span class="mono" style="color: #64748b; font-size: 14px; font-weight: 500;">{{ formatTokens(scope.row.total_tokens) }}</span>
+                  <span class="mono" style="color: #475569; font-size: 14px;">{{ formatTokens(scope.row.total_tokens) }}</span>
                 </template>
               </el-table-column>
             </el-table>
