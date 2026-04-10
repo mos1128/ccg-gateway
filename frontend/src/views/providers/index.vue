@@ -117,14 +117,14 @@
               <div style="display: flex; align-items: center; gap: 40px; flex-shrink: 0; margin-left: 24px;">
                 <div style="display: flex; gap: 24px;">
                   <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
-                    <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#94a3b8' }">失败次数</div>
-                    <div class="mono text-16" style="font-weight: 500;" :style="{ color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#0f172a' }">
+                    <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败次数</div>
+                    <div class="mono text-16" :style="{ 'font-weight': 'var(--fw-500)', color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#0f172a' }">
                       {{ element.consecutive_failures }}
                     </div>
                   </div>
                   <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
                     <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败阈值</div>
-                    <div class="mono text-16 text-secondary" style="font-weight: 500;">{{ element.failure_threshold }}</div>
+                    <div class="mono text-16" style="font-weight: var(--fw-500); color: #0f172a;">{{ element.failure_threshold }}</div>
                   </div>
                 </div>
                 
