@@ -163,7 +163,15 @@
     </AppModal>
 
     <!-- WebDAV Settings Dialog -->
-    <AppModal v-model="webdavSettingsVisible" title="WebDAV 设置" width="480px" @confirm="handleSaveWebdav">
+    <AppModal 
+      v-model="webdavSettingsVisible" 
+      title="WebDAV 设置" 
+      width="480px" 
+      :confirmDisabled="savingWebdav"
+      :cancelDisabled="savingWebdav"
+      :confirmText="savingWebdav ? '保存中...' : '保存'"
+      @confirm="handleSaveWebdav"
+    >
       <div class="webdav-settings-form">
         <div class="input-item">
           <label class="item-label">服务器地址</label>
@@ -180,16 +188,12 @@
           </div>
         </div>
       </div>
-      <template #footer>
-          <button class="b-button-outline" @click="webdavSettingsVisible = false">取消</button>
-          <button class="f-button ghost-plain" @click="handleTestWebdav" :disabled="testingWebdav" style="margin-right: auto;">
-            {{ testingWebdav ? '测试中...' : '测试链接' }}
-          </button>
-          <button class="b-button" @click="handleSaveWebdav" :disabled="savingWebdav">
-            {{ savingWebdav ? '保存中...' : '保存' }}
-          </button>
-        </template>
-      </AppModal>
+      <template #footer-extra>
+        <button class="f-button ghost-plain" @click="handleTestWebdav" :disabled="testingWebdav" style="margin-right: auto;">
+          {{ testingWebdav ? '测试中...' : '测试链接' }}
+        </button>
+      </template>
+    </AppModal>
   </div>
 </template>
 <script setup lang="ts">

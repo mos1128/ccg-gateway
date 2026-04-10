@@ -953,13 +953,12 @@ onUnmounted(() => {
 .action-icon.detect-btn {
   width: 36px;
   height: 36px;
-  color: #0f172a;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.1);
 }
 .action-icon.detect-btn:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: rgba(14, 165, 233, 0.2);
+  color: #0ea5e9;
 }
 
 .action-icon.add-btn {

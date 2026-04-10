@@ -11,8 +11,9 @@
         </div>
         <div v-if="showFooter" class="modal-footer">
           <slot name="footer">
-            <button class="b-button-outline" @click="handleCancel">{{ cancelText }}</button>
-            <button class="b-button" @click="handleConfirm">{{ confirmText }}</button>
+            <slot name="footer-extra"></slot>
+            <button class="b-button-outline" :disabled="cancelDisabled" @click="handleCancel">{{ cancelText }}</button>
+            <button class="b-button" :disabled="confirmDisabled" @click="handleConfirm">{{ confirmText }}</button>
           </slot>
         </div>
       </div>
@@ -30,11 +31,15 @@ const props = withDefaults(defineProps<{
   showFooter?: boolean
   cancelText?: string
   confirmText?: string
+  cancelDisabled?: boolean
+  confirmDisabled?: boolean
 }>(), {
   width: '640px',
   showFooter: true,
   cancelText: '取消',
-  confirmText: '保存'
+  confirmText: '保存',
+  cancelDisabled: false,
+  confirmDisabled: false
 })
 
 const emit = defineEmits<{
