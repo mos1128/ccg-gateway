@@ -448,7 +448,7 @@ onMounted(() => {
   flex: 1; text-align: center; padding: 8px 12px; font-size: var(--fs-14); font-weight: var(--fw-600);
   color: var(--color-text-secondary); cursor: pointer; border-radius: 9px; transition: all 0.2s;
 }
-.seg-item.active { background: var(--color-bg); color: var(--color-text); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.seg-item.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
 
 /* Buttons */
 .f-button {

@@ -255,7 +255,7 @@ defineExpose({ handleSave })
 
 .frost-segmented .seg-item.active {
   background: var(--color-bg);
-  color: var(--color-text);
+  color: var(--color-primary);
   box-shadow: 0 1px 3px var(--color-shadow-sm);
 }
 

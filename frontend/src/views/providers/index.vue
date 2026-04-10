@@ -891,7 +891,7 @@ onUnmounted(() => {
 
 .b-segmented { display: inline-flex; background: var(--color-border); padding: 4px; border-radius: 10px; flex-shrink: 0; }
 .b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: var(--color-text-secondary); border-radius: 8px; cursor: pointer; font-weight: var(--fw-500); transition: all 0.2s ease; }
-.b-seg-btn.active { background: var(--color-bg); color: var(--color-text); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.b-seg-btn.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
 .b-button { background: var(--color-primary); color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
 .b-button:hover { background: var(--color-primary-hover); }
