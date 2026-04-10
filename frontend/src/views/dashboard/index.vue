@@ -238,7 +238,7 @@ const chartOption = computed(() => {
   const successData = dates.map(d => dateMap.get(d)!.success)
 
   return {
-    tooltip: { trigger: 'axis', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: 'var(--color-border)', textStyle: { color: 'var(--color-text)' } },
+    tooltip: { trigger: 'axis', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#e2e8f0', textStyle: { color: '#0f172a' } },
     legend: { show: false },
     grid: { top: 20, right: 40, bottom: 20, left: 40, containLabel: true },
     xAxis: {
@@ -247,13 +247,13 @@ const chartOption = computed(() => {
       data: dates,
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: 'var(--color-text-weak)', margin: 12 }
+      axisLabel: { color: '#94a3b8', margin: 12 }
     },
     yAxis: {
       type: 'value',
       name: '',
-      splitLine: { lineStyle: { type: 'dashed', color: 'var(--color-bg-subtle)' } },
-      axisLabel: { color: 'var(--color-text-weak)' }
+      splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } },
+      axisLabel: { color: '#94a3b8' }
     },
     series: [
       {
@@ -261,7 +261,7 @@ const chartOption = computed(() => {
         type: 'line',
         smooth: true,
         symbol: 'none',
-        lineStyle: { width: 3, color: 'var(--color-primary)' },
+        lineStyle: { width: 3, color: '#0ea5e9' },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(14, 165, 233, 0.3)' },
@@ -275,7 +275,7 @@ const chartOption = computed(() => {
         type: 'line',
         smooth: true,
         symbol: 'none',
-        lineStyle: { width: 3, color: 'var(--color-success)' },
+        lineStyle: { width: 3, color: '#10b981' },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(16, 185, 129, 0.3)' },
