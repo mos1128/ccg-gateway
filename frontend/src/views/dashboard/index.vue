@@ -238,7 +238,7 @@ const chartOption = computed(() => {
   const successData = dates.map(d => dateMap.get(d)!.success)
 
   return {
-    tooltip: { trigger: 'axis', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#e2e8f0', textStyle: { color: '#0f172a' } },
+    tooltip: { trigger: 'axis', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: 'var(--color-border)', textStyle: { color: 'var(--color-text)' } },
     legend: { show: false },
     grid: { top: 20, right: 40, bottom: 20, left: 40, containLabel: true },
     xAxis: {
@@ -247,13 +247,13 @@ const chartOption = computed(() => {
       data: dates,
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#94a3b8', margin: 12 }
+      axisLabel: { color: 'var(--color-text-weak)', margin: 12 }
     },
     yAxis: {
       type: 'value',
       name: '',
-      splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } },
-      axisLabel: { color: '#94a3b8' }
+      splitLine: { lineStyle: { type: 'dashed', color: 'var(--color-bg-subtle)' } },
+      axisLabel: { color: 'var(--color-text-weak)' }
     },
     series: [
       {
@@ -261,7 +261,7 @@ const chartOption = computed(() => {
         type: 'line',
         smooth: true,
         symbol: 'none',
-        lineStyle: { width: 3, color: '#0ea5e9' },
+        lineStyle: { width: 3, color: 'var(--color-primary)' },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(14, 165, 233, 0.3)' },
@@ -275,7 +275,7 @@ const chartOption = computed(() => {
         type: 'line',
         smooth: true,
         symbol: 'none',
-        lineStyle: { width: 3, color: '#10b981' },
+        lineStyle: { width: 3, color: 'var(--color-success)' },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(16, 185, 129, 0.3)' },
@@ -315,27 +315,27 @@ onMounted(async () => {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-shrink: 0; }
 .page-title { font-size: var(--fs-20); font-weight: var(--fw-700); margin: 0; letter-spacing: -0.5px; }
 
-.b-card { background: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); padding: 24px; margin-bottom: 24px; transition: border-color 0.2s; border: 1px solid transparent; }
-.b-card:hover { border-color: #e2e8f0; }
-.b-card-title { font-size: var(--fs-16); font-weight: var(--fw-600); margin-bottom: 20px; color: #0f172a; }
+.b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); padding: 24px; margin-bottom: 24px; transition: border-color 0.2s; border: 1px solid transparent; }
+.b-card:hover { border-color: var(--color-border); }
+.b-card-title { font-size: var(--fs-16); font-weight: var(--fw-600); margin-bottom: 20px; color: var(--color-text); }
 
-.status-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e1; }
-.status-dot.running { background: #10b981; box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--color-text-weak); }
+.status-dot.running { background: var(--color-success); box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
 
-.cli-title { font-size: var(--fs-16); font-weight: var(--fw-700); color: #0f172a; }
-.cli-disabled { font-size: var(--fs-14); font-weight: var(--fw-400); color: #94a3b8; margin-left: 4px; }
+.cli-title { font-size: var(--fs-16); font-weight: var(--fw-700); color: var(--color-text); }
+.cli-disabled { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-weak); margin-left: 4px; }
 
-.b-segmented { display: inline-flex; background: #e2e8f0; padding: 4px; border-radius: 10px; }
-.b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: #475569; border-radius: 8px; font-weight: var(--fw-500); transition: all 0.2s ease; cursor: pointer; }
-.b-seg-btn.active { background: #ffffff; color: #0f172a; box-shadow: 0 1px 3px rgba(0,0,0,0.1); pointer-events: none; }
+.b-segmented { display: inline-flex; background: var(--color-border); padding: 4px; border-radius: 10px; }
+.b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: var(--color-text-muted); border-radius: 8px; font-weight: var(--fw-500); transition: all 0.2s ease; cursor: pointer; }
+.b-seg-btn.active { background: var(--color-bg); color: var(--color-text); box-shadow: 0 1px 3px rgba(0,0,0,0.1); pointer-events: none; }
 
 .kpi-card { flex: 1; padding: 24px 20px !important; margin-bottom: 0 !important; text-align: center; display: flex; flex-direction: column; justify-content: center; }
-.kpi-title { font-size: var(--fs-14); font-weight: var(--fw-500); color: #64748b; margin-bottom: 12px; }
+.kpi-title { font-size: var(--fs-14); font-weight: var(--fw-500); color: var(--color-text-muted); margin-bottom: 12px; }
 .kpi-value { font-size: var(--fs-32); font-weight: var(--fw-700); letter-spacing: -1px; }
 
-.text-blue { color: #0ea5e9; }
-.text-green { color: #10b981; }
-.table-cell { font-size: var(--fs-14); color: #0f172a; }
+.text-blue { color: var(--color-primary); }
+.text-green { color: var(--color-success); }
+.table-cell { font-size: var(--fs-14); color: var(--color-text); }
 
 .chart { width: 100%; height: 100%; }
 </style>
