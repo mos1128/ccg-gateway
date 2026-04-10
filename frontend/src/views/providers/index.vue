@@ -68,7 +68,7 @@
 
     <!-- PROXY MODE LIST -->
     <div v-if="viewMode === 'proxy'" class="b-card list-container" v-loading="providerStore.loading">
-      <div v-if="providerStore.providers.length === 0" style="padding: 40px; text-align: center; color: #94a3b8;">
+      <div v-if="providerStore.providers.length === 0" style="padding: 40px; text-align: center; color: var(--color-text-weak);">
         暂无服务商
       </div>
       
@@ -82,11 +82,11 @@
           <template #item="{ element, index }">
             <div :style="{
               padding: '24px',
-              borderBottom: index === providerStore.providers.length - 1 ? 'none' : '1px solid #f1f5f9',
+              borderBottom: index === providerStore.providers.length - 1 ? 'none' : '1px solid var(--color-bg-subtle)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              background: element.is_blacklisted ? 'rgba(244, 63, 94, 0.02)' : '#ffffff'
+              background: element.is_blacklisted ? 'rgba(244, 63, 94, 0.02)' : 'var(--color-bg)'
             }">
               <div style="display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0;">
                 <div class="drag-handle" aria-label="拖拽排序" style="flex-shrink: 0;">
@@ -95,19 +95,19 @@
                 
                 <div style="flex: 1; min-width: 0;">
                   <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <div class="text-16 fw-medium text-primary" style="white-space: nowrap;" :style="{ color: !element.enabled ? '#94a3b8' : '#0f172a' }">
+                    <div class="text-16 fw-medium text-primary" style="white-space: nowrap;" :style="{ color: !element.enabled ? 'var(--color-text-weak)' : 'var(--color-text)' }">
                       {{ element.name }}
                     </div>
-                    <div v-if="element.is_blacklisted" class="tag" style="background: rgba(244, 63, 94, 0.1); color: #f43f5e; white-space: nowrap;">
+                    <div v-if="element.is_blacklisted" class="tag" style="background: rgba(244, 63, 94, 0.1); color: var(--color-error); white-space: nowrap;">
                       {{ getUnblacklistTime(element) }}
                     </div>
-                    <div v-else-if="!element.enabled" class="tag" style="background: #f1f5f9; color: #64748b; white-space: nowrap;">
+                    <div v-else-if="!element.enabled" class="tag" style="background: var(--color-bg-subtle); color: var(--color-text-muted); white-space: nowrap;">
                       已禁用
                     </div>
-                    <div v-if="element.model_maps.length > 0" class="tag" style="background: rgba(16, 185, 129, 0.1); color: #10b981; white-space: nowrap;">
+                    <div v-if="element.model_maps.length > 0" class="tag" style="background: rgba(16, 185, 129, 0.1); color: var(--color-success); white-space: nowrap;">
                       {{ element.model_maps.length }}个模型映射
                     </div>
-                    <div v-if="element.model_blacklist && element.model_blacklist.length > 0" class="tag" style="background: rgba(245, 158, 11, 0.1); color: #f59e0b; white-space: nowrap;">
+                    <div v-if="element.model_blacklist && element.model_blacklist.length > 0" class="tag" style="background: rgba(245, 158, 11, 0.1); color: var(--color-warning); white-space: nowrap;">
                       {{ element.model_blacklist.length }}个黑名单配置
                     </div>
                   </div>
@@ -118,13 +118,13 @@
                 <div style="display: flex; gap: 24px;">
                   <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
                     <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败次数</div>
-                    <div class="mono text-16" :style="{ 'font-weight': 'var(--fw-500)', color: element.consecutive_failures >= element.failure_threshold ? '#ef4444' : '#0f172a' }">
+                    <div class="mono text-16" :style="{ 'font-weight': 'var(--fw-500)', color: element.consecutive_failures >= element.failure_threshold ? 'var(--color-danger)' : 'var(--color-text)' }">
                       {{ element.consecutive_failures }}
                     </div>
                   </div>
                   <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
                     <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败阈值</div>
-                    <div class="mono text-16" style="font-weight: var(--fw-500); color: #0f172a;">{{ element.failure_threshold }}</div>
+                    <div class="mono text-16" style="font-weight: var(--fw-500); color: var(--color-text);">{{ element.failure_threshold }}</div>
                   </div>
                 </div>
                 
@@ -154,7 +154,7 @@
 
     <!-- DIRECT MODE -->
     <div v-else class="b-card list-container" v-loading="credentialStore.loading">
-      <div v-if="credentialStore.credentials.length === 0" style="padding: 40px; text-align: center; color: #94a3b8;">
+      <div v-if="credentialStore.credentials.length === 0" style="padding: 40px; text-align: center; color: var(--color-text-weak);">
         暂无凭证
       </div>
       
@@ -168,11 +168,11 @@
           <template #item="{ element, index }">
             <div :style="{
               padding: '24px',
-              borderBottom: index === credentialStore.credentials.length - 1 ? 'none' : '1px solid #f1f5f9',
+              borderBottom: index === credentialStore.credentials.length - 1 ? 'none' : '1px solid var(--color-bg-subtle)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              background: '#ffffff'
+              background: 'var(--color-bg)'
             }">
               <div style="display: flex; align-items: center; gap: 16px;">
                 <div class="drag-handle" aria-label="拖拽排序">
@@ -182,7 +182,7 @@
                 <div>
                   <div style="display: flex; align-items: center; gap: 12px;">
                     <div class="text-16 fw-medium text-primary">{{ element.name }}</div>
-                    <div v-if="element.is_active" class="tag" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">激活中</div>
+                    <div v-if="element.is_active" class="tag" style="background: rgba(16, 185, 129, 0.1); color: var(--color-success);">激活中</div>
                   </div>
                 </div>
               </div>
@@ -205,22 +205,22 @@
     <AppModal v-model="showDialog" :title="editingProvider ? '编辑服务商' : '添加服务商'" width="720px" @confirm="handleSave">
       <div style="display: flex; gap: 32px; margin-bottom: 32px;">
             <div style="flex: 1;">
-              <label class="c-label">服务商名称 <span style="color: #ef4444;">*</span></label>
+              <label class="c-label">服务商名称 <span style="color: var(--color-danger);">*</span></label>
               <input type="text" v-model="form.name" class="c-input" placeholder="例如: OpenAI 官方">
             </div>
             <div style="flex: 1;">
-              <label class="c-label">Base URL <span style="color: #ef4444;">*</span></label>
+              <label class="c-label">Base URL <span style="color: var(--color-danger);">*</span></label>
               <input type="text" v-model="form.base_url" class="c-input" :placeholder="baseUrlPlaceholder">
             </div>
           </div>
           
           <div style="margin-bottom: 40px;">
-            <label class="c-label">{{ activeCliType === 'claude_code' ? 'API Token' : 'API Key' }} <span style="color: #ef4444;">*</span></label>
+            <label class="c-label">{{ activeCliType === 'claude_code' ? 'API Token' : 'API Key' }} <span style="color: var(--color-danger);">*</span></label>
             <input type="text" v-model="form.api_key" class="c-input" placeholder="sk-...">
           </div>
 
           <!-- Advanced Params -->
-          <div style="display: flex; gap: 32px; margin-bottom: 40px; padding: 32px 24px; background: #f8fafc; border-radius: 12px; border: 1px solid #f1f5f9;">
+          <div style="display: flex; gap: 32px; margin-bottom: 40px; padding: 32px 24px; background: var(--color-bg-page); border-radius: 12px; border: 1px solid var(--color-bg-subtle);">
             <div style="flex: 1;">
               <label class="c-label">失败鉴权阈值 (次)</label>
               <input type="number" v-model.number="form.failure_threshold" class="c-input">
@@ -278,7 +278,7 @@
     <!-- Add/Edit Credential Modal -->
     <AppModal v-model="showCredentialDialog" :title="editingCredential ? '编辑凭证' : '添加凭证'" width="720px" @confirm="handleSaveCredential">
           <div style="margin-bottom: 32px;">
-            <label class="c-label">凭证名称 <span style="color: #ef4444;">*</span></label>
+            <label class="c-label">凭证名称 <span style="color: var(--color-danger);">*</span></label>
             <input type="text" v-model="credentialForm.name" class="c-input" placeholder="例如: 个人主账号">
           </div>
 
@@ -338,17 +338,17 @@
             class="text-14"
             style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border-radius: 8px; transition: all 0.2s; user-select: none;"
             :style="{
-              color: detectSelectedIds.includes(p.id) ? '#0f172a' : '#94a3b8',
-              border: detectSelectedIds.includes(p.id) ? '1px solid #0ea5e9' : '1px solid #e2e8f0',
-              background: detectSelectedIds.includes(p.id) ? 'rgba(14,165,233,0.04)' : '#fff'
+              color: detectSelectedIds.includes(p.id) ? 'var(--color-text)' : 'var(--color-text-weak)',
+              border: detectSelectedIds.includes(p.id) ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+              background: detectSelectedIds.includes(p.id) ? 'rgba(14,165,233,0.04)' : 'var(--color-bg)'
             }"
             @click="toggleDetectProvider(p.id)"
           >
             <div
               style="width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0;"
               :style="{
-                border: detectSelectedIds.includes(p.id) ? '2px solid #0ea5e9' : '2px solid #e2e8f0',
-                background: detectSelectedIds.includes(p.id) ? '#0ea5e9' : 'transparent'
+                border: detectSelectedIds.includes(p.id) ? '2px solid var(--color-primary)' : '2px solid var(--color-border)',
+                background: detectSelectedIds.includes(p.id) ? 'var(--color-primary)' : 'transparent'
               }"
             >
               <span v-if="detectSelectedIds.includes(p.id)" class="text-12 fw-bold" style="color: #fff;">✓</span>
@@ -362,7 +362,7 @@
       </div>
 
       <!-- Results Table -->
-      <div v-if="detectResults.length > 0 || detectLoading" style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.02);">
+      <div v-if="detectResults.length > 0 || detectLoading" style="border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.02);">
         <table class="flat-table">
           <colgroup>
             <col style="width: 20%;"><col style="width: 25%;"><col style="width: 12%;"><col style="width: 13%;"><col style="width: 30%;">
@@ -385,7 +385,7 @@
                 <span v-if="r.status_code === null && r.elapsed_ms === 0">-</span>
                 <span v-else>{{ r.elapsed_ms }}ms</span>
               </td>
-              <td :style="{ color: r.status_code !== null && r.status_code >= 200 && r.status_code < 300 ? '#64748b' : (r.status_code === null && r.elapsed_ms === 0 ? '#94a3b8' : '#f43f5e') }" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <td :style="{ color: r.status_code !== null && r.status_code >= 200 && r.status_code < 300 ? 'var(--color-text-muted)' : (r.status_code === null && r.elapsed_ms === 0 ? 'var(--color-text-weak)' : 'var(--color-error)') }" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                 <span v-if="r.status_code === null && r.elapsed_ms === 0" style="font-style: italic;">Testing...</span>
                 <el-tooltip
                   v-else
@@ -395,7 +395,7 @@
                   :show-after="200"
                 >
                   <template #content>
-                    <div class="text-14" style="max-width: 350px; line-height: 1.6; word-break: break-word; user-select: text; color: #334155;">
+                    <div class="text-14" style="max-width: 350px; line-height: 1.6; word-break: break-word; user-select: text; color: var(--color-text-dark);">
                       {{ r.response_text }}
                     </div>
                   </template>
@@ -867,9 +867,9 @@ onUnmounted(() => {
 
 /* Tab Underlines */
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid rgba(226, 232, 240, 0.6); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
-.tab-item { padding-bottom: 12px; color: #94a3b8; font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
-.tab-item:hover { color: #475569; }
-.tab-item.active { color: #0f172a; font-weight: var(--fw-600); border-bottom: 2px solid #0f172a; }
+.tab-item { padding-bottom: 12px; color: var(--color-text-weak); font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
+.tab-item:hover { color: var(--color-text-secondary); }
+.tab-item.active { color: var(--color-text); font-weight: var(--fw-600); border-bottom: 2px solid var(--color-text); }
 
 .page-header { flex-shrink: 0; margin: 0 40px 32px 40px; }
 
@@ -886,31 +886,31 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 
-.b-card { background: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); margin-bottom: 24px; transition: border-color 0.2s; border: 1px solid transparent; overflow: hidden; }
-.b-card:hover { border-color: #e2e8f0; }
+.b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); margin-bottom: 24px; transition: border-color 0.2s; border: 1px solid transparent; overflow: hidden; }
+.b-card:hover { border-color: var(--color-border); }
 
-.b-segmented { display: inline-flex; background: #e2e8f0; padding: 4px; border-radius: 10px; flex-shrink: 0; }
-.b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: #475569; border-radius: 8px; cursor: pointer; font-weight: var(--fw-500); transition: all 0.2s ease; }
-.b-seg-btn.active { background: #ffffff; color: #0f172a; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.b-segmented { display: inline-flex; background: var(--color-border); padding: 4px; border-radius: 10px; flex-shrink: 0; }
+.b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: var(--color-text-secondary); border-radius: 8px; cursor: pointer; font-weight: var(--fw-500); transition: all 0.2s ease; }
+.b-seg-btn.active { background: var(--color-bg); color: var(--color-text); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
-.b-button { background: #0ea5e9; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
-.b-button:hover { background: #0284c7; }
+.b-button { background: var(--color-primary); color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
+.b-button:hover { background: var(--color-primary-hover); }
 
-.b-button-outline { background: white; color: #0f172a; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
-.b-button-outline:hover { background: #f8fafc; }
+.b-button-outline { background: white; color: var(--color-text); border: 1px solid var(--color-border); padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
+.b-button-outline:hover { background: var(--color-bg-page); }
 
-.b-button-icon { background: white; border: 1px solid #e2e8f0; color: #64748b; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; }
-.b-button-icon:hover { background: #fee2e2; color: #ef4444; border-color: #fca5a5; }
+.b-button-icon { background: white; border: 1px solid var(--color-border); color: var(--color-text-muted); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; }
+.b-button-icon:hover { background: var(--color-danger-light); color: var(--color-danger); border-color: var(--color-danger-muted); }
 
 .tag { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-400); }
 
-.c-input { width: 100%; padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: var(--fs-14); outline: none; transition: border-color 0.2s; }
-.c-input:focus { border-color: #0ea5e9; }
-.c-label { font-size: var(--fs-14); font-weight: var(--fw-400); color: #475569; margin-bottom: 12px; display: block; }
+.c-input { width: 100%; padding: 10px 14px; border: 1px solid var(--color-border); border-radius: 8px; font-size: var(--fs-14); outline: none; transition: border-color 0.2s; }
+.c-input:focus { border-color: var(--color-primary); }
+.c-label { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-secondary); margin-bottom: 12px; display: block; }
 
 .drag-handle { display: flex; flex-direction: column; gap: 3px; cursor: grab; padding: 8px; margin-left: -8px; opacity: 0.3; transition: opacity 0.2s; }
 .drag-handle:hover { opacity: 0.8; }
-.drag-dot { width: 4px; height: 4px; border-radius: 50%; background: #64748b; }
+.drag-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--color-text-muted); }
 
 .action-icon {
   width: 34px;
@@ -919,7 +919,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: #64748b;
+  color: var(--color-text-muted);
   cursor: pointer;
   transition: all 0.2s;
   background: transparent;
@@ -928,48 +928,48 @@ onUnmounted(() => {
   padding: 0;
 }
 .action-icon:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
 }
 .action-icon.delete:hover {
-  background: #fee2e2;
-  color: #ef4444;
+  background: var(--color-danger-light);
+  color: var(--color-danger);
 }
 
 /* Detection Table */
 .flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; table-layout: fixed; }
 .flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
-.flat-table th { padding: 12px 20px; font-size: var(--fs-12); font-weight: var(--fw-600); color: #64748b; text-transform: uppercase; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 10; }
-.flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: #0f172a; border-bottom: 1px solid #f1f5f9; }
+.flat-table th { padding: 12px 20px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }
+.flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: var(--color-text); border-bottom: 1px solid var(--color-bg-subtle); }
 .flat-table tr:last-child td { border-bottom: none; }
-.flat-table tr:hover td { background: #f8fafc; }
+.flat-table tr:hover td { background: var(--color-bg-page); }
 .pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-600); display: inline-flex; align-items: center; letter-spacing: 0.3px; }
-.pill-green { background: #ecfdf5; color: #10b981; }
-.pill-red { background: #fff1f2; color: #f43f5e; }
-.pill-grey { background: #f1f5f9; color: #64748b; font-weight: var(--fw-400); }
-.code-block { background: #f8fafc; padding: 12px; border-radius: 6px; font-size: var(--fs-12); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
-.code-block:hover { border-color: #cbd5e1; }
+.pill-green { background: var(--color-success-light); color: var(--color-success); }
+.pill-red { background: var(--color-error-light); color: var(--color-error); }
+.pill-grey { background: var(--color-bg-subtle); color: var(--color-text-muted); font-weight: var(--fw-400); }
+.code-block { background: var(--color-bg-page); padding: 12px; border-radius: 6px; font-size: var(--fs-12); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
+.code-block:hover { border-color: var(--color-border-hover); }
 
 .action-icon.detect-btn {
   width: 36px;
   height: 36px;
-  color: #0ea5e9;
+  color: var(--color-primary);
   background: rgba(14, 165, 233, 0.1);
 }
 .action-icon.detect-btn:hover {
   background: rgba(14, 165, 233, 0.2);
-  color: #0ea5e9;
+  color: var(--color-primary);
 }
 
 .action-icon.add-btn {
   width: 36px;
   height: 36px;
-  color: #0ea5e9;
+  color: var(--color-primary);
   background: rgba(14, 165, 233, 0.1);
 }
 .action-icon.add-btn:hover {
   background: rgba(14, 165, 233, 0.2);
-  color: #0ea5e9;
+  color: var(--color-primary);
 }
 </style>
 >
