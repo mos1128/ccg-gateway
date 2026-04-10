@@ -536,10 +536,10 @@ onMounted(() => {
 .webdav-settings-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
 
 .b-button {
-  background: var(--color-primary-muted); color: var(--color-primary); border: none; padding: 10px 20px; border-radius: 10px;
+  background: var(--color-primary-10); color: var(--color-primary); border: none; padding: 10px 20px; border-radius: 10px;
   font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center;
   transition: all 0.2s;
 }
-.b-button:hover { background: rgba(14, 165, 233, 0.2); }
-.b-button:disabled { background: rgba(14, 165, 233, 0.05); color: var(--color-primary-muted); cursor: not-allowed; }
+.b-button:hover { background: var(--color-primary-20); }
+.b-button:disabled { background: var(--color-primary-5); color: var(--color-primary-muted); cursor: not-allowed; }
 </style>
