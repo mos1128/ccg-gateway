@@ -95,25 +95,25 @@ onMounted(async () => {
 <style>
 /* Global styles for our frost theme added to MainLayout avoiding strict scoped limits on deep elements if needed, though most is local */
 body {
-  background: #f8fafc;
+  background: var(--color-bg-page);
   margin: 0;
   padding: 20px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: #0f172a;
+  color: var(--color-text);
 }
 
 /* Ethereal Frost ElMessageBox Global Overrides to mimic custom modals */
 .el-overlay.is-message-box {
-  background: rgba(15, 23, 42, 0.25) !important;
+  background: var(--color-scrim) !important;
   backdrop-filter: blur(3px) !important;
 }
 
 .el-message-box {
-  background: rgba(255, 255, 255, 0.95) !important;
+  background: var(--color-bg-95) !important;
   backdrop-filter: blur(20px) !important;
   border-radius: 12px !important;
-  border: 1px solid rgba(255, 255, 255, 0.8) !important;
-  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid var(--color-bg-80) !important;
+  box-shadow: 0 20px 40px -10px var(--color-shadow-lg) !important;
   padding-bottom: 0 !important;
   width: 400px !important;
   max-width: 90vw !important;
@@ -128,7 +128,7 @@ body {
 .el-message-box__title {
   font-size: 16px !important;
   font-weight: 600 !important;
-  color: #0f172a !important;
+  color: var(--color-text) !important;
 }
 
 .el-message-box__headerbtn {
@@ -139,13 +139,13 @@ body {
 .el-message-box__content {
   padding: 16px 24px 24px 24px !important;
   font-size: 14px !important;
-  color: #475569 !important;
+  color: var(--color-text-secondary) !important;
 }
 
 .el-message-box__btns {
   padding: 16px 24px !important;
-  background: #f8fafc !important;
-  border-top: 1px dashed rgba(226, 232, 240, 0.8) !important;
+  background: var(--color-bg-page) !important;
+  border-top: 1px dashed var(--color-border-medium) !important;
   border-radius: 0 0 12px 12px !important;
   display: flex !important;
   justify-content: flex-end !important;
@@ -164,22 +164,22 @@ body {
 }
 
 .el-message-box__btns .el-button--default {
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  color: #475569 !important;
+  background: var(--color-bg) !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-text-secondary) !important;
 }
 .el-message-box__btns .el-button--default:hover {
-  background: #f1f5f9 !important;
-  color: #0f172a !important;
+  background: var(--color-bg-subtle) !important;
+  color: var(--color-text) !important;
 }
 
 .el-message-box__btns .el-button--primary {
-  background: #0ea5e9 !important;
+  background: var(--color-primary) !important;
   border: none !important;
-  color: #ffffff !important;
+  color: var(--color-bg) !important;
 }
 .el-message-box__btns .el-button--primary:hover {
-  background: #0284c7 !important;
+  background: var(--color-primary-hover) !important;
 }
 </style>
 
@@ -203,7 +203,7 @@ body {
   font-size: var(--fs-20);
   font-weight: var(--fw-700);
   margin-bottom: 24px;
-  color: #0ea5e9;
+  color: var(--color-primary);
   padding-left: 16px;
   letter-spacing: -0.5px;
   flex-shrink: 0;
@@ -223,7 +223,7 @@ body {
 .nav-group-title {
   font-size: var(--fs-12);
   font-weight: var(--fw-600);
-  color: #94a3b8;
+  color: var(--color-text-weak);
   margin-bottom: 12px;
   letter-spacing: 1px;
   padding-left: 16px;
@@ -236,18 +236,18 @@ body {
   cursor: pointer;
   font-size: var(--fs-14);
   font-weight: var(--fw-500);
-  color: #0f172a;
+  color: var(--color-text);
   transition: all 0.2s;
 }
 
 .nav-item:hover {
-  background: #e2e8f0;
+  background: var(--color-border);
 }
 
 .nav-item.active {
-  background: #ffffff;
-  color: #0ea5e9;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  background: var(--color-bg);
+  color: var(--color-primary);
+  box-shadow: 0 2px 8px var(--color-shadow);
   font-weight: var(--fw-600);
 }
 
@@ -265,7 +265,7 @@ body {
 .footer-actions {
   display: flex;
   gap: 8px;
-  background: rgba(148, 163, 184, 0.05);
+  background: var(--color-overlay);
   padding: 4px;
   border-radius: 10px;
 }
@@ -273,7 +273,7 @@ body {
 .footer-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--color-text-weak);
   padding: 6px;
   border-radius: 7px;
   cursor: pointer;
@@ -283,16 +283,16 @@ body {
   transition: all 0.2s;
 }
 .footer-btn:hover {
-  background: #ffffff;
-  color: #0ea5e9;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  background: var(--color-bg);
+  color: var(--color-primary);
+  box-shadow: 0 2px 6px var(--color-shadow-hover);
 }
 .footer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .version-tag {
   font-size: var(--fs-12);
   font-weight: var(--fw-500);
-  color: #64748b;
+  color: var(--color-text-muted);
   letter-spacing: 0.5px;
 }
 
@@ -305,9 +305,9 @@ body {
 /* View container */
 .view-container {
   flex: 1; 
-  background: #f4f7fe; 
+  background: var(--color-bg-subtle); 
   border-radius: 24px; 
-  box-shadow: inset 0 0 0 1px #e2e8f0; 
+  box-shadow: inset 0 0 0 1px var(--color-border); 
   padding: 40px 0; 
   min-width: 0;
   display: flex;
