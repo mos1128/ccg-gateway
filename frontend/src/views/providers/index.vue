@@ -438,6 +438,7 @@ const activeCliType = computed({
 })
 
 const viewMode = ref<'proxy' | 'direct'>('proxy')
+let testResultListener: (() => void) | null = null
 
 function handleSwitchDirect() {
   if (activeCliType.value === 'claude_code') {
@@ -552,6 +553,12 @@ watch(showDetectDialog, (open) => {
     detectSelectedIds.value = detectProviderList.value.map(p => p.id)
     detectResults.value = []
     detectLoading.value = false
+  } else {
+    // 关闭对话框时清理监听器
+    if (testResultListener) {
+      testResultListener()
+      testResultListener = null
+    }
   }
 })
 
@@ -585,12 +592,28 @@ async function handleStartDetect() {
   })
   detectLoading.value = true
 
+  // 清理之前的监听器
+  if (testResultListener) {
+    testResultListener()
+    testResultListener = null
+  }
+
+  // 监听测试结果事件
+  testResultListener = await providersApi.listenTestResults((result) => {
+    const idx = detectResults.value.findIndex(r => r.provider_id === result.provider_id)
+    if (idx >= 0) {
+      detectResults.value[idx] = result
+    }
+    // 检查是否所有结果都已返回
+    if (detectResults.value.every(r => r.status_code !== null || r.elapsed_ms > 0)) {
+      detectLoading.value = false
+    }
+  })
+
   try {
-    const { data } = await providersApi.testModels(detectModel.value.trim(), detectSelectedIds.value)
-    detectResults.value = data
+    await providersApi.startTestModels(detectModel.value.trim(), detectSelectedIds.value)
   } catch (e: any) {
     notify(getErrorMessage(e, '检测失败'), 'error')
-  } finally {
     detectLoading.value = false
   }
 }
@@ -830,6 +853,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
+  if (testResultListener) {
+    testResultListener()
+    testResultListener = null
+  }
 })
 </script>
 

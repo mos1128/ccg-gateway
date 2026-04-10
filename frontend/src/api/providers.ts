@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { Provider, ProviderCreate, ProviderUpdate, TestProviderResult } from '@/types/models'
 
 export const providersApi = {
@@ -34,10 +35,15 @@ export const providersApi = {
     await invoke('reset_provider_failures', { id })
     return { data: null }
   },
-  testModels: async (modelName: string, providerIds: number[]): Promise<{ data: TestProviderResult[] }> => {
-    const data = await invoke<TestProviderResult[]>('test_provider_models', {
+  startTestModels: async (modelName: string, providerIds: number[]) => {
+    await invoke('test_provider_models', {
       input: { model_name: modelName, provider_ids: providerIds }
     })
-    return { data }
+    return { data: null }
+  },
+  listenTestResults: (callback: (result: TestProviderResult) => void): Promise<UnlistenFn> => {
+    return listen<TestProviderResult>('provider-test-result', (event) => {
+      callback(event.payload)
+    })
   }
 }

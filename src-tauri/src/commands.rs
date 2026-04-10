@@ -9,7 +9,7 @@ use crate::db::models::{
     ProviderStatsResponse, ProviderStatsRow, ProviderUpdate, RequestLogDetail, RequestLogItem,
     SessionInfo, SessionMessage, SkillCliFlag, SkillFavorite, SkillFavoriteItem, SkillRepo,
     SkillRepoCreate, SystemLogItem, SystemLogListResponse, SystemStatus, TestProviderModelsInput,
-    TestProviderResult, TimeoutSettings,
+    TimeoutSettings,
     TimeoutSettingsUpdate, WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
 };
 use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestEntry};
@@ -17,7 +17,7 @@ use crate::LogDb;
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -1013,35 +1013,29 @@ pub async fn reset_provider_failures(
 
 #[tauri::command]
 pub async fn test_provider_models(
+    app: tauri::AppHandle,
     db: State<'_, SqlitePool>,
     input: TestProviderModelsInput,
-) -> Result<Vec<TestProviderResult>> {
+) -> Result<()> {
     use crate::services::provider as provider_service;
 
     let db_pool = db.inner().clone();
     let model_name = input.model_name.clone();
 
-    let mut handles = Vec::new();
     for provider_id in input.provider_ids {
         let pool = db_pool.clone();
         let model = model_name.clone();
-        let handle = tokio::spawn(async move {
-            provider_service::test_provider_model(&pool, provider_id, &model).await
-        });
-        handles.push(handle);
-    }
+        let app_handle = app.clone();
 
-    let mut results = Vec::new();
-    for handle in handles {
-        match handle.await {
-            Ok(result) => results.push(result),
-            Err(e) => {
-                tracing::error!(error = %e, "Test task panicked");
+        tokio::spawn(async move {
+            let result = provider_service::test_provider_model(&pool, provider_id, &model).await;
+            if let Err(e) = app_handle.emit("provider-test-result", result) {
+                tracing::error!(error = %e, "Failed to emit test result");
             }
-        }
+        });
     }
 
-    Ok(results)
+    Ok(())
 }
 
 // Settings commands
