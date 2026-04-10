@@ -9,10 +9,11 @@ use futures_util::StreamExt;
 use std::io::Read;
 use std::sync::Arc;
 use std::time::Instant;
+use tauri::Emitter;
 use tokio::sync::{mpsc, Mutex};
 
 use super::AppState;
-use crate::db::models::RequestLogInfo;
+use crate::db::models::{RequestLogInfo, RequestLogItem};
 use crate::services::proxy::{
     apply_body_model_mapping, apply_url_model_mapping, apply_useragent_override, detect_cli_type,
     extract_model_from_body, extract_model_from_path, filter_headers, is_streaming,
@@ -860,8 +861,8 @@ async fn record_request_stats(
         .map(|code| (200..300).contains(&code))
         .unwrap_or(false);
 
-    // Record to request_logs
-    let _ = stats_service::record_request_log(
+    // Record to request_logs and get the inserted ID
+    let log_id = match stats_service::record_request_log(
         &state.log_db,
         cli_type.as_str(),
         provider_name,
@@ -876,7 +877,29 @@ async fn record_request_stats(
         target_model,
         log_info,
     )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to record request log");
+            return;
+        }
+    };
+
+    // Query the inserted log item
+    let log_item = sqlx::query_as::<_, RequestLogItem>(
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
+    )
+    .bind(log_id)
+    .fetch_one(&state.log_db)
     .await;
+
+    // Emit event to frontend
+    if let Ok(item) = log_item {
+        if let Err(e) = state.app_handle.emit("request-log-new", item) {
+            tracing::error!(error = %e, "Failed to emit request log event");
+        }
+    }
 
     // Record to usage_daily
     let _ = stats_service::record_request(

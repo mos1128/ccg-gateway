@@ -38,7 +38,7 @@ pub async fn record_request(
     Ok(())
 }
 
-/// Record a request log entry
+/// Record a request log entry, returns the inserted log ID
 pub async fn record_request_log(
     log_db: &SqlitePool,
     cli_type: &str,
@@ -53,11 +53,11 @@ pub async fn record_request_log(
     source_model: Option<&str>,
     target_model: Option<&str>,
     info: Option<RequestLogInfo>,
-) -> Result<(), sqlx::Error> {
+) -> Result<i64, sqlx::Error> {
     let now = chrono::Utc::now().timestamp();
     let info = info.unwrap_or_default();
 
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -86,7 +86,7 @@ pub async fn record_request_log(
     .execute(log_db)
     .await?;
 
-    Ok(())
+    Ok(result.last_insert_rowid())
 }
 
 /// Record a system log entry

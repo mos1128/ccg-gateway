@@ -325,6 +325,7 @@ const activeTab = computed({
 })
 const logEnabled = ref(false)
 const providerOptions = ref<string[]>([])
+let requestLogListener: (() => void) | null = null
 
 // Dropdown State
 const cliSelectOpen = ref(false)
@@ -349,7 +350,7 @@ function toggleSelect(type: string) {
   if (isEvent) eventTypeSelectOpen.value = true
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('click', closeAllSelects)
   fetchLogSettings()
   fetchProviders()
@@ -358,10 +359,27 @@ onMounted(() => {
   } else {
     fetchSystemLogs()
   }
+
+  // 监听新请求日志事件
+  requestLogListener = await logsApi.listenRequestLogs((log) => {
+    // 只在请求日志页面且第一页无筛选时实时更新
+    if (activeTab.value === 'request' && requestPage.value === 1 && !requestFilters.value.cli_type && !requestFilters.value.provider_name) {
+      requestLogs.value.unshift(log)
+      requestTotal.value += 1
+      // 限制列表长度与 pageSize 一致
+      if (requestLogs.value.length > requestPageSize.value) {
+        requestLogs.value.pop()
+      }
+    }
+  })
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeAllSelects)
+  if (requestLogListener) {
+    requestLogListener()
+    requestLogListener = null
+  }
 })
 
 // Request logs

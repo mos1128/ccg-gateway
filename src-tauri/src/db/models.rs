@@ -495,7 +495,7 @@ pub struct RequestLogInfo {
 }
 
 // Request Log Item (列表视图)
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct RequestLogItem {
     pub id: i64,
     pub created_at: i64,

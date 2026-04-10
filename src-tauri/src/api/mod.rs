@@ -3,12 +3,14 @@ pub mod handlers;
 use axum::{routing::get, Router};
 use sqlx::SqlitePool;
 use std::sync::Arc;
+use tauri::AppHandle;
 use tower_http::cors::{Any, CorsLayer};
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: SqlitePool,
     pub log_db: SqlitePool,
+    pub app_handle: AppHandle,
 }
 
 pub fn create_router(state: AppState) -> Router {

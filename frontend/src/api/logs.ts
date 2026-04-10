@@ -1,7 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   RequestLogListResponse,
   RequestLogDetail,
+  RequestLogListItem,
   SystemLogListResponse,
   GatewaySettings,
   GatewaySettingsUpdate
@@ -46,6 +48,11 @@ export const logsApi = {
   clearRequestLogs: async (before_timestamp?: number) => {
     await invoke('clear_request_logs')
     return { data: null }
+  },
+  listenRequestLogs: (callback: (log: RequestLogListItem) => void): Promise<UnlistenFn> => {
+    return listen<RequestLogListItem>('request-log-new', (event) => {
+      callback(event.payload)
+    })
   },
 
   listSystemLogs: async (params: SystemLogQuery) => {

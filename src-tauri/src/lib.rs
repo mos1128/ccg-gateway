@@ -62,6 +62,7 @@ pub fn run() {
                 let state = api::AppState {
                     db: db.clone(),
                     log_db: log_db.clone(),
+                    app_handle: app.handle().clone(),
                 };
 
                 let router = api::create_router(state);
