@@ -86,7 +86,7 @@ function handleConfirm() {
   background: var(--color-bg);
   border-radius: 20px;
   max-width: 95vw;
-  box-shadow: 0 25px 50px -12px var(--color-shadow-xl);
+  box-shadow: 0 25px 50px -12px var(--color-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -101,12 +101,12 @@ function handleConfirm() {
   flex-shrink: 0;
 }
 .modal-title {
-  font-size: 20px;
+  font-size: var(--fs-20);
   font-weight: var(--fw-600);
   color: var(--color-text);
 }
 .modal-close {
-  font-size: 24px;
+  font-size: var(--fs-24);
   color: var(--color-text-weak);
   cursor: pointer;
   line-height: 1;

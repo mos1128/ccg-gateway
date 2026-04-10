@@ -707,9 +707,8 @@ onMounted(() => {
 .skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 24px; }
 .skill-card {
   background: var(--color-bg); border-radius: 16px; border: 1px solid var(--color-border); padding: 24px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.03); transition: all 0.2s; display: flex; flex-direction: column; gap: 20px;
+  box-shadow: 0 4px 12px var(--color-shadow); display: flex; flex-direction: column; gap: 20px;
 }
-.skill-card:hover { border-color: var(--color-primary); box-shadow: 0 10px 20px -5px rgba(0,0,0,0.05); }
 
 .card-top { display: flex; gap: 16px; align-items: flex-start; }
 .skill-icon {

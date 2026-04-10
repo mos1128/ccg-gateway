@@ -34,7 +34,6 @@
   --color-primary-5: rgba(14, 165, 233, 0.05);
   --color-primary-10: rgba(14, 165, 233, 0.1);
   --color-primary-20: rgba(14, 165, 233, 0.2);
-  --color-primary-30: rgba(14, 165, 233, 0.3);
 
   /* 文字色系 */
   --color-text: #0f172a;
@@ -48,7 +47,6 @@
   --color-bg-page: #f8fafc;
   --color-bg-subtle: #f1f5f9;
   --color-bg-80: rgba(255, 255, 255, 0.8);
-  --color-bg-90: rgba(255, 255, 255, 0.9);
   --color-bg-95: rgba(255, 255, 255, 0.95);
 
   /* 边框色系 */
@@ -79,10 +77,7 @@
 
   /* 阴影色系 */
   --color-shadow: rgba(0, 0, 0, 0.03);
-  --color-shadow-hover: rgba(0, 0, 0, 0.05);
-  --color-shadow-md: rgba(0, 0, 0, 0.08);
   --color-shadow-lg: rgba(0, 0, 0, 0.1);
-  --color-shadow-xl: rgba(0, 0, 0, 0.2);
   --color-scrim: rgba(15, 23, 42, 0.25);
   --color-scrim-dark: rgba(15, 23, 42, 0.4);
   --color-overlay: rgba(148, 163, 184, 0.05);
@@ -91,15 +86,6 @@
   /* 特殊色系 */
   --color-violet: #8b5cf6;
   --color-violet-light: #f5f3ff;
-
-  /* Element Plus 主题色覆盖 */
-  --el-color-primary: #0ea5e9;
-  --el-color-primary-light-3: #38bdf8;
-  --el-color-primary-light-5: #7dd3fc;
-  --el-color-primary-light-7: #bae6fd;
-  --el-color-primary-light-8: #e0f2fe;
-  --el-color-primary-light-9: #f0f9ff;
-  --el-color-primary-dark-2: #0284c7;
 }
 
 *, *::before, *::after {

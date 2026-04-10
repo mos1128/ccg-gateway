@@ -315,19 +315,18 @@ onMounted(async () => {
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-shrink: 0; }
 .page-title { font-size: var(--fs-20); font-weight: var(--fw-700); margin: 0; letter-spacing: -0.5px; }
 
-.b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); padding: 24px; margin-bottom: 24px; transition: border-color 0.2s; border: 1px solid transparent; }
-.b-card:hover { border-color: var(--color-border); }
+.b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); padding: 24px; margin-bottom: 24px; border: 1px solid transparent; }
 .b-card-title { font-size: var(--fs-16); font-weight: var(--fw-600); margin-bottom: 20px; color: var(--color-text); }
 
 .status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--color-text-weak); }
-.status-dot.running { background: var(--color-success); box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+.status-dot.running { background: var(--color-success); box-shadow: 0 0 8px var(--color-success-40); }
 
 .cli-title { font-size: var(--fs-16); font-weight: var(--fw-700); color: var(--color-text); }
 .cli-disabled { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-weak); margin-left: 4px; }
 
 .b-segmented { display: inline-flex; background: var(--color-border); padding: 4px; border-radius: 10px; }
 .b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: var(--color-text-muted); border-radius: 8px; font-weight: var(--fw-500); transition: all 0.2s ease; cursor: pointer; }
-.b-seg-btn.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); pointer-events: none; }
+.b-seg-btn.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 1px 3px var(--color-shadow-lg); pointer-events: none; }
 
 .kpi-card { flex: 1; padding: 24px 20px !important; margin-bottom: 0 !important; text-align: center; display: flex; flex-direction: column; justify-content: center; }
 .kpi-title { font-size: var(--fs-14); font-weight: var(--fw-500); color: var(--color-text-muted); margin-bottom: 12px; }

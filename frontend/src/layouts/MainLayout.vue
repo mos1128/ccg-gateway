@@ -98,7 +98,6 @@ body {
   background: var(--color-bg-page);
   margin: 0;
   padding: 20px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--color-text);
 }
 
@@ -126,8 +125,8 @@ body {
 }
 
 .el-message-box__title {
-  font-size: 16px !important;
-  font-weight: 600 !important;
+  font-size: var(--fs-16) !important;
+  font-weight: var(--fw-600) !important;
   color: var(--color-text) !important;
 }
 
@@ -138,7 +137,7 @@ body {
 
 .el-message-box__content {
   padding: 16px 24px 24px 24px !important;
-  font-size: 14px !important;
+  font-size: var(--fs-14) !important;
   color: var(--color-text-secondary) !important;
 }
 
@@ -156,8 +155,8 @@ body {
   margin-left: 0 !important;
   padding: 8px 16px !important;
   border-radius: 8px !important;
-  font-weight: 500 !important;
-  font-size: 13px !important;
+  font-weight: var(--fw-500) !important;
+  font-size: var(--fs-14) !important;
   transition: all 0.2s !important;
   outline: none !important;
   min-height: auto !important;
@@ -285,7 +284,6 @@ body {
 .footer-btn:hover {
   background: var(--color-bg);
   color: var(--color-primary);
-  box-shadow: 0 2px 6px var(--color-shadow-hover);
 }
 .footer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 

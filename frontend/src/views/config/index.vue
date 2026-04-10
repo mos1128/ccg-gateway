@@ -417,10 +417,9 @@ onMounted(() => {
 /* Frost Card */
 .frost-card {
   background: var(--color-bg); border-radius: 20px; border: 1px solid var(--color-border);
-  padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); transition: all 0.2s;
+  padding: 32px; box-shadow: 0 4px 12px var(--color-shadow); transition: all 0.2s;
   display: flex; flex-direction: column;
 }
-.frost-card:hover { border-color: var(--color-primary); box-shadow: 0 10px 20px -5px rgba(0,0,0,0.05); }
 
 .card-header-simple { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; color: var(--color-text); }
 .header-icon { color: var(--color-text-muted); }
@@ -435,20 +434,20 @@ onMounted(() => {
   width: 100%; padding: 10px 14px; background: var(--color-bg); border: 1px solid var(--color-border);
   border-radius: 10px; font-size: var(--fs-14); color: var(--color-text); outline: none; transition: all 0.2s;
 }
-.f-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1); }
+.f-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-10); }
 
 .input-with-unit { display: flex; align-items: center; gap: 12px; }
 .unit { font-size: var(--fs-14); color: var(--color-text-weak); font-weight: var(--fw-400); }
 
 /* Segmented Control */
 .frost-segmented {
-  display: flex; background: rgba(148, 163, 184, 0.08); padding: 4px; border-radius: 12px; margin-bottom: 20px;
+  display: flex; background: var(--color-overlay-8); padding: 4px; border-radius: 12px; margin-bottom: 20px;
 }
 .seg-item {
   flex: 1; text-align: center; padding: 8px 12px; font-size: var(--fs-14); font-weight: var(--fw-600);
   color: var(--color-text-secondary); cursor: pointer; border-radius: 9px; transition: all 0.2s;
 }
-.seg-item.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.seg-item.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 2px 8px var(--color-shadow-lg); }
 
 /* Buttons */
 .f-button {
@@ -490,14 +489,12 @@ onMounted(() => {
   color: var(--color-text);
 }
 
-.desc-text { font-size: 13px; color: var(--color-text-weak); line-height: 1.6; margin: 0 0 20px 0; }
-
 /* CLI Column adjustment */
 .cli-settings-card { flex: 1; }
 .cli-form-container { flex: 1; min-height: 400px; display: flex; flex-direction: column; }
 
 /* Flat Table (matching logs page style) */
-.table-container { background: var(--color-bg); border-radius: 12px; padding: 0; border: 1px solid var(--color-border); box-shadow: 0 4px 15px rgba(0,0,0,0.02); overflow: hidden; }
+.table-container { background: var(--color-bg); border-radius: 12px; padding: 0; border: 1px solid var(--color-border); box-shadow: 0 4px 15px var(--color-shadow); overflow: hidden; }
 .flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; table-layout: fixed; }
 .flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
 .flat-table th { padding: 12px 20px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }

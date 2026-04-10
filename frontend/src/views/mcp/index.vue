@@ -277,7 +277,7 @@ onMounted(fetchList)
 }
 
 .page-subtitle {
-  font-size: 14px;
+  font-size: var(--fs-14);
   color: var(--color-text-muted);
   margin: 0;
 }
@@ -293,15 +293,10 @@ onMounted(fetchList)
   border-radius: 16px;
   border: 1px solid var(--color-border);
   padding: 24px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-  transition: all 0.2s;
+  box-shadow: 0 4px 12px var(--color-shadow);
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-.mcp-card:hover {
-  border-color: var(--color-primary);
-  box-shadow: 0 10px 20px -5px rgba(0,0,0,0.05);
 }
 
 .card-top {
@@ -329,7 +324,6 @@ onMounted(fetchList)
 .mcp-name {
   font-size: var(--fs-16);
   font-weight: var(--fw-700);
-  font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   color: var(--color-text);
   margin: 0;
   display: -webkit-box;

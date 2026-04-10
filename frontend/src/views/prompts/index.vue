@@ -257,15 +257,10 @@ onMounted(fetchList)
   border-radius: 16px;
   border: 1px solid var(--color-border);
   padding: 24px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-  transition: all 0.2s;
+  box-shadow: 0 4px 12px var(--color-shadow);
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-.prompt-card:hover {
-  border-color: var(--color-primary);
-  box-shadow: 0 10px 20px -5px rgba(0,0,0,0.05);
 }
 
 .card-top {

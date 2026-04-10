@@ -287,7 +287,7 @@ defineExpose({ handleSave })
   border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 8px 24px var(--color-shadow-md);
+  box-shadow: 0 8px 24px var(--color-shadow-lg);
   z-index: 100;
 }
 
