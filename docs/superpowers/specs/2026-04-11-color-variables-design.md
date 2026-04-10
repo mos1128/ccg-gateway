@@ -20,7 +20,7 @@ date: 2026-04-11
 
 ## 变量定义
 
-### 1. 主色系（Primary - Sky Blue）
+### 1. 主色系（Primary - Sky Blue）- 11 个
 
 | 变量名 | 值 | 用途 |
 |---|---|---|
@@ -31,13 +31,12 @@ date: 2026-04-11
 | `--color-primary-lighter` | `#e0f2fe` | 主色更浅 |
 | `--color-primary-border` | `#bae6fd` | 主色边框 |
 | `--color-primary-muted` | `#7dd3fc` | 禁用主色 |
-| `--color-primary-4` | `rgba(14,165,233,0.04)` | 选中复选框背景 |
-| `--color-primary-5` | `rgba(14,165,233,0.05)` | 禁用按钮背景 |
+| `--color-primary-5` | `rgba(14,165,233,0.05)` | 选中/禁用背景 |
 | `--color-primary-10` | `rgba(14,165,233,0.1)` | 按钮/焦点阴影 |
 | `--color-primary-20` | `rgba(14,165,233,0.2)` | 按钮悬停 |
 | `--color-primary-30` | `rgba(14,165,233,0.3)` | 图表渐变 |
 
-### 2. 文字色系
+### 2. 文字色系 - 5 个
 
 | 变量名 | 值 | 用途 |
 |---|---|---|
@@ -47,20 +46,18 @@ date: 2026-04-11
 | `--color-text-weak` | `#94a3b8` | 最弱文字/提示 |
 | `--color-text-dark` | `#334155` | 深色文字 |
 
-### 3. 背景色系
+### 3. 背景色系 - 6 个
 
 | 变量名 | 值 | 用途 |
 |---|---|---|
 | `--color-bg` | `#ffffff` | 主背景/卡片 |
-| `--color-bg-page` | `#f8fafc` | 页面背景 |
-| `--color-bg-subtle` | `#f1f5f9` | 次级背景/悬停 |
-| `--color-bg-muted` | `#f8fafc` | 表头/分区背景 |
-| `--color-bg-tint` | `#f4f7fe` | 视图容器背景 |
+| `--color-bg-page` | `#f8fafc` | 页面背景/表头/分区 |
+| `--color-bg-subtle` | `#f1f5f9` | 次级背景/悬停/视图容器 |
 | `--color-bg-80` | `rgba(255,255,255,0.8)` | 半透明白 |
 | `--color-bg-90` | `rgba(255,255,255,0.9)` | 图表 tooltip |
 | `--color-bg-95` | `rgba(255,255,255,0.95)` | 毛玻璃效果 |
 
-### 4. 边框色系
+### 4. 边框色系 - 6 个
 
 | 变量名 | 值 | 用途 |
 |---|---|---|
@@ -71,7 +68,7 @@ date: 2026-04-11
 | `--color-scrollbar` | `#cbd5e1` | 滚动条 |
 | `--color-scrollbar-hover` | `#94a3b8` | 滚动条悬停 |
 
-### 5. 状态色系
+### 5. 状态色系 - 16 个
 
 | 变量名 | 值 | 用途 |
 |---|---|---|
@@ -92,7 +89,7 @@ date: 2026-04-11
 | `--color-warning` | `#f59e0b` | 警告/收藏 |
 | `--color-warning-10` | `rgba(245,158,11,0.1)` | 收藏背景 |
 
-### 6. 阴影色系
+### 6. 阴影色系 - 9 个
 
 | 变量名 | 值 | 用途 |
 |---|---|---|
@@ -101,18 +98,19 @@ date: 2026-04-11
 | `--color-shadow-md` | `rgba(0,0,0,0.08)` | 分段控件阴影 |
 | `--color-shadow-lg` | `rgba(0,0,0,0.1)` | 下拉/tooltip 阴影 |
 | `--color-shadow-xl` | `rgba(0,0,0,0.2)` | 弹窗阴影 |
-| `--color-scrim` | `rgba(15,23,42,0.1)` | 遮罩层 |
-| `--color-scrim-heavy` | `rgba(15,23,42,0.25)` | 模态遮罩 |
+| `--color-scrim` | `rgba(15,23,42,0.25)` | 遮罩层/模态 |
 | `--color-scrim-dark` | `rgba(15,23,42,0.4)` | 深遮罩 |
 | `--color-overlay` | `rgba(148,163,184,0.05)` | 底栏背景 |
 | `--color-overlay-8` | `rgba(148,163,184,0.08)` | 分段控件背景 |
 
-### 7. 特殊色系
+### 7. 特殊色系 - 2 个
 
 | 变量名 | 值 | 用途 |
 |---|---|---|
 | `--color-violet` | `#8b5cf6` | Skills 图标 |
 | `--color-violet-light` | `#f5f3ff` | Skills 图标背景 |
+
+**变量总数：55 个**（11 + 5 + 6 + 6 + 16 + 9 + 2）
 
 ## 实施范围
 
