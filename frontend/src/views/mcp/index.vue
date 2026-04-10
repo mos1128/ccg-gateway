@@ -329,6 +329,7 @@ onMounted(fetchList)
 .mcp-name {
   font-size: var(--fs-16);
   font-weight: var(--fw-700);
+  font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
   color: var(--color-text);
   margin: 0;
   display: -webkit-box;
