@@ -56,11 +56,12 @@
     </div>
 
     <!-- Main Content Area -->
-    <div class="view-content-wrapper" v-loading="operationLoading">
-      
+    <div class="view-content-wrapper">
+
       <!-- TAB: INSTALLED -->
       <div v-if="activeTab === 'skills'" class="tab-pane">
-        <div v-loading="loadingInstalled" class="list-container">
+        <div class="skills-view">
+          <div v-loading="loadingInstalled || loadingInstalledOperation" class="list-container">
           <template v-if="installedList.length === 0">
             <div class="empty-state">
               <svg width="64" height="64" color="var(--color-border)"><use href="#icon-zap"/></svg>
@@ -141,6 +142,7 @@
             </div>
           </div>
         </div>
+        </div>
       </div>
 
       <!-- TAB: AVAILABLE -->
@@ -212,7 +214,7 @@
             </div>
           </div>
 
-          <div v-loading="loadingSkills" class="list-container">
+          <div v-loading="loadingSkills || loadingSkillsOperation" class="list-container">
             <template v-if="filteredSkillList.length === 0">
               <el-empty :description="skillSearchQuery ? '无匹配结果' : '该仓库暂无 Skills'" />
             </template>
@@ -272,11 +274,12 @@
       </div>
 
       <div v-else class="tab-pane">
-        <div class="page-header">
-          <p class="page-subtitle">收藏的技能会保留仓库信息，方便后续快速安装</p>
-        </div>
+        <div class="favorites-view">
+          <div class="page-header">
+            <p class="page-subtitle">收藏的技能会保留仓库信息，方便后续快速安装</p>
+          </div>
 
-        <div v-loading="loadingFavorites" class="list-container">
+          <div v-loading="loadingFavorites || loadingFavoritesOperation" class="list-container">
           <div v-if="favoriteList.length === 0" class="empty-state">
             <svg width="64" height="64" color="var(--color-border)"><use href="#icon-star"/></svg>
             <p>暂无收藏技能</p>
@@ -323,6 +326,7 @@
             </div>
           </div>
         </div>
+        </div>
       </div>
     </div>
 
@@ -368,8 +372,8 @@ const activeTab = ref<'skills' | 'repos' | 'favorites'>('skills')
 // Installed Skills
 const installedList = ref<InstalledSkill[]>([])
 const loadingInstalled = ref(false)
+const loadingInstalledOperation = ref(false)
 const installingSkillId = ref<string | null>(null)
-const operationLoading = ref(false)
 
 // Repos
 const repoList = ref<SkillRepo[]>([])
@@ -383,11 +387,13 @@ const editRepoForm = ref({ oldName: '', url: '' })
 const currentRepo = ref<SkillRepo | null>(null)
 const repoSkillList = ref<DiscoverableSkill[]>([])
 const loadingSkills = ref(false)
+const loadingSkillsOperation = ref(false)
 const skillSearchQuery = ref('')
 
 // Favorites
 const favoriteList = ref<SkillFavoriteItem[]>([])
 const loadingFavorites = ref(false)
+const loadingFavoritesOperation = ref(false)
 
 const filteredSkillList = computed(() => {
   if (!skillSearchQuery.value) return repoSkillList.value
@@ -495,7 +501,7 @@ function handleBackToRepos() {
 }
 
 async function handleCliToggle(skill: InstalledSkill, cliType: string, enabled: boolean) {
-  operationLoading.value = true
+  loadingInstalledOperation.value = true
   try {
     await skillsApi.toggleCli(skill.id, cliType, enabled)
     if (skill.cli_flags) {
@@ -506,14 +512,14 @@ async function handleCliToggle(skill: InstalledSkill, cliType: string, enabled: 
     notify(getErrorMessage(error, '更新失败'), 'error')
     await fetchInstalled()
   } finally {
-    operationLoading.value = false
+    loadingInstalledOperation.value = false
   }
 }
 
 async function handleUninstall(skill: InstalledSkill) {
   try {
     await confirm(`确定卸载技能 "${skill.name}"?`, '确认卸载')
-    operationLoading.value = true
+    loadingInstalledOperation.value = true
     await skillsApi.uninstall(skill.id)
     notify('已卸载')
     await Promise.all([
@@ -525,7 +531,7 @@ async function handleUninstall(skill: InstalledSkill) {
       notify(getErrorMessage(error, '卸载失败'), 'error')
     }
   } finally {
-    operationLoading.value = false
+    loadingInstalledOperation.value = false
   }
 }
 
@@ -534,7 +540,7 @@ async function handleInstall(skill: DiscoverableSkill, reinstall: boolean = fals
     if (reinstall) {
       await confirm(`确定重装 "${skill.name}"? (将更新为最新版本)`, '确认重装')
     }
-    operationLoading.value = true
+    loadingSkillsOperation.value = true
     installingSkillId.value = skill.key
     await skillsApi.install(skill, reinstall)
     notify(reinstall ? '重装成功' : '安装成功')
@@ -548,7 +554,7 @@ async function handleInstall(skill: DiscoverableSkill, reinstall: boolean = fals
     }
   } finally {
     installingSkillId.value = null
-    operationLoading.value = false
+    loadingSkillsOperation.value = false
   }
 }
 
@@ -559,7 +565,7 @@ async function handleReinstallFromInstalled(skill: InstalledSkill) {
   }
   try {
     await confirm(`确定重装技能 "${skill.name}"?`, '确认重装')
-    operationLoading.value = true
+    loadingInstalledOperation.value = true
     installingSkillId.value = `installed-${skill.id}`
     await skillsApi.reinstallInstalled(skill.id)
     notify('重装成功')
@@ -573,12 +579,12 @@ async function handleReinstallFromInstalled(skill: InstalledSkill) {
     }
   } finally {
     installingSkillId.value = null
-    operationLoading.value = false
+    loadingInstalledOperation.value = false
   }
 }
 
 async function toggleInstalledFavorite(skill: InstalledSkill) {
-  operationLoading.value = true
+  loadingInstalledOperation.value = true
   try {
     const isFavorited = await skillsApi.toggleInstalledFavorite(skill.id)
     notify(isFavorited ? '已收藏' : '已取消收藏')
@@ -587,7 +593,7 @@ async function toggleInstalledFavorite(skill: InstalledSkill) {
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
   } finally {
-    operationLoading.value = false
+    loadingInstalledOperation.value = false
   }
 }
 
@@ -596,7 +602,7 @@ async function handleInstallFavorite(favorite: SkillFavoriteItem, reinstall: boo
     if (reinstall) {
       await confirm(`确定重装 "${favorite.name}"? (将更新为最新版本)`, '确认重装')
     }
-    operationLoading.value = true
+    loadingFavoritesOperation.value = true
     installingSkillId.value = favorite.key
     if (reinstall) {
       await skillsApi.reinstallInstalled(favorite.key)
@@ -614,12 +620,12 @@ async function handleInstallFavorite(favorite: SkillFavoriteItem, reinstall: boo
     }
   } finally {
     installingSkillId.value = null
-    operationLoading.value = false
+    loadingFavoritesOperation.value = false
   }
 }
 
 async function handleRemoveFavoriteById(favorite: SkillFavoriteItem) {
-  operationLoading.value = true
+  loadingFavoritesOperation.value = true
   try {
     await skillsApi.removeFavorite(favorite.key)
     await Promise.all([fetchFavorites(), fetchInstalled()])
@@ -627,7 +633,7 @@ async function handleRemoveFavoriteById(favorite: SkillFavoriteItem) {
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
   } finally {
-    operationLoading.value = false
+    loadingFavoritesOperation.value = false
   }
 }
 
@@ -745,7 +751,7 @@ onMounted(() => {
   min-height: 0;
 }
 
-.repo-list-view, .repo-skills-view {
+.repo-list-view, .repo-skills-view, .favorites-view, .skills-view {
   flex: 1;
   display: flex;
   flex-direction: column;

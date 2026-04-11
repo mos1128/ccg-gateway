@@ -43,11 +43,12 @@
     </div>
 
     <!-- Main Content Area -->
-    <div class="view-content-wrapper" v-loading="operationLoading">
+    <div class="view-content-wrapper">
       
       <!-- TAB: INSTALLED PLUGINS -->
       <div v-if="activeTab === 'plugins'" class="tab-pane">
-        <div v-loading="loadingInstalled" class="list-container">
+        <div class="plugins-view">
+          <div v-loading="loadingInstalled || loadingInstalledOperation" class="list-container">
           <template v-if="installedPlugins.length === 0">
             <div class="empty-state">
               <svg width="64" height="64" class="empty-icon"><use href="#icon-puzzle"/></svg>
@@ -77,10 +78,10 @@
                     >
                       <svg width="18" height="18" :style="favoriteIds.has(getPluginId(plugin)) ? 'fill: var(--color-warning);' : ''"><use href="#icon-star"/></svg>
                     </button>
-                    <button class="action-icon" title="更新" :disabled="operationLoading" @click="handleUpdate(plugin)">
+                    <button class="action-icon" title="更新" :disabled="loadingInstalledOperation" @click="handleUpdate(plugin)">
                       <svg width="18" height="18"><use href="#icon-refresh"/></svg>
                     </button>
-                    <button class="action-icon delete" title="卸载" :disabled="operationLoading" @click="handleUninstall(plugin)">
+                    <button class="action-icon delete" title="卸载" :disabled="loadingInstalledOperation" @click="handleUninstall(plugin)">
                       <svg width="18" height="18"><use href="#icon-trash"/></svg>
                     </button>
                   </div>
@@ -99,6 +100,7 @@
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
 
@@ -165,7 +167,7 @@
             </div>
           </div>
 
-          <div v-loading="loadingMarketPlugins || operationLoading" class="list-container">
+          <div v-loading="loadingMarketPlugins || loadingMarketPluginsOperation" class="list-container">
             <template v-if="filteredMarketPlugins.length === 0">
               <el-empty :description="pluginSearchQuery ? '无匹配结果' : '该市场暂无插件'" />
             </template>
@@ -224,11 +226,12 @@
 
       <!-- TAB: FAVORITES -->
       <div v-else class="tab-pane">
-        <div class="page-header">
-          <p class="page-subtitle">收藏的插件会保留市场信息，方便后续快速安装</p>
-        </div>
+        <div class="favorites-view">
+          <div class="page-header">
+            <p class="page-subtitle">收藏的插件会保留市场信息，方便后续快速安装</p>
+          </div>
 
-        <div v-loading="loadingFavorites || operationLoading" class="list-container">
+          <div v-loading="loadingFavorites || loadingFavoritesOperation" class="list-container">
           <div v-if="favoriteList.length === 0" class="empty-state">
             <svg width="64" height="64" class="empty-icon"><use href="#icon-star"/></svg>
             <p>暂无收藏插件</p>
@@ -273,6 +276,7 @@
             </div>
           </div>
         </div>
+        </div>
       </div>
 
     </div>
@@ -307,6 +311,7 @@ const activeTab = ref('plugins')
 // Installed plugins (Tab 1)
 const installedPlugins = ref<PluginItem[]>([])
 const loadingInstalled = ref(false)
+const loadingInstalledOperation = ref(false)
 
 // Marketplaces (Tab 2)
 const marketplaceList = ref<MarketplaceInfo[]>([])
@@ -314,6 +319,7 @@ const loadingMarketplaces = ref(false)
 const currentMarket = ref<MarketplaceInfo | null>(null)
 const marketPlugins = ref<PluginItem[]>([])
 const loadingMarketPlugins = ref(false)
+const loadingMarketPluginsOperation = ref(false)
 const pluginSearchQuery = ref('')
 const showAddMarketDialog = ref(false)
 const marketForm = ref({ url: '' })
@@ -321,9 +327,9 @@ const marketForm = ref({ url: '' })
 // Favorites (Tab 3)
 const favoriteList = ref<PluginFavoriteItem[]>([])
 const loadingFavorites = ref(false)
+const loadingFavoritesOperation = ref(false)
 
 // Operation state
-const operationLoading = ref(false)
 const installingPluginId = ref<string | null>(null)
 
 // Computed
@@ -429,7 +435,7 @@ function handleBackToMarkets() {
 // --- Plugin actions ---
 
 async function handleToggleEnable(plugin: PluginItem, enabled: boolean) {
-  operationLoading.value = true
+  loadingInstalledOperation.value = true
   const pluginId = getPluginId(plugin)
   try {
     const result = enabled
@@ -441,13 +447,13 @@ async function handleToggleEnable(plugin: PluginItem, enabled: boolean) {
   } catch (error: any) {
     showCliOutput(getErrorMessage(error, '操作失败'), true)
   } finally {
-    operationLoading.value = false
+    loadingInstalledOperation.value = false
   }
 }
 
 async function handleInstall(plugin: PluginItem) {
   const pluginId = getPluginId(plugin)
-  operationLoading.value = true
+  loadingMarketPluginsOperation.value = true
   installingPluginId.value = pluginId
   try {
     const result = await pluginsApi.install(pluginId)
@@ -457,7 +463,7 @@ async function handleInstall(plugin: PluginItem) {
   } catch (error: any) {
     showCliOutput(getErrorMessage(error, '安装失败'), true)
   } finally {
-    operationLoading.value = false
+    loadingMarketPluginsOperation.value = false
     installingPluginId.value = null
   }
 }
@@ -466,7 +472,7 @@ async function handleUninstall(plugin: PluginItem) {
   const pluginId = getPluginId(plugin)
   try {
     await confirm(`确定卸载插件 "${plugin.name}"?`, '确认卸载')
-    operationLoading.value = true
+    loadingInstalledOperation.value = true
     const result = await pluginsApi.uninstall(pluginId)
     showCliOutput(result.cli_output)
     await Promise.all([fetchInstalled(), fetchFavorites()])
@@ -476,13 +482,18 @@ async function handleUninstall(plugin: PluginItem) {
       showCliOutput(getErrorMessage(error, '卸载失败'), true)
     }
   } finally {
-    operationLoading.value = false
+    loadingInstalledOperation.value = false
   }
 }
 
 async function handleUpdate(plugin: PluginItem) {
   const pluginId = getPluginId(plugin)
-  operationLoading.value = true
+  const inMarketDetail = currentMarket.value !== null
+  if (inMarketDetail) {
+    loadingMarketPluginsOperation.value = true
+  } else {
+    loadingInstalledOperation.value = true
+  }
   installingPluginId.value = pluginId
   try {
     const result = await pluginsApi.update(pluginId)
@@ -492,7 +503,11 @@ async function handleUpdate(plugin: PluginItem) {
   } catch (error: any) {
     showCliOutput(getErrorMessage(error, '更新失败'), true)
   } finally {
-    operationLoading.value = false
+    if (inMarketDetail) {
+      loadingMarketPluginsOperation.value = false
+    } else {
+      loadingInstalledOperation.value = false
+    }
     installingPluginId.value = null
   }
 }
@@ -500,7 +515,7 @@ async function handleUpdate(plugin: PluginItem) {
 // --- Favorite actions ---
 
 async function handleAddFavorite(plugin: PluginItem) {
-  operationLoading.value = true
+  loadingInstalledOperation.value = true
   const pluginId = getPluginId(plugin)
   try {
     await pluginsApi.addFavorite(pluginId, plugin.name, plugin.marketplace_name)
@@ -509,12 +524,12 @@ async function handleAddFavorite(plugin: PluginItem) {
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
   } finally {
-    operationLoading.value = false
+    loadingInstalledOperation.value = false
   }
 }
 
 async function handleRemoveFavorite(plugin: PluginItem) {
-  operationLoading.value = true
+  loadingInstalledOperation.value = true
   const pluginId = getPluginId(plugin)
   try {
     await pluginsApi.removeFavorite(pluginId)
@@ -523,12 +538,12 @@ async function handleRemoveFavorite(plugin: PluginItem) {
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
   } finally {
-    operationLoading.value = false
+    loadingInstalledOperation.value = false
   }
 }
 
 async function handleInstallFavorite(favorite: PluginFavoriteItem) {
-  operationLoading.value = true
+  loadingFavoritesOperation.value = true
   installingPluginId.value = favorite.plugin_id
   try {
     let result: { cli_output: string }
@@ -547,13 +562,13 @@ async function handleInstallFavorite(favorite: PluginFavoriteItem) {
   } catch (error: any) {
     showCliOutput(getErrorMessage(error, favorite.is_installed ? '更新失败' : '安装失败'), true)
   } finally {
-    operationLoading.value = false
+    loadingFavoritesOperation.value = false
     installingPluginId.value = null
   }
 }
 
 async function handleRemoveFavoriteById(favorite: PluginFavoriteItem) {
-  operationLoading.value = true
+  loadingFavoritesOperation.value = true
   try {
     await pluginsApi.removeFavorite(favorite.plugin_id)
     await fetchFavorites()
@@ -561,7 +576,7 @@ async function handleRemoveFavoriteById(favorite: PluginFavoriteItem) {
   } catch (error: any) {
     notify(getErrorMessage(error, '操作失败'), 'error')
   } finally {
-    operationLoading.value = false
+    loadingFavoritesOperation.value = false
   }
 }
 
@@ -679,7 +694,7 @@ onMounted(() => {
   min-height: 0;
 }
 
-.repo-list-view, .repo-skills-view {
+.repo-list-view, .repo-skills-view, .favorites-view, .plugins-view {
   flex: 1;
   display: flex;
   flex-direction: column;
