@@ -35,17 +35,13 @@ export const skillsApi = {
     await invoke('remove_skill_repo', { name })
   },
 
-  updateRepo: async (oldName: string, newUrl: string): Promise<SkillRepo> => {
-    return await invoke<SkillRepo>('update_skill_repo', { oldName, newUrl })
-  },
-
   // ==================== Skill 发现 ====================
   discoverRepoSkills: async (name: string): Promise<DiscoverableSkill[]> => {
     return await invoke<DiscoverableSkill[]>('discover_repo_skills', { name })
   },
 
-  refreshRepoSkills: async (name: string): Promise<DiscoverableSkill[]> => {
-    return await invoke<DiscoverableSkill[]>('refresh_repo_skills', { name })
+  reinstallRepo: async (name: string): Promise<DiscoverableSkill[]> => {
+    return await invoke<DiscoverableSkill[]>('reinstall_skill_repo', { name })
   },
 
   // ==================== Skill 安装/卸载 ====================
@@ -54,8 +50,8 @@ export const skillsApi = {
     return transformInstalledSkill(result)
   },
 
-  reinstallInstalled: async (directory: string): Promise<InstalledSkill> => {
-    const result = await invoke<InstalledSkillBackend>('reinstall_installed_skill', { directory })
+  reinstall: async (directory: string): Promise<InstalledSkill> => {
+    const result = await invoke<InstalledSkillBackend>('reinstall_skill', { directory })
     return transformInstalledSkill(result)
   },
 
@@ -92,6 +88,11 @@ export const skillsApi = {
 
   installFavorite: async (key: string): Promise<InstalledSkill> => {
     const result = await invoke<InstalledSkillBackend>('install_favorite_skill', { key })
+    return transformInstalledSkill(result)
+  },
+
+  reinstallFavorite: async (key: string): Promise<InstalledSkill> => {
+    const result = await invoke<InstalledSkillBackend>('reinstall_favorite_skill', { key })
     return transformInstalledSkill(result)
   },
 }
