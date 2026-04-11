@@ -3,6 +3,10 @@
 </template>
 
 <script setup lang="ts">
+import { useUiStore } from '@/stores/ui'
+
+// 初始化主题
+const uiStore = useUiStore()
 </script>
 
 <style>
@@ -88,6 +92,50 @@
   --color-violet-light: #f5f3ff;
 }
 
+/* ========== 暗色模式 ========== */
+[data-theme="dark"] {
+  /* 文字色系 - 反转 */
+  --color-text: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-text-weak: #475569;
+  --color-text-dark: #cbd5e1;
+
+  /* 背景色系 - 反转 */
+  --color-bg: #0f172a;
+  --color-bg-page: #020617;
+  --color-bg-subtle: #1e293b;
+  --color-bg-80: rgba(15, 23, 42, 0.8);
+  --color-bg-95: rgba(15, 23, 42, 0.95);
+
+  /* 边框色系 */
+  --color-border: #334155;
+  --color-border-hover: #475569;
+  --color-border-light: rgba(51, 65, 85, 0.6);
+  --color-border-medium: rgba(51, 65, 85, 0.8);
+  --color-scrollbar: #475569;
+  --color-scrollbar-hover: #64748b;
+
+  /* 主色系微调 */
+  --color-primary-light: rgba(14, 165, 233, 0.15);
+  --color-primary-lighter: rgba(14, 165, 233, 0.1);
+  --color-primary-border: rgba(14, 165, 233, 0.3);
+
+  /* 状态色系微调 */
+  --color-success-light: rgba(16, 185, 129, 0.15);
+  --color-danger-light: rgba(239, 68, 68, 0.15);
+  --color-error-light: rgba(244, 63, 94, 0.15);
+  --color-violet-light: rgba(139, 92, 246, 0.15);
+
+  /* 阴影色系 - 更深 */
+  --color-shadow: rgba(0, 0, 0, 0.2);
+  --color-shadow-lg: rgba(0, 0, 0, 0.4);
+  --color-scrim: rgba(0, 0, 0, 0.5);
+  --color-scrim-dark: rgba(0, 0, 0, 0.6);
+  --color-overlay: rgba(255, 255, 255, 0.03);
+  --color-overlay-8: rgba(255, 255, 255, 0.05);
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -148,8 +196,35 @@ html, body, #app {
   background-color: transparent;
 }
 
-/* Element Plus Specific Overrides */
-.el-textarea__inner::-webkit-scrollbar {
-  width: 14px;
+/* Element Plus 暗色主题适配 - 映射 data-theme="dark" 到 .dark */
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+[data-theme="dark"] .el-button {
+  --el-button-bg-color: var(--el-fill-color-blank);
+  --el-button-text-color: var(--el-text-color-regular);
+}
+
+[data-theme="dark"] .el-input__wrapper,
+[data-theme="dark"] .el-textarea__inner {
+  background-color: var(--el-fill-color-blank);
+}
+
+[data-theme="dark"] .el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--el-fill-color-light);
+  --el-table-row-hover-bg-color: var(--el-fill-color);
+}
+
+[data-theme="dark"] .el-select-dropdown,
+[data-theme="dark"] .el-dropdown-menu {
+  background-color: var(--el-bg-color-overlay);
+  border-color: var(--el-border-color-light);
+}
+
+[data-theme="dark"] .el-popper {
+  --el-popper-bg-color: var(--el-bg-color-overlay);
 }
 </style>

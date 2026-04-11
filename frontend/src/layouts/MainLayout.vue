@@ -25,6 +25,22 @@
       
       <div class="sidebar-footer">
         <div class="footer-actions">
+          <button class="footer-btn" @click="uiStore.toggleTheme" :title="uiStore.theme === 'light' ? '切换暗色模式' : '切换亮色模式'">
+            <svg v-if="uiStore.theme === 'light'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+          </button>
           <button class="footer-btn" @click="handleCheckUpdate" :disabled="checkingUpdate" title="检查更新">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :class="{ 'spin': checkingUpdate }">
               <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
@@ -62,9 +78,11 @@ import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import { checkForUpdates } from '@/utils/updater'
 import { open } from '@tauri-apps/plugin-shell'
+import { useUiStore } from '@/stores/ui'
 
 const route = useRoute()
 const router = useRouter()
+const uiStore = useUiStore()
 
 const appVersion = ref('0.0.0')
 const checkingUpdate = ref(false)
