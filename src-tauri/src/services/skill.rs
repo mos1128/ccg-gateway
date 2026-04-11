@@ -160,13 +160,6 @@ fn load_skill_storage() -> Result<SkillStorage> {
     Ok(storage)
 }
 
-fn merge_repo_skills(target: &mut Vec<StoredInstalledSkill>, incoming: Vec<StoredInstalledSkill>) {
-    for skill in incoming {
-        target.retain(|item| item.directory != skill.directory);
-        target.push(skill);
-    }
-}
-
 pub fn ensure_default_skill_repos() -> Result<()> {
     let path = get_skill_storage_path();
     if path.exists() {
@@ -201,26 +194,6 @@ pub fn upsert_skill_repo(repo: SkillRepo) -> Result<()> {
         existing.source = repo.source;
     } else {
         storage.repos.push(StoredSkillRepo::new(repo));
-    }
-
-    save_skill_storage(storage)
-}
-
-pub fn replace_skill_repo(old_name: &str, repo: SkillRepo) -> Result<()> {
-    let mut storage = load_skill_storage()?;
-    let mut moved_skills = Vec::new();
-
-    if let Some(index) = storage.repos.iter().position(|item| item.name == old_name) {
-        moved_skills = storage.repos.remove(index).skills;
-    }
-
-    if let Some(existing) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
-        existing.source = repo.source;
-        merge_repo_skills(&mut existing.skills, moved_skills);
-    } else {
-        let mut repo_record = StoredSkillRepo::new(repo);
-        merge_repo_skills(&mut repo_record.skills, moved_skills);
-        storage.repos.push(repo_record);
     }
 
     save_skill_storage(storage)
