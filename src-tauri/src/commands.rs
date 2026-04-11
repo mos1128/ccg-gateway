@@ -5853,6 +5853,22 @@ pub async fn install_favorite_skill(
         source: favorite.repo_source.clone(),
     };
 
+    // 检查仓库是否已安装，未安装则静默安装
+    let existing_repo = skill::get_skill_repo(&repo.name)?;
+    if existing_repo.is_none() {
+        // 静默安装仓库
+        if skill::is_local_repo_source(&repo.source) {
+            let path = std::path::Path::new(&repo.source);
+            if !path.exists() || !path.is_dir() {
+                return Err(format!("本地目录 {} 不存在", repo.source));
+            }
+            skill::upsert_skill_repo(repo.clone())?;
+        } else {
+            git_clone_repo(&repo.source)?;
+            skill::upsert_skill_repo(repo.clone())?;
+        }
+    }
+
     // 确保仓库缓存存在
     let cache_dir = if skill::is_local_repo_source(&repo.source) {
         std::path::Path::new(&repo.source).to_path_buf()
