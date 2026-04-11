@@ -175,10 +175,7 @@
                     <div class="repo-source-subtitle mono">{{ repo.source }}</div>
                   </div>
                   <div class="repo-actions-overlay" @click.stop>
-                    <button class="action-icon" title="编辑" @click="handleEditRepo(repo)">
-                      <svg width="18" height="18"><use href="#icon-edit"/></svg>
-                    </button>
-                    <button class="action-icon" title="同步仓库" :disabled="loadingRepos" @click="handleRefreshRepo(repo)">
+                    <button class="action-icon" title="重装仓库" :disabled="loadingRepos" @click="handleReinstallRepo(repo)">
                       <svg width="18" height="18"><use href="#icon-refresh"/></svg>
                     </button>
                     <button class="action-icon delete" title="删除" @click="handleRemoveRepo(repo)">
@@ -343,20 +340,7 @@
           </div>
     </AppModal>
 
-    <AppModal v-model="showEditRepoDialog" title="编辑仓库" width="500px" @confirm="handleUpdateRepo">
-        <div class="form-group">
-            <label class="c-label">仓库地址 <span class="required">*</span></label>
-            <input
-              type="text"
-              v-model="editRepoForm.url"
-              class="c-input"
-              placeholder="GitHub URL / owner/repo / 本地目录"
-            >
-          </div>
-    </AppModal>
-
-  </div>
-</template>
+    </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
@@ -380,8 +364,6 @@ const repoList = ref<SkillRepo[]>([])
 const loadingRepos = ref(false)
 const showAddRepoDialog = ref(false)
 const repoForm = ref({ url: '' })
-const showEditRepoDialog = ref(false)
-const editRepoForm = ref({ oldName: '', url: '' })
 
 // Discovery
 const currentRepo = ref<SkillRepo | null>(null)
@@ -453,17 +435,17 @@ function handleRepoClick(repo: SkillRepo) {
   fetchRepoSkills()
 }
 
-async function handleRefreshRepo(repo: SkillRepo) {
+async function handleReinstallRepo(repo: SkillRepo) {
   loadingRepos.value = true
   try {
-    await skillsApi.refreshRepoSkills(repo.name)
-    notify('已同步仓库')
+    await skillsApi.reinstallRepo(repo.name)
+    notify('重装成功')
     await fetchRepos()
     if (currentRepo.value?.name === repo.name) {
       await fetchRepoSkills()
     }
   } catch (error: any) {
-    notify(getErrorMessage(error, '同步失败'), 'error')
+    notify(getErrorMessage(error, '重装失败'), 'error')
   } finally {
     loadingRepos.value = false
   }
@@ -485,7 +467,7 @@ async function refreshRepoSkills() {
   if (!currentRepo.value) return
   loadingSkills.value = true
   try {
-    repoSkillList.value = await skillsApi.refreshRepoSkills(currentRepo.value.name)
+    repoSkillList.value = await skillsApi.reinstallRepo(currentRepo.value.name)
     notify('已获取最新列表')
   } catch (error: any) {
     notify(getErrorMessage(error, '刷新失败'), 'error')
@@ -567,7 +549,7 @@ async function handleReinstallFromInstalled(skill: InstalledSkill) {
     await confirm(`确定重装技能 "${skill.name}"?`, '确认重装')
     loadingInstalledOperation.value = true
     installingSkillId.value = `installed-${skill.id}`
-    await skillsApi.reinstallInstalled(skill.id)
+    await skillsApi.reinstall(skill.directory)
     notify('重装成功')
     await Promise.all([
       refreshInstallationState(),
@@ -605,7 +587,7 @@ async function handleInstallFavorite(favorite: SkillFavoriteItem, reinstall: boo
     loadingFavoritesOperation.value = true
     installingSkillId.value = favorite.key
     if (reinstall) {
-      await skillsApi.reinstallInstalled(favorite.key)
+      await skillsApi.reinstallFavorite(favorite.key)
     } else {
       await skillsApi.installFavorite(favorite.key)
     }
@@ -683,36 +665,6 @@ async function handleRemoveRepo(repo: SkillRepo) {
     } else {
       loadingRepos.value = false
     }
-  }
-}
-
-function handleEditRepo(repo: SkillRepo) {
-  editRepoForm.value = {
-    oldName: repo.name,
-    url: repo.source,
-  }
-  showEditRepoDialog.value = true
-}
-
-async function handleUpdateRepo() {
-  if (!editRepoForm.value.url.trim()) {
-    notify('请输入仓库地址', 'error')
-    return
-  }
-
-  showEditRepoDialog.value = false
-
-  loadingRepos.value = true
-  try {
-    await skillsApi.updateRepo(
-      editRepoForm.value.oldName,
-      editRepoForm.value.url.trim()
-    )
-    notify('更新成功')
-    await fetchRepos()
-  } catch (error: any) {
-    notify(getErrorMessage(error, '更新失败'), 'error')
-    loadingRepos.value = false
   }
 }
 
