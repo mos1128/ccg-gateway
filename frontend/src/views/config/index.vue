@@ -198,7 +198,7 @@
 </template>
 <script setup lang="ts">
 import { ref, watch, onMounted, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { useSettingsStore } from '@/stores/settings'
@@ -290,7 +290,7 @@ async function handleExportLocal() {
 
 async function handleImportLocal(file: File) {
   try {
-    await ElMessageBox.confirm('导入将覆盖当前所有数据，确定继续？', '警告')
+    await confirm('导入将覆盖当前所有数据，确定继续？', '警告')
     importingLocal.value = true
     await backupApi.importFromLocal(file)
     notify('导入成功，应用将自动退出，请重新打开应用')
@@ -354,7 +354,7 @@ async function handleShowWebdavList() {
 
 async function handleImportWebdav(filename: string) {
   try {
-    await ElMessageBox.confirm('导入将覆盖当前所有数据，确定继续？', '警告')
+    await confirm('导入将覆盖当前所有数据，确定继续？', '警告')
     importingWebdav.value = true
     await backupApi.importFromWebdav(filename)
     notify('导入成功，应用将自动退出，请重新打开应用')
@@ -368,7 +368,7 @@ async function handleImportWebdav(filename: string) {
 
 async function handleDeleteWebdav(filename: string) {
   try {
-    await ElMessageBox.confirm(`确定要删除远程备份 ${filename} 吗？`, '警告')
+    await confirm(`确定要删除远程备份 ${filename} 吗？`, '警告')
     deletingWebdav.value = true
     await backupApi.deleteWebdavBackup(filename)
     notify('已删除')

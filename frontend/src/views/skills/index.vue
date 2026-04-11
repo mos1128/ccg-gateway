@@ -356,7 +356,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import AppModal from '@/components/AppModal.vue'
@@ -512,7 +512,7 @@ async function handleCliToggle(skill: InstalledSkill, cliType: string, enabled: 
 
 async function handleUninstall(skill: InstalledSkill) {
   try {
-    await ElMessageBox.confirm(`确定卸载技能 "${skill.name}"?`, '确认卸载')
+    await confirm(`确定卸载技能 "${skill.name}"?`, '确认卸载')
     operationLoading.value = true
     await skillsApi.uninstall(skill.id)
     notify('已卸载')
@@ -532,7 +532,7 @@ async function handleUninstall(skill: InstalledSkill) {
 async function handleInstall(skill: DiscoverableSkill, reinstall: boolean = false) {
   try {
     if (reinstall) {
-      await ElMessageBox.confirm(`确定重装 "${skill.name}"? (将更新为最新版本)`, '确认重装')
+      await confirm(`确定重装 "${skill.name}"? (将更新为最新版本)`, '确认重装')
     }
     operationLoading.value = true
     installingSkillId.value = skill.key
@@ -558,7 +558,7 @@ async function handleReinstallFromInstalled(skill: InstalledSkill) {
     return
   }
   try {
-    await ElMessageBox.confirm(`确定重装技能 "${skill.name}"?`, '确认重装')
+    await confirm(`确定重装技能 "${skill.name}"?`, '确认重装')
     operationLoading.value = true
     installingSkillId.value = `installed-${skill.id}`
     await skillsApi.reinstallInstalled(skill.id)
@@ -594,7 +594,7 @@ async function toggleInstalledFavorite(skill: InstalledSkill) {
 async function handleInstallFavorite(favorite: SkillFavoriteItem, reinstall: boolean = false) {
   try {
     if (reinstall) {
-      await ElMessageBox.confirm(`确定重装 "${favorite.name}"? (将更新为最新版本)`, '确认重装')
+      await confirm(`确定重装 "${favorite.name}"? (将更新为最新版本)`, '确认重装')
     }
     operationLoading.value = true
     installingSkillId.value = favorite.key
@@ -665,7 +665,7 @@ async function handleAddRepo() {
 
 async function handleRemoveRepo(repo: SkillRepo) {
   try {
-    await ElMessageBox.confirm(`确定删除仓库 "${repo.name}" 并卸载该仓库下所有已安装技能？`, '确认删除')
+    await confirm(`确定删除仓库 "${repo.name}" 并卸载该仓库下所有已安装技能？`, '确认删除')
     loadingRepos.value = true
     await skillsApi.removeRepo(repo.name)
     notify('已删除')

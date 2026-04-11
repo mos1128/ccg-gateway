@@ -106,7 +106,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import AppModal from '@/components/AppModal.vue'
@@ -196,7 +196,7 @@ async function handleCliToggle(prompt: Prompt, cliType: CliType, enabled: boolea
 
 async function handleDelete(prompt: Prompt) {
   try {
-    await ElMessageBox.confirm(`确定删除提示词 "${prompt.name}"?`, '确认删除')
+    await confirm(`确定删除提示词 "${prompt.name}"?`, '确认删除')
     await promptsApi.delete(prompt.id)
     notify('已删除')
     await fetchList()

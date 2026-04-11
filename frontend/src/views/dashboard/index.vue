@@ -87,7 +87,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, reactive, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 
@@ -173,8 +173,8 @@ async function handleModeSwitch(cliType: string, targetMode: 'proxy' | 'direct')
 async function handleCliToggle(cliType: string, enabled: boolean) {
   if (enabled && getCliMode(cliType) === 'direct') {
     try {
-      await ElMessageBox.confirm('当前是官方模式，是否切换至中转模式并启用代理？', '提示', {
-        confirmButtonText: '切换并启用', cancelButtonText: '取消'
+      await confirm('当前是官方模式，是否切换至中转模式并启用代理？', '提示', {
+        confirmText: '切换并启用', cancelText: '取消'
       })
       cliLoading[cliType] = true
       try {

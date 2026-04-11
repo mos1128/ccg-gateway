@@ -295,7 +295,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { ElMessageBox, ElNotification } from 'element-plus'
+import { ElNotification } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import AppModal from '@/components/AppModal.vue'
 import { pluginsApi } from '@/api/plugins'
 import { getErrorMessage } from '@/utils/error'
@@ -464,7 +465,7 @@ async function handleInstall(plugin: PluginItem) {
 async function handleUninstall(plugin: PluginItem) {
   const pluginId = getPluginId(plugin)
   try {
-    await ElMessageBox.confirm(`确定卸载插件 "${plugin.name}"?`, '确认卸载')
+    await confirm(`确定卸载插件 "${plugin.name}"?`, '确认卸载')
     operationLoading.value = true
     const result = await pluginsApi.uninstall(pluginId)
     showCliOutput(result.cli_output)
@@ -590,7 +591,7 @@ async function handleAddMarketplace() {
 
 async function handleRemoveMarketplace(market: MarketplaceInfo) {
   try {
-    await ElMessageBox.confirm(`确定删除市场 "${market.name}"?`, '确认删除')
+    await confirm(`确定删除市场 "${market.name}"?`, '确认删除')
     loadingMarketplaces.value = true
     const result = await pluginsApi.removeMarketplace(market.name)
     showCliOutput(result.cli_output)

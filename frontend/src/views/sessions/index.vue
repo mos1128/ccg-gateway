@@ -177,7 +177,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { useSessionStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
@@ -235,7 +235,7 @@ function closeDrawer() {
 
 async function handleDeleteProject(project: ProjectInfo) {
   try {
-    await ElMessageBox.confirm(
+    await confirm(
       `确定删除项目 "${project.display_name}" 及其所有会话吗？此操作不可恢复！`,
       '确认删除'
     )
@@ -251,7 +251,7 @@ async function handleDeleteProject(project: ProjectInfo) {
 
 async function handleDeleteSession(session: SessionInfo) {
   try {
-    await ElMessageBox.confirm(
+    await confirm(
       `确定删除会话 "${session.session_id.substring(0, 8)}..." 吗？此操作不可恢复！`,
       '确认删除'
     )

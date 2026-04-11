@@ -117,7 +117,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import AppModal from '@/components/AppModal.vue'
@@ -232,7 +232,7 @@ async function handleCliToggle(mcp: Mcp, cliType: CliType, enabled: boolean) {
 
 async function handleDelete(mcp: Mcp) {
   try {
-    await ElMessageBox.confirm(`确定删除 MCP 服务器 "${mcp.name}"?`, '确认删除')
+    await confirm(`确定删除 MCP 服务器 "${mcp.name}"?`, '确认删除')
     await mcpApi.delete(mcp.id)
     notify('已删除')
     await fetchList()

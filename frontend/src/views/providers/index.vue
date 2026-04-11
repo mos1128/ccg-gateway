@@ -412,7 +412,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import draggable from 'vuedraggable'
@@ -718,7 +718,7 @@ async function handleCommand(command: string, provider: Provider) {
     await providerStore.unblacklist(provider.id)
     notify('已解除拉黑')
   } else if (command === 'delete') {
-    await ElMessageBox.confirm('确定删除该服务商？', '确认')
+    await confirm('确定删除该服务商？', '确认')
     await providerStore.deleteProvider(provider.id)
     notify('已删除')
   }
@@ -742,7 +742,7 @@ function handleEditCredential(credential: OfficialCredential) {
 }
 
 async function handleDeleteCredential(credential: OfficialCredential) {
-  await ElMessageBox.confirm('确定删除该凭证？', '确认')
+  await confirm('确定删除该凭证？', '确认')
   await credentialStore.deleteCredential(credential.id)
   notify('已删除')
 }

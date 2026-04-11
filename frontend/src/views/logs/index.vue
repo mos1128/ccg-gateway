@@ -309,7 +309,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import AppModal from '@/components/AppModal.vue'
 import { logsApi } from '@/api/logs'
@@ -459,7 +459,7 @@ function resetRequestFilters() {
 
 async function clearRequestLogs() {
   try {
-    await ElMessageBox.confirm('确定要清空所有请求日志吗？', '清理确认')
+    await confirm('确定要清空所有请求日志吗？', '清理确认')
   } catch {
     return
   }
@@ -508,7 +508,7 @@ function resetSystemFilters() {
 
 async function clearSystemLogs() {
   try {
-    await ElMessageBox.confirm('确定要清空所有系统日志吗？', '清理确认')
+    await confirm('确定要清空所有系统日志吗？', '清理确认')
   } catch {
     return
   }

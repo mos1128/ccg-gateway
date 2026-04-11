@@ -1,8 +1,9 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-shell'
-import { ElMessageBox, ElNotification } from 'element-plus'
+import { ElNotification } from 'element-plus'
 import { notify } from '@/utils/notification'
+import { confirm } from '@/utils/confirm'
 
 // GitHub 仓库配置
 const GITHUB_OWNER = 'mos1128'
@@ -68,37 +69,27 @@ export async function checkForUpdates(silent: boolean = true): Promise<void> {
     
     if (compareVersions(latestVersion, currentVersion) > 0) {
       // 有新版本
-      const releaseNotes = latestRelease.body 
+      const releaseNotes = latestRelease.body
         ? `\n\n更新日志:\n${latestRelease.body.slice(0, 500)}${latestRelease.body.length > 500 ? '...' : ''}`
         : ''
-      
-      ElMessageBox.confirm(
+
+      confirm(
         `发现新版本 ${latestVersion}（当前版本: v${currentVersion}）${releaseNotes}`,
         '更新提示',
-        {
-          confirmButtonText: '前往下载',
-          cancelButtonText: '稍后再说',
-          dangerouslyUseHTMLString: false
-        }
+        { confirmText: '前往下载', cancelText: '稍后再说' }
       ).then(() => {
-        // 打开 Release 页面
         open(latestRelease.html_url)
-      }).catch(() => {
-        // 用户取消
-      })
+      }).catch(() => {})
     } else if (!silent) {
       notify(`当前已是最新版本 v${currentVersion}`)
     }
   } catch (error) {
     console.error('检查更新失败:', error)
     if (!silent) {
-      ElMessageBox.confirm(
+      confirm(
         '无法获取更新信息，可能是网络问题。您可以手动访问发布页面查看最新版本。',
         '检查更新',
-        {
-          confirmButtonText: '前往发布页面',
-          cancelButtonText: '取消'
-        }
+        { confirmText: '前往发布页面', cancelText: '取消' }
       ).then(() => {
         open(`https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`)
       }).catch(() => {})
