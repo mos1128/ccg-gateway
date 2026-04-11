@@ -5339,7 +5339,7 @@ pub async fn discover_repo_skills(
 }
 
 #[tauri::command]
-pub async fn refresh_repo_skills(
+pub async fn reinstall_skill_repo(
     db: State<'_, SqlitePool>,
     name: String,
 ) -> Result<Vec<DiscoverableSkill>> {
