@@ -88,6 +88,9 @@ useThemeStore()
   /* 特殊色系 */
   --color-violet: #8b5cf6;
   --color-violet-light: #f5f3ff;
+
+  /* Element Plus 覆盖 */
+  --el-mask-color: rgba(255, 255, 255, 0.6);
 }
 
 /* ========== 暗色模式 ========== */
@@ -155,6 +158,9 @@ html.dark {
   /* 特殊色系 */
   --color-violet: #a78bfa;
   --color-violet-light: #2e1065;
+
+  /* Element Plus 覆盖 */
+  --el-mask-color: rgba(0, 0, 0, 0.4);
 }
 
 *, *::before, *::after {
