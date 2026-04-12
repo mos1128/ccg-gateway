@@ -187,6 +187,13 @@ async function handleCliToggle(prompt: Prompt, cliType: CliType, enabled: boolea
   try {
     const { data } = await promptsApi.toggleCli(prompt.id, cliType, enabled)
     prompt.cli_flags = data.cli_flags
+    if (enabled) {
+      for (const p of promptList.value) {
+        if (p.id !== prompt.id && p.cli_flags) {
+          p.cli_flags[cliType] = false
+        }
+      }
+    }
     notify('已更新')
   } catch (error: any) {
     notify(getErrorMessage(error, '更新失败'), 'error')
