@@ -409,8 +409,7 @@ pub async fn test_provider_model(
                 let (response_text, raw_chunk) = match first_chunk {
                     Ok(Some(Ok(bytes))) => {
                         let text = String::from_utf8_lossy(&bytes).to_string();
-                        let summary = extract_stream_summary(&text);
-                        (summary, text)
+                        ("请求成功".to_string(), text)
                     }
                     Ok(Some(Err(e))) => (format!("Stream error: {}", e), String::new()),
                     Ok(None) => ("Empty stream".to_string(), String::new()),
@@ -431,16 +430,15 @@ pub async fn test_provider_model(
                     response_body: raw_chunk,
                 }
             } else {
-                // Non-2xx: read error body
+                // Non-2xx: return raw response body for debugging
                 let body_text = resp.text().await.unwrap_or_default();
-                let response_text = extract_error_summary(&body_text);
                 TestProviderResult {
                     provider_id,
                     provider_name,
                     actual_model,
                     status_code: Some(status_code),
                     elapsed_ms,
-                    response_text,
+                    response_text: body_text.clone(),
                     request_url: url,
                     request_headers,
                     request_body,
@@ -476,69 +474,3 @@ fn headers_to_json(headers: &reqwest::header::HeaderMap) -> String {
     serde_json::to_string_pretty(&map).unwrap_or_default()
 }
 
-/// Extract summary from the first SSE chunk
-fn extract_stream_summary(chunk: &str) -> String {
-    // SSE chunks start with "data: " — try to parse the JSON payload
-    for line in chunk.lines() {
-        let data = line.strip_prefix("data: ").unwrap_or(line).trim();
-        if data.is_empty() || data == "[DONE]" {
-            continue;
-        }
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-            // OpenAI streaming: choices[0].delta.content
-            if let Some(c) = json
-                .pointer("/choices/0/delta/content")
-                .and_then(|v| v.as_str())
-            {
-                if !c.is_empty() {
-                    return truncate_string(c, 200);
-                }
-            }
-            // Anthropic streaming: check event type
-            if let Some(t) = json.get("type").and_then(|v| v.as_str()) {
-                return t.to_string();
-            }
-            // Gemini streaming: candidates[0].content.parts[0].text
-            if let Some(c) = json
-                .pointer("/candidates/0/content/parts/0/text")
-                .and_then(|v| v.as_str())
-            {
-                return truncate_string(c, 200);
-            }
-        }
-    }
-    "Stream OK".to_string()
-}
-
-/// Extract error message from response body
-fn extract_error_summary(body: &str) -> String {
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-        if let Some(msg) = json.pointer("/error/message").and_then(|v| v.as_str()) {
-            return truncate_string(msg, 1000);
-        }
-        if let Some(msg) = json
-            .pointer("/error/error/message")
-            .and_then(|v| v.as_str())
-        {
-            return truncate_string(msg, 1000);
-        }
-        // FastAPI/Pydantic validation errors use "detail" field
-        if let Some(detail) = json.get("detail") {
-            if detail.is_array() {
-                return truncate_string(&detail.to_string(), 1000);
-            }
-            if let Some(msg) = detail.as_str() {
-                return truncate_string(msg, 1000);
-            }
-        }
-    }
-    truncate_string(body, 1000)
-}
-
-fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len])
-    }
-}
