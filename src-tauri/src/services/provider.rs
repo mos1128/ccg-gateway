@@ -384,6 +384,15 @@ pub async fn test_provider_model(
     let request_body = serde_json::to_string_pretty(&body_json).unwrap_or_default();
     let request_headers = headers_to_json(&headers);
 
+    // Log request details
+    tracing::info!(
+        "[模型测试] {}\nURL: {}\nHeaders: {}\nBody: {}",
+        provider_name,
+        url,
+        request_headers,
+        request_body
+    );
+
     // 4. Send request, measure time to first chunk
     let start = std::time::Instant::now();
     let response = client
