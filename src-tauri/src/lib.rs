@@ -30,6 +30,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let config = config.clone();
+            app.manage(config.clone());
 
             // Initialize database
             let db_path = config.database.path.clone();
@@ -67,7 +68,7 @@ pub fn run() {
                 };
 
                 let router = api::create_router(state);
-                let addr = format!("{}:{}", config.server.host, config.server.port);
+                let addr = config.bind_addr();
 
                 tokio::spawn(async move {
                     // Bind listener with better error handling

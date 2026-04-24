@@ -1,4 +1,6 @@
-use crate::config::{expand_home_path, get_data_dir, get_default_cli_config_dir, shrink_home_path};
+use crate::config::{
+    expand_home_path, get_data_dir, get_default_cli_config_dir, shrink_home_path, Config,
+};
 use crate::db::models::{
     CliSettingsResponse, CliSettingsUpdate, DailyStats, DiscoverableSkill, GatewaySettings,
     InstalledSkillResponse, MarketplaceInfo, McpCliFlag, McpConfig, McpCreate, McpResponse,
@@ -32,15 +34,18 @@ fn serialize_toml_table<T: Serialize>(value: &T, context: &str) -> Result<toml_e
     Ok(serialize_toml_document(value, context)?.as_table().clone())
 }
 
-fn codex_gateway_document() -> Result<toml_edit::DocumentMut> {
-    r#"model_provider = "ccg-gateway"
+fn codex_gateway_document(gateway_url: &str) -> Result<toml_edit::DocumentMut> {
+    format!(
+        r#"model_provider = "ccg-gateway"
 
 [model_providers.ccg-gateway]
 name = "ccg-gateway"
-base_url = "http://127.0.0.1:7788"
+base_url = "{}"
 wire_api = "responses"
 requires_openai_auth = false
-"#
+"#,
+        gateway_url
+    )
     .parse::<toml_edit::DocumentMut>()
     .map_err(|e| format!("Failed to build Codex gateway config: {}", e))
 }
@@ -285,13 +290,14 @@ mod tests {
         let temp_dir =
             std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let gateway_url = Config::default().gateway_base_url();
 
         let config_path = temp_dir.join("settings.json");
         std::fs::write(
             &config_path,
             serde_json::to_string_pretty(&serde_json::json!({
                 "env": {
-                    "ANTHROPIC_BASE_URL": "http://127.0.0.1:7788",
+                    "ANTHROPIC_BASE_URL": gateway_url,
                     "ANTHROPIC_AUTH_TOKEN": "ccg-gateway",
                     "KEEP": "yes"
                 },
@@ -330,22 +336,26 @@ mod tests {
         let temp_dir =
             std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let gateway_url = Config::default().gateway_base_url();
 
         let config_path = temp_dir.join("config.toml");
         std::fs::write(
             &config_path,
-            r#"model_provider = "ccg-gateway"
+            format!(
+                r#"model_provider = "ccg-gateway"
 model = "gpt-5.4"
 
 [model_providers.ccg-gateway]
 name = "ccg-gateway"
-base_url = "http://127.0.0.1:7788"
+base_url = "{}"
 wire_api = "responses"
 requires_openai_auth = false
 
 [mcp_servers.universal-db]
 command = "cmd"
 "#,
+                gateway_url
+            ),
         )
         .expect("config.toml should be written");
 
@@ -396,15 +406,20 @@ command = "cmd"
         let temp_dir =
             std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let gateway_url = Config::default().gateway_base_url();
 
         let env_path = temp_dir.join(".env");
         std::fs::write(
             &env_path,
-            "GEMINI_API_KEY=ccg-gateway\nGOOGLE_GEMINI_BASE_URL=http://127.0.0.1:7788\nEXTRA=keep\n",
+            format!(
+                "GEMINI_API_KEY=ccg-gateway\nGOOGLE_GEMINI_BASE_URL={}\nEXTRA=keep\n",
+                gateway_url
+            ),
         )
         .expect(".env should be written");
 
-        remove_gemini_gateway_env_content(&env_path).expect(".env cleanup should succeed");
+        remove_gemini_gateway_env_content(&env_path, &gateway_url)
+            .expect(".env cleanup should succeed");
 
         let result = std::fs::read_to_string(&env_path).expect(".env should be readable");
         assert_eq!(result, "EXTRA=keep\n");
@@ -1095,8 +1110,10 @@ pub async fn update_timeout_settings(
 #[tauri::command]
 pub async fn get_cli_settings(
     db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
     cli_type: String,
 ) -> Result<CliSettingsResponse> {
+    let gateway_url = config.gateway_base_url();
     let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
         "SELECT cli_type, default_json_config, cli_mode, config_write_mode, updated_at FROM cli_settings WHERE cli_type = ?",
     )
@@ -1115,7 +1132,7 @@ pub async fn get_cli_settings(
         .to_string();
 
     if let Some(row) = row {
-        let enabled = check_cli_enabled(db.inner(), &cli_type).await;
+        let enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
 
         Ok(CliSettingsResponse {
             cli_type: row.cli_type,
@@ -1153,10 +1170,12 @@ struct CliSettingsRowWithoutConfigDir {
 #[tauri::command]
 pub async fn update_cli_settings(
     db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
     cli_type: String,
     input: CliSettingsUpdate,
 ) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
+    let gateway_url = config.gateway_base_url();
 
     // Validate and update database
     if let Some(ref config) = input.default_json_config {
@@ -1202,10 +1221,10 @@ pub async fn update_cli_settings(
 
         if mode == "proxy" {
             // 中转模式：如果 CLI 已启用，重新同步配置
-            let enabled = check_cli_enabled(db.inner(), &cli_type).await;
+            let enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
             if enabled {
                 tracing::info!("{} CLI 已启用，配置变更后自动同步配置文件", cli_type);
-                sync_cli_config(db.inner(), &cli_type, true, config_trimmed).await?;
+                sync_cli_config(db.inner(), &cli_type, true, config_trimmed, &gateway_url).await?;
             }
         } else {
             // 直连模式：重新同步凭证配置
@@ -1260,7 +1279,7 @@ pub async fn update_cli_settings(
         // 只有在中转模式下才处理 enabled 参数
         if mode == "proxy" {
             // 检查 CLI 当前是否已经处于目标状态
-            let current_enabled = check_cli_enabled(db.inner(), &cli_type).await;
+            let current_enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
 
             if current_enabled == enabled {
                 tracing::info!(
@@ -1283,7 +1302,14 @@ pub async fn update_cli_settings(
                     .and_then(|r| r.default_json_config.clone())
                     .unwrap_or_default();
                 tracing::info!("{} 执行 CLI 状态切换：enabled={}", cli_type, enabled);
-                sync_cli_config(db.inner(), &cli_type, enabled, &default_config).await?;
+                sync_cli_config(
+                    db.inner(),
+                    &cli_type,
+                    enabled,
+                    &default_config,
+                    &gateway_url,
+                )
+                .await?;
             }
         } else {
             tracing::info!("{} 处于直连模式，忽略 enabled 参数", cli_type);
@@ -1403,16 +1429,24 @@ pub async fn get_cli_config_dir_path(db: &SqlitePool, cli_type: &str) -> std::pa
 // 内部辅助函数
 // ============================================================================
 
-async fn check_cli_enabled(db: &SqlitePool, cli_type: &str) -> bool {
+async fn check_cli_enabled(db: &SqlitePool, cli_type: &str, gateway_url: &str) -> bool {
     match cli_type {
-        "claude_code" => check_claude_uses_gateway(db, cli_type).await,
-        "codex" => check_codex_uses_gateway(db, cli_type).await,
-        "gemini" => check_gemini_uses_gateway(db, cli_type).await,
+        "claude_code" => check_claude_uses_gateway(db, cli_type, gateway_url).await,
+        "codex" => check_codex_uses_gateway(db, cli_type, gateway_url).await,
+        "gemini" => check_gemini_uses_gateway(db, cli_type, gateway_url).await,
         _ => false,
     }
 }
 
-async fn check_claude_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
+fn normalize_gateway_url(url: &str) -> String {
+    url.trim().trim_end_matches('/').to_ascii_lowercase()
+}
+
+fn gateway_url_matches(value: &str, gateway_url: &str) -> bool {
+    normalize_gateway_url(value) == normalize_gateway_url(gateway_url)
+}
+
+async fn check_claude_uses_gateway(db: &SqlitePool, cli_type: &str, gateway_url: &str) -> bool {
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
     let config_path = config_dir.join("settings.json");
 
@@ -1434,8 +1468,7 @@ async fn check_claude_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
         Ok(data) => {
             if let Some(env) = data.get("env") {
                 if let Some(base_url) = env.get("ANTHROPIC_BASE_URL").and_then(|v| v.as_str()) {
-                    return base_url.contains("127.0.0.1:7788")
-                        || base_url.contains("localhost:7788");
+                    return gateway_url_matches(base_url, gateway_url);
                 }
             }
             false
@@ -1444,7 +1477,7 @@ async fn check_claude_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
     }
 }
 
-async fn check_codex_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
+async fn check_codex_uses_gateway(db: &SqlitePool, cli_type: &str, gateway_url: &str) -> bool {
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
     let config_path = config_dir.join("config.toml");
 
@@ -1463,10 +1496,15 @@ async fn check_codex_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
 
     match content.parse::<toml_edit::DocumentMut>() {
         Ok(doc) => {
-            // Check if model_provider is "ccg-gateway"
             if let Some(provider) = doc.get("model_provider").and_then(|v| v.as_str()) {
                 if provider == "ccg-gateway" {
-                    return true;
+                    return doc
+                        .get("model_providers")
+                        .and_then(|providers| providers.get("ccg-gateway"))
+                        .and_then(|provider| provider.get("base_url"))
+                        .and_then(|base_url| base_url.as_str())
+                        .map(|base_url| gateway_url_matches(base_url, gateway_url))
+                        .unwrap_or(false);
                 }
             }
             false
@@ -1475,7 +1513,7 @@ async fn check_codex_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
     }
 }
 
-async fn check_gemini_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
+async fn check_gemini_uses_gateway(db: &SqlitePool, cli_type: &str, gateway_url: &str) -> bool {
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
     let env_path = config_dir.join(".env");
 
@@ -1490,9 +1528,8 @@ async fn check_gemini_uses_gateway(db: &SqlitePool, cli_type: &str) -> bool {
 
     // Check if .env contains GOOGLE_GEMINI_BASE_URL pointing to gateway
     for line in content.lines() {
-        if line.starts_with("GOOGLE_GEMINI_BASE_URL=") {
-            let url = line.split('=').nth(1).unwrap_or("");
-            return url.contains("127.0.0.1:7788") || url.contains("localhost:7788");
+        if let Some(url) = line.trim().strip_prefix("GOOGLE_GEMINI_BASE_URL=") {
+            return gateway_url_matches(url, gateway_url);
         }
     }
     false
@@ -1529,12 +1566,15 @@ async fn sync_cli_config(
     cli_type: &str,
     enabled: bool,
     default_config: &str,
+    gateway_url: &str,
 ) -> Result<()> {
     let write_mode = get_config_write_mode(db, cli_type).await;
     match cli_type {
-        "claude_code" => sync_claude_code_config(db, enabled, default_config, &write_mode).await,
-        "codex" => sync_codex_config(db, enabled, default_config, &write_mode).await,
-        "gemini" => sync_gemini_config(db, enabled, default_config, &write_mode).await,
+        "claude_code" => {
+            sync_claude_code_config(db, enabled, default_config, &write_mode, gateway_url).await
+        }
+        "codex" => sync_codex_config(db, enabled, default_config, &write_mode, gateway_url).await,
+        "gemini" => sync_gemini_config(db, enabled, default_config, &write_mode, gateway_url).await,
         _ => Err("Invalid CLI type".to_string()),
     }
 }
@@ -1658,7 +1698,7 @@ fn remove_codex_gateway_auth_content(auth_path: &std::path::Path) -> Result<()> 
     Ok(())
 }
 
-fn remove_gemini_gateway_env_content(env_path: &std::path::Path) -> Result<()> {
+fn remove_gemini_gateway_env_content(env_path: &std::path::Path, gateway_url: &str) -> Result<()> {
     if !env_path.exists() {
         return Ok(());
     }
@@ -1676,7 +1716,7 @@ fn remove_gemini_gateway_env_content(env_path: &std::path::Path) -> Result<()> {
                 return false;
             }
             if let Some(url) = trimmed.strip_prefix("GOOGLE_GEMINI_BASE_URL=") {
-                if url.contains("127.0.0.1:7788") || url.contains("localhost:7788") {
+                if gateway_url_matches(url, gateway_url) {
                     return false;
                 }
             }
@@ -1781,6 +1821,7 @@ async fn sync_claude_code_config(
     enabled: bool,
     default_config: &str,
     write_mode: &str,
+    gateway_url: &str,
 ) -> Result<()> {
     let config_dir = get_cli_config_dir_path(db, "claude_code").await;
     let config_path = config_dir.join("settings.json");
@@ -1799,7 +1840,7 @@ async fn sync_claude_code_config(
         // Build gateway config
         let gateway_config = serde_json::json!({
             "env": {
-                "ANTHROPIC_BASE_URL": "http://127.0.0.1:7788",
+                "ANTHROPIC_BASE_URL": gateway_url,
                 "ANTHROPIC_AUTH_TOKEN": "ccg-gateway"
             }
         });
@@ -1865,6 +1906,7 @@ async fn sync_codex_config(
     enabled: bool,
     default_config: &str,
     write_mode: &str,
+    gateway_url: &str,
 ) -> Result<()> {
     let codex_dir = get_cli_config_dir_path(db, "codex").await;
     let auth_path = codex_dir.join("auth.json");
@@ -1930,7 +1972,7 @@ async fn sync_codex_config(
             }
         }
 
-        let gateway_doc = codex_gateway_document()?;
+        let gateway_doc = codex_gateway_document(gateway_url)?;
         for (k, v) in gateway_doc.iter() {
             final_doc.insert(&k, v.clone());
         }
@@ -1956,6 +1998,7 @@ async fn sync_gemini_config(
     enabled: bool,
     default_config: &str,
     write_mode: &str,
+    gateway_url: &str,
 ) -> Result<()> {
     let gemini_dir = get_cli_config_dir_path(db, "gemini").await;
     let config_path = gemini_dir.join("settings.json");
@@ -1971,9 +2014,10 @@ async fn sync_gemini_config(
         })?;
 
         // Write .env file with gateway address
-        let env_content =
-            "GEMINI_API_KEY=ccg-gateway\nGOOGLE_GEMINI_BASE_URL=http://127.0.0.1:7788\n"
-                .to_string();
+        let env_content = format!(
+            "GEMINI_API_KEY=ccg-gateway\nGOOGLE_GEMINI_BASE_URL={}\n",
+            gateway_url
+        );
         std::fs::write(&env_path, env_content).map_err(|e| {
             tracing::error!("Failed to write .env file: {}", e);
             e.to_string()
@@ -2031,7 +2075,7 @@ async fn sync_gemini_config(
         })?;
     } else {
         let gateway_config = gemini_gateway_json_template();
-        remove_gemini_gateway_env_content(&env_path)?;
+        remove_gemini_gateway_env_content(&env_path, gateway_url)?;
         remove_json_config_content(
             &config_path,
             &gateway_config,
@@ -2197,10 +2241,12 @@ pub async fn clear_system_logs(log_db: State<'_, crate::LogDb>) -> Result<()> {
 
 // System status
 #[tauri::command]
-pub async fn get_system_status() -> Result<SystemStatus> {
+pub async fn get_system_status(config: State<'_, Config>) -> Result<SystemStatus> {
     Ok(SystemStatus {
         status: "running".to_string(),
-        port: 7788,
+        host: config.server.host.clone(),
+        port: config.server.port,
+        gateway_url: config.gateway_base_url(),
         uptime: 0,
         version: env!("CARGO_PKG_VERSION").to_string(),
     })
@@ -6770,11 +6816,13 @@ pub async fn get_cli_mode(db: State<'_, SqlitePool>, cli_type: String) -> Result
 #[tauri::command]
 pub async fn set_cli_mode(
     db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
     log_db: State<'_, LogDb>,
     cli_type: String,
     mode: String,
 ) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
+    let gateway_url = config.gateway_base_url();
 
     let current_mode: Option<(String,)> =
         sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
@@ -6803,7 +6851,7 @@ pub async fn set_cli_mode(
         // 步骤1: 如果从中转模式切换过来，先关闭 CLI
         if current_mode == "proxy" {
             // 检查是否真的有中转配置（通过检查配置文件）
-            let has_gateway_config = check_cli_enabled(db.inner(), &cli_type).await;
+            let has_gateway_config = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
 
             if has_gateway_config {
                 let default_config = sqlx::query_as::<_, (Option<String>,)>(
@@ -6818,7 +6866,8 @@ pub async fn set_cli_mode(
 
                 tracing::info!("{} 从中转模式切换到直连模式，先关闭 CLI", cli_type);
                 // 关闭中转模式（会自动处理备份恢复）
-                sync_cli_config(db.inner(), &cli_type, false, &default_config).await?;
+                sync_cli_config(db.inner(), &cli_type, false, &default_config, &gateway_url)
+                    .await?;
             } else {
                 tracing::info!("{} 当前没有中转配置，跳过关闭 CLI 步骤", cli_type);
             }
@@ -6890,7 +6939,7 @@ pub async fn set_cli_mode(
         .and_then(|r| r.0)
         .unwrap_or_default();
 
-        sync_cli_config(db.inner(), &cli_type, true, &default_config).await?;
+        sync_cli_config(db.inner(), &cli_type, true, &default_config, &gateway_url).await?;
 
         let _ = crate::services::stats::record_system_log(
             &log_db.0,

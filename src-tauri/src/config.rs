@@ -123,7 +123,28 @@ impl Default for Config {
 }
 
 impl Config {
+    pub fn bind_addr(&self) -> String {
+        format!("{}:{}", self.server.host, self.server.port)
+    }
+
+    pub fn gateway_base_url(&self) -> String {
+        format!(
+            "http://{}:{}",
+            host_for_url(&self.server.host),
+            self.server.port
+        )
+    }
+
     pub fn load() -> Self {
         Config::default()
+    }
+}
+
+fn host_for_url(host: &str) -> String {
+    match host {
+        "0.0.0.0" => "127.0.0.1".to_string(),
+        "::" => "[::1]".to_string(),
+        h if h.contains(':') && !h.starts_with('[') => format!("[{}]", h),
+        h => h.to_string(),
     }
 }

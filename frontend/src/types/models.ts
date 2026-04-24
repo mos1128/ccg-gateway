@@ -140,7 +140,9 @@ export interface OfficialCredentialUpdate {
 
 export interface SystemStatus {
   status: 'running' | 'stopped'
+  host: string
   port: number
+  gateway_url: string
   uptime: number
   version: string
 }

@@ -664,7 +664,9 @@ pub struct SessionMessage {
 #[derive(Debug, Serialize)]
 pub struct SystemStatus {
     pub status: String,
+    pub host: String,
     pub port: u16,
+    pub gateway_url: String,
     pub uptime: i64,
     pub version: String,
 }

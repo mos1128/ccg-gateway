@@ -305,6 +305,7 @@ import { notify } from '@/utils/notification'
 import AppModal from '@/components/AppModal.vue'
 import { logsApi } from '@/api/logs'
 import { providersApi } from '@/api/providers'
+import { settingsApi } from '@/api/settings'
 import { useUiStore } from '@/stores/ui'
 import { formatJson as formatJsonUtil, formatTokens } from '@/utils/json'
 import type { RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
@@ -315,6 +316,7 @@ const activeTab = computed({
   set: (val) => uiStore.setLogsActiveTab(val as 'request' | 'system')
 })
 const logEnabled = ref(false)
+const gatewayUrl = ref('')
 const providerOptions = ref<string[]>([])
 let requestLogListener: (() => void) | null = null
 
@@ -344,6 +346,7 @@ function toggleSelect(type: string) {
 onMounted(async () => {
   document.addEventListener('click', closeAllSelects)
   fetchLogSettings()
+  fetchGatewayStatus()
   fetchProviders()
   if (activeTab.value === 'request') {
     fetchRequestLogs()
@@ -410,6 +413,15 @@ async function fetchLogSettings() {
     const res = await logsApi.getSettings()
     logEnabled.value = res.data.debug_log
   } catch {}
+}
+
+async function fetchGatewayStatus() {
+  try {
+    const { data } = await settingsApi.getStatus()
+    gatewayUrl.value = data.gateway_url
+  } catch {
+    gatewayUrl.value = ''
+  }
 }
 
 async function updateLogSettings() {
@@ -575,7 +587,8 @@ function getStatusCodeType(code: number | null): 'success' | 'warning' | 'info' 
 function getFullClientUrl(): string {
   if (!requestDetail.value) return ''
   const path = requestDetail.value.client_path
-  return `http://localhost:7788/${path.startsWith('/') ? path.slice(1) : path}`
+  const baseUrl = gatewayUrl.value.replace(/\/$/, '')
+  return `${baseUrl}/${path.startsWith('/') ? path.slice(1) : path}`
 }
 
 async function handleCopy(content: string | null) {
