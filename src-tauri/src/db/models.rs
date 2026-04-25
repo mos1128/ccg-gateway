@@ -7,6 +7,7 @@ use sqlx::FromRow;
 pub struct Provider {
     pub id: i64,
     pub cli_type: String,
+    pub profile: String,
     pub name: String,
     pub base_url: String,
     pub api_key: String,
@@ -53,6 +54,7 @@ pub struct ModelBlacklistInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderCreate {
     pub cli_type: Option<String>,
+    pub profile: Option<String>,
     pub name: String,
     pub base_url: String,
     pub api_key: String,
@@ -66,6 +68,7 @@ pub struct ProviderCreate {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderUpdate {
+    pub profile: Option<String>,
     pub name: Option<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
@@ -96,6 +99,7 @@ pub struct ModelBlacklistResponse {
 pub struct ProviderResponse {
     pub id: i64,
     pub cli_type: String,
+    pub profile: String,
     pub name: String,
     pub base_url: String,
     pub api_key: String,
@@ -125,6 +129,7 @@ impl From<Provider> for ProviderResponse {
         Self {
             id: p.id,
             cli_type: p.cli_type,
+            profile: p.profile,
             name: p.name,
             base_url: p.base_url,
             api_key: p.api_key,

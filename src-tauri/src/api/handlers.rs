@@ -16,8 +16,8 @@ use super::AppState;
 use crate::db::models::{RequestLogInfo, RequestLogItem};
 use crate::services::proxy::{
     apply_body_model_mapping, apply_url_model_mapping, apply_useragent_override, detect_cli_type,
-    extract_model_from_body, extract_model_from_path, filter_headers, is_streaming,
-    parse_token_usage, set_auth_header, CliType, TimeoutConfig, TokenUsage,
+    detect_gateway_profile, extract_model_from_body, extract_model_from_path, filter_headers,
+    is_streaming, parse_token_usage, set_auth_header, CliType, TimeoutConfig, TokenUsage,
 };
 use crate::services::routing::select_provider;
 use crate::services::{provider as provider_service, stats as stats_service};
@@ -41,6 +41,7 @@ pub async fn proxy_handler_catchall(
 
     // Detect CLI type from User-Agent
     let cli_type = detect_cli_type(&headers);
+    let provider_profile = detect_gateway_profile(&headers);
 
     // Serialize client headers for logging
     let client_headers_json = serialize_headers(&headers);
@@ -76,31 +77,44 @@ pub async fn proxy_handler_catchall(
     };
 
     // Select provider based on CLI type and model
-    let provider_with_maps =
-        match select_provider(&state.db, cli_type.as_str(), extracted_model.as_deref()).await {
-            Ok(Some(p)) => p,
-            Ok(None) => {
-                tracing::warn!(cli_type = %cli_type, "No available provider");
-                // Log system event
-                let _ = stats_service::record_system_log(
-                    &state.log_db,
-                    "no_provider_available",
-                    &format!("CLI 类型 {} 没有可用的服务商", cli_type),
-                )
-                .await;
-                return Ok(Response::builder()
-                    .status(StatusCode::SERVICE_UNAVAILABLE)
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"error": "No available provider configured"}"#,
-                    ))
-                    .unwrap());
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to select provider");
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        };
+    let provider_with_maps = match select_provider(
+        &state.db,
+        cli_type.as_str(),
+        provider_profile,
+        extracted_model.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            tracing::warn!(
+                cli_type = %cli_type,
+                profile = provider_profile,
+                "No available provider"
+            );
+            // Log system event
+            let _ = stats_service::record_system_log(
+                &state.log_db,
+                "no_provider_available",
+                &format!(
+                    "CLI 类型 {} / profile {} 没有可用的服务商",
+                    cli_type, provider_profile
+                ),
+            )
+            .await;
+            return Ok(Response::builder()
+                .status(StatusCode::SERVICE_UNAVAILABLE)
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"error": "No available provider configured"}"#,
+                ))
+                .unwrap());
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to select provider");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
 
     let provider = &provider_with_maps.provider;
     let provider_id = provider.id;

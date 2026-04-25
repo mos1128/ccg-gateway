@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { CliType } from '@/types/models'
+import type { CliType, ProviderProfile } from '@/types/models'
 
 export const useUiStore = defineStore('ui', () => {
   // 服务商管理页面的 CLI 类型 tab
   const providersActiveCliType = ref<CliType>('claude_code')
+  const providersActiveProfile = ref<ProviderProfile>('default')
 
   // 会话管理页面的 CLI 类型 tab
   const sessionsActiveCliType = ref<CliType>('claude_code')
@@ -18,6 +19,10 @@ export const useUiStore = defineStore('ui', () => {
 
   function setProvidersActiveCliType(cliType: CliType) {
     providersActiveCliType.value = cliType
+  }
+
+  function setProvidersActiveProfile(profile: ProviderProfile) {
+    providersActiveProfile.value = profile
   }
 
   function setSessionsActiveCliType(cliType: CliType) {
@@ -38,11 +43,13 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     providersActiveCliType,
+    providersActiveProfile,
     sessionsActiveCliType,
     logsActiveTab,
     configActiveCliTab,
     configActiveBackupTab,
     setProvidersActiveCliType,
+    setProvidersActiveProfile,
     setSessionsActiveCliType,
     setLogsActiveTab,
     setConfigActiveCliTab,

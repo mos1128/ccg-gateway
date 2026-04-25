@@ -74,7 +74,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 20,
+            version: 21,
             tables: Self::define_main_tables(),
         }
     }
@@ -116,6 +116,12 @@ impl DatabaseSchema {
                         data_type: "TEXT".to_string(),
                         nullable: false,
                         default_value: Some("'claude_code'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "profile".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'default'".to_string()),
                     },
                     ColumnDefinition {
                         name: "name".to_string(),
@@ -191,7 +197,11 @@ impl DatabaseSchema {
                     },
                 ],
                 primary_key: vec!["id".to_string()],
-                unique_constraints: vec![vec!["cli_type".to_string(), "name".to_string()]],
+                unique_constraints: vec![vec![
+                    "cli_type".to_string(),
+                    "profile".to_string(),
+                    "name".to_string(),
+                ]],
             },
         );
 

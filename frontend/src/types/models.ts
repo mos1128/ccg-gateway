@@ -1,5 +1,6 @@
 // CLI Type
 export type CliType = 'claude_code' | 'codex' | 'gemini'
+export type ProviderProfile = 'default' | 'profile1' | 'profile2' | 'profile3'
 
 // Provider types
 export interface ModelMap {
@@ -17,6 +18,7 @@ export interface ModelBlacklist {
 export interface Provider {
   id: number
   cli_type: CliType
+  profile: ProviderProfile
   name: string
   base_url: string
   api_key: string
@@ -34,6 +36,7 @@ export interface Provider {
 
 export interface ProviderCreate {
   cli_type?: CliType
+  profile?: ProviderProfile
   name: string
   base_url: string
   api_key: string
@@ -46,6 +49,7 @@ export interface ProviderCreate {
 }
 
 export interface ProviderUpdate {
+  profile?: ProviderProfile
   name?: string
   base_url?: string
   api_key?: string
@@ -91,6 +95,15 @@ export interface CliSettings {
   config_dir: string
   default_config_dir: string
   config_write_mode: 'overwrite' | 'merge'
+}
+
+export interface ClaudeProfileSettingsStatus {
+  profile: ProviderProfile
+  filename: string
+  path: string
+  launch_command: string
+  exists: boolean
+  uses_gateway: boolean
 }
 
 export interface AllSettings {

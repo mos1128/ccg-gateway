@@ -49,22 +49,34 @@
           <div class="seg-item" :class="{ active: form.config_write_mode === 'merge' }" @click="form.config_write_mode = 'merge'">增量合并</div>
           <div class="seg-item" :class="{ active: form.config_write_mode === 'overwrite' }" @click="form.config_write_mode = 'overwrite'">全量写入</div>
         </div>
-        <div class="help-icon-wrapper" @mouseenter="showHelp = true" @mouseleave="showHelp = false">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
-            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-          </svg>
-          <div v-show="showHelp" class="help-tooltip">
-            <div class="tooltip-title">配置写入模式</div>
-            <div class="tooltip-item">
-              <strong>增量合并</strong>
-              <span>只写入需要变更的字段，保留配置文件中已有的其他配置（如 MCP / plugin 开关等配置）。</span>
+        <el-tooltip
+          effect="light"
+          placement="top"
+          :fallback-placements="['bottom', 'top', 'right', 'left']"
+          :offset="10"
+          :show-after="150"
+          :enterable="true"
+          popper-class="write-mode-help-popper"
+        >
+          <template #content>
+            <div class="write-mode-help-content">
+              <div class="tooltip-title">配置写入模式</div>
+              <div class="tooltip-item">
+                <strong>增量合并</strong>
+                <span>只写入需要变更的字段，保留配置文件中已有的其他配置（如 MCP / plugin 开关等配置）。</span>
+              </div>
+              <div class="tooltip-item">
+                <strong>全量写入</strong>
+                <span>每次写入时完全覆盖配置文件。中转模式会备份原始文件，关闭时自动恢复。保持配置干净，强迫症适用。</span>
+              </div>
             </div>
-            <div class="tooltip-item">
-              <strong>全量写入</strong>
-              <span>每次写入时完全覆盖配置文件。中转模式会备份原始文件，关闭时自动恢复。保持配置干净，强迫症适用。</span>
-            </div>
+          </template>
+          <div class="help-icon-wrapper">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
+              <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
           </div>
-        </div>
+        </el-tooltip>
         <div style="flex: 1;"></div>
         <button class="save-button" @click="handleSave">
           <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
@@ -99,7 +111,6 @@ const form = ref({
 
 const defaultConfigDir = ref('')
 const validationError = ref('')
-const showHelp = ref(false)
 
 const placeholder = computed(() => {
   switch (props.cliType) {
@@ -270,39 +281,14 @@ defineExpose({ handleSave })
 
 .help-icon-wrapper:hover .help-icon { color: var(--color-text-muted); }
 
-/* Tooltip */
-.help-tooltip {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 50%;
-  transform: translateX(-50%);
+.write-mode-help-content {
   width: 300px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+}
+
+:global(.write-mode-help-popper.el-popper) {
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 8px 24px var(--color-shadow-lg);
-  z-index: 100;
-}
-
-.help-tooltip::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 6px solid transparent;
-  border-top-color: var(--color-bg);
-}
-
-.help-tooltip::before {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 7px solid transparent;
-  border-top-color: var(--color-border);
 }
 
 .tooltip-title {

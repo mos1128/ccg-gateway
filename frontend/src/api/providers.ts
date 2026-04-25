@@ -3,8 +3,11 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { Provider, ProviderCreate, ProviderUpdate, TestProviderResult } from '@/types/models'
 
 export const providersApi = {
-  list: async (cliType?: string): Promise<{ data: Provider[] }> => {
-    const data = await invoke<Provider[]>('get_providers', { cliType })
+  list: async (cliType?: string, profile?: string): Promise<{ data: Provider[] }> => {
+    const args: Record<string, string> = {}
+    if (cliType) args.cliType = cliType
+    if (profile) args.profile = profile
+    const data = await invoke<Provider[]>('get_providers', args)
     return { data }
   },
   get: async (id: number): Promise<{ data: Provider }> => {

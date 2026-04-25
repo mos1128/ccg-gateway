@@ -13,6 +13,9 @@ use crate::db::models::{
     SkillRepoCreate, SystemLogItem, SystemLogListResponse, SystemStatus, TestProviderModelsInput,
     TimeoutSettings, TimeoutSettingsUpdate, WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
 };
+use crate::services::routing::{
+    gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE, PROVIDER_PROFILES,
+};
 use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestEntry};
 use crate::LogDb;
 use serde::Serialize;
@@ -478,13 +481,49 @@ command = "cmd"
 
         std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
     }
+
+    #[test]
+    fn claude_profile_settings_filenames_are_predictable() {
+        assert_eq!(claude_settings_filename(DEFAULT_PROFILE), "settings.json");
+        assert_eq!(
+            claude_settings_filename("profile1"),
+            "settings-ccg-profile1.json"
+        );
+        assert_eq!(
+            claude_settings_filename("profile2"),
+            "settings-ccg-profile2.json"
+        );
+        assert_eq!(
+            claude_settings_filename("profile3"),
+            "settings-ccg-profile3.json"
+        );
+    }
+
+    #[test]
+    fn claude_settings_launch_command_quotes_paths_with_spaces() {
+        let command = claude_settings_launch_command(&std::path::PathBuf::from(
+            "C:\\Users\\Test User\\.claude\\settings-ccg-profile1.json",
+        ));
+
+        #[cfg(windows)]
+        assert_eq!(
+            command,
+            "claude --settings \"C:\\Users\\Test User\\.claude\\settings-ccg-profile1.json\""
+        );
+
+        #[cfg(not(windows))]
+        assert_eq!(
+            command,
+            "claude --settings 'C:\\Users\\Test User\\.claude\\settings-ccg-profile1.json'"
+        );
+    }
 }
 
 fn map_db_error(e: sqlx::Error) -> String {
     let err_str = e.to_string();
     if err_str.contains("code: 2067") || err_str.contains("UNIQUE constraint failed") {
         if err_str.contains("providers.cli_type") && err_str.contains("providers.name") {
-            return "同类型的服务商名称已存在".to_string();
+            return "同类型同 Profile 的服务商名称已存在".to_string();
         }
         if err_str.contains("provider_model_map.provider_id")
             && err_str.contains("provider_model_map.source_model")
@@ -521,22 +560,53 @@ fn map_db_error(e: sqlx::Error) -> String {
     err_str
 }
 
+fn validate_provider_profile(profile: Option<&str>) -> Result<&'static str> {
+    normalize_profile(profile)
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))
+}
+
 #[tauri::command]
 pub async fn get_providers(
     db: State<'_, SqlitePool>,
     cli_type: Option<String>,
+    profile: Option<String>,
 ) -> Result<Vec<ProviderResponse>> {
-    let providers = if let Some(ct) = cli_type {
-        sqlx::query_as::<_, Provider>(
-            "SELECT * FROM providers WHERE cli_type = ? ORDER BY sort_order, id",
+    let profile = match profile {
+        Some(value) => Some(validate_provider_profile(Some(&value))?.to_string()),
+        None => None,
+    };
+
+    let providers = match (cli_type, profile) {
+        (Some(ct), Some(profile)) => sqlx::query_as::<_, Provider>(
+            "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id",
         )
         .bind(&ct)
+        .bind(&profile)
         .fetch_all(db.inner())
-        .await
-    } else {
-        sqlx::query_as::<_, Provider>("SELECT * FROM providers ORDER BY sort_order, id")
+        .await,
+        (Some(ct), None) => {
+            sqlx::query_as::<_, Provider>(
+                "SELECT * FROM providers WHERE cli_type = ? ORDER BY sort_order, id",
+            )
+            .bind(&ct)
             .fetch_all(db.inner())
             .await
+        }
+        (None, Some(profile)) => {
+            sqlx::query_as::<_, Provider>(
+                "SELECT * FROM providers WHERE profile = ? ORDER BY cli_type, sort_order, id",
+            )
+            .bind(&profile)
+            .fetch_all(db.inner())
+            .await
+        }
+        (None, None) => {
+            sqlx::query_as::<_, Provider>(
+                "SELECT * FROM providers ORDER BY cli_type, profile, sort_order, id",
+            )
+            .fetch_all(db.inner())
+            .await
+        }
     };
 
     let providers = providers.map_err(|e| e.to_string())?;
@@ -684,6 +754,7 @@ pub async fn create_provider(
 ) -> Result<ProviderResponse> {
     let now = chrono::Utc::now().timestamp();
     let cli_type = input.cli_type.unwrap_or_else(|| "claude_code".to_string());
+    let profile = validate_provider_profile(input.profile.as_deref())?.to_string();
     let provider_name = input.name.clone();
 
     // Normalize custom_useragent: treat empty string as None
@@ -696,17 +767,20 @@ pub async fn create_provider(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO providers (cli_type, name, base_url, api_key, enabled, failure_threshold, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers), ?, ?, ?)
+        INSERT INTO providers (cli_type, profile, name, base_url, api_key, enabled, failure_threshold, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?)
         "#,
     )
     .bind(&cli_type)
+    .bind(&profile)
     .bind(&input.name)
     .bind(&input.base_url)
     .bind(&input.api_key)
     .bind(input.enabled.unwrap_or(true) as i64)
     .bind(input.failure_threshold.unwrap_or(3))
     .bind(input.blacklist_minutes.unwrap_or(10))
+    .bind(&cli_type)
+    .bind(&profile)
     .bind(&custom_ua)
     .bind(now)
     .bind(now)
@@ -781,11 +855,20 @@ pub async fn update_provider(
     // Check if model maps will be updated (before moving)
     let has_model_maps_update = input.model_maps.is_some();
     let has_model_blacklist_update = input.model_blacklist.is_some();
+    let normalized_profile = if let Some(ref profile) = input.profile {
+        Some(validate_provider_profile(Some(profile.as_str()))?.to_string())
+    } else {
+        None
+    };
 
     // Build dynamic update query
     let mut updates = vec!["updated_at = ?".to_string()];
     let mut has_updates = false;
 
+    if normalized_profile.is_some() {
+        updates.push("profile = ?".to_string());
+        has_updates = true;
+    }
     if input.name.is_some() {
         updates.push("name = ?".to_string());
         has_updates = true;
@@ -819,6 +902,9 @@ pub async fn update_provider(
         let query = format!("UPDATE providers SET {} WHERE id = ?", updates.join(", "));
         let mut q = sqlx::query(&query).bind(now);
 
+        if let Some(ref profile) = normalized_profile {
+            q = q.bind(profile);
+        }
         if let Some(ref name) = input.name {
             q = q.bind(name);
         }
@@ -1165,6 +1251,59 @@ struct CliSettingsRowWithoutConfigDir {
     pub cli_mode: String,
     pub config_write_mode: String,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ClaudeProfileSettingsStatus {
+    pub profile: String,
+    pub filename: String,
+    pub path: String,
+    pub launch_command: String,
+    pub exists: bool,
+    pub uses_gateway: bool,
+}
+
+#[tauri::command]
+pub async fn get_claude_profile_settings_status(
+    db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    profile: String,
+) -> Result<ClaudeProfileSettingsStatus> {
+    let profile = validate_provider_profile(Some(&profile))?.to_string();
+    claude_profile_settings_status(db.inner(), &profile, &config.gateway_base_url()).await
+}
+
+#[tauri::command]
+pub async fn ensure_claude_profile_settings(
+    db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    profile: String,
+) -> Result<ClaudeProfileSettingsStatus> {
+    let profile = validate_provider_profile(Some(&profile))?.to_string();
+    let gateway_url = config.gateway_base_url();
+    let config_dir = get_cli_config_dir_path(db.inner(), "claude_code").await;
+    let config_path = config_dir.join(claude_settings_filename(&profile));
+    let gateway_token = gateway_token_for_profile(&profile).unwrap_or("ccg-gateway");
+    let use_merge = get_config_write_mode(db.inner(), "claude_code").await == "merge";
+    let default_config = sqlx::query_as::<_, (Option<String>,)>(
+        "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
+    )
+    .bind("claude_code")
+    .fetch_optional(db.inner())
+    .await
+    .map_err(|e| e.to_string())?
+    .and_then(|r| r.0)
+    .unwrap_or_default();
+
+    write_claude_gateway_settings(
+        &config_path,
+        &default_config,
+        use_merge,
+        &gateway_url,
+        gateway_token,
+    )?;
+
+    claude_profile_settings_status(db.inner(), &profile, &gateway_url).await
 }
 
 #[tauri::command]
@@ -1815,6 +1954,177 @@ fn deep_remove(base: &mut serde_json::Value, template: &serde_json::Value) {
     }
 }
 
+fn claude_settings_filename(profile: &str) -> &'static str {
+    match profile {
+        DEFAULT_PROFILE => "settings.json",
+        "profile1" => "settings-ccg-profile1.json",
+        "profile2" => "settings-ccg-profile2.json",
+        "profile3" => "settings-ccg-profile3.json",
+        _ => "settings.json",
+    }
+}
+
+#[cfg(windows)]
+fn shell_quote_path(path: &str) -> String {
+    if path.chars().any(char::is_whitespace) {
+        format!("\"{}\"", path)
+    } else {
+        path.to_string()
+    }
+}
+
+#[cfg(not(windows))]
+fn shell_quote_path(path: &str) -> String {
+    if path
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "_@%+=:,./-".contains(c))
+    {
+        path.to_string()
+    } else {
+        format!("'{}'", path.replace('\'', "'\\''"))
+    }
+}
+
+fn claude_settings_launch_command(config_path: &std::path::Path) -> String {
+    format!(
+        "claude --settings {}",
+        shell_quote_path(&config_path.to_string_lossy())
+    )
+}
+
+fn claude_settings_uses_gateway(
+    config_path: &std::path::Path,
+    gateway_url: &str,
+    gateway_token: &str,
+) -> bool {
+    if !config_path.exists() {
+        return false;
+    }
+
+    let content = match std::fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(_) => return false,
+    };
+
+    let content_trimmed = content.trim();
+    if content_trimmed.is_empty() || content_trimmed == "{}" {
+        return false;
+    }
+
+    let data = match serde_json::from_str::<serde_json::Value>(content_trimmed) {
+        Ok(data) => data,
+        Err(_) => return false,
+    };
+
+    let env = match data.get("env") {
+        Some(env) => env,
+        None => return false,
+    };
+
+    let base_url = env
+        .get("ANTHROPIC_BASE_URL")
+        .and_then(|value| value.as_str());
+    let auth_token = env
+        .get("ANTHROPIC_AUTH_TOKEN")
+        .and_then(|value| value.as_str());
+
+    matches!(
+        (base_url, auth_token),
+        (Some(base_url), Some(auth_token))
+            if gateway_url_matches(base_url, gateway_url) && auth_token == gateway_token
+    )
+}
+
+async fn claude_profile_settings_status(
+    db: &SqlitePool,
+    profile: &str,
+    gateway_url: &str,
+) -> Result<ClaudeProfileSettingsStatus> {
+    let profile = normalize_profile(Some(profile))
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
+    let filename = claude_settings_filename(profile);
+    let config_dir = get_cli_config_dir_path(db, "claude_code").await;
+    let config_path = config_dir.join(filename);
+    let gateway_token = gateway_token_for_profile(profile).unwrap_or("ccg-gateway");
+    let path = shrink_home_path(&config_path.to_string_lossy());
+    let launch_command = claude_settings_launch_command(&config_path);
+
+    Ok(ClaudeProfileSettingsStatus {
+        profile: profile.to_string(),
+        filename: filename.to_string(),
+        path,
+        launch_command,
+        exists: config_path.exists(),
+        uses_gateway: claude_settings_uses_gateway(&config_path, gateway_url, gateway_token),
+    })
+}
+
+fn claude_gateway_config(gateway_url: &str, gateway_token: &str) -> serde_json::Value {
+    serde_json::json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": gateway_url,
+            "ANTHROPIC_AUTH_TOKEN": gateway_token
+        }
+    })
+}
+
+fn write_claude_gateway_settings(
+    config_path: &std::path::Path,
+    default_config: &str,
+    use_merge: bool,
+    gateway_url: &str,
+    gateway_token: &str,
+) -> Result<()> {
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            tracing::error!("Failed to create directory: {}", e);
+            e.to_string()
+        })?;
+    }
+
+    let gateway_config = claude_gateway_config(gateway_url, gateway_token);
+    let protected_gateway_fields = claude_gateway_json_template();
+
+    let mut config = if use_merge {
+        if config_path.exists() {
+            std::fs::read_to_string(config_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .unwrap_or_else(|| serde_json::json!({}))
+        } else {
+            serde_json::json!({})
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    deep_merge(&mut config, &gateway_config);
+
+    if !default_config.is_empty() {
+        match serde_json::from_str::<serde_json::Value>(default_config) {
+            Ok(custom_config) => {
+                let sanitized_config =
+                    sanitize_json_config(custom_config, &protected_gateway_fields);
+                deep_merge(&mut config, &sanitized_config);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to parse custom config (invalid JSON): {}", e);
+            }
+        }
+    }
+
+    let config_str = serde_json::to_string_pretty(&config).map_err(|e| {
+        tracing::error!("Failed to serialize config: {}", e);
+        e.to_string()
+    })?;
+    std::fs::write(config_path, config_str).map_err(|e| {
+        tracing::error!("Failed to write config file: {}", e);
+        e.to_string()
+    })?;
+
+    Ok(())
+}
+
 // Sync Claude Code configuration (settings.json)
 async fn sync_claude_code_config(
     db: &SqlitePool,
@@ -1824,77 +2134,32 @@ async fn sync_claude_code_config(
     gateway_url: &str,
 ) -> Result<()> {
     let config_dir = get_cli_config_dir_path(db, "claude_code").await;
-    let config_path = config_dir.join("settings.json");
-
     let use_merge = write_mode == "merge";
 
     if enabled {
-        // Create config directory if it doesn't exist
-        if let Some(parent) = config_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                tracing::error!("Failed to create directory: {}", e);
-                e.to_string()
-            })?;
+        for profile in PROVIDER_PROFILES {
+            let gateway_token = gateway_token_for_profile(profile).unwrap_or("ccg-gateway");
+            let config_path = config_dir.join(claude_settings_filename(profile));
+            write_claude_gateway_settings(
+                &config_path,
+                default_config,
+                use_merge,
+                gateway_url,
+                gateway_token,
+            )?;
         }
-
-        // Build gateway config
-        let gateway_config = serde_json::json!({
-            "env": {
-                "ANTHROPIC_BASE_URL": gateway_url,
-                "ANTHROPIC_AUTH_TOKEN": "ccg-gateway"
-            }
-        });
-        let protected_gateway_fields = claude_gateway_json_template();
-
-        let mut config = if use_merge {
-            // merge 模式：先读取现有文件作为基础
-            if config_path.exists() {
-                std::fs::read_to_string(&config_path)
-                    .ok()
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                    .unwrap_or_else(|| serde_json::json!({}))
-            } else {
-                serde_json::json!({})
-            }
-        } else {
-            serde_json::json!({})
-        };
-
-        // 合并 gateway 配置
-        deep_merge(&mut config, &gateway_config);
-
-        // Merge user's custom config if provided
-        if !default_config.is_empty() {
-            match serde_json::from_str::<serde_json::Value>(default_config) {
-                Ok(custom_config) => {
-                    let sanitized_config =
-                        sanitize_json_config(custom_config, &protected_gateway_fields);
-                    deep_merge(&mut config, &sanitized_config);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to parse custom config (invalid JSON): {}", e);
-                }
-            }
-        }
-
-        // Write config file
-        let config_str = serde_json::to_string_pretty(&config).map_err(|e| {
-            tracing::error!("Failed to serialize config: {}", e);
-            e.to_string()
-        })?;
-        std::fs::write(&config_path, config_str).map_err(|e| {
-            tracing::error!("Failed to write config file: {}", e);
-            e.to_string()
-        })?;
     } else {
         let gateway_config = claude_gateway_json_template();
-        remove_json_config_content(
-            &config_path,
-            &gateway_config,
-            default_config,
-            &gateway_config,
-        )?;
-        tracing::info!("已从 Claude Code settings.json 中移除 gateway 及预设配置");
+        for profile in PROVIDER_PROFILES {
+            let config_path = config_dir.join(claude_settings_filename(profile));
+            remove_json_config_content(
+                &config_path,
+                &gateway_config,
+                default_config,
+                &gateway_config,
+            )?;
+        }
+        tracing::info!("已从 Claude Code settings.json 及 profile 配置中移除 gateway 及预设配置");
     }
 
     Ok(())
@@ -5624,7 +5889,10 @@ pub async fn install_skill(
 }
 
 #[tauri::command]
-async fn reinstall_skill_impl(db: &SqlitePool, directory: String) -> Result<InstalledSkillResponse> {
+async fn reinstall_skill_impl(
+    db: &SqlitePool,
+    directory: String,
+) -> Result<InstalledSkillResponse> {
     // 1. 检测当前 CLI 启用状态
     let enabled_clis = detect_skill_cli_status(db, &directory).await;
 
@@ -5986,12 +6254,16 @@ pub async fn reinstall_favorite_skill(
             .ok_or_else(|| "Skill favorite not found".to_string())?;
 
     // 计算安装目录
-    let directory = skill_install_directory_name_from_parts(&favorite.directory, &favorite.repo_name);
+    let directory =
+        skill_install_directory_name_from_parts(&favorite.directory, &favorite.repo_name);
 
     // 检查是否已安装
     let ssot_dir = get_ssot_dir();
     if !ssot_dir.join(&directory).exists() {
-        return Err(format!("Skill '{}' is not installed, cannot reinstall", directory));
+        return Err(format!(
+            "Skill '{}' is not installed, cannot reinstall",
+            directory
+        ));
     }
 
     reinstall_skill_impl(db.inner(), directory).await

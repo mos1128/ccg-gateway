@@ -482,4 +482,3 @@ fn headers_to_json(headers: &reqwest::header::HeaderMap) -> String {
     }
     serde_json::to_string_pretty(&map).unwrap_or_default()
 }
-

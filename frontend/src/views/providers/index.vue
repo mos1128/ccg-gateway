@@ -13,6 +13,16 @@
         <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
         </symbol>
+        <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </symbol>
+        <symbol id="icon-paste" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+          <path d="M9 14h6"/>
+          <path d="M12 11v6"/>
+        </symbol>
         <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
         </symbol>
@@ -36,9 +46,64 @@
 
     <!-- Page Header & Segmented Control -->
     <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-      <div class="b-segmented">
-        <div class="b-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="viewMode = 'proxy'">中转模式</div>
-        <div class="b-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方模式</div>
+      <div class="header-left">
+        <div class="b-segmented">
+          <div class="b-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="viewMode = 'proxy'">中转模式</div>
+          <div class="b-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方模式</div>
+        </div>
+
+        <div v-if="showProfileControls" class="b-segmented profile-segmented">
+          <div
+            v-for="profile in profileTabs"
+            :key="profile.id"
+            class="b-seg-btn"
+            :class="{ active: activeProfile === profile.id, disabled: !!profileSwitching }"
+            @click="handleProfileSelect(profile.id)"
+          >
+            {{ profile.label }}
+          </div>
+        </div>
+        <el-tooltip
+          v-if="showProfileControls"
+          effect="light"
+          placement="top"
+          :fallback-placements="['bottom', 'top', 'right', 'left']"
+          :offset="10"
+          :show-after="150"
+          :enterable="true"
+          popper-class="profile-help-popper"
+        >
+          <template #content>
+            <div class="profile-help-content">
+              <div class="tooltip-title">Profile 用法</div>
+              <div class="tooltip-item">
+                <span>切换到 Profile 时会自动生成对应的配置文件，通过对应启动命令启动的 ClaudeCode 会路由到对应 Profile 配置的服务商</span>
+              </div>
+              <div class="profile-command-panel">
+                <div class="profile-command-header">
+                  <strong>{{ profileLabels[activeProfile] }} 启动命令</strong>
+                  <button
+                    class="profile-command-copy"
+                    type="button"
+                    :disabled="isCurrentProfileCommandLoading"
+                    @click.stop="copyCurrentProfileLaunchCommand"
+                    title="复制启动命令"
+                  >
+                    <svg width="14" height="14"><use href="#icon-copy"/></svg>
+                  </button>
+                </div>
+                <div class="profile-command-text" @click.stop="copyCurrentProfileLaunchCommand">
+                  {{ currentProfileLaunchCommand || '正在获取启动命令...' }}
+                </div>
+              </div>
+            </div>
+          </template>
+          <div class="help-icon-wrapper" @click.stop="copyCurrentProfileLaunchCommand" title="复制当前 Profile 启动命令">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
+              <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+        </el-tooltip>
       </div>
       
       <div v-if="viewMode === 'proxy'" style="display: flex; align-items: center; gap: 8px;">
@@ -52,8 +117,17 @@
           </svg>
         </button>
         <button
+          v-if="copiedProvider"
+          class="action-icon paste-btn"
+          :disabled="pasteLoading"
+          @click="handlePasteProvider"
+          :title="pasteButtonTitle"
+        >
+          <svg width="18" height="18"><use href="#icon-paste"/></svg>
+        </button>
+        <button
           class="action-icon add-btn"
-          @click="showAddDialog = true"
+          @click="handleAddProvider"
           title="添加服务商"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -125,15 +199,11 @@
               
               <div style="display: flex; align-items: center; gap: 40px; flex-shrink: 0; margin-left: 24px;">
                 <div style="display: flex; gap: 24px;">
-                  <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
-                    <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败次数</div>
-                    <div class="mono text-16" :style="{ 'font-weight': 'var(--fw-500)', color: element.consecutive_failures >= element.failure_threshold ? 'var(--color-danger)' : 'var(--color-text)' }">
-                      {{ element.consecutive_failures }}
-                    </div>
-                  </div>
-                  <div style="display: flex; flex-direction: column; align-items: center; min-width: 50px;">
+                  <div style="display: flex; flex-direction: column; align-items: center; min-width: 64px;">
                     <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败阈值</div>
-                    <div class="mono text-16" style="font-weight: var(--fw-500); color: var(--color-text);">{{ element.failure_threshold }}</div>
+                    <div class="mono text-16" :style="{ 'font-weight': 'var(--fw-500)', color: element.consecutive_failures >= element.failure_threshold ? 'var(--color-danger)' : 'var(--color-text)' }">
+                      {{ element.consecutive_failures }}/{{ element.failure_threshold }}
+                    </div>
                   </div>
                 </div>
                 
@@ -141,6 +211,10 @@
                   <el-switch v-model="element.enabled" @change="handleToggle(element)" />
                   
                   <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="action-icon" @click="handleCopyProvider(element)" title="复制">
+                      <svg width="18" height="18"><use href="#icon-copy"/></svg>
+                    </div>
+
                     <div class="action-icon" @click="handleEdit(element)" title="编辑">
                       <svg width="18" height="18"><use href="#icon-edit"/></svg>
                     </div>
@@ -432,7 +506,8 @@ import { useCredentialStore } from '@/stores/credentials'
 import { useUiStore } from '@/stores/ui'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
-import type { Provider, CliType, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
+import { settingsApi } from '@/api/settings'
+import type { Provider, CliType, ProviderProfile, ClaudeProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
 
 const providerStore = useProviderStore()
 const credentialStore = useCredentialStore()
@@ -444,19 +519,64 @@ const cliTabs: { id: CliType; label: string }[] = [
   { id: 'gemini', label: 'Gemini' }
 ]
 
+const profileTabs: { id: ProviderProfile; label: string }[] = [
+  { id: 'default', label: '默认' },
+  { id: 'profile1', label: 'Profile 1' },
+  { id: 'profile2', label: 'Profile 2' },
+  { id: 'profile3', label: 'Profile 3' }
+]
+
 const activeCliType = computed({
   get: () => uiStore.providersActiveCliType,
   set: (val) => uiStore.setProvidersActiveCliType(val)
 })
 
-const viewMode = ref<'proxy' | 'direct'>('proxy')
+const activeProfile = computed({
+  get: () => uiStore.providersActiveProfile,
+  set: (val) => uiStore.setProvidersActiveProfile(val)
+})
+
+type ViewMode = 'proxy' | 'direct'
+
+const viewModes = ref<Record<CliType, ViewMode>>({
+  claude_code: 'proxy',
+  codex: 'proxy',
+  gemini: 'proxy'
+})
+const viewMode = computed<ViewMode>({
+  get: () => activeCliType.value === 'claude_code' ? 'proxy' : viewModes.value[activeCliType.value],
+  set: (mode) => {
+    if (activeCliType.value === 'claude_code') {
+      viewModes.value.claude_code = 'proxy'
+      if (mode === 'direct') notify('Claude Code 暂未实现官方模式功能', 'warning')
+      return
+    }
+    viewModes.value[activeCliType.value] = mode
+  }
+})
+const showProfileControls = computed(() => viewMode.value === 'proxy' && activeCliType.value === 'claude_code')
+const currentProviderProfile = computed<ProviderProfile>(() =>
+  activeCliType.value === 'claude_code' ? activeProfile.value : 'default'
+)
+const profileSwitching = ref<ProviderProfile | null>(null)
 let testResultListener: (() => void) | null = null
 
+const profileLabels: Record<ProviderProfile, string> = {
+  default: '默认',
+  profile1: 'Profile 1',
+  profile2: 'Profile 2',
+  profile3: 'Profile 3'
+}
+
+const profileSettingsStatusMap = ref<Partial<Record<ProviderProfile, ClaudeProfileSettingsStatus>>>({})
+const profileCommandLoading = ref<ProviderProfile | null>(null)
+let profileCommandRequestId = 0
+
+const currentProfileSettingsStatus = computed(() => profileSettingsStatusMap.value[activeProfile.value])
+const currentProfileLaunchCommand = computed(() => currentProfileSettingsStatus.value?.launch_command || '')
+const isCurrentProfileCommandLoading = computed(() => profileCommandLoading.value === activeProfile.value)
+
 function handleSwitchDirect() {
-  if (activeCliType.value === 'claude_code') {
-    notify('Claude Code 暂未实现官方模式功能', 'warning')
-    return
-  }
   viewMode.value = 'direct'
 }
 
@@ -471,6 +591,7 @@ const showDialog = computed({
     if (!val) {
       showAddDialog.value = false
       editingProvider.value = null
+      resetForm()
     }
   }
 })
@@ -487,6 +608,17 @@ const showCredentialDialog = computed({
 
 interface FormModelMap { source_model: string; target_model: string; enabled: boolean }
 interface FormModelBlacklist { model_pattern: string }
+interface ProviderDraft {
+  name: string
+  base_url: string
+  api_key: string
+  enabled: boolean
+  failure_threshold: number
+  blacklist_minutes: number
+  custom_useragent: string
+  model_maps: FormModelMap[]
+  model_blacklist: FormModelBlacklist[]
+}
 
 const form = ref({
   name: '',
@@ -498,6 +630,8 @@ const form = ref({
   model_maps: [] as FormModelMap[],
   model_blacklist: [] as FormModelBlacklist[]
 })
+const copiedProvider = ref<ProviderDraft | null>(null)
+const pasteLoading = ref(false)
 
 const credentialForm = ref({
   name: '',
@@ -512,6 +646,11 @@ const baseUrlPlaceholder = computed(() => {
   return 'https://api.example.com'
 })
 
+const pasteButtonTitle = computed(() => {
+  if (!copiedProvider.value) return '粘贴服务商'
+  return `粘贴服务商：${copiedProvider.value.name}`
+})
+
 function resetForm() {
   form.value = {
     name: '', base_url: '', api_key: '', failure_threshold: 3, blacklist_minutes: 10,
@@ -520,6 +659,43 @@ function resetForm() {
 }
 function resetCredentialForm() {
   credentialForm.value = { name: '', claude_settings: '', codex_auth: '', gemini_oauth: '', gemini_accounts: '' }
+}
+
+function cloneProviderDraft(draft: ProviderDraft): ProviderDraft {
+  return {
+    ...draft,
+    model_maps: draft.model_maps.map(m => ({ ...m })),
+    model_blacklist: draft.model_blacklist.map(b => ({ ...b }))
+  }
+}
+
+function createProviderDraft(provider: Provider): ProviderDraft {
+  return {
+    name: provider.name,
+    base_url: provider.base_url,
+    api_key: provider.api_key,
+    enabled: provider.enabled,
+    failure_threshold: provider.failure_threshold,
+    blacklist_minutes: provider.blacklist_minutes,
+    custom_useragent: provider.custom_useragent || '',
+    model_maps: provider.model_maps.map(({ source_model, target_model, enabled }) => ({ source_model, target_model, enabled })),
+    model_blacklist: provider.model_blacklist.map(({ model_pattern }) => ({ model_pattern }))
+  }
+}
+
+function makeUniqueProviderName(name: string): string {
+  const trimmedName = name.trim() || '未命名服务商'
+  const existingNames = new Set(providerStore.providers.map(p => p.name.trim().toLowerCase()))
+  if (!existingNames.has(trimmedName.toLowerCase())) return trimmedName
+
+  const baseName = `${trimmedName} 副本`
+  let candidate = baseName
+  let index = 2
+  while (existingNames.has(candidate.toLowerCase())) {
+    candidate = `${baseName} ${index}`
+    index += 1
+  }
+  return candidate
 }
 
 // ==================== Model Detection ====================
@@ -647,16 +823,151 @@ async function copyResponseText(text: string) {
   }
 }
 
+function cacheClaudeProfileSettingsStatus(status: ClaudeProfileSettingsStatus) {
+  profileSettingsStatusMap.value = {
+    ...profileSettingsStatusMap.value,
+    [status.profile]: status
+  }
+}
+
+async function loadClaudeProfileSettingsStatus(profile: ProviderProfile, silent = false): Promise<ClaudeProfileSettingsStatus | null> {
+  const requestId = ++profileCommandRequestId
+  profileCommandLoading.value = profile
+  try {
+    const { data } = await settingsApi.getClaudeProfileSettingsStatus(profile)
+    cacheClaudeProfileSettingsStatus(data)
+    return data
+  } catch (e: any) {
+    if (!silent) notify(getErrorMessage(e, '获取启动命令失败'), 'error')
+    return null
+  } finally {
+    if (requestId === profileCommandRequestId) {
+      profileCommandLoading.value = null
+    }
+  }
+}
+
+async function copyCurrentProfileLaunchCommand() {
+  if (!showProfileControls.value) return
+
+  const profile = activeProfile.value
+  const status = profileSettingsStatusMap.value[profile] || await loadClaudeProfileSettingsStatus(profile)
+  const command = status?.launch_command
+  if (!command) return
+
+  try {
+    await navigator.clipboard.writeText(command)
+    notify(`已复制 ${profileLabels[profile]} 启动命令`)
+  } catch {
+    notify('复制失败', 'error')
+  }
+}
+
 function addModelMap() { form.value.model_maps.push({ source_model: '', target_model: '', enabled: true }) }
 function removeModelMap(index: number) { form.value.model_maps.splice(index, 1) }
 function addModelBlacklist() { form.value.model_blacklist.push({ model_pattern: '' }) }
 function removeModelBlacklist(index: number) { form.value.model_blacklist.splice(index, 1) }
 
+async function ensureClaudeProfileReady(profile: ProviderProfile): Promise<boolean> {
+  if (activeCliType.value !== 'claude_code' || viewMode.value !== 'proxy' || profile === 'default') {
+    return true
+  }
+
+  profileSwitching.value = profile
+  try {
+    const { data: status } = await settingsApi.getClaudeProfileSettingsStatus(profile)
+    cacheClaudeProfileSettingsStatus(status)
+    if (status.uses_gateway) return true
+
+    const { data: ensured } = await settingsApi.ensureClaudeProfileSettings(profile)
+    cacheClaudeProfileSettingsStatus(ensured)
+    if (!ensured.uses_gateway) {
+      notify(`写入后仍未检测到有效配置：${ensured.path}`, 'error')
+      return false
+    }
+
+    notify(`已写入 ${ensured.path}`)
+    return true
+  } catch (e: any) {
+    notify(getErrorMessage(e, '写入 Profile 配置失败'), 'error')
+    return false
+  } finally {
+    profileSwitching.value = null
+  }
+}
+
+async function handleProfileSelect(profile: ProviderProfile) {
+  if (profile === activeProfile.value || profileSwitching.value) return
+
+  const ok = await ensureClaudeProfileReady(profile)
+  if (!ok) return
+
+  activeProfile.value = profile
+}
+
+async function ensureCurrentClaudeProfileOrFallback(): Promise<ProviderProfile> {
+  if (activeCliType.value !== 'claude_code') return 'default'
+
+  const profile = activeProfile.value
+  if (await ensureClaudeProfileReady(profile)) return profile
+
+  activeProfile.value = 'default'
+  return 'default'
+}
+
 // Listen for tab changes
-watch(() => activeCliType.value, (cliType) => {
-  providerStore.fetchProviders(cliType as CliType)
+watch(() => activeCliType.value, async (cliType) => {
+  const profile = await ensureCurrentClaudeProfileOrFallback()
+  providerStore.fetchProviders(cliType as CliType, profile)
   credentialStore.fetchCredentials(cliType as CliType)
 })
+
+watch(() => activeProfile.value, (profile) => {
+  if (activeCliType.value !== 'claude_code') return
+  providerStore.fetchProviders(activeCliType.value as CliType, profile)
+})
+
+watch([showProfileControls, activeProfile], ([visible, profile]) => {
+  if (!visible || profileSettingsStatusMap.value[profile]) return
+  loadClaudeProfileSettingsStatus(profile, true)
+}, { immediate: true })
+
+function handleAddProvider() {
+  editingProvider.value = null
+  resetForm()
+  showAddDialog.value = true
+}
+
+function handleCopyProvider(provider: Provider) {
+  copiedProvider.value = createProviderDraft(provider)
+  notify(`已复制服务商：${provider.name}`)
+}
+
+async function handlePasteProvider() {
+  if (!copiedProvider.value || pasteLoading.value) return
+
+  const targetCliType = activeCliType.value as CliType
+  const targetProfile = currentProviderProfile.value
+  pasteLoading.value = true
+  try {
+    await providerStore.fetchProviders(targetCliType, targetProfile)
+    const draft = cloneProviderDraft(copiedProvider.value)
+    const data = {
+      cli_type: targetCliType,
+      profile: targetProfile,
+      ...draft,
+      name: makeUniqueProviderName(draft.name),
+      model_maps: draft.model_maps.filter(m => m.source_model && m.target_model),
+      model_blacklist: draft.model_blacklist.filter(b => b.model_pattern)
+    }
+    await providerStore.createProvider(data)
+    notify(`已粘贴服务商：${data.name}`)
+  } catch (e: any) {
+    notify(getErrorMessage(e, '粘贴失败'), 'error')
+  } finally {
+    pasteLoading.value = false
+  }
+}
 
 function handleEdit(provider: Provider) {
   editingProvider.value = provider
@@ -676,6 +987,7 @@ async function handleSave() {
   }
   const data = {
     cli_type: activeCliType.value,
+    profile: currentProviderProfile.value,
     ...form.value,
     model_maps: form.value.model_maps.filter(m => m.source_model && m.target_model),
     model_blacklist: form.value.model_blacklist.filter(b => b.model_pattern)
@@ -691,7 +1003,7 @@ async function handleSave() {
     }
     showDialog.value = false
     resetForm()
-    providerStore.fetchProviders(activeCliType.value as CliType)
+    providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
   } catch (e: any) {
     notify(getErrorMessage(e, '保存失败'), 'error')
   }
@@ -844,8 +1156,9 @@ function getUnblacklistTime(provider: Provider): string {
   return mins === 0 ? `${Math.ceil(diffSeconds)}秒后解除` : `${mins}分${Math.ceil(diffSeconds % 60)}秒后解除`
 }
 
-onMounted(() => {
-  providerStore.fetchProviders(activeCliType.value as CliType)
+onMounted(async () => {
+  const profile = await ensureCurrentClaudeProfileOrFallback()
+  providerStore.fetchProviders(activeCliType.value as CliType, profile)
   credentialStore.fetchCredentials(activeCliType.value as CliType)
   
   // 每秒更新一次时间，触发倒计时重绘
@@ -862,7 +1175,7 @@ onMounted(() => {
     })
     
     if (hasExpired) {
-      providerStore.fetchProviders(activeCliType.value as CliType)
+      providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
     }
   }, 1000)
 })
@@ -890,6 +1203,111 @@ onUnmounted(() => {
 .tab-item.active { color: var(--color-primary); font-weight: var(--fw-600); border-bottom: 2px solid var(--color-primary); }
 
 .page-header { flex-shrink: 0; margin: 0 40px 32px 40px; }
+.header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.profile-segmented .b-seg-btn { padding: 6px 12px; }
+.profile-segmented .b-seg-btn.disabled { opacity: 0.55; pointer-events: none; }
+
+.help-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: help;
+}
+
+.help-icon {
+  color: var(--color-text-weak);
+  transition: color 0.2s;
+}
+
+.help-icon-wrapper:hover .help-icon { color: var(--color-text-muted); }
+
+:global(.profile-help-popper.el-popper) {
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px var(--color-shadow-lg);
+}
+
+.profile-help-content {
+  width: 320px;
+}
+
+.tooltip-title {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-700);
+  color: var(--color-text);
+  margin-bottom: 10px;
+}
+
+.tooltip-item {
+  margin-bottom: 8px;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.tooltip-item:last-child { margin-bottom: 0; }
+
+.tooltip-item strong {
+  display: block;
+  color: var(--color-text-dark);
+  font-weight: var(--fw-600);
+  margin-bottom: 2px;
+}
+
+.profile-command-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.profile-command-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: var(--fs-12);
+  color: var(--color-text-dark);
+}
+
+.profile-command-copy {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.profile-command-copy:hover:not(:disabled) {
+  background: var(--color-bg-page);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.profile-command-copy:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.profile-command-text {
+  padding: 8px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 6px;
+  background: var(--color-bg-page);
+  color: var(--color-text-secondary);
+  font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: var(--fs-12);
+  line-height: 1.45;
+  word-break: break-all;
+  cursor: pointer;
+  user-select: text;
+}
 
 .list-container {
   flex: 1;
@@ -943,6 +1361,11 @@ onUnmounted(() => {
   background: var(--color-bg-subtle);
   color: var(--color-text);
 }
+.action-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 .action-icon.delete:hover {
   background: var(--color-danger-light);
   color: var(--color-danger);
@@ -971,6 +1394,17 @@ onUnmounted(() => {
 .action-icon.detect-btn:hover {
   background: var(--color-primary-20);
   color: var(--color-primary);
+}
+
+.action-icon.paste-btn {
+  width: 36px;
+  height: 36px;
+  color: var(--color-success);
+  background: var(--color-success-10);
+}
+.action-icon.paste-btn:hover {
+  background: var(--color-success-light);
+  color: var(--color-success);
 }
 
 .action-icon.add-btn {

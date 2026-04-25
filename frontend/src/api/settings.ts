@@ -1,5 +1,14 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { AllSettings, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate, CliSettings, SystemStatus } from '@/types/models'
+import type {
+  AllSettings,
+  GatewaySettingsUpdate,
+  TimeoutSettingsUpdate,
+  CliSettingsUpdate,
+  CliSettings,
+  SystemStatus,
+  ProviderProfile,
+  ClaudeProfileSettingsStatus
+} from '@/types/models'
 
 export const settingsApi = {
   getAll: async () => {
@@ -39,6 +48,14 @@ export const settingsApi = {
   setCliMode: async (cliType: string, mode: 'proxy' | 'direct') => {
     await invoke('set_cli_mode', { cliType, mode })
     return { data: null }
+  },
+  getClaudeProfileSettingsStatus: async (profile: ProviderProfile) => {
+    const data = await invoke<ClaudeProfileSettingsStatus>('get_claude_profile_settings_status', { profile })
+    return { data }
+  },
+  ensureClaudeProfileSettings: async (profile: ProviderProfile) => {
+    const data = await invoke<ClaudeProfileSettingsStatus>('ensure_claude_profile_settings', { profile })
+    return { data }
   },
   getStatus: async () => {
     const data = await invoke<SystemStatus>('get_system_status')

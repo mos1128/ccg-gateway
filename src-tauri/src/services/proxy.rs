@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::time::Duration;
 
 use crate::db::models::ProviderModelMap;
-use crate::services::routing::ProviderWithMaps;
+use crate::services::routing::{profile_from_gateway_token, ProviderWithMaps, DEFAULT_PROFILE};
 
 pub struct CapturedHeaders {
     pub headers: Vec<(String, String)>,
@@ -214,6 +214,31 @@ pub fn detect_cli_type(headers: &HeaderMap) -> CliType {
     } else {
         CliType::ClaudeCode
     }
+}
+
+fn bearer_token(value: &str) -> &str {
+    let value = value.trim();
+    if let Some((scheme, token)) = value.split_once(' ') {
+        if scheme.eq_ignore_ascii_case("bearer") {
+            return token.trim();
+        }
+    }
+    value
+}
+
+/// Detect provider profile from the gateway token sent by the CLI.
+pub fn detect_gateway_profile(headers: &HeaderMap) -> &'static str {
+    let header_names = ["authorization", "x-api-key", "x-goog-api-key"];
+
+    for name in header_names {
+        if let Some(value) = headers.get(name).and_then(|v| v.to_str().ok()) {
+            if let Some(profile) = profile_from_gateway_token(bearer_token(value)) {
+                return profile;
+            }
+        }
+    }
+
+    DEFAULT_PROFILE
 }
 
 /// Check if request is streaming based on body content
