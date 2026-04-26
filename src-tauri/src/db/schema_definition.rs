@@ -82,7 +82,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 6,
+            version: 8,
             tables: Self::define_log_tables(),
         }
     }
@@ -777,6 +777,18 @@ impl DatabaseSchema {
                         default_value: Some("0".to_string()),
                     },
                     ColumnDefinition {
+                        name: "cache_read_input_tokens".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "cache_creation_input_tokens".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
                         name: "output_tokens".to_string(),
                         data_type: "INTEGER".to_string(),
                         nullable: false,
@@ -940,6 +952,18 @@ impl DatabaseSchema {
                     },
                     ColumnDefinition {
                         name: "input_tokens".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "cache_read_input_tokens".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "cache_creation_input_tokens".to_string(),
                         data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: Some("0".to_string()),

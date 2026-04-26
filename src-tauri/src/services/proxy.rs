@@ -196,7 +196,13 @@ impl std::fmt::Display for CliType {
 #[derive(Debug, Default, Clone)]
 pub struct TokenUsage {
     pub input_tokens: i64,
+    pub cache_read_input_tokens: i64,
+    pub cache_creation_input_tokens: i64,
     pub output_tokens: i64,
+    gemini_prompt_tokens: i64,
+    gemini_tool_use_prompt_tokens: i64,
+    gemini_candidates_token_count: i64,
+    gemini_thoughts_token_count: i64,
 }
 
 /// Detect CLI type from User-Agent header
@@ -377,19 +383,9 @@ pub fn parse_token_usage(data: &[u8], cli_type: CliType, usage: &mut TokenUsage)
         CliType::ClaudeCode => {
             // Claude format: message.usage or usage at root
             if let Some(msg_usage) = json.get("message").and_then(|m| m.get("usage")) {
-                if let Some(input) = msg_usage.get("input_tokens").and_then(|v| v.as_i64()) {
-                    usage.input_tokens = input;
-                }
-                if let Some(output) = msg_usage.get("output_tokens").and_then(|v| v.as_i64()) {
-                    usage.output_tokens = output;
-                }
+                apply_claude_usage(msg_usage, usage);
             } else if let Some(root_usage) = json.get("usage") {
-                if let Some(input) = root_usage.get("input_tokens").and_then(|v| v.as_i64()) {
-                    usage.input_tokens = input;
-                }
-                if let Some(output) = root_usage.get("output_tokens").and_then(|v| v.as_i64()) {
-                    usage.output_tokens = output;
-                }
+                apply_claude_usage(root_usage, usage);
             }
         }
         CliType::Codex => {
@@ -397,47 +393,107 @@ pub fn parse_token_usage(data: &[u8], cli_type: CliType, usage: &mut TokenUsage)
             // Or usage at root for non-streaming
             if let Some(response) = json.get("response") {
                 if let Some(resp_usage) = response.get("usage") {
-                    if let Some(input) = resp_usage.get("input_tokens").and_then(|v| v.as_i64()) {
-                        usage.input_tokens = input;
-                    }
-                    if let Some(output) = resp_usage.get("output_tokens").and_then(|v| v.as_i64()) {
-                        usage.output_tokens = output;
-                    }
+                    apply_openai_usage(resp_usage, usage);
                 }
             } else if let Some(root_usage) = json.get("usage") {
-                if let Some(input) = root_usage
-                    .get("prompt_tokens")
-                    .or_else(|| root_usage.get("input_tokens"))
-                    .and_then(|v| v.as_i64())
-                {
-                    usage.input_tokens = input;
-                }
-                if let Some(output) = root_usage
-                    .get("completion_tokens")
-                    .or_else(|| root_usage.get("output_tokens"))
-                    .and_then(|v| v.as_i64())
-                {
-                    usage.output_tokens = output;
-                }
+                apply_openai_usage(root_usage, usage);
             }
         }
         CliType::Gemini => {
             // Gemini format: usageMetadata
             if let Some(metadata) = json.get("usageMetadata") {
-                if let Some(prompt) = metadata.get("promptTokenCount").and_then(|v| v.as_i64()) {
-                    usage.input_tokens = prompt;
-                }
-                let candidates = metadata
-                    .get("candidatesTokenCount")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-                let thoughts = metadata
-                    .get("thoughtsTokenCount")
-                    .and_then(|v| v.as_i64())
-                    .unwrap_or(0);
-                usage.output_tokens = candidates + thoughts;
+                apply_gemini_usage(metadata, usage);
             }
         }
+    }
+}
+
+fn apply_i64(value: &Value, key: &str, target: &mut i64) -> bool {
+    if let Some(next) = value.get(key).and_then(|v| v.as_i64()) {
+        *target = next;
+        return true;
+    }
+    false
+}
+
+fn apply_claude_usage(value: &Value, usage: &mut TokenUsage) {
+    apply_i64(value, "input_tokens", &mut usage.input_tokens);
+    apply_i64(
+        value,
+        "cache_read_input_tokens",
+        &mut usage.cache_read_input_tokens,
+    );
+    apply_i64(
+        value,
+        "cache_creation_input_tokens",
+        &mut usage.cache_creation_input_tokens,
+    );
+    apply_i64(value, "output_tokens", &mut usage.output_tokens);
+}
+
+fn apply_openai_usage(value: &Value, usage: &mut TokenUsage) {
+    let cached_updated = value
+        .get("input_tokens_details")
+        .or_else(|| value.get("prompt_tokens_details"))
+        .and_then(|details| details.get("cached_tokens"))
+        .and_then(|v| v.as_i64())
+        .map(|cached| {
+            usage.cache_read_input_tokens = cached;
+        })
+        .is_some();
+
+    if let Some(input) = value
+        .get("input_tokens")
+        .or_else(|| value.get("prompt_tokens"))
+        .and_then(|v| v.as_i64())
+    {
+        usage.input_tokens = (input - usage.cache_read_input_tokens).max(0);
+    } else if cached_updated {
+        usage.input_tokens = usage.input_tokens.max(0);
+    }
+
+    if let Some(output) = value
+        .get("output_tokens")
+        .or_else(|| value.get("completion_tokens"))
+        .and_then(|v| v.as_i64())
+    {
+        usage.output_tokens = output;
+    }
+}
+
+fn apply_gemini_usage(value: &Value, usage: &mut TokenUsage) {
+    let prompt_updated = apply_i64(value, "promptTokenCount", &mut usage.gemini_prompt_tokens);
+    let cached_updated = apply_i64(
+        value,
+        "cachedContentTokenCount",
+        &mut usage.cache_read_input_tokens,
+    );
+    let tool_updated = apply_i64(
+        value,
+        "toolUsePromptTokenCount",
+        &mut usage.gemini_tool_use_prompt_tokens,
+    );
+
+    if prompt_updated || cached_updated || tool_updated {
+        usage.input_tokens = (usage.gemini_prompt_tokens - usage.cache_read_input_tokens
+            + usage.gemini_tool_use_prompt_tokens)
+            .max(0);
+    }
+
+    let candidates_updated = apply_i64(
+        value,
+        "candidatesTokenCount",
+        &mut usage.gemini_candidates_token_count,
+    );
+    let thoughts_updated = apply_i64(
+        value,
+        "thoughtsTokenCount",
+        &mut usage.gemini_thoughts_token_count,
+    );
+
+    if candidates_updated || thoughts_updated {
+        usage.output_tokens =
+            usage.gemini_candidates_token_count + usage.gemini_thoughts_token_count;
     }
 }
 

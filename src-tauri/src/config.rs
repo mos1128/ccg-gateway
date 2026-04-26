@@ -134,10 +134,6 @@ impl Config {
             self.server.port
         )
     }
-
-    pub fn load() -> Self {
-        Config::default()
-    }
 }
 
 fn host_for_url(host: &str) -> String {

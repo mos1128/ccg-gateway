@@ -36,101 +36,70 @@ pub async fn record_success(db: &SqlitePool, provider_id: i64) -> Result<bool, s
 /// Record a failed request for a provider
 /// Increments consecutive_failures and blacklists if threshold is reached
 /// If the provider was blacklisted but blacklist has expired, resets count before incrementing
-/// Uses atomic UPDATE to avoid race conditions with concurrent requests
+/// Uses a single write transaction to avoid lost updates under concurrent failures
 /// Returns (was_blacklisted, provider_name) tuple
 pub async fn record_failure(
     db: &SqlitePool,
     provider_id: i64,
 ) -> Result<(bool, String), sqlx::Error> {
     let now = chrono::Utc::now().timestamp();
+    let mut tx = db.begin().await?;
 
-    // Get provider state including current blacklist status
-    let provider: Option<(i64, i64, i64, Option<i64>, String)> = sqlx::query_as(
-        "SELECT consecutive_failures, failure_threshold, blacklist_minutes, blacklisted_until, name FROM providers WHERE id = ?",
+    let result = sqlx::query(
+        r#"
+        UPDATE providers
+        SET consecutive_failures = CASE
+                WHEN blacklisted_until IS NOT NULL AND blacklisted_until <= ? THEN 1
+                ELSE consecutive_failures + 1
+            END,
+            blacklisted_until = CASE
+                WHEN (
+                    CASE
+                        WHEN blacklisted_until IS NOT NULL AND blacklisted_until <= ? THEN 1
+                        ELSE consecutive_failures + 1
+                    END
+                ) >= failure_threshold THEN ? + blacklist_minutes * 60
+                WHEN blacklisted_until IS NOT NULL AND blacklisted_until <= ? THEN NULL
+                ELSE blacklisted_until
+            END,
+            updated_at = ?
+        WHERE id = ?
+          AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
+        "#,
     )
+    .bind(now)
+    .bind(now)
+    .bind(now)
+    .bind(now)
+    .bind(now)
     .bind(provider_id)
-    .fetch_optional(db)
+    .bind(now)
+    .execute(&mut *tx)
     .await?;
 
-    let Some((
-        consecutive_failures,
-        failure_threshold,
-        blacklist_minutes,
-        blacklisted_until,
-        provider_name,
-    )) = provider
-    else {
+    let provider: Option<(String, i64, i64)> = sqlx::query_as(
+        "SELECT name, consecutive_failures, failure_threshold FROM providers WHERE id = ?",
+    )
+    .bind(provider_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    let Some((provider_name, failures, threshold)) = provider else {
         return Ok((false, String::new()));
     };
 
-    // Check if provider is currently blacklisted (blacklisted_until > now)
-    let currently_blacklisted = blacklisted_until.map(|t| t > now).unwrap_or(false);
-
-    // If currently blacklisted, don't update anything
-    if currently_blacklisted {
-        return Ok((false, provider_name));
-    }
-
-    // Determine base count: if blacklist expired, reset to 0; otherwise use current value
-    let base_count = if blacklisted_until.is_some() {
-        // Blacklist expired (since we passed the currently_blacklisted check)
-        0
-    } else {
-        // Never been blacklisted, use current count
-        consecutive_failures
-    };
-
-    // Increment failure count
-    let new_failures = base_count + 1;
-
-    // Check if we should blacklist
-    let should_blacklist = new_failures >= failure_threshold;
-
+    let should_blacklist = result.rows_affected() > 0 && failures >= threshold;
     if should_blacklist {
-        let blacklist_until = now + (blacklist_minutes * 60);
-        sqlx::query(
-            r#"
-            UPDATE providers
-            SET consecutive_failures = ?,
-                blacklisted_until = ?,
-                updated_at = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(new_failures)
-        .bind(blacklist_until)
-        .bind(now)
-        .bind(provider_id)
-        .execute(db)
-        .await?;
-
         tracing::warn!(
             provider_id = provider_id,
-            failures = new_failures,
+            failures = failures,
             "Provider blacklisted due to consecutive failures"
         );
-
-        Ok((true, provider_name))
-    } else {
-        // If blacklist expired, clear it; otherwise just update failure count
-        sqlx::query(
-            r#"
-            UPDATE providers
-            SET consecutive_failures = ?,
-                blacklisted_until = CASE WHEN blacklisted_until IS NOT NULL AND blacklisted_until <= ? THEN NULL ELSE blacklisted_until END,
-                updated_at = ?
-            WHERE id = ?
-            "#,
-        )
-        .bind(new_failures)
-        .bind(now)
-        .bind(now)
-        .bind(provider_id)
-        .execute(db)
-        .await?;
-
-        Ok((false, provider_name))
     }
+
+    Ok((should_blacklist, provider_name))
 }
 
 /// Reset provider failures and remove blacklist

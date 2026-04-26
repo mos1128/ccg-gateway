@@ -1,6 +1,7 @@
 pub mod handlers;
 
 use axum::{routing::get, Router};
+use reqwest::Client as HttpClient;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 use tauri::AppHandle;
@@ -11,6 +12,7 @@ pub struct AppState {
     pub db: SqlitePool,
     pub log_db: SqlitePool,
     pub app_handle: AppHandle,
+    pub http_client: HttpClient,
 }
 
 pub fn create_router(state: AppState) -> Router {

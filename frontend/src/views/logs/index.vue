@@ -104,7 +104,35 @@
                   <th style="min-width: 100px;">服务商</th>
                   <th style="min-width: 60px;">状态</th>
                   <th style="min-width: 100px;">耗时</th>
-                  <th style="min-width: 110px;">Tokens(In/Out)</th>
+                  <th style="min-width: 150px;">
+                    <div class="token-head">
+                      <span>Tokens</span>
+                      <el-tooltip
+                        effect="light"
+                        placement="top"
+                        :fallback-placements="['bottom', 'top', 'right', 'left']"
+                        :offset="10"
+                        :show-after="150"
+                        :enterable="true"
+                        popper-class="token-help-popper"
+                      >
+                        <template #content>
+                          <div class="token-help-content">
+                            <div class="tooltip-title">Token 显示顺序</div>
+                            <div class="tooltip-item"><strong>输入</strong><span>普通输入 tokens</span></div>
+                            <div class="tooltip-item"><strong>缓存读取</strong><span>命中的缓存输入 tokens</span></div>
+                            <div class="tooltip-item"><strong>缓存创建</strong><span>本次创建的缓存输入 tokens</span></div>
+                            <div class="tooltip-item"><strong>输出</strong><span>输出 tokens，包含 reasoning/thoughts</span></div>
+                          </div>
+                        </template>
+                        <span class="help-icon-wrapper">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
+                            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                          </svg>
+                        </span>
+                      </el-tooltip>
+                    </div>
+                  </th>
                   <th style="min-width: 100px;">模型映射</th>
                   <th class="col-sticky" style="width: 60px;">操作</th>
                 </tr>
@@ -123,7 +151,7 @@
                     {{ (row.elapsed_ms / 1000).toFixed(2) }}s
                   </td>
                   <td class="mono">
-                    <span v-if="row.input_tokens || row.output_tokens">{{ formatTokens(row.input_tokens) }} / {{ formatTokens(row.output_tokens) }}</span>
+                    <span v-if="hasTokenUsage(row)">{{ formatTokenUsage(row) }}</span>
                     <span v-else>-</span>
                   </td>
                   <td class="mono">{{ row.source_model || '-' }} → {{ row.target_model || '-' }}</td>
@@ -543,6 +571,24 @@ function formatJson(str: string | null): string {
   return formatJsonUtil(str)
 }
 
+function hasTokenUsage(row: RequestLogListItem | RequestLogDetail): boolean {
+  return !!(
+    row.input_tokens ||
+    row.cache_read_input_tokens ||
+    row.cache_creation_input_tokens ||
+    row.output_tokens
+  )
+}
+
+function formatTokenUsage(row: RequestLogListItem | RequestLogDetail): string {
+  return [
+    row.input_tokens,
+    row.cache_read_input_tokens,
+    row.cache_creation_input_tokens,
+    row.output_tokens
+  ].map(formatTokens).join(' / ')
+}
+
 const eventTypeMap: Record<string, string> = {
   no_provider_available: '无可用服务商',
   provider_blacklisted: '服务商黑名单',
@@ -707,6 +753,59 @@ watch(activeTab, (tab) => {
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: var(--color-bg-page); }
 .flat-table tr:hover td.col-sticky { background: var(--color-bg-page); }
+
+.token-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.help-icon-wrapper {
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+}
+
+.help-icon {
+  color: var(--color-text-weak);
+  transition: color 0.2s;
+}
+
+.help-icon-wrapper:hover .help-icon { color: var(--color-text-muted); }
+
+:global(.token-help-popper.el-popper) {
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px var(--color-shadow-lg);
+}
+
+.token-help-content {
+  width: 220px;
+}
+
+.tooltip-title {
+  font-size: var(--fs-14);
+  font-weight: var(--fw-700);
+  color: var(--color-text);
+  margin-bottom: 10px;
+}
+
+.tooltip-item {
+  margin-bottom: 8px;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.tooltip-item:last-child { margin-bottom: 0; }
+
+.tooltip-item strong {
+  display: block;
+  color: var(--color-text-dark);
+  font-weight: var(--fw-600);
+  margin-bottom: 2px;
+}
 
 .col-sticky {
   position: sticky;

@@ -8,6 +8,8 @@ pub async fn record_request(
     cli_type: &str,
     success: bool,
     input_tokens: i64,
+    cache_read_input_tokens: i64,
+    cache_creation_input_tokens: i64,
     output_tokens: i64,
 ) -> Result<(), sqlx::Error> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -15,13 +17,15 @@ pub async fn record_request(
     // Upsert into usage_daily table
     sqlx::query(
         r#"
-        INSERT INTO usage_daily (usage_date, provider_name, cli_type, request_count, success_count, failure_count, input_tokens, output_tokens)
-        VALUES (?, ?, ?, 1, ?, ?, ?, ?)
+        INSERT INTO usage_daily (usage_date, provider_name, cli_type, request_count, success_count, failure_count, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens)
+        VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(usage_date, provider_name, cli_type) DO UPDATE SET
             request_count = request_count + 1,
             success_count = success_count + excluded.success_count,
             failure_count = failure_count + excluded.failure_count,
             input_tokens = input_tokens + excluded.input_tokens,
+            cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,
+            cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,
             output_tokens = output_tokens + excluded.output_tokens
         "#,
     )
@@ -31,6 +35,8 @@ pub async fn record_request(
     .bind(if success { 1 } else { 0 })
     .bind(if success { 0 } else { 1 })
     .bind(input_tokens)
+    .bind(cache_read_input_tokens)
+    .bind(cache_creation_input_tokens)
     .bind(output_tokens)
     .execute(log_db)
     .await?;
@@ -47,6 +53,8 @@ pub async fn record_request_log(
     status_code: Option<u16>,
     elapsed_ms: i64,
     input_tokens: i64,
+    cache_read_input_tokens: i64,
+    cache_creation_input_tokens: i64,
     output_tokens: i64,
     client_method: &str,
     client_path: &str,
@@ -59,8 +67,8 @@ pub async fn record_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
@@ -70,6 +78,8 @@ pub async fn record_request_log(
     .bind(status_code.map(|c| c as i64))
     .bind(elapsed_ms)
     .bind(input_tokens)
+    .bind(cache_read_input_tokens)
+    .bind(cache_creation_input_tokens)
     .bind(output_tokens)
     .bind(client_method)
     .bind(client_path)

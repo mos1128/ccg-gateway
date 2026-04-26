@@ -23,7 +23,7 @@ impl std::ops::Deref for LogDb {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let config = Config::load();
+    let config = Config::default();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -60,11 +60,19 @@ pub fn run() {
                 app.manage(db.clone());
                 app.manage(LogDb(log_db.clone()));
 
+                // Create shared HTTP client with connection pooling
+                let http_client = reqwest::Client::builder()
+                    .pool_max_idle_per_host(10)
+                    .pool_idle_timeout(std::time::Duration::from_secs(90))
+                    .build()
+                    .unwrap_or_default();
+
                 // Start HTTP server for proxy
                 let state = api::AppState {
                     db: db.clone(),
                     log_db: log_db.clone(),
                     app_handle: app.handle().clone(),
+                    http_client,
                 };
 
                 let router = api::create_router(state);

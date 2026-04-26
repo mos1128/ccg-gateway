@@ -273,8 +273,10 @@ export interface DailyStats {
   request_count: number
   success_count: number
   failure_count: number
-  prompt_tokens: number
-  completion_tokens: number
+  input_tokens: number
+  cache_read_input_tokens: number
+  cache_creation_input_tokens: number
+  output_tokens: number
 }
 
 export interface ProviderStats {
@@ -297,6 +299,8 @@ export interface RequestLogListItem {
   status_code: number | null
   elapsed_ms: number
   input_tokens: number
+  cache_read_input_tokens: number
+  cache_creation_input_tokens: number
   output_tokens: number
   client_method: string
   client_path: string

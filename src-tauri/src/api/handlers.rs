@@ -17,7 +17,8 @@ use crate::db::models::{RequestLogInfo, RequestLogItem};
 use crate::services::proxy::{
     apply_body_model_mapping, apply_url_model_mapping, apply_useragent_override, detect_cli_type,
     detect_gateway_profile, extract_model_from_body, extract_model_from_path, filter_headers,
-    is_streaming, parse_token_usage, set_auth_header, CliType, TimeoutConfig, TokenUsage,
+    is_streaming, parse_streaming_token_usage, parse_token_usage, set_auth_header, CliType,
+    TimeoutConfig, TokenUsage,
 };
 use crate::services::routing::select_provider;
 use crate::services::{provider as provider_service, stats as stats_service};
@@ -47,7 +48,7 @@ pub async fn proxy_handler_catchall(
     let client_headers_json = serialize_headers(&headers);
 
     // Read request body
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
+    let body_bytes = match axum::body::to_bytes(req.into_body(), 20 * 1024 * 1024).await {
         Ok(bytes) => bytes.to_vec(),
         Err(e) => {
             tracing::error!(error = %e, "Failed to read request body");
@@ -176,14 +177,6 @@ pub async fn proxy_handler_catchall(
     let _original_ua =
         apply_useragent_override(&mut req_headers, provider.custom_useragent.as_deref());
 
-    // Set content-type if not present
-    if !req_headers.contains_key(reqwest::header::CONTENT_TYPE) {
-        req_headers.insert(
-            reqwest::header::CONTENT_TYPE,
-            "application/json".parse().unwrap(),
-        );
-    }
-
     // Explicitly set Content-Length to ensure correct body transmission
     // This is critical because we filtered out the original content-length header
     if !final_body.is_empty() {
@@ -193,15 +186,14 @@ pub async fn proxy_handler_catchall(
         );
     }
 
-    // Create HTTP client request
-    let client = reqwest::Client::new();
+    // Build the request to inspect actual headers and body that will be sent
     let request_builder = match method.as_str() {
-        "GET" => client.get(&upstream_url),
-        "POST" => client.post(&upstream_url),
-        "PUT" => client.put(&upstream_url),
-        "DELETE" => client.delete(&upstream_url),
-        "PATCH" => client.patch(&upstream_url),
-        _ => client.request(
+        "GET" => state.http_client.get(&upstream_url),
+        "POST" => state.http_client.post(&upstream_url),
+        "PUT" => state.http_client.put(&upstream_url),
+        "DELETE" => state.http_client.delete(&upstream_url),
+        "PATCH" => state.http_client.patch(&upstream_url),
+        _ => state.http_client.request(
             reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET),
             &upstream_url,
         ),
@@ -246,7 +238,7 @@ pub async fn proxy_handler_catchall(
     if streaming {
         handle_streaming_request(
             request,
-            &client,
+            &state.http_client,
             &state,
             provider_id,
             &provider_name,
@@ -264,7 +256,7 @@ pub async fn proxy_handler_catchall(
     } else {
         handle_non_streaming_request(
             request,
-            &client,
+            &state.http_client,
             &state,
             provider_id,
             &provider_name,
@@ -322,6 +314,32 @@ fn maybe_decompress(body: &[u8], content_encoding: Option<&str>) -> Vec<u8> {
     body.to_vec()
 }
 
+fn parse_streaming_usage_chunk(
+    buffer: &mut String,
+    chunk: &[u8],
+    cli_type: CliType,
+    usage: &mut TokenUsage,
+) {
+    const MAX_SSE_LINE_BUFFER: usize = 64 * 1024;
+
+    buffer.push_str(&String::from_utf8_lossy(chunk));
+    while let Some(pos) = buffer.find('\n') {
+        let mut line: String = buffer.drain(..=pos).collect();
+        if line.ends_with('\n') {
+            line.pop();
+        }
+        if line.ends_with('\r') {
+            line.pop();
+        }
+        parse_streaming_token_usage(&line, cli_type, usage);
+    }
+
+    if buffer.len() > MAX_SSE_LINE_BUFFER {
+        let drain_len = buffer.len() - MAX_SSE_LINE_BUFFER;
+        buffer.drain(..drain_len);
+    }
+}
+
 async fn handle_streaming_request(
     request: reqwest::Request,
     client: &reqwest::Client,
@@ -364,8 +382,7 @@ async fn handle_streaming_request(
                     model_id,
                     None,
                     start_time.elapsed().as_millis() as i64,
-                    0,
-                    0,
+                    TokenUsage::default(),
                     client_method,
                     client_path,
                     source_model,
@@ -404,8 +421,7 @@ async fn handle_streaming_request(
                     model_id,
                     None,
                     start_time.elapsed().as_millis() as i64,
-                    0,
-                    0,
+                    TokenUsage::default(),
                     client_method,
                     client_path,
                     source_model,
@@ -438,21 +454,19 @@ async fn handle_streaming_request(
             }
         }
     }
-    builder = builder.header("X-CCG-Provider", provider_name);
 
     // Create streaming body
     let is_success = status.is_success();
 
-    // 使用共享状态收集chunks，确保即使stream被提前终止也能记录日志
-    // 优化：只存储原始chunks，后台任务再解析（避免重复解析）
+    // Collect body chunks for logging, capped at 1MB
+    const MAX_BODY_LOG: usize = 1 * 1024 * 1024;
     let collected_chunks = Arc::new(Mutex::new(Vec::<Bytes>::new()));
     let collected_chunks_for_stream = collected_chunks.clone();
+    let stream_usage = Arc::new(Mutex::new(TokenUsage::default()));
+    let stream_usage_for_stream = stream_usage.clone();
 
     // 创建channel用于通知stream结束
     let (stream_end_tx, mut stream_end_rx) = mpsc::channel::<()>(1);
-
-    // 收集完整内容的上限（10MB），用于解析token
-    const MAX_COLLECT_SIZE: usize = 10 * 1024 * 1024;
 
     let stream = async_stream::stream! {
         let mut byte_stream = response.bytes_stream();
@@ -460,6 +474,7 @@ async fn handle_streaming_request(
         let mut chunk_count = 0usize;
         let mut total_bytes = 0usize;
         let mut collected_bytes = 0usize;
+        let mut sse_buffer = String::new();
 
         loop {
             match tokio::time::timeout(idle_timeout, byte_stream.next()).await {
@@ -468,12 +483,24 @@ async fn handle_streaming_request(
                     let chunk_size = chunk.len();
                     total_bytes += chunk_size;
 
-                    // 收集chunk用于解析token（限制10MB防止极端情况）
-                    if collected_bytes < MAX_COLLECT_SIZE {
+                    {
+                        let mut usage = stream_usage_for_stream.lock().await;
+                        parse_streaming_usage_chunk(
+                            &mut sse_buffer,
+                            chunk.as_ref(),
+                            cli_type,
+                            &mut usage,
+                        );
+                    }
+
+                    // Collect chunk for body logging (capped at 1MB)
+                    if collected_bytes < MAX_BODY_LOG {
                         let mut chunks = collected_chunks_for_stream.lock().await;
-                        chunks.push(chunk.clone());
-                        collected_bytes += chunk_size;
-                        drop(chunks);  // 立即释放锁
+                        let to_collect = chunk.len().min(MAX_BODY_LOG - collected_bytes);
+                        if to_collect > 0 {
+                            chunks.push(chunk.slice(..to_collect));
+                            collected_bytes += to_collect;
+                        }
                     }
 
                     tracing::debug!(
@@ -491,7 +518,6 @@ async fn handle_streaming_request(
                     break;
                 }
                 Ok(None) => {
-                    // Stream completed normally
                     tracing::info!(
                         "[{}] Stream completed normally: {} chunks, {} bytes",
                         cli_type, chunk_count, total_bytes
@@ -499,12 +525,10 @@ async fn handle_streaming_request(
                     break;
                 }
                 Err(_) => {
-                    // Idle timeout
                     tracing::warn!(
                         "[{}] Stream idle timeout after {} chunks, {} bytes",
                         cli_type, chunk_count, total_bytes
                     );
-                    // Send SSE error event
                     let error_event = "event: error\ndata: {\"error\": \"Stream idle timeout\"}\n\n".to_string();
                     yield Ok::<Bytes, std::io::Error>(Bytes::from(error_event));
                     break;
@@ -512,14 +536,20 @@ async fn handle_streaming_request(
             }
         }
 
-        // Stream loop正常结束（无论是completed、error还是timeout）
-        tracing::debug!("[{}] Stream loop ended naturally", cli_type);
+        if !sse_buffer.is_empty() {
+            let mut usage = stream_usage_for_stream.lock().await;
+            parse_streaming_token_usage(
+                sse_buffer.trim_end_matches('\r'),
+                cli_type,
+                &mut usage,
+            );
+        }
 
-        // 通知后台任务stream已结束
+        tracing::debug!("[{}] Stream loop ended naturally", cli_type);
         let _ = stream_end_tx.send(()).await;
     };
 
-    // Spawn后台任务记录日志 - 等待stream结束通知或超时
+    // Spawn后台任务记录日志
     let log_state = state.clone();
     let log_provider_name = provider_name.to_string();
     let log_model_id = model_id.map(|s| s.to_string());
@@ -533,59 +563,43 @@ async fn handle_streaming_request(
     let log_target_model = target_model.map(|s| s.to_string());
 
     tokio::spawn(async move {
-        // 等待stream结束通知（已验证可靠，无需超时兜底）
         let _ = stream_end_rx.recv().await;
         tracing::debug!("[{}] Received stream end notification", cli_type);
 
-        // 读取收集的chunks
+        // Reconstruct body from collected chunks (up to 1MB)
         let chunks = collected_chunks.lock().await.clone();
-        drop(collected_chunks); // 立即释放Arc引用
-
-        // 一次性解析（避免重复解析，提升性能）
+        drop(collected_chunks);
         let full_body: Vec<u8> = chunks.iter().flat_map(|c| c.iter()).copied().collect();
-        let chunk_count = chunks.len();
+        let body_truncated = full_body.len() >= MAX_BODY_LOG;
 
         tracing::info!(
-            "[{}] Processing stream log: {} chunks, {} bytes",
+            "[{}] Processing stream log: {} bytes collected",
             cli_type,
-            chunk_count,
             full_body.len()
         );
 
-        // 解析token usage
-        let mut usage = TokenUsage::default();
-        if !full_body.is_empty() {
-            // SSE 格式需要逐行解析，不能直接解析整个body
-            // 注意：流式响应可能有多个usage更新，应该使用最后一个值
-            let body_str = String::from_utf8_lossy(&full_body);
-            for line in body_str.lines() {
-                if line.starts_with("data:") {
-                    // 提取 data: 后面的 JSON
-                    let data = line.strip_prefix("data:").unwrap_or("").trim();
-                    if data == "[DONE]" || data.is_empty() {
-                        continue;
-                    }
-                    // 解析这一行的 JSON（如果有usage，会覆盖旧值）
-                    parse_token_usage(data.as_bytes(), cli_type, &mut usage);
-                    // 继续遍历所有行，使用最后一个值
-                }
-            }
-        }
+        let usage = stream_usage.lock().await.clone();
 
         tracing::debug!(
-            "[{}] Parsed tokens: input={}, output={}",
+            "[{}] Parsed tokens: input={}, cache_read={}, cache_creation={}, output={}",
             cli_type,
             usage.input_tokens,
+            usage.cache_read_input_tokens,
+            usage.cache_creation_input_tokens,
             usage.output_tokens
         );
 
-        // Update log info with response body
+        // Decompress if needed for logging
         let content_encoding = log_resp_headers
             .get("content-encoding")
             .and_then(|v| v.to_str().ok());
         let decompressed_body = maybe_decompress(&full_body, content_encoding);
         let mut final_log_info = log_info;
-        final_log_info.provider_body = Some(truncate_body(&decompressed_body));
+        let mut body_str = String::from_utf8_lossy(&decompressed_body).into_owned();
+        if body_truncated {
+            body_str.push_str("\n\n[response body truncated at 1MB]");
+        }
+        final_log_info.provider_body = Some(body_str);
 
         // Record stats
         let elapsed = start_time.elapsed().as_millis() as i64;
@@ -622,8 +636,7 @@ async fn handle_streaming_request(
             log_model_id.as_deref(),
             Some(log_status.as_u16()),
             elapsed,
-            usage.input_tokens,
-            usage.output_tokens,
+            usage,
             &log_client_method,
             &log_client_path,
             log_source_model.as_deref(),
@@ -680,8 +693,7 @@ async fn handle_non_streaming_request(
                     model_id,
                     None,
                     start_time.elapsed().as_millis() as i64,
-                    0,
-                    0,
+                    TokenUsage::default(),
                     client_method,
                     client_path,
                     source_model,
@@ -720,8 +732,7 @@ async fn handle_non_streaming_request(
                     model_id,
                     None,
                     start_time.elapsed().as_millis() as i64,
-                    0,
-                    0,
+                    TokenUsage::default(),
                     client_method,
                     client_path,
                     source_model,
@@ -769,8 +780,7 @@ async fn handle_non_streaming_request(
                 model_id,
                 Some(status.as_u16()),
                 start_time.elapsed().as_millis() as i64,
-                0,
-                0,
+                TokenUsage::default(),
                 client_method,
                 client_path,
                 source_model,
@@ -829,8 +839,7 @@ async fn handle_non_streaming_request(
         model_id,
         Some(status.as_u16()),
         elapsed,
-        usage.input_tokens,
-        usage.output_tokens,
+        usage,
         client_method,
         client_path,
         source_model,
@@ -850,7 +859,6 @@ async fn handle_non_streaming_request(
             }
         }
     }
-    builder = builder.header("X-CCG-Provider", provider_name);
 
     Ok(builder.body(Body::from(body_bytes)).unwrap())
 }
@@ -862,8 +870,7 @@ async fn record_request_stats(
     model_id: Option<&str>,
     status_code: Option<u16>,
     elapsed_ms: i64,
-    input_tokens: i64,
-    output_tokens: i64,
+    usage: TokenUsage,
     client_method: &str,
     client_path: &str,
     source_model: Option<&str>,
@@ -883,8 +890,10 @@ async fn record_request_stats(
         model_id,
         status_code,
         elapsed_ms,
-        input_tokens,
-        output_tokens,
+        usage.input_tokens,
+        usage.cache_read_input_tokens,
+        usage.cache_creation_input_tokens,
+        usage.output_tokens,
         client_method,
         client_path,
         source_model,
@@ -902,7 +911,7 @@ async fn record_request_stats(
 
     // Query the inserted log item
     let log_item = sqlx::query_as::<_, RequestLogItem>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(log_id)
     .fetch_one(&state.log_db)
@@ -921,8 +930,10 @@ async fn record_request_stats(
         provider_name,
         cli_type.as_str(),
         success,
-        input_tokens,
-        output_tokens,
+        usage.input_tokens,
+        usage.cache_read_input_tokens,
+        usage.cache_creation_input_tokens,
+        usage.output_tokens,
     )
     .await;
 }

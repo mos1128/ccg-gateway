@@ -510,6 +510,8 @@ pub struct RequestLogItem {
     pub status_code: Option<i64>,
     pub elapsed_ms: i64,
     pub input_tokens: i64,
+    pub cache_read_input_tokens: i64,
+    pub cache_creation_input_tokens: i64,
     pub output_tokens: i64,
     pub client_method: String,
     pub client_path: String,
@@ -528,6 +530,8 @@ pub struct RequestLogDetail {
     pub status_code: Option<i64>,
     pub elapsed_ms: i64,
     pub input_tokens: i64,
+    pub cache_read_input_tokens: i64,
+    pub cache_creation_input_tokens: i64,
     pub output_tokens: i64,
     pub client_method: String,
     pub client_path: String,
@@ -590,6 +594,8 @@ pub struct UsageDaily {
     pub success_count: i64,
     pub failure_count: i64,
     pub input_tokens: i64,
+    pub cache_read_input_tokens: i64,
+    pub cache_creation_input_tokens: i64,
     pub output_tokens: i64,
 }
 

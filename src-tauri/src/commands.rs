@@ -2367,7 +2367,7 @@ pub async fn get_request_logs(
     let offset = (page - 1) * page_size;
     let pool = &log_db.0;
 
-    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE 1=1".to_string();
+    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE 1=1".to_string();
     let mut count_sql = "SELECT COUNT(*) FROM request_logs WHERE 1=1".to_string();
 
     if cli_type.is_some() {
@@ -2431,7 +2431,7 @@ pub async fn get_request_log_detail(
     id: i64,
 ) -> Result<RequestLogDetail> {
     sqlx::query_as::<_, RequestLogDetail>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&log_db.0)
@@ -3192,7 +3192,7 @@ pub async fn get_provider_stats(
             provider_name,
             COUNT(*) as total_requests,
             SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as total_success,
-            SUM(input_tokens + output_tokens) as total_tokens,
+            SUM(input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens) as total_tokens,
             SUM(elapsed_ms) as total_elapsed_ms
         FROM request_logs
         WHERE 1=1
@@ -3559,7 +3559,6 @@ fn build_gemini_path_mapping(
                     (drive_path.join("Code"), 4),
                     (drive_path.join("workspace"), 4),
                     (drive_path.join("dev"), 4),
-                    (drive_path.join("my-develop"), 5),
                 ]);
             }
         }
@@ -5920,14 +5919,12 @@ async fn reinstall_skill_impl(
             }
         });
 
-    // 3. 删除 SSOT 目录
+    // 3. 从仓库源复制到临时目录（避免中间状态暴露）
     let ssot_dir = get_ssot_dir();
     let skill_path = ssot_dir.join(&directory);
-    if skill_path.exists() {
-        std::fs::remove_dir_all(&skill_path).map_err(|e| e.to_string())?;
-    }
+    let temp_path = ssot_dir.join(format!(".temp_{}_{}", directory, uuid::Uuid::new_v4()));
+    let backup_path = ssot_dir.join(format!(".backup_{}_{}", directory, uuid::Uuid::new_v4()));
 
-    // 4. 从仓库源复制到 SSOT
     let skill_source_path = if skill::is_local_repo_source(&repo.source) {
         let base = std::path::Path::new(&repo.source);
         if source_dir == "." {
@@ -5947,7 +5944,42 @@ async fn reinstall_skill_impl(
     if !skill_source_path.exists() {
         return Err(format!("技能目录不存在: {}", skill_source_path.display()));
     }
-    copy_dir_recursive(&skill_source_path, &skill_path)?;
+
+    if let Err(e) = copy_dir_recursive(&skill_source_path, &temp_path) {
+        let _ = std::fs::remove_dir_all(&temp_path);
+        return Err(e);
+    }
+
+    let had_existing = skill_path.exists();
+    if had_existing {
+        if let Err(e) = std::fs::rename(&skill_path, &backup_path) {
+            let _ = std::fs::remove_dir_all(&temp_path);
+            return Err(format!("Skill 备份失败: {}", e));
+        }
+    }
+
+    if let Err(e) = std::fs::rename(&temp_path, &skill_path) {
+        let _ = std::fs::remove_dir_all(&temp_path);
+        if had_existing {
+            if let Err(restore_err) = std::fs::rename(&backup_path, &skill_path) {
+                return Err(format!(
+                    "Skill 替换失败: {}; 旧版本恢复失败: {}",
+                    e, restore_err
+                ));
+            }
+        }
+        return Err(format!("Skill 替换失败: {}", e));
+    }
+
+    if had_existing {
+        if let Err(e) = std::fs::remove_dir_all(&backup_path) {
+            tracing::warn!(
+                error = %e,
+                path = %backup_path.display(),
+                "Failed to remove skill backup"
+            );
+        }
+    }
 
     // 5. 恢复 CLI 启用状态
     batch_set_skill_cli(db, &directory, &enabled_clis).await?;
