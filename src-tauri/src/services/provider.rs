@@ -247,8 +247,8 @@ pub async fn test_provider_model(
             (url, body)
         }
         "codex" => {
-            // OpenAI format: base_url already includes /v1
-            let url = format!("{}/chat/completions", base_url);
+            // Codex format: base_url already includes /v1
+            let url = format!("{}/responses", base_url);
             let body = serde_json::json!({
                 "model": actual_model,
                 "instructions": "You are Codex, a coding agent based on GPT-5.",
@@ -285,7 +285,7 @@ pub async fn test_provider_model(
             );
             let body = serde_json::json!({
                 "contents": [{"role": "user", "parts": [{"text": "今天天气不错"}]}],
-                "systemInstruction": {"role": "user", "parts": [{"text": "You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks."}]},
+                "systemInstruction": {"parts": [{"text": "You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks."}]},
                 "generationConfig": {"temperature": 1.0, "topP": 0.95, "topK": 64, "thinkingConfig": {"includeThoughts": true}}
             });
 
