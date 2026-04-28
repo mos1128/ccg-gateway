@@ -211,15 +211,10 @@ pub async fn test_provider_model(
             let url = format!("{}/v1/messages", base_url);
             let body = serde_json::json!({
                 "model": actual_model,
-                "messages": [{
-                    "role": "user",
-                    "content": [{"type": "text", "text": "今天天气不错"}]
-                }],
+                "messages": [{"role": "user", "content": [{"type": "text", "text": "今天天气不错"}]}],
                 "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}],
                 "max_tokens": 1024,
-                "thinking": {
-                    "type": "adaptive"
-                },
+                "thinking": {"type": "adaptive"},
                 "stream": true
             });
             
@@ -256,33 +251,28 @@ pub async fn test_provider_model(
             let url = format!("{}/chat/completions", base_url);
             let body = serde_json::json!({
                 "model": actual_model,
-                "messages": [{"role": "user", "content": "今天天气不错"}],
-                "stream": true,
-                "max_tokens": 1024
+                "instructions": "You are Codex, a coding agent based on GPT-5.",
+                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "今天天气不错"}]}],
+                "reasoning": {"effort": "high"},
+                "stream": true
             });
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
                 headers.insert(reqwest::header::AUTHORIZATION, v);
             }
 
-            // Apply captured headers or defaults
+            headers.insert("accept", "text/event-stream".parse().unwrap());
+            headers.insert("originator", "codex-tui".parse().unwrap());
+
+            let mut user_agent = "codex-tui/0.125.0 (Windows 10.0.22631; x86_64) unknown (codex-tui; 0.125.0)".to_string();
             let captured_headers = crate::services::proxy::get_captured_codex_headers();
-            if captured_headers.headers.is_empty() {
-                headers.insert(
-                    reqwest::header::USER_AGENT,
-                    "codex-tui/0.118.0 (Windows 10.0.26200; x86_64) unknown (codex-tui; 0.118.0)"
-                        .parse()
-                        .unwrap(),
-                );
-                headers.insert("originator", "codex-tui".parse().unwrap());
-            } else {
-                for (k, v) in &captured_headers.headers {
-                    if let (Ok(h_name), Ok(h_val)) = (
-                        reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                        reqwest::header::HeaderValue::from_str(v),
-                    ) {
-                        headers.insert(h_name, h_val);
-                    }
+            for (k, v) in &captured_headers.headers {
+                if k.to_lowercase() == "user-agent" {
+                    user_agent = v.clone();
+                    break;
                 }
+            }
+            if let Ok(v) = reqwest::header::HeaderValue::from_str(&user_agent) {
+                headers.insert(reqwest::header::USER_AGENT, v);
             }
 
             (url, body)
