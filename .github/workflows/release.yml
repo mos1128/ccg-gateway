@@ -26,15 +26,15 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
       
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v5
         with:
           version: 8
       
@@ -74,21 +74,21 @@ jobs:
       
       - name: Upload artifacts (Windows)
         if: matrix.platform == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}
           path: src-tauri/target/release/ccg-gateway.exe
       
       - name: Upload artifacts (macOS)
         if: matrix.platform == 'macos-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-${{ matrix.arch }}
           path: src-tauri/target/release/bundle/dmg/*.dmg
       
       - name: Upload artifacts (Linux)
         if: matrix.platform == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}
           path: src-tauri/target/release/bundle/appimage/*.AppImage
@@ -102,7 +102,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       
@@ -110,7 +110,7 @@ jobs:
         run: git fetch --tags --force
       
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
       
@@ -140,7 +140,7 @@ jobs:
       
       - name: Create Release (with tag message)
         if: steps.tag.outputs.has_message == 'true'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           prerelease: false
@@ -154,7 +154,7 @@ jobs:
       
       - name: Create Release (auto-generate)
         if: steps.tag.outputs.has_message == 'false'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           prerelease: false
