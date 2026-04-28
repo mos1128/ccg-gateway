@@ -1298,6 +1298,7 @@ pub async fn ensure_claude_profile_settings(
     write_claude_gateway_settings(
         &config_path,
         &default_config,
+        None,
         use_merge,
         &gateway_url,
         gateway_token,
@@ -1315,21 +1316,19 @@ pub async fn update_cli_settings(
 ) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
     let gateway_url = config.gateway_base_url();
+    let config_trimmed = input
+        .default_json_config
+        .as_ref()
+        .map(|config| config.trim().to_string());
 
-    // Validate and update database
-    if let Some(ref config) = input.default_json_config {
-        let config_trimmed = config.trim();
-
-        // Validate format if config is not empty
+    if let Some(ref config_trimmed) = config_trimmed {
         if !config_trimmed.is_empty() {
             match cli_type.as_str() {
                 "claude_code" | "gemini" => {
-                    // Validate JSON format
                     serde_json::from_str::<serde_json::Value>(config_trimmed)
                         .map_err(|e| format!("JSON 格式错误: {}", e))?;
                 }
                 "codex" => {
-                    // Validate TOML format
                     config_trimmed
                         .parse::<toml_edit::DocumentMut>()
                         .map_err(|e| format!("TOML 格式错误: {}", e))?;
@@ -1337,6 +1336,47 @@ pub async fn update_cli_settings(
                 _ => {}
             }
         }
+    }
+
+    if let Some(ref write_mode) = input.config_write_mode {
+        if write_mode != "overwrite" && write_mode != "merge" {
+            return Err("config_write_mode 只能是 'overwrite' 或 'merge'".to_string());
+        }
+    }
+
+    if let Some(ref write_mode) = input.config_write_mode {
+        sqlx::query(
+            "UPDATE cli_settings SET config_write_mode = ?, updated_at = ? WHERE cli_type = ?",
+        )
+        .bind(write_mode)
+        .bind(now)
+        .bind(&cli_type)
+        .execute(db.inner())
+        .await
+        .map_err(map_db_error)?;
+    }
+
+    if let Some(ref config_dir) = input.config_dir {
+        let shrunk_path = shrink_home_path(config_dir);
+        sqlx::query("UPDATE cli_settings SET config_dir = ?, updated_at = ? WHERE cli_type = ?")
+            .bind(&shrunk_path)
+            .bind(now)
+            .bind(&cli_type)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
+    }
+
+    if let Some(ref config_trimmed) = config_trimmed {
+        let previous_default_config = sqlx::query_as::<_, (Option<String>,)>(
+            "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
+        )
+        .bind(&cli_type)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+        .and_then(|r| r.0)
+        .unwrap_or_default();
 
         sqlx::query(
             "UPDATE cli_settings SET default_json_config = ?, updated_at = ? WHERE cli_type = ?",
@@ -1358,7 +1398,20 @@ pub async fn update_cli_settings(
                 .map(|r| r.0)
                 .unwrap_or_else(|| "proxy".to_string());
 
-        if mode == "proxy" {
+        if cli_type == "claude_code" {
+            sync_claude_code_preset_update(
+                db.inner(),
+                config_trimmed,
+                &previous_default_config,
+                &gateway_url,
+            )
+            .await?;
+
+            if mode == "direct" {
+                tracing::info!("{} 直连模式，配置变更后自动同步凭证配置", cli_type);
+                auto_sync_credential_in_direct_mode(db.inner(), &cli_type).await?;
+            }
+        } else if mode == "proxy" {
             // 中转模式：如果 CLI 已启用，重新同步配置
             let enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
             if enabled {
@@ -1370,35 +1423,6 @@ pub async fn update_cli_settings(
             tracing::info!("{} 直连模式，配置变更后自动同步凭证配置", cli_type);
             auto_sync_credential_in_direct_mode(db.inner(), &cli_type).await?;
         }
-    }
-
-    // Update config_write_mode if provided
-    if let Some(ref write_mode) = input.config_write_mode {
-        if write_mode != "overwrite" && write_mode != "merge" {
-            return Err("config_write_mode 只能是 'overwrite' 或 'merge'".to_string());
-        }
-        sqlx::query(
-            "UPDATE cli_settings SET config_write_mode = ?, updated_at = ? WHERE cli_type = ?",
-        )
-        .bind(write_mode)
-        .bind(now)
-        .bind(&cli_type)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
-    }
-
-    // Update config_dir if provided
-    if let Some(ref config_dir) = input.config_dir {
-        // 收缩路径为 ~ 开头的相对路径，便于跨设备同步
-        let shrunk_path = shrink_home_path(config_dir);
-        sqlx::query("UPDATE cli_settings SET config_dir = ?, updated_at = ? WHERE cli_type = ?")
-            .bind(&shrunk_path)
-            .bind(now)
-            .bind(&cli_type)
-            .execute(db.inner())
-            .await
-            .map_err(map_db_error)?;
     }
 
     // Update CLI config file if enabled flag is provided
@@ -1710,11 +1734,33 @@ async fn sync_cli_config(
     let write_mode = get_config_write_mode(db, cli_type).await;
     match cli_type {
         "claude_code" => {
-            sync_claude_code_config(db, enabled, default_config, &write_mode, gateway_url).await
+            sync_claude_code_config(
+                db,
+                enabled,
+                default_config,
+                None,
+                &write_mode,
+                gateway_url,
+                ClaudeProfileSyncScope::DefaultOnly,
+            )
+            .await
         }
         "codex" => sync_codex_config(db, enabled, default_config, &write_mode, gateway_url).await,
         "gemini" => sync_gemini_config(db, enabled, default_config, &write_mode, gateway_url).await,
         _ => Err("Invalid CLI type".to_string()),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ClaudeProfileSyncScope {
+    DefaultOnly,
+    NonDefaultProfiles,
+}
+
+fn claude_profile_in_scope(scope: ClaudeProfileSyncScope, profile: &str) -> bool {
+    match scope {
+        ClaudeProfileSyncScope::DefaultOnly => profile == DEFAULT_PROFILE,
+        ClaudeProfileSyncScope::NonDefaultProfiles => profile != DEFAULT_PROFILE,
     }
 }
 
@@ -2071,6 +2117,7 @@ fn claude_gateway_config(gateway_url: &str, gateway_token: &str) -> serde_json::
 fn write_claude_gateway_settings(
     config_path: &std::path::Path,
     default_config: &str,
+    previous_default_config: Option<&str>,
     use_merge: bool,
     gateway_url: &str,
     gateway_token: &str,
@@ -2097,6 +2144,28 @@ fn write_claude_gateway_settings(
     } else {
         serde_json::json!({})
     };
+
+    if use_merge {
+        let previous_default_config = previous_default_config
+            .map(str::trim)
+            .filter(|config| !config.is_empty() && *config != default_config.trim());
+
+        if let Some(previous_default_config) = previous_default_config {
+            match serde_json::from_str::<serde_json::Value>(previous_default_config) {
+                Ok(previous_config) => {
+                    let sanitized_config =
+                        sanitize_json_config(previous_config, &protected_gateway_fields);
+                    deep_remove(&mut config, &sanitized_config);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse previous custom config (invalid JSON): {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
 
     deep_merge(&mut config, &gateway_config);
 
@@ -2130,19 +2199,26 @@ async fn sync_claude_code_config(
     db: &SqlitePool,
     enabled: bool,
     default_config: &str,
+    previous_default_config: Option<&str>,
     write_mode: &str,
     gateway_url: &str,
+    scope: ClaudeProfileSyncScope,
 ) -> Result<()> {
     let config_dir = get_cli_config_dir_path(db, "claude_code").await;
     let use_merge = write_mode == "merge";
 
     if enabled {
         for profile in PROVIDER_PROFILES {
+            if !claude_profile_in_scope(scope, profile) {
+                continue;
+            }
+
             let gateway_token = gateway_token_for_profile(profile).unwrap_or("ccg-gateway");
             let config_path = config_dir.join(claude_settings_filename(profile));
             write_claude_gateway_settings(
                 &config_path,
                 default_config,
+                previous_default_config,
                 use_merge,
                 gateway_url,
                 gateway_token,
@@ -2151,6 +2227,10 @@ async fn sync_claude_code_config(
     } else {
         let gateway_config = claude_gateway_json_template();
         for profile in PROVIDER_PROFILES {
+            if !claude_profile_in_scope(scope, profile) {
+                continue;
+            }
+
             let config_path = config_dir.join(claude_settings_filename(profile));
             remove_json_config_content(
                 &config_path,
@@ -2159,10 +2239,43 @@ async fn sync_claude_code_config(
                 &gateway_config,
             )?;
         }
-        tracing::info!("已从 Claude Code settings.json 及 profile 配置中移除 gateway 及预设配置");
+        tracing::info!("已从 Claude Code 目标配置中移除 gateway 及预设配置");
     }
 
     Ok(())
+}
+
+async fn sync_claude_code_preset_update(
+    db: &SqlitePool,
+    default_config: &str,
+    previous_default_config: &str,
+    gateway_url: &str,
+) -> Result<()> {
+    let write_mode = get_config_write_mode(db, "claude_code").await;
+
+    if check_cli_enabled(db, "claude_code", gateway_url).await {
+        sync_claude_code_config(
+            db,
+            true,
+            default_config,
+            Some(previous_default_config),
+            &write_mode,
+            gateway_url,
+            ClaudeProfileSyncScope::DefaultOnly,
+        )
+        .await?;
+    }
+
+    sync_claude_code_config(
+        db,
+        true,
+        default_config,
+        Some(previous_default_config),
+        &write_mode,
+        gateway_url,
+        ClaudeProfileSyncScope::NonDefaultProfiles,
+    )
+    .await
 }
 
 // Sync Codex configuration (auth.json + config.toml)
@@ -7031,14 +7144,18 @@ pub async fn delete_credential(
     log_db: State<'_, LogDb>,
     id: i64,
 ) -> Result<()> {
-    let cred_info: Option<(String,)> =
-        sqlx::query_as("SELECT name FROM official_credentials WHERE id = ?")
+    let cred_info: Option<(String, String, i64)> =
+        sqlx::query_as("SELECT name, cli_type, sort_order FROM official_credentials WHERE id = ?")
             .bind(id)
             .fetch_optional(db.inner())
             .await
             .map_err(|e| e.to_string())?;
 
-    if let Some((name,)) = cred_info {
+    let active_cli_type = cred_info
+        .as_ref()
+        .and_then(|(_, cli_type, sort_order)| (*sort_order == 0).then(|| cli_type.clone()));
+
+    if let Some((name, _, _)) = cred_info {
         let _ = crate::services::stats::record_system_log(
             &log_db.0,
             "credential_deleted",
@@ -7052,6 +7169,12 @@ pub async fn delete_credential(
         .execute(db.inner())
         .await
         .map_err(map_db_error)?;
+
+    if let Some(cli_type) = active_cli_type {
+        if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &cli_type).await {
+            tracing::error!("自动同步凭证失败: {}", e);
+        }
+    }
 
     Ok(())
 }

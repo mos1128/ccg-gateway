@@ -217,9 +217,12 @@ pub async fn test_provider_model(
                 "thinking": {"type": "adaptive"},
                 "stream": true
             });
-            
+
             headers.insert("accept", "application/json".parse().unwrap());
-            headers.insert("accept-encoding", "gzip, deflate, br, zstd".parse().unwrap());
+            headers.insert(
+                "accept-encoding",
+                "gzip, deflate, br, zstd".parse().unwrap(),
+            );
             headers.insert("x-app", "cli".parse().unwrap());
 
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
@@ -263,7 +266,9 @@ pub async fn test_provider_model(
             headers.insert("accept", "text/event-stream".parse().unwrap());
             headers.insert("originator", "codex-tui".parse().unwrap());
 
-            let mut user_agent = "codex-tui/0.125.0 (Windows 10.0.22631; x86_64) unknown (codex-tui; 0.125.0)".to_string();
+            let mut user_agent =
+                "codex-tui/0.125.0 (Windows 10.0.22631; x86_64) unknown (codex-tui; 0.125.0)"
+                    .to_string();
             let captured_headers = crate::services::proxy::get_captured_codex_headers();
             for (k, v) in &captured_headers.headers {
                 if k.to_lowercase() == "user-agent" {
@@ -298,7 +303,8 @@ pub async fn test_provider_model(
             }
 
             // Apply captured headers or defaults
-            let mut user_agent = "GeminiCLI/0.39.1/gemini-3.1-pro-preview (win32; x64; terminal)".to_string();
+            let mut user_agent =
+                "GeminiCLI/0.39.1/gemini-3.1-pro-preview (win32; x64; terminal)".to_string();
 
             let captured_headers = crate::services::proxy::get_captured_gemini_headers();
             for (k, v) in &captured_headers.headers {
