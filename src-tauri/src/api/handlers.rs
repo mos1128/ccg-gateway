@@ -464,6 +464,8 @@ async fn handle_streaming_request(
     let collected_chunks_for_stream = collected_chunks.clone();
     let stream_usage = Arc::new(Mutex::new(TokenUsage::default()));
     let stream_usage_for_stream = stream_usage.clone();
+    let idle_timeout_flag = Arc::new(Mutex::new(false));
+    let idle_timeout_flag_for_stream = idle_timeout_flag.clone();
 
     // 创建channel用于通知stream结束
     let (stream_end_tx, mut stream_end_rx) = mpsc::channel::<()>(1);
@@ -529,8 +531,7 @@ async fn handle_streaming_request(
                         "[{}] Stream idle timeout after {} chunks, {} bytes",
                         cli_type, chunk_count, total_bytes
                     );
-                    let error_event = "event: error\ndata: {\"error\": \"Stream idle timeout\"}\n\n".to_string();
-                    yield Ok::<Bytes, std::io::Error>(Bytes::from(error_event));
+                    *idle_timeout_flag_for_stream.lock().await = true;
                     break;
                 }
             }
@@ -600,6 +601,12 @@ async fn handle_streaming_request(
             body_str.push_str("\n\n[response body truncated at 1MB]");
         }
         final_log_info.provider_body = Some(body_str);
+
+        // Check idle timeout flag
+        let is_idle_timeout = *idle_timeout_flag.lock().await;
+        if is_idle_timeout {
+            final_log_info.error_message = Some("Stream idle timeout".to_string());
+        }
 
         // Record stats
         let elapsed = start_time.elapsed().as_millis() as i64;
