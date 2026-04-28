@@ -284,40 +284,32 @@ pub async fn test_provider_model(
                 base_url, actual_model
             );
             let body = serde_json::json!({
-                "contents": [{
-                    "role": "user",
-                    "parts": [{"text": "今天天气不错"}]
-                }],
-                "generationConfig": {
-                    "maxOutputTokens": 1024
-                }
+                "contents": [{"role": "user", "parts": [{"text": "今天天气不错"}]}],
+                "systemInstruction": {"role": "user", "parts": [{"text": "You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks."}]},
+                "generationConfig": {"temperature": 1.0, "topP": 0.95, "topK": 64, "thinkingConfig": {"includeThoughts": true}}
             });
+
+            headers.insert("accept", "*/*".parse().unwrap());
+            headers.insert("content-type", "application/json".parse().unwrap());
+            headers.insert("accept-encoding", "gzip, deflate".parse().unwrap());
+
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&api_key) {
                 headers.insert("x-goog-api-key", v);
             }
 
             // Apply captured headers or defaults
+            let mut user_agent = "GeminiCLI/0.39.1/gemini-3.1-pro-preview (win32; x64; terminal)".to_string();
+
             let captured_headers = crate::services::proxy::get_captured_gemini_headers();
-            if captured_headers.headers.is_empty() {
-                headers.insert(
-                    reqwest::header::USER_AGENT,
-                    "GeminiCLI/0.33.1/gemini-3.1-pro-preview (win32; x64)"
-                        .parse()
-                        .unwrap(),
-                );
-                headers.insert(
-                    "x-goog-api-client",
-                    "google-genai-sdk/1.30.0 gl-node/v24.14.0".parse().unwrap(),
-                );
-            } else {
-                for (k, v) in &captured_headers.headers {
-                    if let (Ok(h_name), Ok(h_val)) = (
-                        reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                        reqwest::header::HeaderValue::from_str(v),
-                    ) {
-                        headers.insert(h_name, h_val);
-                    }
+            for (k, v) in &captured_headers.headers {
+                if k.to_lowercase() == "user-agent" {
+                    user_agent = v.clone();
+                    break;
                 }
+            }
+
+            if let Ok(v) = reqwest::header::HeaderValue::from_str(&user_agent) {
+                headers.insert(reqwest::header::USER_AGENT, v);
             }
 
             (url, body)
