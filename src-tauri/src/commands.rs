@@ -289,6 +289,80 @@ mod tests {
     }
 
     #[test]
+    fn json_previous_preset_cleanup_preserves_unrelated_fields() {
+        let mut config = serde_json::json!({
+            "theme": "old",
+            "ui": {
+                "density": "compact",
+                "keep": true
+            },
+            "security": {
+                "auth": {
+                    "selectedType": "gemini-api-key"
+                }
+            },
+            "custom": "keep"
+        });
+        let new_config = r#"{"theme":"new"}"#;
+
+        remove_previous_json_preset(
+            &mut config,
+            Some(
+                r#"{"theme":"old","ui":{"density":"compact"},"security":{"auth":{"selectedType":"oauth-personal"}}}"#,
+            ),
+            new_config,
+            &gemini_gateway_json_template(),
+            "Gemini",
+        );
+        let sanitized = sanitize_json_config(
+            serde_json::from_str(new_config).expect("new config should parse"),
+            &gemini_gateway_json_template(),
+        );
+        deep_merge(&mut config, &sanitized);
+
+        assert_eq!(config["theme"], "new");
+        assert_eq!(config["ui"]["keep"], true);
+        assert_eq!(config["custom"], "keep");
+        assert!(config["ui"].get("density").is_none());
+        assert_eq!(config["security"]["auth"]["selectedType"], "gemini-api-key");
+    }
+
+    #[test]
+    fn codex_previous_preset_cleanup_removes_old_top_level_keys() {
+        let mut doc = r#"model = "old"
+approval_policy = "never"
+
+[profiles.keep]
+model = "keep"
+"#
+        .parse::<toml_edit::DocumentMut>()
+        .expect("existing config should parse");
+        let new_config = r#"model = "new""#;
+
+        remove_previous_codex_preset(
+            &mut doc,
+            Some(
+                r#"model = "old"
+approval_policy = "never"
+"#,
+            ),
+            new_config,
+            false,
+        );
+        let custom_doc = new_config
+            .parse::<toml_edit::DocumentMut>()
+            .expect("new config should parse");
+        for (key, value) in custom_doc.iter() {
+            doc.insert(&key, value.clone());
+        }
+
+        let result = doc.to_string();
+        assert!(result.contains("model = \"new\""));
+        assert!(!result.contains("approval_policy"));
+        assert!(result.contains("[profiles.keep]"));
+    }
+
+    #[test]
     fn removing_claude_gateway_content_preserves_other_fields() {
         let temp_dir =
             std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
@@ -1409,19 +1483,37 @@ pub async fn update_cli_settings(
 
             if mode == "direct" {
                 tracing::info!("{} 直连模式，配置变更后自动同步凭证配置", cli_type);
-                auto_sync_credential_in_direct_mode(db.inner(), &cli_type).await?;
+                auto_sync_credential_in_direct_mode(
+                    db.inner(),
+                    &cli_type,
+                    Some(&previous_default_config),
+                )
+                .await?;
             }
         } else if mode == "proxy" {
             // 中转模式：如果 CLI 已启用，重新同步配置
             let enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
             if enabled {
                 tracing::info!("{} CLI 已启用，配置变更后自动同步配置文件", cli_type);
-                sync_cli_config(db.inner(), &cli_type, true, config_trimmed, &gateway_url).await?;
+                sync_cli_config(
+                    db.inner(),
+                    &cli_type,
+                    true,
+                    config_trimmed,
+                    Some(&previous_default_config),
+                    &gateway_url,
+                )
+                .await?;
             }
         } else {
             // 直连模式：重新同步凭证配置
             tracing::info!("{} 直连模式，配置变更后自动同步凭证配置", cli_type);
-            auto_sync_credential_in_direct_mode(db.inner(), &cli_type).await?;
+            auto_sync_credential_in_direct_mode(
+                db.inner(),
+                &cli_type,
+                Some(&previous_default_config),
+            )
+            .await?;
         }
     }
 
@@ -1470,6 +1562,7 @@ pub async fn update_cli_settings(
                     &cli_type,
                     enabled,
                     &default_config,
+                    None,
                     &gateway_url,
                 )
                 .await?;
@@ -1729,6 +1822,7 @@ async fn sync_cli_config(
     cli_type: &str,
     enabled: bool,
     default_config: &str,
+    previous_default_config: Option<&str>,
     gateway_url: &str,
 ) -> Result<()> {
     let write_mode = get_config_write_mode(db, cli_type).await;
@@ -1738,15 +1832,35 @@ async fn sync_cli_config(
                 db,
                 enabled,
                 default_config,
-                None,
+                previous_default_config,
                 &write_mode,
                 gateway_url,
                 ClaudeProfileSyncScope::DefaultOnly,
             )
             .await
         }
-        "codex" => sync_codex_config(db, enabled, default_config, &write_mode, gateway_url).await,
-        "gemini" => sync_gemini_config(db, enabled, default_config, &write_mode, gateway_url).await,
+        "codex" => {
+            sync_codex_config(
+                db,
+                enabled,
+                default_config,
+                previous_default_config,
+                &write_mode,
+                gateway_url,
+            )
+            .await
+        }
+        "gemini" => {
+            sync_gemini_config(
+                db,
+                enabled,
+                default_config,
+                previous_default_config,
+                &write_mode,
+                gateway_url,
+            )
+            .await
+        }
         _ => Err("Invalid CLI type".to_string()),
     }
 }
@@ -2000,6 +2114,63 @@ fn deep_remove(base: &mut serde_json::Value, template: &serde_json::Value) {
     }
 }
 
+fn previous_config_to_remove<'a>(
+    previous_default_config: Option<&'a str>,
+    default_config: &str,
+) -> Option<&'a str> {
+    previous_default_config
+        .map(str::trim)
+        .filter(|config| !config.is_empty() && *config != default_config.trim())
+}
+
+fn remove_previous_json_preset(
+    config: &mut serde_json::Value,
+    previous_default_config: Option<&str>,
+    default_config: &str,
+    protected_template: &serde_json::Value,
+    label: &str,
+) {
+    if let Some(previous_default_config) =
+        previous_config_to_remove(previous_default_config, default_config)
+    {
+        match serde_json::from_str::<serde_json::Value>(previous_default_config) {
+            Ok(previous_config) => {
+                let sanitized_config = sanitize_json_config(previous_config, protected_template);
+                deep_remove(config, &sanitized_config);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to parse previous {} preset: {}", label, e);
+            }
+        }
+    }
+}
+
+fn remove_previous_codex_preset(
+    doc: &mut toml_edit::DocumentMut,
+    previous_default_config: Option<&str>,
+    default_config: &str,
+    strip_gateway_fields: bool,
+) {
+    if let Some(previous_default_config) =
+        previous_config_to_remove(previous_default_config, default_config)
+    {
+        match previous_default_config.parse::<toml_edit::DocumentMut>() {
+            Ok(mut preset_doc) => {
+                if strip_gateway_fields {
+                    preset_doc.remove("model_provider");
+                    preset_doc.remove("model_providers");
+                }
+                for (key, _) in preset_doc.iter() {
+                    doc.remove(key);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to parse previous Codex preset: {}", e);
+            }
+        }
+    }
+}
+
 fn claude_settings_filename(profile: &str) -> &'static str {
     match profile {
         DEFAULT_PROFILE => "settings.json",
@@ -2146,25 +2317,13 @@ fn write_claude_gateway_settings(
     };
 
     if use_merge {
-        let previous_default_config = previous_default_config
-            .map(str::trim)
-            .filter(|config| !config.is_empty() && *config != default_config.trim());
-
-        if let Some(previous_default_config) = previous_default_config {
-            match serde_json::from_str::<serde_json::Value>(previous_default_config) {
-                Ok(previous_config) => {
-                    let sanitized_config =
-                        sanitize_json_config(previous_config, &protected_gateway_fields);
-                    deep_remove(&mut config, &sanitized_config);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse previous custom config (invalid JSON): {}",
-                        e
-                    );
-                }
-            }
-        }
+        remove_previous_json_preset(
+            &mut config,
+            previous_default_config,
+            default_config,
+            &protected_gateway_fields,
+            "Claude Code",
+        );
     }
 
     deep_merge(&mut config, &gateway_config);
@@ -2283,6 +2442,7 @@ async fn sync_codex_config(
     db: &SqlitePool,
     enabled: bool,
     default_config: &str,
+    previous_default_config: Option<&str>,
     write_mode: &str,
     gateway_url: &str,
 ) -> Result<()> {
@@ -2330,9 +2490,16 @@ async fn sync_codex_config(
             toml_edit::DocumentMut::new()
         };
 
-        // 移除原有的 gateway 相关的配置
         final_doc.remove("model_provider");
         final_doc.remove("model_providers");
+        if use_merge {
+            remove_previous_codex_preset(
+                &mut final_doc,
+                previous_default_config,
+                default_config,
+                true,
+            );
+        }
 
         if !default_config.is_empty() {
             match default_config.parse::<toml_edit::DocumentMut>() {
@@ -2375,6 +2542,7 @@ async fn sync_gemini_config(
     db: &SqlitePool,
     enabled: bool,
     default_config: &str,
+    previous_default_config: Option<&str>,
     write_mode: &str,
     gateway_url: &str,
 ) -> Result<()> {
@@ -2425,10 +2593,18 @@ async fn sync_gemini_config(
             serde_json::json!({})
         };
 
-        // 合并 gateway 配置
+        if use_merge {
+            remove_previous_json_preset(
+                &mut config,
+                previous_default_config,
+                default_config,
+                &protected_gateway_fields,
+                "Gemini",
+            );
+        }
+
         deep_merge(&mut config, &gateway_config);
 
-        // Merge user's custom config if provided
         if !default_config.is_empty() {
             match serde_json::from_str::<serde_json::Value>(default_config) {
                 Ok(custom_config) => {
@@ -6674,6 +6850,7 @@ async fn sync_credential_to_cli_async(
     cli_type: &str,
     credential_json: &str,
     default_config: &str,
+    previous_default_config: Option<&str>,
 ) -> Result<()> {
     // 解析文件列表
     let files: Vec<serde_json::Value> = serde_json::from_str(credential_json)
@@ -6726,7 +6903,9 @@ async fn sync_credential_to_cli_async(
             }
 
             // 处理 config.toml
-            if !default_config.is_empty() {
+            let should_clean_previous = use_merge
+                && previous_config_to_remove(previous_default_config, default_config).is_some();
+            if !default_config.is_empty() || (should_clean_previous && config_path.exists()) {
                 let existing_content = if use_merge && config_path.exists() {
                     std::fs::read_to_string(&config_path).ok()
                 } else {
@@ -6744,17 +6923,28 @@ async fn sync_credential_to_cli_async(
                     toml_edit::DocumentMut::new()
                 };
 
-                match default_config.parse::<toml_edit::DocumentMut>() {
-                    Ok(custom_doc) => {
-                        for (k, v) in custom_doc.iter() {
-                            final_doc.insert(&k, v.clone());
+                if use_merge {
+                    remove_previous_codex_preset(
+                        &mut final_doc,
+                        previous_default_config,
+                        default_config,
+                        false,
+                    );
+                }
+
+                if !default_config.is_empty() {
+                    match default_config.parse::<toml_edit::DocumentMut>() {
+                        Ok(custom_doc) => {
+                            for (k, v) in custom_doc.iter() {
+                                final_doc.insert(&k, v.clone());
+                            }
                         }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to parse Codex default_config (invalid TOML): {}",
-                            e
-                        );
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to parse Codex default_config (invalid TOML): {}",
+                                e
+                            );
+                        }
                     }
                 }
 
@@ -6829,6 +7019,17 @@ async fn sync_credential_to_cli_async(
                 serde_json::json!({})
             };
 
+            let protected = gemini_gateway_json_template();
+            if use_merge {
+                remove_previous_json_preset(
+                    &mut config,
+                    previous_default_config,
+                    default_config,
+                    &protected,
+                    "Gemini",
+                );
+            }
+
             // 2. 注入直连模式强制配置 (OAuth Personal)
             let direct_mode_auth = serde_json::json!({
                 "security": {
@@ -6844,7 +7045,6 @@ async fn sync_credential_to_cli_async(
             if !default_config.is_empty() {
                 tracing::info!("Gemini 全局配置不为空，长度: {}", default_config.len());
                 if let Ok(default_val) = serde_json::from_str::<serde_json::Value>(default_config) {
-                    let protected = gemini_gateway_json_template();
                     let sanitized = sanitize_json_config(default_val, &protected);
                     deep_merge(&mut config, &sanitized);
                     tracing::info!("Gemini 全局配置合并成功");
@@ -6884,7 +7084,11 @@ async fn sync_credential_to_cli_async(
 }
 
 /// 在直连模式下，自动同步第一个凭证到 CLI 配置文件
-async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) -> Result<()> {
+async fn auto_sync_credential_in_direct_mode(
+    db: &SqlitePool,
+    cli_type: &str,
+    previous_default_config: Option<&str>,
+) -> Result<()> {
     tracing::info!(
         "auto_sync_credential_in_direct_mode 被调用，cli_type: {}",
         cli_type
@@ -6934,8 +7138,14 @@ async fn auto_sync_credential_in_direct_mode(db: &SqlitePool, cli_type: &str) ->
         tracing::info!("{} 全局配置长度: {}", cli_type, default_config.len());
         tracing::info!("{} 开始同步凭证到文件", cli_type);
 
-        match sync_credential_to_cli_async(db, cli_type, &cred.credential_json, &default_config)
-            .await
+        match sync_credential_to_cli_async(
+            db,
+            cli_type,
+            &cred.credential_json,
+            &default_config,
+            previous_default_config,
+        )
+        .await
         {
             Ok(_) => {
                 tracing::info!("{} 凭证同步成功", cli_type);
@@ -7043,7 +7253,7 @@ pub async fn create_credential(
     .await;
 
     // 如果是直连模式，自动同步到文件
-    if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &input.cli_type).await {
+    if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &input.cli_type, None).await {
         tracing::error!("自动同步凭证失败: {}", e);
     }
 
@@ -7130,7 +7340,8 @@ pub async fn update_credential(
 
     // 如果是直连模式，自动同步到文件
     if let Some(cred) = updated_cred {
-        if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &cred.cli_type).await {
+        if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &cred.cli_type, None).await
+        {
             tracing::error!("自动同步凭证失败: {}", e);
         }
     }
@@ -7171,7 +7382,7 @@ pub async fn delete_credential(
         .map_err(map_db_error)?;
 
     if let Some(cli_type) = active_cli_type {
-        if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &cli_type).await {
+        if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &cli_type, None).await {
             tracing::error!("自动同步凭证失败: {}", e);
         }
     }
@@ -7215,7 +7426,7 @@ pub async fn reorder_credentials(db: State<'_, SqlitePool>, ids: Vec<i64>) -> Re
 
     // 如果是直连模式，自动同步到文件
     if let Some((cli_type_str,)) = cli_type {
-        if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &cli_type_str).await {
+        if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &cli_type_str, None).await {
             tracing::error!("自动同步凭证失败: {}", e);
         }
     }
@@ -7293,8 +7504,15 @@ pub async fn set_cli_mode(
 
                 tracing::info!("{} 从中转模式切换到直连模式，先关闭 CLI", cli_type);
                 // 关闭中转模式（会自动处理备份恢复）
-                sync_cli_config(db.inner(), &cli_type, false, &default_config, &gateway_url)
-                    .await?;
+                sync_cli_config(
+                    db.inner(),
+                    &cli_type,
+                    false,
+                    &default_config,
+                    None,
+                    &gateway_url,
+                )
+                .await?;
             } else {
                 tracing::info!("{} 当前没有中转配置，跳过关闭 CLI 步骤", cli_type);
             }
@@ -7325,6 +7543,7 @@ pub async fn set_cli_mode(
                 &cli_type,
                 &cred.credential_json,
                 &default_config,
+                None,
             )
             .await
             {
@@ -7366,7 +7585,15 @@ pub async fn set_cli_mode(
         .and_then(|r| r.0)
         .unwrap_or_default();
 
-        sync_cli_config(db.inner(), &cli_type, true, &default_config, &gateway_url).await?;
+        sync_cli_config(
+            db.inner(),
+            &cli_type,
+            true,
+            &default_config,
+            None,
+            &gateway_url,
+        )
+        .await?;
 
         let _ = crate::services::stats::record_system_log(
             &log_db.0,
