@@ -700,7 +700,7 @@ function makeUniqueProviderName(name: string): string {
 
 // ==================== Model Detection ====================
 const DEFAULT_DETECT_MODELS: Record<string, string> = {
-  claude_code: 'claude-opus-4-6',
+  claude_code: 'claude-opus-4-7',
   codex: 'gpt-5.4',
   gemini: 'gemini-3.1-pro-preview',
 }

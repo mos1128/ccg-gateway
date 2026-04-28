@@ -211,35 +211,42 @@ pub async fn test_provider_model(
             let url = format!("{}/v1/messages", base_url);
             let body = serde_json::json!({
                 "model": actual_model,
-                "messages": [{"role": "user", "content": [{"type": "text", "text": "今天天气不错"}]}],
-                "stream": true,
-                "max_tokens": 1024
+                "messages": [{
+                    "role": "user",
+                    "content": [{"type": "text", "text": "今天天气不错"}]
+                }],
+                "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}],
+                "max_tokens": 1024,
+                "thinking": {
+                    "type": "adaptive"
+                },
+                "stream": true
             });
+            
+            headers.insert("accept", "application/json".parse().unwrap());
+            headers.insert("accept-encoding", "gzip, deflate, br, zstd".parse().unwrap());
+            headers.insert("x-app", "cli".parse().unwrap());
+
             if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
                 headers.insert(reqwest::header::AUTHORIZATION, v);
             }
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&api_key) {
-                headers.insert("x-api-key", v);
-            }
-            headers.insert("anthropic-version", "2023-06-01".parse().unwrap());
 
-            // Apply captured headers or defaults
+            headers.insert(
+                reqwest::header::USER_AGENT,
+                "claude-cli/2.1.121 (external, cli)".parse().unwrap(),
+            );
+
+            // Dynamically learn anthropic-beta from captured headers if available, otherwise default
+            let mut beta_value = "claude-code-20250219,context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24".to_string();
             let captured_headers = crate::services::proxy::get_captured_claude_headers();
-            if captured_headers.headers.is_empty() {
-                headers.insert(
-                    reqwest::header::USER_AGENT,
-                    "claude-cli/2.1.91 (external, cli)".parse().unwrap(),
-                );
-                headers.insert("anthropic-beta", "claude-code-20250219,context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24".parse().unwrap());
-            } else {
-                for (k, v) in &captured_headers.headers {
-                    if let (Ok(h_name), Ok(h_val)) = (
-                        reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                        reqwest::header::HeaderValue::from_str(v),
-                    ) {
-                        headers.insert(h_name, h_val);
-                    }
+            for (k, v) in &captured_headers.headers {
+                if k.to_lowercase() == "anthropic-beta" {
+                    beta_value = v.clone();
+                    break;
                 }
+            }
+            if let Ok(v) = reqwest::header::HeaderValue::from_str(&beta_value) {
+                headers.insert("anthropic-beta", v);
             }
 
             (url, body)
