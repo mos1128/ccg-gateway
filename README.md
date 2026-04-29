@@ -1,5 +1,7 @@
 # CCG Gateway
 
+中文 | [English](README-en.md)
+
 <div align="center">
 <strong>智能 AI 模型网关 | 统一代理 · 负载均衡 · 故障转移</strong>
 
