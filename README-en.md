@@ -120,12 +120,18 @@ Browse session history of each CLI grouped by project, viewing message lists, AI
 
 ## 🚀 Quick Start
 
-### Method 1: Download from Releases (Recommended)
+### Method 1: Download from Releases (Multi-platform)
 
 1. Go to the [Releases](https://github.com/mos1128/ccg-gateway/releases) page to download the latest version.
 2. Select the corresponding file for your operating system.
 
-### Method 2: Run from Source
+### Method 2: Install with Scoop (Windows)
+
+```powershell
+scoop install extras/ccg-gateway
+```
+
+### Method 3: Run from Source
 
 #### Requirements
 
@@ -135,7 +141,7 @@ Browse session history of each CLI grouped by project, viewing message lists, AI
 
 #### Quick Start
 
-**Method 2-1: One-click Start Script (Recommended)**
+**Method 3-1: One-click Start Script**
 
 The script automatically starts the frontend development server and the Tauri backend. Requires `tauri-cli` installed and supports hot reloading.
 
@@ -144,7 +150,7 @@ The script automatically starts the frontend development server and the Tauri ba
 dev.bat
 ```
 
-**Method 2-2: Manual Dependency Installation and Start**
+**Method 3-2: Manual Dependency Installation and Start**
 
 Run directly via `cargo`. Does not support hot reloading, requiring manual restart of the backend.
 
