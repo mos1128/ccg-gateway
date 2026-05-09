@@ -1369,9 +1369,16 @@ pub async fn ensure_claude_profile_settings(
     .and_then(|r| r.0)
     .unwrap_or_default();
 
+    // 非 default profile 只写网关必要字段，不合并用户预设配置
+    let profile_default_config = if profile == DEFAULT_PROFILE {
+        &default_config
+    } else {
+        ""
+    };
+
     write_claude_gateway_settings(
         &config_path,
-        &default_config,
+        profile_default_config,
         None,
         use_merge,
         &gateway_url,
@@ -2374,10 +2381,21 @@ async fn sync_claude_code_config(
 
             let gateway_token = gateway_token_for_profile(profile).unwrap_or("ccg-gateway");
             let config_path = config_dir.join(claude_settings_filename(profile));
+            // 非 default profile 只写网关必要字段，不合并用户预设配置
+            let profile_default_config = if profile == DEFAULT_PROFILE {
+                default_config
+            } else {
+                ""
+            };
+            let profile_previous_config = if profile == DEFAULT_PROFILE {
+                previous_default_config
+            } else {
+                None
+            };
             write_claude_gateway_settings(
                 &config_path,
-                default_config,
-                previous_default_config,
+                profile_default_config,
+                profile_previous_config,
                 use_merge,
                 gateway_url,
                 gateway_token,
