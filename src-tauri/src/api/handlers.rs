@@ -20,7 +20,7 @@ use crate::services::proxy::{
     is_streaming, parse_streaming_token_usage, parse_token_usage, set_auth_header, CliType,
     TimeoutConfig, TokenUsage,
 };
-use crate::services::routing::select_provider;
+use crate::services::routing::{select_provider, split_gateway_profile_path};
 use crate::services::{provider as provider_service, stats as stats_service};
 
 // Catch-all proxy handler - forwards any non-API request to the appropriate provider
@@ -34,15 +34,22 @@ pub async fn proxy_handler_catchall(
     let uri = req.uri().clone();
 
     // Get the full path including query string
-    let full_path = if let Some(query) = uri.query() {
+    let raw_full_path = if let Some(query) = uri.query() {
         format!("{}?{}", uri.path(), query)
     } else {
         uri.path().to_string()
     };
 
+    let (path_profile, full_path) =
+        if let Some((profile, stripped_path)) = split_gateway_profile_path(&raw_full_path) {
+            (Some(profile), stripped_path)
+        } else {
+            (None, raw_full_path.clone())
+        };
+
     // Detect CLI type from User-Agent
     let cli_type = detect_cli_type(&headers);
-    let provider_profile = detect_gateway_profile(&headers);
+    let provider_profile = path_profile.unwrap_or_else(|| detect_gateway_profile(&headers));
 
     // Serialize client headers for logging
     let client_headers_json = serialize_headers(&headers);
@@ -245,7 +252,7 @@ pub async fn proxy_handler_catchall(
             cli_type,
             model_id.as_deref(),
             method.as_ref(),
-            &full_path,
+            &raw_full_path,
             start_time,
             timeouts,
             source_model.as_deref(),
@@ -263,7 +270,7 @@ pub async fn proxy_handler_catchall(
             cli_type,
             model_id.as_deref(),
             method.as_ref(),
-            &full_path,
+            &raw_full_path,
             start_time,
             timeouts,
             source_model.as_deref(),

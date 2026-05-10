@@ -7,7 +7,7 @@ import type {
   CliSettings,
   SystemStatus,
   ProviderProfile,
-  ClaudeProfileSettingsStatus
+  CliProfileSettingsStatus
 } from '@/types/models'
 
 export const settingsApi = {
@@ -50,11 +50,19 @@ export const settingsApi = {
     return { data: null }
   },
   getClaudeProfileSettingsStatus: async (profile: ProviderProfile) => {
-    const data = await invoke<ClaudeProfileSettingsStatus>('get_claude_profile_settings_status', { profile })
+    const data = await invoke<CliProfileSettingsStatus>('get_claude_profile_settings_status', { profile })
     return { data }
   },
   ensureClaudeProfileSettings: async (profile: ProviderProfile) => {
-    const data = await invoke<ClaudeProfileSettingsStatus>('ensure_claude_profile_settings', { profile })
+    const data = await invoke<CliProfileSettingsStatus>('ensure_claude_profile_settings', { profile })
+    return { data }
+  },
+  getCodexProfileSettingsStatus: async (profile: ProviderProfile) => {
+    const data = await invoke<CliProfileSettingsStatus>('get_codex_profile_settings_status', { profile })
+    return { data }
+  },
+  ensureCodexProfileSettings: async (profile: ProviderProfile) => {
+    const data = await invoke<CliProfileSettingsStatus>('ensure_codex_profile_settings', { profile })
     return { data }
   },
   getStatus: async () => {

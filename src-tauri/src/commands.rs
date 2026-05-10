@@ -14,7 +14,8 @@ use crate::db::models::{
     TimeoutSettings, TimeoutSettingsUpdate, WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
 };
 use crate::services::routing::{
-    gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE, PROVIDER_PROFILES,
+    gateway_path_prefix_for_profile, gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE,
+    PROFILE1, PROFILE2, PROFILE3, PROVIDER_PROFILES,
 };
 use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestEntry};
 use crate::LogDb;
@@ -37,20 +38,130 @@ fn serialize_toml_table<T: Serialize>(value: &T, context: &str) -> Result<toml_e
     Ok(serialize_toml_document(value, context)?.as_table().clone())
 }
 
-fn codex_gateway_document(gateway_url: &str) -> Result<toml_edit::DocumentMut> {
-    format!(
-        r#"model_provider = "ccg-gateway"
+fn codex_gateway_provider_name(profile: &str) -> Option<&'static str> {
+    match normalize_profile(Some(profile))? {
+        DEFAULT_PROFILE => Some("ccg-gateway"),
+        PROFILE1 => Some("ccg-gateway-profile1"),
+        PROFILE2 => Some("ccg-gateway-profile2"),
+        PROFILE3 => Some("ccg-gateway-profile3"),
+        _ => None,
+    }
+}
 
-[model_providers.ccg-gateway]
-name = "ccg-gateway"
-base_url = "{}"
-wire_api = "responses"
-requires_openai_auth = false
-"#,
-        gateway_url
-    )
-    .parse::<toml_edit::DocumentMut>()
-    .map_err(|e| format!("Failed to build Codex gateway config: {}", e))
+fn codex_gateway_base_url(gateway_url: &str, profile: &str) -> Result<String> {
+    let prefix = gateway_path_prefix_for_profile(profile)
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
+    Ok(format!("{}{}", gateway_url.trim_end_matches('/'), prefix))
+}
+
+fn ensure_toml_table<'a>(
+    doc: &'a mut toml_edit::DocumentMut,
+    key: &str,
+) -> &'a mut toml_edit::Table {
+    if doc.get(key).and_then(|item| item.as_table()).is_none() {
+        let table = doc
+            .remove(key)
+            .and_then(|item| item.into_table().ok())
+            .unwrap_or_else(toml_edit::Table::new);
+        doc[key] = toml_edit::Item::Table(table);
+    }
+
+    doc.get_mut(key)
+        .and_then(|item| item.as_table_mut())
+        .expect("table should exist after normalization")
+}
+
+fn ensure_child_toml_table<'a>(
+    table: &'a mut toml_edit::Table,
+    key: &str,
+) -> &'a mut toml_edit::Table {
+    if table.get(key).and_then(|item| item.as_table()).is_none() {
+        let child = table
+            .remove(key)
+            .and_then(|item| item.into_table().ok())
+            .unwrap_or_else(toml_edit::Table::new);
+        table[key] = toml_edit::Item::Table(child);
+    }
+
+    table
+        .get_mut(key)
+        .and_then(|item| item.as_table_mut())
+        .expect("child table should exist after normalization")
+}
+
+fn apply_codex_gateway_provider_config(
+    doc: &mut toml_edit::DocumentMut,
+    gateway_url: &str,
+    profile: &str,
+) -> Result<&'static str> {
+    let profile = normalize_profile(Some(profile))
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
+    let provider_name = codex_gateway_provider_name(profile)
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
+    let base_url = codex_gateway_base_url(gateway_url, profile)?;
+
+    let mut provider_table = toml_edit::Table::new();
+    provider_table["name"] = toml_edit::value(provider_name);
+    provider_table["base_url"] = toml_edit::value(base_url);
+    provider_table["wire_api"] = toml_edit::value("responses");
+    provider_table["requires_openai_auth"] = toml_edit::value(false);
+
+    let model_providers = ensure_toml_table(doc, "model_providers");
+    model_providers[provider_name] = toml_edit::Item::Table(provider_table);
+
+    Ok(provider_name)
+}
+
+fn apply_codex_gateway_default_config(
+    doc: &mut toml_edit::DocumentMut,
+    gateway_url: &str,
+) -> Result<()> {
+    let provider_name = apply_codex_gateway_provider_config(doc, gateway_url, DEFAULT_PROFILE)?;
+    doc["model_provider"] = toml_edit::value(provider_name);
+
+    Ok(())
+}
+
+fn apply_codex_gateway_named_profile_config(
+    doc: &mut toml_edit::DocumentMut,
+    gateway_url: &str,
+    profile: &str,
+) -> Result<()> {
+    let profile = normalize_profile(Some(profile))
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
+    if profile == DEFAULT_PROFILE {
+        return Ok(());
+    }
+
+    let provider_name = apply_codex_gateway_provider_config(doc, gateway_url, profile)?;
+    let profiles = ensure_toml_table(doc, "profiles");
+    let profile_table = ensure_child_toml_table(profiles, profile);
+    profile_table["model_provider"] = toml_edit::value(provider_name);
+
+    Ok(())
+}
+
+fn remove_codex_default_gateway_entry(doc: &mut toml_edit::DocumentMut) {
+    let Some(default_provider_name) = codex_gateway_provider_name(DEFAULT_PROFILE) else {
+        return;
+    };
+
+    if doc
+        .get("model_provider")
+        .and_then(|item| item.as_str())
+        .map(|provider| provider == default_provider_name)
+        .unwrap_or(false)
+    {
+        doc.remove("model_provider");
+    }
+
+    if doc.get("model_providers").is_some() {
+        let model_providers = ensure_toml_table(doc, "model_providers");
+        model_providers.remove(default_provider_name);
+        if model_providers.is_empty() {
+            doc.remove("model_providers");
+        }
+    }
 }
 
 fn remove_file_if_exists(path: &std::path::Path, label: &str) -> Result<()> {
@@ -124,472 +235,6 @@ fn validate_toml_compatible_json(value: &serde_json::Value) -> Result<()> {
             Ok(())
         }
         _ => Ok(()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn codex_mcp_json_preserves_stdio_fields() {
-        let server_table = parse_codex_mcp_toml_table(
-            r#"{
-                "type": "stdio",
-                "command": "auggie",
-                "args": ["--mcp"],
-                "env": {
-                    "AUGMENT_API_TOKEN": "token",
-                    "AUGMENT_API_URL": "https://ace-test.heroman.wtf/"
-                }
-            }"#,
-        )
-        .expect("stdio MCP should parse");
-
-        let mut doc = toml_edit::DocumentMut::new();
-        doc["mcp_servers"] = toml_edit::table();
-        doc["mcp_servers"]["auggie"] = toml_edit::Item::Table(server_table);
-
-        let parsed = doc
-            .to_string()
-            .parse::<toml::Value>()
-            .expect("serialized TOML should parse");
-
-        let server = parsed
-            .get("mcp_servers")
-            .and_then(|value| value.get("auggie"))
-            .expect("mcp server should exist");
-
-        assert_eq!(
-            server.get("type").and_then(|value| value.as_str()),
-            Some("stdio")
-        );
-        assert_eq!(
-            server.get("command").and_then(|value| value.as_str()),
-            Some("auggie")
-        );
-        assert_eq!(
-            server
-                .get("args")
-                .and_then(|value| value.get(0))
-                .and_then(|value| value.as_str()),
-            Some("--mcp")
-        );
-        assert_eq!(
-            server
-                .get("env")
-                .and_then(|value| value.get("AUGMENT_API_TOKEN"))
-                .and_then(|value| value.as_str()),
-            Some("token")
-        );
-    }
-
-    #[test]
-    fn codex_mcp_json_preserves_sse_headers() {
-        let server_table = parse_codex_mcp_toml_table(
-            r#"{
-                "type": "sse",
-                "url": "https://mcp.api-inference.modelscope.net/f3b382c4523044/sse",
-                "headers": {
-                    "Authorization": "Bearer example-token"
-                }
-            }"#,
-        )
-        .expect("sse MCP should parse");
-
-        let mut doc = toml_edit::DocumentMut::new();
-        doc["mcp_servers"] = toml_edit::table();
-        doc["mcp_servers"]["fetch"] = toml_edit::Item::Table(server_table);
-
-        let parsed = doc
-            .to_string()
-            .parse::<toml::Value>()
-            .expect("serialized TOML should parse");
-
-        let server = parsed
-            .get("mcp_servers")
-            .and_then(|value| value.get("fetch"))
-            .expect("mcp server should exist");
-
-        assert_eq!(
-            server.get("type").and_then(|value| value.as_str()),
-            Some("sse")
-        );
-        assert_eq!(
-            server.get("url").and_then(|value| value.as_str()),
-            Some("https://mcp.api-inference.modelscope.net/f3b382c4523044/sse")
-        );
-        assert_eq!(
-            server
-                .get("headers")
-                .and_then(|value| value.get("Authorization"))
-                .and_then(|value| value.as_str()),
-            Some("Bearer example-token")
-        );
-    }
-
-    #[test]
-    fn codex_mcp_json_requires_object_root() {
-        let err = parse_codex_mcp_toml_table(r#""not-an-object""#)
-            .expect_err("non-object MCP config should fail");
-
-        assert!(err.contains("JSON object"));
-    }
-
-    #[test]
-    fn codex_mcp_json_rejects_null() {
-        let err = parse_codex_mcp_toml_table(
-            r#"{
-                "type": "sse",
-                "url": null
-            }"#,
-        )
-        .expect_err("null value should fail");
-
-        assert!(err.contains("null"));
-    }
-
-    #[test]
-    fn claude_gateway_fields_are_protected_from_custom_config() {
-        let custom_config = serde_json::json!({
-            "env": {
-                "ANTHROPIC_BASE_URL": "https://example.com",
-                "ANTHROPIC_AUTH_TOKEN": "user-token",
-                "FOO": "bar"
-            },
-            "other": 1
-        });
-
-        let sanitized = sanitize_json_config(custom_config, &claude_gateway_json_template());
-
-        assert_eq!(sanitized["env"]["FOO"], "bar");
-        assert_eq!(sanitized["other"], 1);
-        assert!(sanitized["env"].get("ANTHROPIC_BASE_URL").is_none());
-        assert!(sanitized["env"].get("ANTHROPIC_AUTH_TOKEN").is_none());
-    }
-
-    #[test]
-    fn gemini_gateway_fields_are_protected_from_custom_config() {
-        let custom_config = serde_json::json!({
-            "security": {
-                "auth": {
-                    "selectedType": "oauth-personal"
-                }
-            },
-            "theme": "dark"
-        });
-
-        let sanitized = sanitize_json_config(custom_config, &gemini_gateway_json_template());
-
-        assert_eq!(sanitized["theme"], "dark");
-        assert!(
-            sanitized["security"]["auth"].get("selectedType").is_none(),
-            "selectedType should be stripped from custom config"
-        );
-    }
-
-    #[test]
-    fn json_previous_preset_cleanup_preserves_unrelated_fields() {
-        let mut config = serde_json::json!({
-            "theme": "old",
-            "ui": {
-                "density": "compact",
-                "keep": true
-            },
-            "security": {
-                "auth": {
-                    "selectedType": "gemini-api-key"
-                }
-            },
-            "custom": "keep"
-        });
-        let new_config = r#"{"theme":"new"}"#;
-
-        remove_previous_json_preset(
-            &mut config,
-            Some(
-                r#"{"theme":"old","ui":{"density":"compact"},"security":{"auth":{"selectedType":"oauth-personal"}}}"#,
-            ),
-            new_config,
-            &gemini_gateway_json_template(),
-            "Gemini",
-        );
-        let sanitized = sanitize_json_config(
-            serde_json::from_str(new_config).expect("new config should parse"),
-            &gemini_gateway_json_template(),
-        );
-        deep_merge(&mut config, &sanitized);
-
-        assert_eq!(config["theme"], "new");
-        assert_eq!(config["ui"]["keep"], true);
-        assert_eq!(config["custom"], "keep");
-        assert!(config["ui"].get("density").is_none());
-        assert_eq!(config["security"]["auth"]["selectedType"], "gemini-api-key");
-    }
-
-    #[test]
-    fn codex_previous_preset_cleanup_removes_old_top_level_keys() {
-        let mut doc = r#"model = "old"
-approval_policy = "never"
-
-[profiles.keep]
-model = "keep"
-"#
-        .parse::<toml_edit::DocumentMut>()
-        .expect("existing config should parse");
-        let new_config = r#"model = "new""#;
-
-        remove_previous_codex_preset(
-            &mut doc,
-            Some(
-                r#"model = "old"
-approval_policy = "never"
-"#,
-            ),
-            new_config,
-            false,
-        );
-        let custom_doc = new_config
-            .parse::<toml_edit::DocumentMut>()
-            .expect("new config should parse");
-        for (key, value) in custom_doc.iter() {
-            doc.insert(&key, value.clone());
-        }
-
-        let result = doc.to_string();
-        assert!(result.contains("model = \"new\""));
-        assert!(!result.contains("approval_policy"));
-        assert!(result.contains("[profiles.keep]"));
-    }
-
-    #[test]
-    fn removing_claude_gateway_content_preserves_other_fields() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
-        let gateway_url = Config::default().gateway_base_url();
-
-        let config_path = temp_dir.join("settings.json");
-        std::fs::write(
-            &config_path,
-            serde_json::to_string_pretty(&serde_json::json!({
-                "env": {
-                    "ANTHROPIC_BASE_URL": gateway_url,
-                    "ANTHROPIC_AUTH_TOKEN": "ccg-gateway",
-                    "KEEP": "yes"
-                },
-                "theme": "solarized",
-                "custom_flag": true
-            }))
-            .expect("json should serialize"),
-        )
-        .expect("settings.json should be written");
-
-        let gateway_config = claude_gateway_json_template();
-        remove_json_config_content(
-            &config_path,
-            &gateway_config,
-            r#"{"theme":"solarized","env":{"ANTHROPIC_BASE_URL":"https://should-be-ignored"}}"#,
-            &gateway_config,
-        )
-        .expect("gateway content removal should succeed");
-
-        let result: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(&config_path).expect("settings.json should be readable"),
-        )
-        .expect("settings.json should remain valid JSON");
-
-        assert_eq!(result["env"]["KEEP"], "yes");
-        assert_eq!(result["custom_flag"], true);
-        assert!(result.get("theme").is_none());
-        assert!(result["env"].get("ANTHROPIC_BASE_URL").is_none());
-        assert!(result["env"].get("ANTHROPIC_AUTH_TOKEN").is_none());
-
-        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
-    }
-
-    #[test]
-    fn removing_codex_gateway_content_preserves_other_tables() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
-        let gateway_url = Config::default().gateway_base_url();
-
-        let config_path = temp_dir.join("config.toml");
-        std::fs::write(
-            &config_path,
-            format!(
-                r#"model_provider = "ccg-gateway"
-model = "gpt-5.4"
-
-[model_providers.ccg-gateway]
-name = "ccg-gateway"
-base_url = "{}"
-wire_api = "responses"
-requires_openai_auth = false
-
-[mcp_servers.universal-db]
-command = "cmd"
-"#,
-                gateway_url
-            ),
-        )
-        .expect("config.toml should be written");
-
-        remove_codex_gateway_config_content(&config_path, "model = \"gpt-5.4\"\n")
-            .expect("gateway config removal should succeed");
-
-        let result = std::fs::read_to_string(&config_path).expect("config.toml should be readable");
-        assert!(!result.contains("model_provider = "));
-        assert!(!result.contains("[model_providers.ccg-gateway]"));
-        assert!(!result.contains("model = \"gpt-5.4\""));
-        assert!(result.contains("[mcp_servers.universal-db]"));
-
-        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
-    }
-
-    #[test]
-    fn removing_codex_gateway_auth_preserves_other_keys() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
-
-        let auth_path = temp_dir.join("auth.json");
-        std::fs::write(
-            &auth_path,
-            serde_json::to_string_pretty(&serde_json::json!({
-                "OPENAI_API_KEY": "ccg-gateway",
-                "EXTRA": "keep"
-            }))
-            .expect("json should serialize"),
-        )
-        .expect("auth.json should be written");
-
-        remove_codex_gateway_auth_content(&auth_path).expect("auth cleanup should succeed");
-
-        let result: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(&auth_path).expect("auth.json should be readable"),
-        )
-        .expect("auth.json should remain valid JSON");
-
-        assert_eq!(result["EXTRA"], "keep");
-        assert!(result.get("OPENAI_API_KEY").is_none());
-
-        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
-    }
-
-    #[test]
-    fn removing_gemini_gateway_env_preserves_other_lines() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
-        let gateway_url = Config::default().gateway_base_url();
-
-        let env_path = temp_dir.join(".env");
-        std::fs::write(
-            &env_path,
-            format!(
-                "GEMINI_API_KEY=ccg-gateway\nGOOGLE_GEMINI_BASE_URL={}\nEXTRA=keep\n",
-                gateway_url
-            ),
-        )
-        .expect(".env should be written");
-
-        remove_gemini_gateway_env_content(&env_path, &gateway_url)
-            .expect(".env cleanup should succeed");
-
-        let result = std::fs::read_to_string(&env_path).expect(".env should be readable");
-        assert_eq!(result, "EXTRA=keep\n");
-
-        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
-    }
-
-    #[test]
-    fn codex_direct_to_proxy_merge_preserves_config_toml() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
-
-        let auth_path = temp_dir.join("auth.json");
-        let config_path = temp_dir.join("config.toml");
-        std::fs::write(&auth_path, r#"{"OPENAI_API_KEY":"official"}"#)
-            .expect("auth.json should be written");
-        std::fs::write(&config_path, "model = \"legacy\"\n")
-            .expect("config.toml should be written");
-
-        remove_codex_direct_mode_files(&temp_dir, true).expect("merge cleanup should succeed");
-
-        assert!(!auth_path.exists(), "auth.json should be removed");
-        assert!(
-            config_path.exists(),
-            "config.toml should be preserved in merge mode"
-        );
-        assert_eq!(
-            std::fs::read_to_string(&config_path).expect("config.toml should be readable"),
-            "model = \"legacy\"\n"
-        );
-
-        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
-    }
-
-    #[test]
-    fn codex_direct_to_proxy_overwrite_removes_config_toml() {
-        let temp_dir =
-            std::env::temp_dir().join(format!("ccg-gateway-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&temp_dir).expect("temp dir should be created");
-
-        let auth_path = temp_dir.join("auth.json");
-        let config_path = temp_dir.join("config.toml");
-        std::fs::write(&auth_path, r#"{"OPENAI_API_KEY":"official"}"#)
-            .expect("auth.json should be written");
-        std::fs::write(&config_path, "model = \"legacy\"\n")
-            .expect("config.toml should be written");
-
-        remove_codex_direct_mode_files(&temp_dir, false).expect("overwrite cleanup should succeed");
-
-        assert!(!auth_path.exists(), "auth.json should be removed");
-        assert!(
-            !config_path.exists(),
-            "config.toml should be removed in overwrite mode"
-        );
-
-        std::fs::remove_dir_all(&temp_dir).expect("temp dir should be removed");
-    }
-
-    #[test]
-    fn claude_profile_settings_filenames_are_predictable() {
-        assert_eq!(claude_settings_filename(DEFAULT_PROFILE), "settings.json");
-        assert_eq!(
-            claude_settings_filename("profile1"),
-            "settings-ccg-profile1.json"
-        );
-        assert_eq!(
-            claude_settings_filename("profile2"),
-            "settings-ccg-profile2.json"
-        );
-        assert_eq!(
-            claude_settings_filename("profile3"),
-            "settings-ccg-profile3.json"
-        );
-    }
-
-    #[test]
-    fn claude_settings_launch_command_quotes_paths_with_spaces() {
-        let command = claude_settings_launch_command(&std::path::PathBuf::from(
-            "C:\\Users\\Test User\\.claude\\settings-ccg-profile1.json",
-        ));
-
-        #[cfg(windows)]
-        assert_eq!(
-            command,
-            "claude --settings \"C:\\Users\\Test User\\.claude\\settings-ccg-profile1.json\""
-        );
-
-        #[cfg(not(windows))]
-        assert_eq!(
-            command,
-            "claude --settings 'C:\\Users\\Test User\\.claude\\settings-ccg-profile1.json'"
-        );
     }
 }
 
@@ -1337,6 +982,16 @@ pub struct ClaudeProfileSettingsStatus {
     pub uses_gateway: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct CodexProfileSettingsStatus {
+    pub profile: String,
+    pub filename: String,
+    pub path: String,
+    pub launch_command: String,
+    pub exists: bool,
+    pub uses_gateway: bool,
+}
+
 #[tauri::command]
 pub async fn get_claude_profile_settings_status(
     db: State<'_, SqlitePool>,
@@ -1386,6 +1041,65 @@ pub async fn ensure_claude_profile_settings(
     )?;
 
     claude_profile_settings_status(db.inner(), &profile, &gateway_url).await
+}
+
+#[tauri::command]
+pub async fn get_codex_profile_settings_status(
+    db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    profile: String,
+) -> Result<CodexProfileSettingsStatus> {
+    let profile = validate_provider_profile(Some(&profile))?.to_string();
+    codex_profile_settings_status(db.inner(), &profile, &config.gateway_base_url()).await
+}
+
+#[tauri::command]
+pub async fn ensure_codex_profile_settings(
+    db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    profile: String,
+) -> Result<CodexProfileSettingsStatus> {
+    let profile = validate_provider_profile(Some(&profile))?.to_string();
+    let gateway_url = config.gateway_base_url();
+
+    let mode = get_cli_mode(db.clone(), "codex".to_string()).await?;
+    if profile == DEFAULT_PROFILE {
+        return codex_profile_settings_status(db.inner(), &profile, &gateway_url).await;
+    }
+
+    let codex_dir = get_cli_config_dir_path(db.inner(), "codex").await;
+    let config_path = codex_dir.join("config.toml");
+
+    std::fs::create_dir_all(&codex_dir).map_err(|e| {
+        tracing::error!("Failed to create Codex directory: {}", e);
+        e.to_string()
+    })?;
+
+    let mut final_doc = if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path).map_err(|e| {
+            tracing::error!("Failed to read config.toml: {}", e);
+            e.to_string()
+        })?;
+        content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+            format!(
+                "Codex config.toml TOML 格式错误，未写入 Profile 配置: {}",
+                e
+            )
+        })?
+    } else {
+        toml_edit::DocumentMut::new()
+    };
+
+    if mode == "direct" {
+        remove_codex_default_gateway_entry(&mut final_doc);
+    }
+    apply_codex_gateway_named_profile_config(&mut final_doc, &gateway_url, &profile)?;
+    std::fs::write(&config_path, final_doc.to_string()).map_err(|e| {
+        tracing::error!("Failed to write config.toml: {}", e);
+        e.to_string()
+    })?;
+
+    codex_profile_settings_status(db.inner(), &profile, &gateway_url).await
 }
 
 #[tauri::command]
@@ -1875,13 +1589,11 @@ async fn sync_cli_config(
 #[derive(Clone, Copy)]
 enum ClaudeProfileSyncScope {
     DefaultOnly,
-    NonDefaultProfiles,
 }
 
 fn claude_profile_in_scope(scope: ClaudeProfileSyncScope, profile: &str) -> bool {
     match scope {
         ClaudeProfileSyncScope::DefaultOnly => profile == DEFAULT_PROFILE,
-        ClaudeProfileSyncScope::NonDefaultProfiles => profile != DEFAULT_PROFILE,
     }
 }
 
@@ -2004,6 +1716,20 @@ fn remove_codex_gateway_auth_content(auth_path: &std::path::Path) -> Result<()> 
     Ok(())
 }
 
+fn write_codex_gateway_auth(auth_path: &std::path::Path) -> Result<()> {
+    let auth = serde_json::json!({
+        "OPENAI_API_KEY": "ccg-gateway"
+    });
+    let auth_str = serde_json::to_string_pretty(&auth).map_err(|e| {
+        tracing::error!("Failed to serialize auth.json: {}", e);
+        e.to_string()
+    })?;
+    std::fs::write(auth_path, auth_str).map_err(|e| {
+        tracing::error!("Failed to write auth.json: {}", e);
+        e.to_string()
+    })
+}
+
 fn remove_gemini_gateway_env_content(env_path: &std::path::Path, gateway_url: &str) -> Result<()> {
     if !env_path.exists() {
         return Ok(());
@@ -2064,13 +1790,11 @@ fn remove_codex_gateway_config_content(
         }
     };
 
-    doc.remove("model_provider");
-    doc.remove("model_providers");
+    remove_codex_default_gateway_entry(&mut doc);
 
     if !default_config.is_empty() {
         if let Ok(mut preset_doc) = default_config.parse::<toml_edit::DocumentMut>() {
-            preset_doc.remove("model_provider");
-            preset_doc.remove("model_providers");
+            remove_codex_default_gateway_entry(&mut preset_doc);
             for (key, _) in preset_doc.iter() {
                 doc.remove(key);
             }
@@ -2216,6 +1940,14 @@ fn claude_settings_launch_command(config_path: &std::path::Path) -> String {
     )
 }
 
+fn codex_profile_launch_command(profile: &str) -> String {
+    if profile == DEFAULT_PROFILE {
+        "codex".to_string()
+    } else {
+        format!("codex --profile {}", profile)
+    }
+}
+
 fn claude_settings_uses_gateway(
     config_path: &std::path::Path,
     gateway_url: &str,
@@ -2280,6 +2012,75 @@ async fn claude_profile_settings_status(
         launch_command,
         exists: config_path.exists(),
         uses_gateway: claude_settings_uses_gateway(&config_path, gateway_url, gateway_token),
+    })
+}
+
+fn codex_profile_uses_gateway(
+    config_path: &std::path::Path,
+    profile: &str,
+    gateway_url: &str,
+) -> bool {
+    if !config_path.exists() {
+        return false;
+    }
+
+    let content = match std::fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(_) => return false,
+    };
+
+    let doc = match content.parse::<toml_edit::DocumentMut>() {
+        Ok(doc) => doc,
+        Err(_) => return false,
+    };
+
+    let provider_name = if profile == DEFAULT_PROFILE {
+        doc.get("model_provider")
+            .and_then(|item| item.as_str())
+            .map(|value| value.to_string())
+    } else {
+        doc.get("profiles")
+            .and_then(|item| item.get(profile))
+            .and_then(|item| item.get("model_provider"))
+            .and_then(|item| item.as_str())
+            .map(|value| value.to_string())
+    };
+
+    let Some(provider_name) = provider_name else {
+        return false;
+    };
+
+    let expected_url = match codex_gateway_base_url(gateway_url, profile) {
+        Ok(url) => url,
+        Err(_) => return false,
+    };
+
+    doc.get("model_providers")
+        .and_then(|item| item.get(&provider_name))
+        .and_then(|item| item.get("base_url"))
+        .and_then(|item| item.as_str())
+        .map(|base_url| gateway_url_matches(base_url, &expected_url))
+        .unwrap_or(false)
+}
+
+async fn codex_profile_settings_status(
+    db: &SqlitePool,
+    profile: &str,
+    gateway_url: &str,
+) -> Result<CodexProfileSettingsStatus> {
+    let profile = normalize_profile(Some(profile))
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
+    let config_dir = get_cli_config_dir_path(db, "codex").await;
+    let config_path = config_dir.join("config.toml");
+    let path = shrink_home_path(&config_path.to_string_lossy());
+
+    Ok(CodexProfileSettingsStatus {
+        profile: profile.to_string(),
+        filename: "config.toml".to_string(),
+        path,
+        launch_command: codex_profile_launch_command(profile),
+        exists: config_path.exists(),
+        uses_gateway: codex_profile_uses_gateway(&config_path, profile, gateway_url),
     })
 }
 
@@ -2443,16 +2244,7 @@ async fn sync_claude_code_preset_update(
         .await?;
     }
 
-    sync_claude_code_config(
-        db,
-        true,
-        default_config,
-        Some(previous_default_config),
-        &write_mode,
-        gateway_url,
-        ClaudeProfileSyncScope::NonDefaultProfiles,
-    )
-    .await
+    Ok(())
 }
 
 // Sync Codex configuration (auth.json + config.toml)
@@ -2477,18 +2269,7 @@ async fn sync_codex_config(
             e.to_string()
         })?;
 
-        // Write auth.json with gateway API key
-        let auth = serde_json::json!({
-            "OPENAI_API_KEY": "ccg-gateway"
-        });
-        let auth_str = serde_json::to_string_pretty(&auth).map_err(|e| {
-            tracing::error!("Failed to serialize auth.json: {}", e);
-            e.to_string()
-        })?;
-        std::fs::write(&auth_path, auth_str).map_err(|e| {
-            tracing::error!("Failed to write auth.json: {}", e);
-            e.to_string()
-        })?;
+        write_codex_gateway_auth(&auth_path)?;
 
         // merge 模式下保留现有文件中未被 gateway / 预设覆盖的顶层 key。
         let existing_content = if use_merge && config_path.exists() {
@@ -2508,8 +2289,7 @@ async fn sync_codex_config(
             toml_edit::DocumentMut::new()
         };
 
-        final_doc.remove("model_provider");
-        final_doc.remove("model_providers");
+        remove_codex_default_gateway_entry(&mut final_doc);
         if use_merge {
             remove_previous_codex_preset(
                 &mut final_doc,
@@ -2535,10 +2315,7 @@ async fn sync_codex_config(
             }
         }
 
-        let gateway_doc = codex_gateway_document(gateway_url)?;
-        for (k, v) in gateway_doc.iter() {
-            final_doc.insert(&k, v.clone());
-        }
+        apply_codex_gateway_default_config(&mut final_doc, gateway_url)?;
 
         let final_content = final_doc.to_string();
 

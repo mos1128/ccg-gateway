@@ -13,7 +13,7 @@ export const useProviderStore = defineStore('providers', () => {
     try {
       const uiStore = useUiStore()
       const type = cliType || uiStore.providersActiveCliType
-      const targetProfile = type === 'claude_code'
+      const targetProfile = type === 'claude_code' || type === 'codex'
         ? (profile || uiStore.providersActiveProfile)
         : 'default'
       const { data } = await providersApi.list(type, targetProfile)

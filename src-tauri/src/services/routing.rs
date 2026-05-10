@@ -9,6 +9,7 @@ pub const PROFILE2: &str = "profile2";
 pub const PROFILE3: &str = "profile3";
 
 pub const PROVIDER_PROFILES: [&str; 4] = [DEFAULT_PROFILE, PROFILE1, PROFILE2, PROFILE3];
+pub const GATEWAY_PROFILE_PATH_ROOT: &str = "/__ccg";
 
 pub fn normalize_profile(profile: Option<&str>) -> Option<&'static str> {
     let profile = profile.unwrap_or(DEFAULT_PROFILE).trim();
@@ -39,6 +40,35 @@ pub fn profile_from_gateway_token(token: &str) -> Option<&'static str> {
         "ccg-gateway-3" => Some(PROFILE3),
         _ => None,
     }
+}
+
+pub fn gateway_path_prefix_for_profile(profile: &str) -> Option<&'static str> {
+    match normalize_profile(Some(profile))? {
+        DEFAULT_PROFILE => Some(""),
+        PROFILE1 => Some("/__ccg/profile1"),
+        PROFILE2 => Some("/__ccg/profile2"),
+        PROFILE3 => Some("/__ccg/profile3"),
+        _ => None,
+    }
+}
+
+pub fn split_gateway_profile_path(full_path: &str) -> Option<(&'static str, String)> {
+    let rest = full_path.strip_prefix("/__ccg/")?;
+    let (profile_segment, suffix) = match rest.find(|c| c == '/' || c == '?') {
+        Some(index) => (&rest[..index], &rest[index..]),
+        None => (rest, ""),
+    };
+    let profile = normalize_profile(Some(profile_segment))?;
+
+    let stripped_path = if suffix.is_empty() {
+        "/".to_string()
+    } else if suffix.starts_with('/') {
+        suffix.to_string()
+    } else {
+        format!("/{}", suffix)
+    };
+
+    Some((profile, stripped_path))
 }
 
 /// Provider with its model mappings and blacklist

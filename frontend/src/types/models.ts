@@ -97,7 +97,7 @@ export interface CliSettings {
   config_write_mode: 'overwrite' | 'merge'
 }
 
-export interface ClaudeProfileSettingsStatus {
+export interface CliProfileSettingsStatus {
   profile: ProviderProfile
   filename: string
   path: string
@@ -105,6 +105,9 @@ export interface ClaudeProfileSettingsStatus {
   exists: boolean
   uses_gateway: boolean
 }
+
+export type ClaudeProfileSettingsStatus = CliProfileSettingsStatus
+export type CodexProfileSettingsStatus = CliProfileSettingsStatus
 
 export interface AllSettings {
   gateway: GatewaySettings

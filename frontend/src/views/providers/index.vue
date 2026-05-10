@@ -48,7 +48,7 @@
     <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
       <div class="header-left">
         <div class="b-segmented">
-          <div class="b-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="viewMode = 'proxy'">中转模式</div>
+          <div class="b-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="handleSwitchProxy">中转模式</div>
           <div class="b-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方模式</div>
         </div>
 
@@ -77,7 +77,7 @@
             <div class="profile-help-content">
               <div class="tooltip-title">Profile 用法</div>
               <div class="tooltip-item">
-                <span>切换到 Profile 时会自动生成对应的配置文件，通过对应启动命令启动的 ClaudeCode 会路由到对应 Profile 配置的服务商</span>
+                <span>{{ profileUsageText }}</span>
               </div>
               <div class="profile-command-panel">
                 <div class="profile-command-header">
@@ -507,7 +507,7 @@ import { useUiStore } from '@/stores/ui'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
-import type { Provider, CliType, ProviderProfile, ClaudeProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
+import type { Provider, CliType, ProviderProfile, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
 
 const providerStore = useProviderStore()
 const credentialStore = useCredentialStore()
@@ -554,9 +554,10 @@ const viewMode = computed<ViewMode>({
     viewModes.value[activeCliType.value] = mode
   }
 })
-const showProfileControls = computed(() => viewMode.value === 'proxy' && activeCliType.value === 'claude_code')
+const profileCapableCliTypes: CliType[] = ['claude_code', 'codex']
+const showProfileControls = computed(() => viewMode.value === 'proxy' && profileCapableCliTypes.includes(activeCliType.value))
 const currentProviderProfile = computed<ProviderProfile>(() =>
-  activeCliType.value === 'claude_code' ? activeProfile.value : 'default'
+  showProfileControls.value ? activeProfile.value : 'default'
 )
 const profileSwitching = ref<ProviderProfile | null>(null)
 let testResultListener: (() => void) | null = null
@@ -568,16 +569,37 @@ const profileLabels: Record<ProviderProfile, string> = {
   profile3: 'Profile 3'
 }
 
-const profileSettingsStatusMap = ref<Partial<Record<ProviderProfile, ClaudeProfileSettingsStatus>>>({})
-const profileCommandLoading = ref<ProviderProfile | null>(null)
+const profileSettingsStatusMap = ref<Partial<Record<string, CliProfileSettingsStatus>>>({})
+const profileCommandLoading = ref<string | null>(null)
 let profileCommandRequestId = 0
 
-const currentProfileSettingsStatus = computed(() => profileSettingsStatusMap.value[activeProfile.value])
+function profileStatusKey(cliType: CliType, profile: ProviderProfile) {
+  return `${cliType}:${profile}`
+}
+
+const currentProfileSettingsStatus = computed(() =>
+  profileSettingsStatusMap.value[profileStatusKey(activeCliType.value, activeProfile.value)]
+)
 const currentProfileLaunchCommand = computed(() => currentProfileSettingsStatus.value?.launch_command || '')
-const isCurrentProfileCommandLoading = computed(() => profileCommandLoading.value === activeProfile.value)
+const isCurrentProfileCommandLoading = computed(() =>
+  profileCommandLoading.value === profileStatusKey(activeCliType.value, activeProfile.value)
+)
+const profileUsageText = computed(() => {
+  if (activeCliType.value === 'codex') {
+    return '切换到非默认 Profile 时只会写入当前 Codex profile 的原生配置，不会修改默认窗口的官方模式'
+  }
+  return '切换到 Profile 时会自动生成对应的配置文件，通过对应启动命令启动的 Claude Code 会路由到对应 Profile 配置的服务商'
+})
+
+function handleSwitchProxy() {
+  if (viewMode.value === 'proxy') return
+  viewMode.value = 'proxy'
+}
 
 function handleSwitchDirect() {
+  if (viewMode.value === 'direct') return
   viewMode.value = 'direct'
+  credentialStore.fetchCredentials(activeCliType.value as CliType)
 }
 
 const showAddDialog = ref(false)
@@ -823,19 +845,22 @@ async function copyResponseText(text: string) {
   }
 }
 
-function cacheClaudeProfileSettingsStatus(status: ClaudeProfileSettingsStatus) {
+function cacheProfileSettingsStatus(cliType: CliType, status: CliProfileSettingsStatus) {
   profileSettingsStatusMap.value = {
     ...profileSettingsStatusMap.value,
-    [status.profile]: status
+    [profileStatusKey(cliType, status.profile)]: status
   }
 }
 
-async function loadClaudeProfileSettingsStatus(profile: ProviderProfile, silent = false): Promise<ClaudeProfileSettingsStatus | null> {
+async function loadProfileSettingsStatus(cliType: CliType, profile: ProviderProfile, silent = false): Promise<CliProfileSettingsStatus | null> {
   const requestId = ++profileCommandRequestId
-  profileCommandLoading.value = profile
+  const loadingKey = profileStatusKey(cliType, profile)
+  profileCommandLoading.value = loadingKey
   try {
-    const { data } = await settingsApi.getClaudeProfileSettingsStatus(profile)
-    cacheClaudeProfileSettingsStatus(data)
+    const { data } = cliType === 'codex'
+      ? await settingsApi.getCodexProfileSettingsStatus(profile)
+      : await settingsApi.getClaudeProfileSettingsStatus(profile)
+    cacheProfileSettingsStatus(cliType, data)
     return data
   } catch (e: any) {
     if (!silent) notify(getErrorMessage(e, '获取启动命令失败'), 'error')
@@ -850,8 +875,10 @@ async function loadClaudeProfileSettingsStatus(profile: ProviderProfile, silent 
 async function copyCurrentProfileLaunchCommand() {
   if (!showProfileControls.value) return
 
+  const cliType = activeCliType.value
   const profile = activeProfile.value
-  const status = profileSettingsStatusMap.value[profile] || await loadClaudeProfileSettingsStatus(profile)
+  const key = profileStatusKey(cliType, profile)
+  const status = profileSettingsStatusMap.value[key] || await loadProfileSettingsStatus(cliType, profile)
   const command = status?.launch_command
   if (!command) return
 
@@ -868,19 +895,27 @@ function removeModelMap(index: number) { form.value.model_maps.splice(index, 1) 
 function addModelBlacklist() { form.value.model_blacklist.push({ model_pattern: '' }) }
 function removeModelBlacklist(index: number) { form.value.model_blacklist.splice(index, 1) }
 
-async function ensureClaudeProfileReady(profile: ProviderProfile): Promise<boolean> {
-  if (activeCliType.value !== 'claude_code' || viewMode.value !== 'proxy' || profile === 'default') {
+async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
+  const cliType = activeCliType.value
+  if (!profileCapableCliTypes.includes(cliType) || viewMode.value !== 'proxy') {
+    return true
+  }
+  if (profile === 'default') {
     return true
   }
 
   profileSwitching.value = profile
   try {
-    const { data: status } = await settingsApi.getClaudeProfileSettingsStatus(profile)
-    cacheClaudeProfileSettingsStatus(status)
+    const { data: status } = cliType === 'codex'
+      ? await settingsApi.getCodexProfileSettingsStatus(profile)
+      : await settingsApi.getClaudeProfileSettingsStatus(profile)
+    cacheProfileSettingsStatus(cliType, status)
     if (status.uses_gateway) return true
 
-    const { data: ensured } = await settingsApi.ensureClaudeProfileSettings(profile)
-    cacheClaudeProfileSettingsStatus(ensured)
+    const { data: ensured } = cliType === 'codex'
+      ? await settingsApi.ensureCodexProfileSettings(profile)
+      : await settingsApi.ensureClaudeProfileSettings(profile)
+    cacheProfileSettingsStatus(cliType, ensured)
     if (!ensured.uses_gateway) {
       notify(`写入后仍未检测到有效配置：${ensured.path}`, 'error')
       return false
@@ -899,17 +934,17 @@ async function ensureClaudeProfileReady(profile: ProviderProfile): Promise<boole
 async function handleProfileSelect(profile: ProviderProfile) {
   if (profile === activeProfile.value || profileSwitching.value) return
 
-  const ok = await ensureClaudeProfileReady(profile)
+  const ok = await ensureProfileReady(profile)
   if (!ok) return
 
   activeProfile.value = profile
 }
 
-async function ensureCurrentClaudeProfileOrFallback(): Promise<ProviderProfile> {
-  if (activeCliType.value !== 'claude_code') return 'default'
+async function ensureCurrentProfileOrFallback(): Promise<ProviderProfile> {
+  if (!showProfileControls.value) return 'default'
 
   const profile = activeProfile.value
-  if (await ensureClaudeProfileReady(profile)) return profile
+  if (await ensureProfileReady(profile)) return profile
 
   activeProfile.value = 'default'
   return 'default'
@@ -917,19 +952,25 @@ async function ensureCurrentClaudeProfileOrFallback(): Promise<ProviderProfile> 
 
 // Listen for tab changes
 watch(() => activeCliType.value, async (cliType) => {
-  const profile = await ensureCurrentClaudeProfileOrFallback()
+  const profile = await ensureCurrentProfileOrFallback()
   providerStore.fetchProviders(cliType as CliType, profile)
   credentialStore.fetchCredentials(cliType as CliType)
 })
 
 watch(() => activeProfile.value, (profile) => {
-  if (activeCliType.value !== 'claude_code') return
+  if (!showProfileControls.value) return
   providerStore.fetchProviders(activeCliType.value as CliType, profile)
 })
 
-watch([showProfileControls, activeProfile], ([visible, profile]) => {
-  if (!visible || profileSettingsStatusMap.value[profile]) return
-  loadClaudeProfileSettingsStatus(profile, true)
+watch(() => viewMode.value, async (mode) => {
+  if (mode !== 'proxy') return
+  const profile = await ensureCurrentProfileOrFallback()
+  providerStore.fetchProviders(activeCliType.value as CliType, profile)
+})
+
+watch([showProfileControls, activeCliType, activeProfile], ([visible, cliType, profile]) => {
+  if (!visible || profileSettingsStatusMap.value[profileStatusKey(cliType, profile)]) return
+  loadProfileSettingsStatus(cliType, profile, true)
 }, { immediate: true })
 
 function handleAddProvider() {
@@ -1157,7 +1198,7 @@ function getUnblacklistTime(provider: Provider): string {
 }
 
 onMounted(async () => {
-  const profile = await ensureCurrentClaudeProfileOrFallback()
+  const profile = await ensureCurrentProfileOrFallback()
   providerStore.fetchProviders(activeCliType.value as CliType, profile)
   credentialStore.fetchCredentials(activeCliType.value as CliType)
   

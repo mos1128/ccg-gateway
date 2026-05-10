@@ -183,6 +183,8 @@ pub fn run() {
             commands::get_cli_settings,
             commands::get_claude_profile_settings_status,
             commands::ensure_claude_profile_settings,
+            commands::get_codex_profile_settings_status,
+            commands::ensure_codex_profile_settings,
             commands::update_cli_settings,
             commands::get_request_logs,
             commands::get_request_log_detail,
