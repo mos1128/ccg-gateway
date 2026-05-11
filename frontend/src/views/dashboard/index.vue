@@ -96,16 +96,16 @@ import * as echarts from 'echarts/core'
 
 use([LineChart, BarChart, TooltipComponent, GridComponent, DatasetComponent, TransformComponent, LegendComponent, CanvasRenderer])
 
-import { useDashboardStore } from '@/stores/dashboard'
 import { useProviderStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
 import { statsApi } from '@/api/stats'
 import { formatTokens } from '@/utils/json'
+import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import type { ProviderStats, DailyStats } from '@/types/models'
 
-const dashboardStore = useDashboardStore()
 const providerStore = useProviderStore()
 const settingsStore = useSettingsStore()
+const DASHBOARD_REFRESH_INTERVAL_MS = 5_000
 
 const cliList = [
   { type: 'claude_code', label: 'Claude Code' },
@@ -211,6 +211,10 @@ async function fetchChartData() {
   dailyStats.value = dailyRes.data
 }
 
+useAutoRefresh(async () => {
+  await Promise.allSettled([fetchStats(), fetchChartData()])
+}, { intervalMs: DASHBOARD_REFRESH_INTERVAL_MS, immediate: true })
+
 const chartOption = computed(() => {
   const dates: string[] = []
   for (let i = 6; i >= 0; i--) {
@@ -284,14 +288,9 @@ const chartOption = computed(() => {
   }
 })
 
-onMounted(async () => {
-  await Promise.all([
-    dashboardStore.fetchStatus(),
-    providerStore.fetchProviders(),
-    settingsStore.fetchSettings(),
-    fetchStats(),
-    fetchChartData()
-  ])
+onMounted(() => {
+  void providerStore.fetchProviders()
+  void settingsStore.fetchSettings()
 })
 </script>
 
