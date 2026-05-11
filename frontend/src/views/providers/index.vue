@@ -1187,7 +1187,13 @@ async function handleCredentialDragEnd() {
 }
 
 const now = ref(Date.now())
-let timer: any = null
+let timer: ReturnType<typeof setInterval> | null = null
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    now.value = Date.now()
+  }
+}
 
 function getUnblacklistTime(provider: Provider): string {
   if (!provider.is_blacklisted || !provider.blacklisted_until) return '已拉黑'
@@ -1201,12 +1207,15 @@ onMounted(async () => {
   const profile = await ensureCurrentProfileOrFallback()
   providerStore.fetchProviders(activeCliType.value as CliType, profile)
   credentialStore.fetchCredentials(activeCliType.value as CliType)
-  
-  // 每秒更新一次时间，触发倒计时重绘
+
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+
+  // 每秒更新一次时间，触发倒计时重绘（后台标签页跳过）
   timer = setInterval(() => {
+    if (document.visibilityState !== 'visible') return
     const oldNow = now.value
     now.value = Date.now()
-    
+
     // 检查是否有服务商的拉黑时间刚刚到期
     const hasExpired = providerStore.providers.some(p => {
       if (p.is_blacklisted && p.blacklisted_until) {
@@ -1214,7 +1223,7 @@ onMounted(async () => {
       }
       return false
     })
-    
+
     if (hasExpired) {
       providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
     }
@@ -1222,7 +1231,11 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (testResultListener) {
     testResultListener()
     testResultListener = null

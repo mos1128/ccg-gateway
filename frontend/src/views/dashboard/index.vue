@@ -212,8 +212,12 @@ async function fetchChartData() {
 }
 
 useAutoRefresh(async () => {
-  await Promise.allSettled([fetchStats(), fetchChartData()])
-}, { intervalMs: DASHBOARD_REFRESH_INTERVAL_MS, immediate: true })
+  await Promise.all([fetchStats(), fetchChartData()])
+}, {
+  intervalMs: DASHBOARD_REFRESH_INTERVAL_MS,
+  immediate: true,
+  onError: (e) => notify(getErrorMessage(e, '数据刷新失败'), 'error')
+})
 
 const chartOption = computed(() => {
   const dates: string[] = []

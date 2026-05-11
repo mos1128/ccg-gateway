@@ -1,6 +1,7 @@
 export interface AutoRefreshOptions {
   intervalMs: number
   immediate?: boolean
+  onError?: (error: unknown) => void
 }
 
 export function useAutoRefresh(
@@ -13,7 +14,10 @@ export function useAutoRefresh(
   async function refresh(force = false) {
     if (!force && document.visibilityState !== 'visible') return
     if (inflight) return inflight
-    inflight = refreshFn().catch(() => undefined)
+    inflight = refreshFn().catch((e) => {
+      options.onError?.(e)
+      return undefined
+    })
     try {
       await inflight
     } finally {
