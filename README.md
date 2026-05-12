@@ -137,7 +137,7 @@ scoop install extras/ccg-gateway
 
 - Rust 1.80+
 - Node.js 18+
-- pnpm
+- pnpm 11+
 
 #### 快速启动
 
