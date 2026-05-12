@@ -110,7 +110,7 @@
             <tbody>
               <tr v-for="row in filteredTableData" :key="`${row.date}-${row.provider_name}-${row.model_id}`">
                 <td class="table-cell">{{ row.date }}</td>
-                <td class="table-cell"><span class="badge" :class="getProviderBadgeClass(row.provider_name)">{{ row.provider_name }}</span></td>
+                <td class="table-cell">{{ row.provider_name }}</td>
                 <td class="table-cell">{{ row.model_id }}</td>
                 <td class="table-cell mono">{{ row.total_requests }}</td>
                 <td class="table-cell mono">{{ formatTokens(row.total_tokens) }}</td>
@@ -414,15 +414,6 @@ const filteredTableData = computed(() => {
   return result
 })
 
-function getProviderBadgeClass(providerName: string) {
-  const n = providerName.toLowerCase()
-  if (n.includes('ali') || n.includes('阿里')) return 'prov-ali'
-  if (n.includes('deepseek')) return 'prov-deepseek'
-  if (n.includes('open') || n.includes('gpt')) return 'prov-openai'
-  if (n.includes('claude') || n.includes('anthropic')) return 'prov-claude'
-  return 'prov-default'
-}
-
 onMounted(() => {
   document.addEventListener('click', closeAllSelects)
   void providerStore.fetchProviders()
@@ -493,10 +484,4 @@ onUnmounted(() => {
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: var(--color-bg-page); }
 
-.badge { padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
-.prov-ali { background: #e0f2fe; color: #0284c7; }
-.prov-deepseek { background: #f3e8ff; color: #7e22ce; }
-.prov-openai { background: #dcfce7; color: #059669; }
-.prov-claude { background: #fce7f3; color: #db2777; }
-.prov-default { background: #f1f5f9; color: #475569; }
 </style>
