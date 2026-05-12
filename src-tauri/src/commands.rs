@@ -12,6 +12,7 @@ use crate::db::models::{
     SessionInfo, SessionMessage, SkillCliFlag, SkillFavorite, SkillFavoriteItem, SkillRepo,
     SkillRepoCreate, SystemLogItem, SystemLogListResponse, SystemStatus, TestProviderModelsInput,
     TimeoutSettings, TimeoutSettingsUpdate, WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
+    AdvancedStatsRow
 };
 use crate::services::routing::{
     gateway_path_prefix_for_profile, gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE,
@@ -3277,6 +3278,8 @@ pub async fn get_provider_stats(
             COUNT(*) as total_requests,
             SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as total_success,
             SUM(input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens) as total_tokens,
+            SUM(cache_read_input_tokens) as total_cache_read_tokens,
+            SUM(cache_creation_input_tokens) as total_cache_creation_tokens,
             SUM(elapsed_ms) as total_elapsed_ms
         FROM request_logs
         WHERE 1=1
@@ -3319,6 +3322,8 @@ pub async fn get_provider_stats(
             total_requests: row.total_requests,
             total_success: row.total_success,
             total_tokens: row.total_tokens,
+            total_cache_read_tokens: row.total_cache_read_tokens,
+            total_cache_creation_tokens: row.total_cache_creation_tokens,
             total_elapsed_ms: row.total_elapsed_ms,
             success_rate: if row.total_requests > 0 {
                 (row.total_success as f64 / row.total_requests as f64) * 100.0
@@ -3329,6 +3334,69 @@ pub async fn get_provider_stats(
         .collect();
 
     Ok(results)
+}
+
+#[tauri::command]
+pub async fn get_advanced_stats(
+    log_db: State<'_, crate::LogDb>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    cli_type: Option<String>,
+    provider_name: Option<String>,
+    model_id: Option<String>,
+) -> Result<Vec<AdvancedStatsRow>> {
+    let pool = &log_db.0;
+
+    let mut query = r#"
+        SELECT
+            date(created_at, 'unixepoch', 'localtime') as date,
+            provider_name,
+            COALESCE(model_id, source_model, '未知模型') as model_id,
+            COUNT(*) as total_requests,
+            SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as total_success,
+            SUM(input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens) as total_tokens,
+            SUM(cache_read_input_tokens) as total_cache_read_tokens,
+            SUM(cache_creation_input_tokens) as total_cache_creation_tokens
+        FROM request_logs
+        WHERE 1=1
+    "#.to_string();
+
+    if start_date.is_some() {
+        query.push_str(" AND date(created_at, 'unixepoch', 'localtime') >= ?");
+    }
+    if end_date.is_some() {
+        query.push_str(" AND date(created_at, 'unixepoch', 'localtime') <= ?");
+    }
+    if cli_type.is_some() {
+        query.push_str(" AND cli_type = ?");
+    }
+    if provider_name.is_some() {
+        query.push_str(" AND provider_name = ?");
+    }
+    if model_id.is_some() {
+        query.push_str(" AND COALESCE(model_id, source_model, '未知模型') = ?");
+    }
+    
+    query.push_str(" GROUP BY date, provider_name, model_id ORDER BY date DESC, provider_name, model_id");
+
+    let mut q = sqlx::query_as::<_, AdvancedStatsRow>(&query);
+    if let Some(ref sd) = start_date {
+        q = q.bind(sd);
+    }
+    if let Some(ref ed) = end_date {
+        q = q.bind(ed);
+    }
+    if let Some(ref ct) = cli_type {
+        q = q.bind(ct);
+    }
+    if let Some(ref pn) = provider_name {
+        q = q.bind(pn);
+    }
+    if let Some(ref mid) = model_id {
+        q = q.bind(mid);
+    }
+
+    q.fetch_all(pool).await.map_err(|e| e.to_string())
 }
 
 // Session helpers

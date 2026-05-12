@@ -609,6 +609,8 @@ pub struct ProviderStatsRow {
     pub total_requests: i64,
     pub total_success: i64,
     pub total_tokens: i64,
+    pub total_cache_read_tokens: i64,
+    pub total_cache_creation_tokens: i64,
     pub total_elapsed_ms: i64,
 }
 
@@ -618,8 +620,22 @@ pub struct ProviderStatsResponse {
     pub total_requests: i64,
     pub total_success: i64,
     pub total_tokens: i64,
+    pub total_cache_read_tokens: i64,
+    pub total_cache_creation_tokens: i64,
     pub total_elapsed_ms: i64,
     pub success_rate: f64,
+}
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct AdvancedStatsRow {
+    pub date: String,
+    pub provider_name: String,
+    pub model_id: String,
+    pub total_requests: i64,
+    pub total_success: i64,
+    pub total_tokens: i64,
+    pub total_cache_read_tokens: i64,
+    pub total_cache_creation_tokens: i64,
 }
 
 // ==================== Session 相关实体 (非数据库) ====================

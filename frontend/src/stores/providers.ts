@@ -19,7 +19,12 @@ export const useProviderStore = defineStore('providers', () => {
     return `${type}_${profile}`
   })
 
-  const providers = computed(() => providersMap.value[activeCacheKey.value] || [])
+  const providers = computed({
+    get: () => providersMap.value[activeCacheKey.value] || [],
+    set: (val) => {
+      providersMap.value[activeCacheKey.value] = val
+    }
+  })
 
   function getCacheKey(cliType?: string, profile?: ProviderProfile) {
     const type = cliType || uiStore.providersActiveCliType

@@ -37,44 +37,76 @@
           <div class="kpi-value mono">{{ kpiData.tokens }}</div>
         </div>
         <div class="b-card kpi-card">
-          <div class="kpi-title">活跃服务商</div>
-          <div class="kpi-value mono">{{ kpiData.providers }}</div>
+          <div class="kpi-title">缓存Token</div>
+          <div class="kpi-value mono">{{ kpiData.cachedTokens }}</div>
         </div>
       </div>
 
-      <!-- 底部图表与日志 -->
-      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
-        <!-- 图表区 -->
-        <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; min-width: 400px;">
-          <div class="b-card-title">请求统计趋势</div>
-          <div style="height: 240px; width: 100%;">
-            <v-chart class="chart" :option="chartOption" autoresize />
+      <!-- 核心图表分析区 -->
+      <div class="b-card responsive-bottom-card" style="margin-bottom: 24px; padding: 24px; min-width: 400px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 16px;">
+          <div class="b-card-title" style="margin-bottom: 0;">趋势与分布分析</div>
+          <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+            <div class="b-segmented">
+              <div class="b-seg-btn" :class="{ active: metricMode === 'requests' }" @click="metricMode = 'requests'">请求次数</div>
+              <div class="b-seg-btn" :class="{ active: metricMode === 'tokens' }" @click="metricMode = 'tokens'">Token 消耗</div>
+            </div>
+            <div class="b-segmented">
+              <div class="b-seg-btn" :class="{ active: dimMode === 'provider' }" @click="dimMode = 'provider'">按服务商</div>
+              <div class="b-seg-btn" :class="{ active: dimMode === 'model' }" @click="dimMode = 'model'">按模型</div>
+            </div>
           </div>
         </div>
-        
-        <!-- 服务商统计 -->
-        <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; display: flex; flex-direction: column; min-width: 400px; padding: 24px;">
-          <div class="b-card-title" style="margin-bottom: 16px;">服务商统计</div>
-          <div class="stats-table-wrapper">
-            <table class="flat-table">
-              <thead>
-                <tr>
-                  <th>服务商</th>
-                  <th>请求</th>
-                  <th>成功率</th>
-                  <th>Token</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in providerStats" :key="row.provider_name">
-                  <td class="table-cell">{{ row.provider_name }}</td>
-                  <td class="table-cell mono">{{ row.total_requests }}</td>
-                  <td class="table-cell">{{ row.success_rate.toFixed(1) }}%</td>
-                  <td class="table-cell mono">{{ formatTokens(row.total_tokens) }}</td>
-                </tr>
-              </tbody>
-            </table>
+        <div style="height: 350px; width: 100%;">
+          <v-chart class="chart" :option="chartOption" autoresize />
+        </div>
+      </div>
+
+      <!-- 多维数据明细表 -->
+      <div class="b-card responsive-bottom-card" style="padding: 24px; min-width: 400px; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 16px;">
+          <div class="b-card-title" style="margin-bottom: 0;">详细数据记录</div>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <select v-model="filterDate" class="filter-select">
+              <option value="7days">最近 7 天</option>
+              <option value="today">今天</option>
+            </select>
+            <select v-model="filterProvider" class="filter-select">
+              <option value="all">所有服务商</option>
+              <option v-for="p in uniqueProviders" :key="p" :value="p">{{ p }}</option>
+            </select>
+            <select v-model="filterModel" class="filter-select">
+              <option value="all">所有模型</option>
+              <option v-for="m in uniqueModels" :key="m" :value="m">{{ m }}</option>
+            </select>
           </div>
+        </div>
+        <div class="stats-table-wrapper" style="height: 400px;">
+          <table class="flat-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>服务商</th>
+                <th>模型</th>
+                <th>请求总数</th>
+                <th>成功率</th>
+                <th>总 Token 消耗</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in filteredTableData" :key="`${row.date}-${row.provider_name}-${row.model_id}`">
+                <td class="table-cell">{{ row.date }}</td>
+                <td class="table-cell"><span class="badge" :class="getProviderBadgeClass(row.provider_name)">{{ row.provider_name }}</span></td>
+                <td class="table-cell">{{ row.model_id }}</td>
+                <td class="table-cell mono">{{ row.total_requests }}</td>
+                <td class="table-cell" :class="getSuccessRateColor(row.total_success, row.total_requests)">{{ ((row.total_success / (row.total_requests || 1)) * 100).toFixed(1) }}%</td>
+                <td class="table-cell mono">{{ formatTokens(row.total_tokens) }}</td>
+              </tr>
+              <tr v-if="filteredTableData.length === 0">
+                <td colspan="6" style="text-align: center; color: var(--color-text-weak); padding: 24px;">暂无数据</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -101,7 +133,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { statsApi } from '@/api/stats'
 import { formatTokens } from '@/utils/json'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
-import type { ProviderStats, DailyStats } from '@/types/models'
+import type { ProviderStats, DailyStats, AdvancedStatsRow } from '@/types/models'
 
 const providerStore = useProviderStore()
 const settingsStore = useSettingsStore()
@@ -121,20 +153,28 @@ const cliLoading = reactive<Record<string, boolean>>({
 
 const providerStats = ref<ProviderStats[]>([])
 const dailyStats = ref<DailyStats[]>([])
+const advancedStats = ref<AdvancedStatsRow[]>([])
+
+// UI State
+const metricMode = ref<'requests' | 'tokens'>('requests')
+const dimMode = ref<'provider' | 'model'>('provider')
+const filterDate = ref<'7days' | 'today'>('7days')
+const filterProvider = ref<string>('all')
+const filterModel = ref<string>('all')
 
 const kpiData = computed(() => {
   const stats = providerStats.value
   const totalRequests = stats.reduce((sum, s) => sum + s.total_requests, 0)
   const totalSuccess = stats.reduce((sum, s) => sum + s.total_success, 0)
   const totalTokens = stats.reduce((sum, s) => sum + s.total_tokens, 0)
-  const activeProviders = stats.filter(s => s.total_requests > 0).length
+  const totalCachedTokens = stats.reduce((sum, s) => sum + (s.total_cache_read_tokens || 0) + (s.total_cache_creation_tokens || 0), 0)
   const successRate = totalRequests > 0 ? (totalSuccess / totalRequests) * 100 : 0
 
   return {
     requests: totalRequests.toLocaleString(),
     successRate: totalRequests > 0 ? successRate.toFixed(1) + '%' : '0%',
     tokens: formatTokens(totalTokens),
-    providers: activeProviders
+    cachedTokens: formatTokens(totalCachedTokens)
   }
 })
 
@@ -190,11 +230,6 @@ async function handleCliToggle(cliType: string, enabled: boolean) {
   }
 }
 
-async function fetchStats() {
-  const providerRes = await statsApi.getProviders({})
-  providerStats.value = providerRes.data
-}
-
 function formatLocalDate(d: Date): string {
   const year = d.getFullYear()
   const month = String(d.getMonth() + 1).padStart(2, '0')
@@ -202,22 +237,31 @@ function formatLocalDate(d: Date): string {
   return `${year}-${month}-${day}`
 }
 
-async function fetchChartData() {
+async function fetchStats() {
   const today = new Date()
   const sevenDaysAgo = new Date(today)
   sevenDaysAgo.setDate(today.getDate() - 6)
-  const params = { start_date: formatLocalDate(sevenDaysAgo), end_date: formatLocalDate(today) }
-  const dailyRes = await statsApi.getDaily(params)
-  dailyStats.value = dailyRes.data
+  
+  const p1 = statsApi.getProviders({})
+  const p2 = statsApi.getDaily({ start_date: formatLocalDate(sevenDaysAgo), end_date: formatLocalDate(today) })
+  const p3 = statsApi.getAdvanced({ start_date: formatLocalDate(sevenDaysAgo), end_date: formatLocalDate(today) })
+  
+  const [resProv, resDaily, resAdv] = await Promise.all([p1, p2, p3])
+  providerStats.value = resProv.data
+  dailyStats.value = resDaily.data
+  advancedStats.value = resAdv.data
 }
 
 useAutoRefresh(async () => {
-  await Promise.all([fetchStats(), fetchChartData()])
+  await fetchStats()
 }, {
   intervalMs: DASHBOARD_REFRESH_INTERVAL_MS,
   immediate: true,
   onError: (e) => notify(getErrorMessage(e, '数据刷新失败'), 'error')
 })
+
+// === Chart Logic ===
+const PALETTE = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6', '#6366f1']
 
 const chartOption = computed(() => {
   const dates: string[] = []
@@ -226,71 +270,133 @@ const chartOption = computed(() => {
     d.setDate(d.getDate() - i)
     dates.push(formatLocalDate(d))
   }
-  
-  const dateMap = new Map<string, { reqs: number; success: number }>()
-  dates.forEach(d => dateMap.set(d, { reqs: 0, success: 0 }))
-  
-  dailyStats.value.forEach(s => {
-    const ex = dateMap.get(s.usage_date)
-    if (ex) {
-      ex.reqs += s.success_count + s.failure_count
-      ex.success += s.success_count
-    }
+
+  const metricKey = metricMode.value === 'requests' ? 'total_requests' : 'total_tokens'
+
+  // 堆叠柱状图 (按服务商或模型)
+  const groupKey = dimMode.value === 'provider' ? 'provider_name' : 'model_id'
+  const groups = new Set<string>()
+  advancedStats.value.forEach(s => groups.add(s[groupKey]))
+  const groupArray = Array.from(groups).sort()
+
+  const seriesData: any[] = []
+  groupArray.forEach((gName, idx) => {
+    const data = dates.map(d => {
+      let sum = 0
+      advancedStats.value.forEach(s => {
+        if (s.date === d && s[groupKey] === gName) sum += s[metricKey]
+      })
+      return sum
+    })
+    
+    const color = PALETTE[idx % PALETTE.length]
+    seriesData.push({
+      name: gName,
+      type: 'bar',
+      stack: 'total',
+      barWidth: '40%',
+      itemStyle: { color },
+      data
+    })
   })
 
-  const reqData = dates.map(d => dateMap.get(d)!.reqs)
-  const successData = dates.map(d => dateMap.get(d)!.success)
+  // 对顶部的柱子应用圆角
+  if (seriesData.length > 0) {
+    for (let i = 0; i < dates.length; i++) {
+      let topSeriesIdx = -1
+      for (let j = seriesData.length - 1; j >= 0; j--) {
+        if (seriesData[j].data[i] > 0) {
+          topSeriesIdx = j
+          break
+        }
+      }
+      if (topSeriesIdx !== -1) {
+        if (!seriesData[topSeriesIdx].itemStyle) seriesData[topSeriesIdx].itemStyle = {}
+        if (!seriesData[topSeriesIdx].itemStyle.borderRadius) {
+           seriesData[topSeriesIdx].itemStyle.borderRadius = [0, 0, 0, 0] // default
+        }
+        // We can't easily do per-item border radius in simple series definition without using function,
+        // so we skip dynamic per-bar radius for simplicity and compatibility.
+      }
+    }
+  }
 
   return {
-    tooltip: { trigger: 'axis', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderColor: '#e2e8f0', textStyle: { color: '#0f172a' } },
-    legend: { show: false },
-    grid: { top: 20, right: 40, bottom: 20, left: 40, containLabel: true },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: dates,
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: { color: '#94a3b8', margin: 12 }
+    tooltip: { 
+      trigger: 'axis', 
+      axisPointer: { type: 'shadow' }, 
+      valueFormatter: (value: any) => metricMode.value === 'tokens' ? formatTokens(value) : value,
+      backgroundColor: 'rgba(255, 255, 255, 0.9)', 
+      borderColor: '#e2e8f0', 
+      textStyle: { color: '#0f172a' } 
     },
-    yAxis: {
-      type: 'value',
-      name: '',
-      splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } },
-      axisLabel: { color: '#94a3b8' }
+    legend: { top: 0, right: 0, icon: 'circle', textStyle: { color: '#64748b' } },
+    grid: { top: 40, right: 40, bottom: 20, left: 50, containLabel: true },
+    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#e2e8f0' } }, axisLabel: { color: '#64748b' } },
+    yAxis: { 
+      type: 'value', 
+      splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } }, 
+      axisLabel: { 
+        color: '#64748b',
+        formatter: (value: number) => {
+          if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M'
+          if (value >= 1000) return (value / 1000).toFixed(1) + 'K'
+          return value
+        }
+      } 
     },
-    series: [
-      {
-        name: '总请求数',
-        type: 'line',
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { width: 3, color: '#0ea5e9' },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(14, 165, 233, 0.3)' },
-            { offset: 1, color: 'rgba(14, 165, 233, 0.0)' }
-          ])
-        },
-        data: reqData
-      },
-      {
-        name: '成功请求数',
-        type: 'line',
-        smooth: true,
-        symbol: 'none',
-        lineStyle: { width: 3, color: '#10b981' },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(16, 185, 129, 0.3)' },
-            { offset: 1, color: 'rgba(16, 185, 129, 0.0)' }
-          ])
-        },
-        data: successData
-      }
-    ]
+    series: seriesData
   }
 })
+
+// === Table Logic ===
+const uniqueProviders = computed(() => {
+  const p = new Set<string>()
+  advancedStats.value.forEach(s => p.add(s.provider_name))
+  return Array.from(p).sort()
+})
+
+const uniqueModels = computed(() => {
+  const m = new Set<string>()
+  advancedStats.value.forEach(s => m.add(s.model_id))
+  return Array.from(m).sort()
+})
+
+const filteredTableData = computed(() => {
+  let result = advancedStats.value
+  
+  if (filterDate.value === 'today') {
+    const todayStr = formatLocalDate(new Date())
+    result = result.filter(r => r.date === todayStr)
+  }
+  
+  if (filterProvider.value !== 'all') {
+    result = result.filter(r => r.provider_name === filterProvider.value)
+  }
+  
+  if (filterModel.value !== 'all') {
+    result = result.filter(r => r.model_id === filterModel.value)
+  }
+  
+  return result
+})
+
+function getProviderBadgeClass(providerName: string) {
+  const n = providerName.toLowerCase()
+  if (n.includes('ali') || n.includes('阿里')) return 'prov-ali'
+  if (n.includes('deepseek')) return 'prov-deepseek'
+  if (n.includes('open') || n.includes('gpt')) return 'prov-openai'
+  if (n.includes('claude') || n.includes('anthropic')) return 'prov-claude'
+  return 'prov-default'
+}
+
+function getSuccessRateColor(success: number, total: number) {
+  if (!total) return 'text-muted'
+  const rate = success / total
+  if (rate >= 0.95) return 'text-green'
+  if (rate >= 0.8) return 'text-warning'
+  return 'text-danger'
+}
 
 onMounted(() => {
   void providerStore.fetchProviders()
@@ -311,9 +417,6 @@ onMounted(() => {
   padding: 0 40px 16px 40px;
 }
 
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-shrink: 0; }
-.page-title { font-size: var(--fs-20); font-weight: var(--fw-700); margin: 0; letter-spacing: -0.5px; }
-
 .b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); padding: 24px; margin-bottom: 24px; border: 1px solid transparent; }
 .b-card-title { font-size: var(--fs-16); font-weight: var(--fw-600); margin-bottom: 20px; color: var(--color-text); }
 
@@ -333,18 +436,30 @@ onMounted(() => {
 
 .text-blue { color: var(--color-primary); }
 .text-green { color: var(--color-success); }
+.text-warning { color: #eab308; }
+.text-danger { color: #ef4444; }
+.text-muted { color: var(--color-text-weak); }
 .table-cell { font-size: var(--fs-14); color: var(--color-text); }
 
 .chart { width: 100%; height: 100%; }
 
 /* Stats Table Wrapper */
-.stats-table-wrapper { height: 240px; overflow-y: auto; }
+.stats-table-wrapper { overflow-y: auto; }
+
+.filter-select { padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 6px; outline: none; font-size: var(--fs-14); color: var(--color-text); min-width: 120px; background: var(--color-bg); }
 
 /* Flat Table */
-.flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; table-layout: fixed; }
+.flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; }
 .flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
-.flat-table th { padding: 12px 16px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); }
+.flat-table th { padding: 12px 16px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }
 .flat-table td { padding: 12px 16px; font-size: var(--fs-14); color: var(--color-text); border-bottom: 1px solid var(--color-bg-subtle); }
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: var(--color-bg-page); }
+
+.badge { padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; }
+.prov-ali { background: #e0f2fe; color: #0284c7; }
+.prov-deepseek { background: #f3e8ff; color: #7e22ce; }
+.prov-openai { background: #dcfce7; color: #059669; }
+.prov-claude { background: #fce7f3; color: #db2777; }
+.prov-default { background: #f1f5f9; color: #475569; }
 </style>

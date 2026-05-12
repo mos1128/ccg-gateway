@@ -284,12 +284,24 @@ export interface DailyStats {
 
 export interface ProviderStats {
   provider_name: string
-  cli_type: string
   total_requests: number
   total_success: number
-  total_failure: number
   success_rate: number
   total_tokens: number
+  total_cache_read_tokens: number
+  total_cache_creation_tokens: number
+  total_elapsed_ms: number
+}
+
+export interface AdvancedStatsRow {
+  date: string
+  provider_name: string
+  model_id: string
+  total_requests: number
+  total_success: number
+  total_tokens: number
+  total_cache_read_tokens: number
+  total_cache_creation_tokens: number
 }
 
 // Log types

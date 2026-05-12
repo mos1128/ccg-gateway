@@ -223,6 +223,7 @@ pub fn run() {
             commands::reinstall_favorite_skill,
             commands::get_daily_stats,
             commands::get_provider_stats,
+            commands::get_advanced_stats,
             commands::get_session_projects,
             commands::get_project_sessions,
             commands::get_session_messages,
