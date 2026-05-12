@@ -1,23 +1,45 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { providersApi } from '@/api/providers'
 import type { Provider, ProviderCreate, ProviderProfile, ProviderUpdate } from '@/types/models'
 import { useUiStore } from './ui'
 
 export const useProviderStore = defineStore('providers', () => {
-  const providers = ref<Provider[]>([])
+  const uiStore = useUiStore()
+  
+  // Cache map: key is `${cliType}_${profile}`
+  const providersMap = ref<Record<string, Provider[]>>({})
   const loading = ref(false)
+
+  const activeCacheKey = computed(() => {
+    const type = uiStore.providersActiveCliType
+    const profile = type === 'claude_code' || type === 'codex' 
+      ? uiStore.providersActiveProfile 
+      : 'default'
+    return `${type}_${profile}`
+  })
+
+  const providers = computed(() => providersMap.value[activeCacheKey.value] || [])
+
+  function getCacheKey(cliType?: string, profile?: ProviderProfile) {
+    const type = cliType || uiStore.providersActiveCliType
+    const targetProfile = type === 'claude_code' || type === 'codex'
+      ? (profile || uiStore.providersActiveProfile)
+      : 'default'
+    return `${type}_${targetProfile}`
+  }
 
   async function fetchProviders(cliType?: string, profile?: ProviderProfile) {
     loading.value = true
     try {
-      const uiStore = useUiStore()
       const type = cliType || uiStore.providersActiveCliType
       const targetProfile = type === 'claude_code' || type === 'codex'
         ? (profile || uiStore.providersActiveProfile)
         : 'default'
+      const key = `${type}_${targetProfile}`
+      
       const { data } = await providersApi.list(type, targetProfile)
-      providers.value = data
+      providersMap.value[key] = data
     } finally {
       loading.value = false
     }
@@ -25,22 +47,32 @@ export const useProviderStore = defineStore('providers', () => {
 
   async function createProvider(data: ProviderCreate) {
     const { data: provider } = await providersApi.create(data)
-    providers.value.push(provider)
+    const key = activeCacheKey.value
+    if (!providersMap.value[key]) {
+      providersMap.value[key] = []
+    }
+    providersMap.value[key].push(provider)
     return provider
   }
 
   async function updateProvider(id: number, data: ProviderUpdate) {
     const { data: provider } = await providersApi.update(id, data)
-    const index = providers.value.findIndex(p => p.id === id)
-    if (index !== -1) {
-      providers.value[index] = provider
+    const key = activeCacheKey.value
+    if (providersMap.value[key]) {
+      const index = providersMap.value[key].findIndex(p => p.id === id)
+      if (index !== -1) {
+        providersMap.value[key][index] = provider
+      }
     }
     return provider
   }
 
   async function deleteProvider(id: number) {
     await providersApi.delete(id)
-    providers.value = providers.value.filter(p => p.id !== id)
+    const key = activeCacheKey.value
+    if (providersMap.value[key]) {
+      providersMap.value[key] = providersMap.value[key].filter(p => p.id !== id)
+    }
   }
 
   async function reorderProviders(ids: number[]) {
@@ -60,7 +92,9 @@ export const useProviderStore = defineStore('providers', () => {
 
   return {
     providers,
+    providersMap,
     loading,
+    getCacheKey,
     fetchProviders,
     createProvider,
     updateProvider,

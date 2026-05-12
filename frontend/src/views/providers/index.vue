@@ -953,19 +953,28 @@ async function ensureCurrentProfileOrFallback(): Promise<ProviderProfile> {
 // Listen for tab changes
 watch(() => activeCliType.value, async (cliType) => {
   const profile = await ensureCurrentProfileOrFallback()
-  providerStore.fetchProviders(cliType as CliType, profile)
+  const key = providerStore.getCacheKey(cliType as CliType, profile)
+  if (!providerStore.providersMap[key] || providerStore.providersMap[key].length === 0) {
+    providerStore.fetchProviders(cliType as CliType, profile)
+  }
   credentialStore.fetchCredentials(cliType as CliType)
 })
 
 watch(() => activeProfile.value, (profile) => {
   if (!showProfileControls.value) return
-  providerStore.fetchProviders(activeCliType.value as CliType, profile)
+  const key = providerStore.getCacheKey(activeCliType.value as CliType, profile)
+  if (!providerStore.providersMap[key] || providerStore.providersMap[key].length === 0) {
+    providerStore.fetchProviders(activeCliType.value as CliType, profile)
+  }
 })
 
 watch(() => viewMode.value, async (mode) => {
   if (mode !== 'proxy') return
   const profile = await ensureCurrentProfileOrFallback()
-  providerStore.fetchProviders(activeCliType.value as CliType, profile)
+  const key = providerStore.getCacheKey(activeCliType.value as CliType, profile)
+  if (!providerStore.providersMap[key] || providerStore.providersMap[key].length === 0) {
+    providerStore.fetchProviders(activeCliType.value as CliType, profile)
+  }
 })
 
 watch([showProfileControls, activeCliType, activeProfile], ([visible, cliType, profile]) => {
