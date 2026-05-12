@@ -206,8 +206,9 @@ const expandedMessages = ref(new Set<number>())
 
 function handleCliChange(name: string) {
   activeCliType.value = name as CliType
-  sessionStore.clearSessions()
-  sessionStore.fetchProjects(1)
+  if (!sessionStore.currentProject && sessionStore.projects.length === 0) {
+    sessionStore.fetchProjects(1)
+  }
 }
 
 const filteredSessions = computed(() => {
