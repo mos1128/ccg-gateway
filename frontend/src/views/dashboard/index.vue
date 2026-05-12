@@ -42,55 +42,69 @@
         </div>
       </div>
 
-      <!-- 核心图表分析区 -->
-      <div class="b-card responsive-bottom-card" style="margin-bottom: 24px; padding: 24px; min-width: 400px;">
+      <!-- 底部图表与明细 -->
+      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+        <!-- 核心图表分析区 -->
+        <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; padding: 24px; min-width: 400px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 16px;">
-          <div class="b-card-title" style="margin-bottom: 0;">趋势与分布分析</div>
+          <div class="b-card-title" style="margin-bottom: 0;">请求统计</div>
           <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
             <div class="b-segmented">
-              <div class="b-seg-btn" :class="{ active: metricMode === 'requests' }" @click="metricMode = 'requests'">请求次数</div>
-              <div class="b-seg-btn" :class="{ active: metricMode === 'tokens' }" @click="metricMode = 'tokens'">Token 消耗</div>
+              <div class="b-seg-btn" :class="{ active: metricMode === 'requests' }" @click="metricMode = 'requests'">请求</div>
+              <div class="b-seg-btn" :class="{ active: metricMode === 'tokens' }" @click="metricMode = 'tokens'">Token</div>
             </div>
             <div class="b-segmented">
-              <div class="b-seg-btn" :class="{ active: dimMode === 'provider' }" @click="dimMode = 'provider'">按服务商</div>
-              <div class="b-seg-btn" :class="{ active: dimMode === 'model' }" @click="dimMode = 'model'">按模型</div>
+              <div class="b-seg-btn" :class="{ active: dimMode === 'provider' }" @click="dimMode = 'provider'">服务商</div>
+              <div class="b-seg-btn" :class="{ active: dimMode === 'model' }" @click="dimMode = 'model'">模型</div>
             </div>
           </div>
         </div>
-        <div style="height: 350px; width: 100%;">
+        <div style="height: 260px; width: 100%;">
           <v-chart class="chart" :option="chartOption" autoresize />
         </div>
       </div>
 
       <!-- 多维数据明细表 -->
-      <div class="b-card responsive-bottom-card" style="padding: 24px; min-width: 400px; display: flex; flex-direction: column;">
+      <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; padding: 24px; min-width: 400px; display: flex; flex-direction: column;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 16px;">
-          <div class="b-card-title" style="margin-bottom: 0;">详细数据记录</div>
+          <div class="b-card-title" style="margin-bottom: 0;">请求明细</div>
           <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-            <select v-model="filterDate" class="filter-select">
-              <option value="7days">最近 7 天</option>
-              <option value="today">今天</option>
-            </select>
-            <select v-model="filterProvider" class="filter-select">
-              <option value="all">所有服务商</option>
-              <option v-for="p in uniqueProviders" :key="p" :value="p">{{ p }}</option>
-            </select>
-            <select v-model="filterModel" class="filter-select">
-              <option value="all">所有模型</option>
-              <option v-for="m in uniqueModels" :key="m" :value="m">{{ m }}</option>
-            </select>
+            <svg style="display: none;">
+              <symbol id="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m6 9 6 6 6-6"/>
+              </symbol>
+            </svg>
+            <div class="custom-select" style="width: 170px;" :class="{ open: providerSelectOpen }" @click.stop="toggleSelect('provider')">
+              <div class="custom-select-trigger">{{ filterProvider === 'all' ? '所有服务商' : filterProvider }}</div>
+              <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
+              <div class="custom-select-options" style="width: 220px;">
+                <div class="custom-option" :class="{ selected: filterProvider === 'all' }" @click.stop="filterProvider = 'all'; providerSelectOpen = false">所有服务商<span v-if="filterProvider === 'all'" class="check">✓</span></div>
+                <div v-for="p in uniqueProviders" :key="p" class="custom-option" :class="{ selected: filterProvider === p }" @click.stop="filterProvider = p; providerSelectOpen = false">
+                  {{ p }}<span v-if="filterProvider === p" class="check">✓</span>
+                </div>
+              </div>
+            </div>
+            <div class="custom-select" style="width: 170px;" :class="{ open: modelSelectOpen }" @click.stop="toggleSelect('model')">
+              <div class="custom-select-trigger">{{ filterModel === 'all' ? '所有模型' : filterModel }}</div>
+              <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
+              <div class="custom-select-options" style="width: 220px;">
+                <div class="custom-option" :class="{ selected: filterModel === 'all' }" @click.stop="filterModel = 'all'; modelSelectOpen = false">所有模型<span v-if="filterModel === 'all'" class="check">✓</span></div>
+                <div v-for="m in uniqueModels" :key="m" class="custom-option" :class="{ selected: filterModel === m }" @click.stop="filterModel = m; modelSelectOpen = false">
+                  {{ m }}<span v-if="filterModel === m" class="check">✓</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="stats-table-wrapper" style="height: 400px;">
+        <div class="stats-table-wrapper" style="height: 260px;">
           <table class="flat-table">
             <thead>
               <tr>
                 <th>日期</th>
                 <th>服务商</th>
                 <th>模型</th>
-                <th>请求总数</th>
-                <th>成功率</th>
-                <th>总 Token 消耗</th>
+                <th>请求</th>
+                <th>Token</th>
               </tr>
             </thead>
             <tbody>
@@ -99,22 +113,22 @@
                 <td class="table-cell"><span class="badge" :class="getProviderBadgeClass(row.provider_name)">{{ row.provider_name }}</span></td>
                 <td class="table-cell">{{ row.model_id }}</td>
                 <td class="table-cell mono">{{ row.total_requests }}</td>
-                <td class="table-cell" :class="getSuccessRateColor(row.total_success, row.total_requests)">{{ ((row.total_success / (row.total_requests || 1)) * 100).toFixed(1) }}%</td>
                 <td class="table-cell mono">{{ formatTokens(row.total_tokens) }}</td>
               </tr>
               <tr v-if="filteredTableData.length === 0">
-                <td colspan="6" style="text-align: center; color: var(--color-text-weak); padding: 24px;">暂无数据</td>
+                <td colspan="5" style="text-align: center; color: var(--color-text-weak); padding: 24px;">暂无数据</td>
               </tr>
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, reactive, computed } from 'vue'
+import { onMounted, onUnmounted, ref, reactive, computed } from 'vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
@@ -158,9 +172,26 @@ const advancedStats = ref<AdvancedStatsRow[]>([])
 // UI State
 const metricMode = ref<'requests' | 'tokens'>('requests')
 const dimMode = ref<'provider' | 'model'>('provider')
-const filterDate = ref<'7days' | 'today'>('7days')
 const filterProvider = ref<string>('all')
 const filterModel = ref<string>('all')
+
+const providerSelectOpen = ref(false)
+const modelSelectOpen = ref(false)
+
+function closeAllSelects() {
+  providerSelectOpen.value = false
+  modelSelectOpen.value = false
+}
+
+function toggleSelect(type: string) {
+  const isProv = type === 'provider' && !providerSelectOpen.value
+  const isModel = type === 'model' && !modelSelectOpen.value
+
+  closeAllSelects()
+
+  if (isProv) providerSelectOpen.value = true
+  if (isModel) modelSelectOpen.value = true
+}
 
 const kpiData = computed(() => {
   const stats = providerStats.value
@@ -244,7 +275,7 @@ async function fetchStats() {
   
   const p1 = statsApi.getProviders({})
   const p2 = statsApi.getDaily({ start_date: formatLocalDate(sevenDaysAgo), end_date: formatLocalDate(today) })
-  const p3 = statsApi.getAdvanced({ start_date: formatLocalDate(sevenDaysAgo), end_date: formatLocalDate(today) })
+  const p3 = statsApi.getAdvanced({})
   
   const [resProv, resDaily, resAdv] = await Promise.all([p1, p2, p3])
   providerStats.value = resProv.data
@@ -273,11 +304,16 @@ const chartOption = computed(() => {
 
   const metricKey = metricMode.value === 'requests' ? 'total_requests' : 'total_tokens'
 
-  // 堆叠柱状图 (按服务商或模型)
+  // 堆叠柱状图 (按服务商或模型，固定前5)
   const groupKey = dimMode.value === 'provider' ? 'provider_name' : 'model_id'
-  const groups = new Set<string>()
-  advancedStats.value.forEach(s => groups.add(s[groupKey]))
-  const groupArray = Array.from(groups).sort()
+  const groupTotals = new Map<string, number>()
+  advancedStats.value.forEach(s => {
+    groupTotals.set(s[groupKey], (groupTotals.get(s[groupKey]) || 0) + s[metricKey])
+  })
+  const groupArray = Array.from(groupTotals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name]) => name)
 
   const seriesData: any[] = []
   groupArray.forEach((gName, idx) => {
@@ -294,7 +330,8 @@ const chartOption = computed(() => {
       name: gName,
       type: 'bar',
       stack: 'total',
-      barWidth: '40%',
+      barWidth: '60%',
+      barGap: '10%',
       itemStyle: { color },
       data
     })
@@ -330,11 +367,12 @@ const chartOption = computed(() => {
       borderColor: '#e2e8f0', 
       textStyle: { color: '#0f172a' } 
     },
-    legend: { top: 0, right: 0, icon: 'circle', textStyle: { color: '#64748b' } },
-    grid: { top: 40, right: 40, bottom: 20, left: 50, containLabel: true },
+    legend: { bottom: 0, left: 'center', icon: 'circle', textStyle: { color: '#64748b' } },
+    grid: { top: 20, right: '3%', bottom: 40, left: '3%', containLabel: true },
     xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#e2e8f0' } }, axisLabel: { color: '#64748b' } },
-    yAxis: { 
-      type: 'value', 
+    yAxis: {
+      type: 'value',
+      splitNumber: 4,
       splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } }, 
       axisLabel: { 
         color: '#64748b',
@@ -364,20 +402,15 @@ const uniqueModels = computed(() => {
 
 const filteredTableData = computed(() => {
   let result = advancedStats.value
-  
-  if (filterDate.value === 'today') {
-    const todayStr = formatLocalDate(new Date())
-    result = result.filter(r => r.date === todayStr)
-  }
-  
+
   if (filterProvider.value !== 'all') {
     result = result.filter(r => r.provider_name === filterProvider.value)
   }
-  
+
   if (filterModel.value !== 'all') {
     result = result.filter(r => r.model_id === filterModel.value)
   }
-  
+
   return result
 })
 
@@ -390,17 +423,14 @@ function getProviderBadgeClass(providerName: string) {
   return 'prov-default'
 }
 
-function getSuccessRateColor(success: number, total: number) {
-  if (!total) return 'text-muted'
-  const rate = success / total
-  if (rate >= 0.95) return 'text-green'
-  if (rate >= 0.8) return 'text-warning'
-  return 'text-danger'
-}
-
 onMounted(() => {
+  document.addEventListener('click', closeAllSelects)
   void providerStore.fetchProviders()
   void settingsStore.fetchSettings()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeAllSelects)
 })
 </script>
 
@@ -436,9 +466,6 @@ onMounted(() => {
 
 .text-blue { color: var(--color-primary); }
 .text-green { color: var(--color-success); }
-.text-warning { color: #eab308; }
-.text-danger { color: #ef4444; }
-.text-muted { color: var(--color-text-weak); }
 .table-cell { font-size: var(--fs-14); color: var(--color-text); }
 
 .chart { width: 100%; height: 100%; }
@@ -446,11 +473,21 @@ onMounted(() => {
 /* Stats Table Wrapper */
 .stats-table-wrapper { overflow-y: auto; }
 
-.filter-select { padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 6px; outline: none; font-size: var(--fs-14); color: var(--color-text); min-width: 120px; background: var(--color-bg); }
+.custom-select { position: relative; width: 150px; }
+.custom-select-trigger { padding: 9px 36px 9px 16px; border: 1px solid var(--color-border); border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text); background: color-mix(in srgb, var(--color-bg) 80%, transparent); box-shadow: 0 1px 3px var(--color-shadow); cursor: pointer; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+.custom-select:hover .custom-select-trigger { border-color: var(--color-border-hover); background: var(--color-bg); }
+.custom-select.open .custom-select-trigger { border-color: var(--color-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent); background: var(--color-bg); }
+.custom-select .chevron { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); pointer-events: none; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.custom-select.open .chevron { transform: translateY(-50%) rotate(180deg); color: var(--color-primary); }
+.custom-select-options { position: absolute; top: calc(100% + 6px); left: 0; right: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 10px 40px -10px var(--color-shadow-lg); padding: 4px; z-index: 50; opacity: 0; transform: translateY(-5px); pointer-events: none; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); min-width: 100%; max-height: 250px; overflow-y: auto; }
+.custom-select.open .custom-select-options { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: var(--color-text-secondary); cursor: pointer; transition: all 0.1s; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.custom-option:hover { background: var(--color-bg-subtle); color: var(--color-text); }
+.custom-option.selected { font-weight: var(--fw-600); color: var(--color-primary); background: var(--color-primary-light); }
 
 /* Flat Table */
-.flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; }
-.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
+.flat-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; text-align: center; }
+.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: center; }
 .flat-table th { padding: 12px 16px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }
 .flat-table td { padding: 12px 16px; font-size: var(--fs-14); color: var(--color-text); border-bottom: 1px solid var(--color-bg-subtle); }
 .flat-table tr:last-child td { border-bottom: none; }
