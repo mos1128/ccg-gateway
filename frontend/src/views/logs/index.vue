@@ -216,17 +216,11 @@
         <template v-else>
           <div class="table-wrapper">
             <table class="flat-table">
-              <colgroup>
-                <col style="width: 60px;">
-                <col style="width: 100;">
-                <col style="width: 200px;">
-                <col>
-              </colgroup>
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>时间</th>
-                  <th>事件类型</th>
+                  <th style="min-width: 60px;">ID</th>
+                  <th style="min-width: 100px;">时间</th>
+                  <th style="min-width: 200px;">事件类型</th>
                   <th>事件消息</th>
                 </tr>
               </thead>
@@ -234,7 +228,7 @@
                 <tr v-for="row in systemLogs" :key="row.id">
                   <td>{{ row.id }}</td>
                   <td>{{ formatTime(row.created_at) }}</td>
-                  <td style="width: 160px;">{{ formatEventType(row.event_type) }}</td>
+                  <td>{{ formatEventType(row.event_type) }}</td>
                   <td>{{ row.message }}</td>
                 </tr>
               </tbody>

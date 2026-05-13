@@ -99,14 +99,14 @@
         <div class="stats-table-wrapper" style="height: 260px;">
           <table class="flat-table">
             <thead>
-              <tr>
-                <th>日期</th>
-                <th>服务商</th>
-                <th>模型</th>
-                <th>请求</th>
-                <th>Token</th>
-              </tr>
-            </thead>
+                <tr>
+                  <th style="min-width: 100px;">日期</th>
+                  <th style="min-width: 100px;">服务商</th>
+                  <th style="min-width: 100px;">模型</th>
+                  <th style="min-width: 60px;">请求</th>
+                  <th style="min-width: 60px;">Token</th>
+                </tr>
+              </thead>
             <tbody>
               <tr v-for="row in filteredTableData" :key="`${row.date}-${row.provider_name}-${row.model_id}`">
                 <td class="table-cell">{{ row.date }}</td>
@@ -138,7 +138,6 @@ import { LineChart, BarChart } from 'echarts/charts'
 import { TooltipComponent, GridComponent, DatasetComponent, TransformComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
-import * as echarts from 'echarts/core'
 
 use([LineChart, BarChart, TooltipComponent, GridComponent, DatasetComponent, TransformComponent, LegendComponent, CanvasRenderer])
 
@@ -293,6 +292,7 @@ useAutoRefresh(async () => {
 
 // === Chart Logic ===
 const PALETTE = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6', '#6366f1']
+const BAR_RADIUS = 4
 
 const chartOption = computed(() => {
   const dates: string[] = []
@@ -315,8 +315,7 @@ const chartOption = computed(() => {
     .slice(0, 5)
     .map(([name]) => name)
 
-  const seriesData: any[] = []
-  groupArray.forEach((gName, idx) => {
+  const rawSeriesData = groupArray.map((gName, idx) => {
     const data = dates.map(d => {
       let sum = 0
       advancedStats.value.forEach(s => {
@@ -326,37 +325,32 @@ const chartOption = computed(() => {
     })
     
     const color = PALETTE[idx % PALETTE.length]
-    seriesData.push({
+    return {
       name: gName,
-      type: 'bar',
-      stack: 'total',
-      barWidth: '60%',
-      barGap: '10%',
-      itemStyle: { color },
+      color,
       data
-    })
+    }
   })
 
-  // 对顶部的柱子应用圆角
-  if (seriesData.length > 0) {
-    for (let i = 0; i < dates.length; i++) {
-      let topSeriesIdx = -1
-      for (let j = seriesData.length - 1; j >= 0; j--) {
-        if (seriesData[j].data[i] > 0) {
-          topSeriesIdx = j
-          break
-        }
-      }
-      if (topSeriesIdx !== -1) {
-        if (!seriesData[topSeriesIdx].itemStyle) seriesData[topSeriesIdx].itemStyle = {}
-        if (!seriesData[topSeriesIdx].itemStyle.borderRadius) {
-           seriesData[topSeriesIdx].itemStyle.borderRadius = [0, 0, 0, 0] // default
-        }
-        // We can't easily do per-item border radius in simple series definition without using function,
-        // so we skip dynamic per-bar radius for simplicity and compatibility.
-      }
+  const topSeriesByDate = dates.map((_, dateIdx) => {
+    for (let seriesIdx = rawSeriesData.length - 1; seriesIdx >= 0; seriesIdx--) {
+      if (rawSeriesData[seriesIdx].data[dateIdx] > 0) return seriesIdx
     }
-  }
+    return -1
+  })
+
+  const seriesData: any[] = rawSeriesData.map((series, seriesIdx) => ({
+    name: series.name,
+    type: 'bar',
+    stack: 'total',
+    barWidth: '60%',
+    barGap: '10%',
+    itemStyle: { color: series.color },
+    data: series.data.map((value, dateIdx) => {
+      if (value <= 0 || topSeriesByDate[dateIdx] !== seriesIdx) return value
+      return { value, itemStyle: { borderRadius: [BAR_RADIUS, BAR_RADIUS, 0, 0] } }
+    })
+  }))
 
   return {
     tooltip: { 
@@ -479,8 +473,8 @@ onUnmounted(() => {
 /* Flat Table */
 .flat-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; text-align: center; }
 .flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: center; }
-.flat-table th { padding: 12px 16px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }
-.flat-table td { padding: 12px 16px; font-size: var(--fs-14); color: var(--color-text); border-bottom: 1px solid var(--color-bg-subtle); }
+.flat-table th { padding: 12px 20px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }
+.flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: var(--color-text); border-bottom: 1px solid var(--color-bg-subtle); }
 .flat-table tr:last-child td { border-bottom: none; }
 .flat-table tr:hover td { background: var(--color-bg-page); }
 
