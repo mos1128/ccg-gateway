@@ -43,92 +43,32 @@
       </div>
 
       <!-- 底部图表与明细 -->
-      <div style="display: flex; gap: 24px; flex-wrap: wrap;">
-        <!-- 核心图表分析区 -->
-        <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; padding: 24px; min-width: 400px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 16px;">
-          <div class="b-card-title" style="margin-bottom: 0;">请求统计</div>
-          <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-            <div class="b-segmented">
-              <div class="b-seg-btn" :class="{ active: metricMode === 'requests' }" @click="metricMode = 'requests'">请求</div>
-              <div class="b-seg-btn" :class="{ active: metricMode === 'tokens' }" @click="metricMode = 'tokens'">Token</div>
-            </div>
-            <div class="b-segmented">
-              <div class="b-seg-btn" :class="{ active: dimMode === 'provider' }" @click="dimMode = 'provider'">服务商</div>
-              <div class="b-seg-btn" :class="{ active: dimMode === 'model' }" @click="dimMode = 'model'">模型</div>
-            </div>
-          </div>
-        </div>
-        <div style="height: 260px; width: 100%;">
-          <v-chart class="chart" :option="chartOption" autoresize />
-        </div>
-      </div>
-
-      <!-- 多维数据明细表 -->
-      <div class="b-card responsive-bottom-card" style="flex: 1; margin-bottom: 0; padding: 24px; min-width: 400px; display: flex; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 16px;">
-          <div class="b-card-title" style="margin-bottom: 0;">请求明细</div>
-          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-            <svg style="display: none;">
-              <symbol id="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="m6 9 6 6 6-6"/>
-              </symbol>
-            </svg>
-            <div class="custom-select" :class="{ open: providerSelectOpen }" @click.stop="toggleSelect('provider')">
-              <div class="custom-select-trigger">{{ filterProvider === 'all' ? '所有服务商' : filterProvider }}</div>
-              <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-              <div class="custom-select-options">
-                <div class="custom-option" :class="{ selected: filterProvider === 'all' }" @click.stop="filterProvider = 'all'; providerSelectOpen = false">所有服务商</div>
-                <div v-for="p in uniqueProviders" :key="p" class="custom-option" :class="{ selected: filterProvider === p }" @click.stop="filterProvider = p; providerSelectOpen = false">
-                  {{ p }}
-                </div>
+      <div style="display: flex; gap: 24px; flex-direction: column;">
+        <div class="b-card responsive-bottom-card" style="width: 100%; margin-bottom: 0; padding: 24px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 16px;">
+            <div class="b-card-title" style="margin-bottom: 0;">统计总览</div>
+            <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+              <div class="b-segmented">
+                <div class="b-seg-btn" :class="{ active: metricMode === 'requests' }" @click="metricMode = 'requests'">请求数</div>
+                <div class="b-seg-btn" :class="{ active: metricMode === 'tokens' }" @click="metricMode = 'tokens'">Token</div>
               </div>
-            </div>
-            <div class="custom-select" :class="{ open: modelSelectOpen }" @click.stop="toggleSelect('model')">
-              <div class="custom-select-trigger">{{ filterModel === 'all' ? '所有模型' : filterModel }}</div>
-              <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-              <div class="custom-select-options">
-                <div class="custom-option" :class="{ selected: filterModel === 'all' }" @click.stop="filterModel = 'all'; modelSelectOpen = false">所有模型</div>
-                <div v-for="m in uniqueModels" :key="m" class="custom-option" :class="{ selected: filterModel === m }" @click.stop="filterModel = m; modelSelectOpen = false">
-                  {{ m }}
-                </div>
+              <div class="b-segmented">
+                <div class="b-seg-btn" :class="{ active: dimMode === 'provider' }" @click="dimMode = 'provider'">服务商</div>
+                <div class="b-seg-btn" :class="{ active: dimMode === 'model' }" @click="dimMode = 'model'">模型</div>
               </div>
             </div>
           </div>
+          <div style="height: 260px; width: 100%;">
+            <v-chart class="chart" :option="chartOption" autoresize />
+          </div>
         </div>
-        <div class="stats-table-wrapper" style="height: 260px;">
-          <table class="flat-table">
-            <thead>
-                <tr>
-                  <th style="min-width: 100px;">日期</th>
-                  <th style="min-width: 100px;">服务商</th>
-                  <th style="min-width: 100px;">模型</th>
-                  <th style="min-width: 60px;">请求</th>
-                  <th style="min-width: 60px;">Token</th>
-                </tr>
-              </thead>
-            <tbody>
-              <tr v-for="row in filteredTableData" :key="`${row.date}-${row.provider_name}-${row.model_id}`">
-                <td class="table-cell">{{ row.date }}</td>
-                <td class="table-cell">{{ row.provider_name }}</td>
-                <td class="table-cell">{{ row.model_id }}</td>
-                <td class="table-cell mono">{{ row.total_requests }}</td>
-                <td class="table-cell mono">{{ formatTokens(row.total_tokens) }}</td>
-              </tr>
-              <tr v-if="filteredTableData.length === 0">
-                <td colspan="5" style="text-align: center; color: var(--color-text-weak); padding: 24px;">暂无数据</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, reactive, computed } from 'vue'
+import { onMounted, ref, reactive, computed } from 'vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
@@ -170,26 +110,6 @@ const advancedStats = ref<AdvancedStatsRow[]>([])
 // UI State
 const metricMode = ref<'requests' | 'tokens'>('requests')
 const dimMode = ref<'provider' | 'model'>('provider')
-const filterProvider = ref<string>('all')
-const filterModel = ref<string>('all')
-
-const providerSelectOpen = ref(false)
-const modelSelectOpen = ref(false)
-
-function closeAllSelects() {
-  providerSelectOpen.value = false
-  modelSelectOpen.value = false
-}
-
-function toggleSelect(type: string) {
-  const isProv = type === 'provider' && !providerSelectOpen.value
-  const isModel = type === 'model' && !modelSelectOpen.value
-
-  closeAllSelects()
-
-  if (isProv) providerSelectOpen.value = true
-  if (isModel) modelSelectOpen.value = true
-}
 
 const kpiData = computed(() => {
   const stats = providerStats.value
@@ -291,8 +211,14 @@ useAutoRefresh(async () => {
 })
 
 // === Chart Logic ===
-const PALETTE = ['#0ea5e9', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#14b8a6', '#6366f1']
+const PALETTE = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc', '#00b4d8', '#f472b6', '#fbbf24']
 const BAR_RADIUS = 4
+
+function formatTokenValue(value: number): string {
+  if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M'
+  if (value >= 1000) return (value / 1000).toFixed(1) + 'K'
+  return value.toString()
+}
 
 const chartOption = computed(() => {
   const dates: string[] = []
@@ -302,120 +228,148 @@ const chartOption = computed(() => {
     dates.push(formatLocalDate(d))
   }
 
-  const metricKey = metricMode.value === 'requests' ? 'total_requests' : 'total_tokens'
-
-  // 堆叠柱状图 (按服务商或模型，固定前5)
+  const isTokens = metricMode.value === 'tokens'
   const groupKey = dimMode.value === 'provider' ? 'provider_name' : 'model_id'
+
+  // Get unique groups and total for sorting
   const groupTotals = new Map<string, number>()
   advancedStats.value.forEach(s => {
-    groupTotals.set(s[groupKey], (groupTotals.get(s[groupKey]) || 0) + s[metricKey])
+    const val = isTokens ? s.total_tokens : s.total_success
+    groupTotals.set(s[groupKey], (groupTotals.get(s[groupKey]) || 0) + val)
   })
   const groupArray = Array.from(groupTotals.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
     .map(([name]) => name)
 
-  const rawSeriesData = groupArray.map((gName, idx) => {
-    const data = dates.map(d => {
-      let sum = 0
-      advancedStats.value.forEach(s => {
-        if (s.date === d && s[groupKey] === gName) sum += s[metricKey]
-      })
-      return sum
-    })
-    
+  const seriesData: any[] = groupArray.map((gName, idx) => {
     const color = PALETTE[idx % PALETTE.length]
-    return {
-      name: gName,
-      color,
-      data
+
+    if (isTokens) {
+      const data = dates.map(d => {
+        let sum = 0, input = 0, output = 0, cache = 0
+        advancedStats.value.forEach(s => {
+          if (s.date === d && s[groupKey] === gName) {
+            sum += s.total_tokens
+            input += s.total_input_tokens || 0
+            output += s.total_output_tokens || 0
+            cache += (s.total_cache_read_tokens || 0) + (s.total_cache_creation_tokens || 0)
+          }
+        })
+        return { value: sum, input, output, cache, name: gName }
+      })
+      return { name: gName, type: 'bar', stack: 'total', barWidth: '60%', itemStyle: { color }, data }
+    } else {
+      const data = dates.map(d => {
+        let sum = 0
+        advancedStats.value.forEach(s => {
+          if (s.date === d && s[groupKey] === gName) {
+            sum += s.total_success
+          }
+        })
+        return sum
+      })
+      return {
+        name: gName, type: 'line', smooth: true, showSymbol: false, itemStyle: { color },
+        areaStyle: {
+          color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color }, { offset: 1, color: 'transparent' }] },
+          opacity: 0.2
+        },
+        data
+      }
     }
   })
 
-  const topSeriesByDate = dates.map((_, dateIdx) => {
-    for (let seriesIdx = rawSeriesData.length - 1; seriesIdx >= 0; seriesIdx--) {
-      if (rawSeriesData[seriesIdx].data[dateIdx] > 0) return seriesIdx
-    }
-    return -1
-  })
-
-  const seriesData: any[] = rawSeriesData.map((series, seriesIdx) => ({
-    name: series.name,
-    type: 'bar',
-    stack: 'total',
-    barWidth: '60%',
-    barGap: '10%',
-    itemStyle: { color: series.color },
-    data: series.data.map((value, dateIdx) => {
-      if (value <= 0 || topSeriesByDate[dateIdx] !== seriesIdx) return value
-      return { value, itemStyle: { borderRadius: [BAR_RADIUS, BAR_RADIUS, 0, 0] } }
+  // Apply border radius for bar chart
+  if (isTokens) {
+    const topSeriesByDate = dates.map((_, dateIdx) => {
+      for (let seriesIdx = seriesData.length - 1; seriesIdx >= 0; seriesIdx--) {
+        if (seriesData[seriesIdx].data[dateIdx].value > 0) return seriesIdx
+      }
+      return -1
     })
-  }))
+    seriesData.forEach((series, seriesIdx) => {
+      series.data = series.data.map((item: any, dateIdx: number) => {
+        if (item.value <= 0 || topSeriesByDate[dateIdx] !== seriesIdx) return item
+        return { ...item, itemStyle: { borderRadius: [BAR_RADIUS, BAR_RADIUS, 0, 0] } }
+      })
+    })
+  }
 
   return {
-    tooltip: { 
-      trigger: 'axis', 
-      axisPointer: { type: 'shadow' }, 
-      valueFormatter: (value: any) => metricMode.value === 'tokens' ? formatTokens(value) : value,
-      backgroundColor: 'rgba(255, 255, 255, 0.9)', 
-      borderColor: '#e2e8f0', 
-      textStyle: { color: '#0f172a' } 
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: isTokens ? 'shadow' : 'line' },
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#e2e8f0',
+      textStyle: { color: '#0f172a' },
+      formatter: (params: any[]) => {
+        if (!params.length) return ''
+        const date = params[0].name
+        let html = `<div style="font-weight: 600; margin-bottom: 8px;">${date}</div>`
+
+        if (isTokens) {
+          params.forEach(p => {
+            if (p.value > 0) {
+              const d = p.data
+              html += `<div style="margin-bottom: 6px;">
+                <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                  <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${p.color};"></span>
+                  ${d.name} (总计: ${formatTokenValue(d.value)})
+                </div>
+                <div style="padding-left: 16px; color: #64748b; font-size: 13px;">
+                  <div>- 输入: ${formatTokenValue(d.input)}</div>
+                  <div>- 输出: ${formatTokenValue(d.output)}</div>
+                  <div>- 缓存: ${formatTokenValue(d.cache)}</div>
+                </div>
+              </div>`
+            }
+          })
+        } else {
+          params.forEach(p => {
+            if (p.value > 0) {
+              html += `<div style="margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${p.color};"></span>
+                <span style="font-weight: 500;">${p.seriesName}:</span>
+                <span>${p.value}</span>
+              </div>`
+            }
+          })
+        }
+        return html
+      }
     },
-    legend: { bottom: 0, left: 'center', icon: 'circle', textStyle: { color: '#64748b' } },
-    grid: { top: 20, right: '3%', bottom: 40, left: '3%', containLabel: true },
-    xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#e2e8f0' } }, axisLabel: { color: '#64748b' } },
+    legend: { bottom: 0, left: 'center', type: 'scroll', icon: 'circle', textStyle: { color: '#64748b' } },
+    grid: { top: 20, right: '4%', bottom: 40, left: '3%', containLabel: true },
+    xAxis: { 
+      type: 'category', 
+      data: dates, 
+      boundaryGap: isTokens, 
+      axisLine: { lineStyle: { color: '#e2e8f0' } }, 
+      axisLabel: { 
+        color: '#64748b',
+        formatter: (value: string) => value.substring(5)
+      } 
+    },
     yAxis: {
       type: 'value',
       splitNumber: 4,
-      splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } }, 
-      axisLabel: { 
+      splitLine: { lineStyle: { type: 'dashed', color: '#f1f5f9' } },
+      axisLabel: {
         color: '#64748b',
         formatter: (value: number) => {
           if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M'
           if (value >= 1000) return (value / 1000).toFixed(1) + 'K'
           return value
         }
-      } 
+      }
     },
     series: seriesData
   }
 })
 
-// === Table Logic ===
-const uniqueProviders = computed(() => {
-  const p = new Set<string>()
-  advancedStats.value.forEach(s => p.add(s.provider_name))
-  return Array.from(p).sort()
-})
-
-const uniqueModels = computed(() => {
-  const m = new Set<string>()
-  advancedStats.value.forEach(s => m.add(s.model_id))
-  return Array.from(m).sort()
-})
-
-const filteredTableData = computed(() => {
-  let result = advancedStats.value
-
-  if (filterProvider.value !== 'all') {
-    result = result.filter(r => r.provider_name === filterProvider.value)
-  }
-
-  if (filterModel.value !== 'all') {
-    result = result.filter(r => r.model_id === filterModel.value)
-  }
-
-  return result
-})
-
 onMounted(() => {
-  document.addEventListener('click', closeAllSelects)
   void providerStore.fetchProviders()
   void settingsStore.fetchSettings()
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', closeAllSelects)
 })
 </script>
 

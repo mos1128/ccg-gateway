@@ -3338,6 +3338,8 @@ pub async fn get_advanced_stats(
             COUNT(*) as total_requests,
             SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as total_success,
             SUM(input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens) as total_tokens,
+            SUM(input_tokens) as total_input_tokens,
+            SUM(output_tokens) as total_output_tokens,
             SUM(cache_read_input_tokens) as total_cache_read_tokens,
             SUM(cache_creation_input_tokens) as total_cache_creation_tokens
         FROM request_logs

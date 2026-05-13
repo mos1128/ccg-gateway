@@ -633,6 +633,8 @@ pub struct AdvancedStatsRow {
     pub total_requests: i64,
     pub total_success: i64,
     pub total_tokens: i64,
+    pub total_input_tokens: i64,
+    pub total_output_tokens: i64,
     pub total_cache_read_tokens: i64,
     pub total_cache_creation_tokens: i64,
 }
