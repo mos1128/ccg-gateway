@@ -8,8 +8,13 @@ on:
 
 jobs:
   build:
+    # 严格的安全边界：在编译期间仅授予对源代码的只读访问权限
+    # 可防止受损的构建依赖项将恶意代码推回仓库
+    permissions:
+      contents: read
+      
     strategy:
-      fail-fast: false
+      fail-fast: false  # 防止独立操作系统的失败取消其他并行的构建任务
       matrix:
         include:
           - platform: 'windows-latest'
@@ -28,19 +33,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
       
+      - name: Setup pnpm
+        # 升级至 v6 以原生支持 pnpm 11 的结构变化与 Node 24 兼容性
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11
+          
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
-      
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v5
-        with:
-          version: 11
+          # 显式开启基于 pnpm-lock.yaml 的依赖缓存
+          # 将网络 I/O 负担转移至高速磁盘 I/O，极大缩短安装时间
+          cache: 'pnpm' 
       
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          # 注入 macOS 构建通用(Fat)二进制文件所需的两个架构目标
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       
       - name: Install dependencies (Ubuntu only)
@@ -54,27 +64,32 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
       
-      # Note: Tauri 2.0 自动根据 frontendDist 配置推断 frontend 目录，并从该目录执行 beforeBuildCommand。
-      # 因此 tauri.conf.json 应该直接使用 "pnpm install && pnpm build"，而不是 "pnpm --dir frontend ..."，
-      # 否则会导致路径错误 (frontend/frontend)。
+      # Tauri 2.0 CLI 自动根据 frontendDist 配置推断前端目录并隔离执行上下文
       - name: Build Tauri App (Windows)
         if: matrix.platform == 'windows-latest'
+        # 使用 --no-bundle 绕过安装程序生成，输出纯便携的可执行文件
         run: pnpm dlx @tauri-apps/cli build --no-bundle
 
       - name: Build Tauri App (macOS)
         if: matrix.platform == 'macos-latest'
-        run: pnpm dlx @tauri-apps/cli build --bundles dmg
+        # 关键修复：添加 --target universal-apple-darwin 指令
+        # 强制 tauri 构建出同时包含 Intel 与 ARM 架构的真正的 Universal DMG 包
+        run: pnpm dlx @tauri-apps/cli build --bundles dmg --target universal-apple-darwin
 
       - name: Build Tauri App (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: pnpm dlx @tauri-apps/cli build --bundles appimage
       
+      # 使用 v7 版本并设置 compression-level: 0 
+      # 防止对本来就已压缩的体积庞大的原生包进行无效的二次 zip 压缩
       - name: Upload artifacts (Windows)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}
           path: src-tauri/target/release/ccg-gateway.exe
+          if-no-files-found: error
+          compression-level: 0
       
       - name: Upload artifacts (macOS)
         if: matrix.platform == 'macos-latest'
@@ -82,6 +97,8 @@ jobs:
         with:
           name: macos-${{ matrix.arch }}
           path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          compression-level: 0
       
       - name: Upload artifacts (Linux)
         if: matrix.platform == 'ubuntu-22.04'
@@ -89,16 +106,18 @@ jobs:
         with:
           name: linux-${{ matrix.arch }}
           path: src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          compression-level: 0
   
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')  # 仅在标签推送时创建 Release
+    if: startsWith(github.ref, 'refs/tags/')  
     permissions:
-      contents: write
+      contents: write  # 提升权限以创建 GitHub Release 对象
     
     steps:
-      - name: Checkout code
+      - name: Checkout Code with Deep Fetch
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -111,30 +130,26 @@ jobs:
         with:
           path: artifacts
       
-      - name: Display structure
-        run: ls -R artifacts
-      
-      - name: Get tag message
+      - name: Get tag message natively
         id: tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG_NAME=${GITHUB_REF#refs/tags/}
-          # 通过 GitHub API 获取 annotated tag 的 message
-          TAG_SHA=$(gh api repos/${{ github.repository }}/git/ref/tags/$TAG_NAME --jq '.object.sha')
-          TAG_MESSAGE=$(gh api repos/${{ github.repository }}/git/tags/$TAG_SHA --jq '.message' 2>/dev/null || echo "")
+          # 优化点：直接从本地 Git 数据库提取注释标签信息
+          # 完全绕过 GitHub API 延迟、网络限制及速率阈值
+          TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG_NAME")
           
-          if [ -z "$TAG_MESSAGE" ]; then
-            echo "has_message=false" >> $GITHUB_OUTPUT
+          if; then
+            echo "has_message=false" >> "$GITHUB_OUTPUT"
           else
-            echo "has_message=true" >> $GITHUB_OUTPUT
-            {
-              echo "message<<EOF"
-              echo "$TAG_MESSAGE"
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
+            echo "has_message=true" >> "$GITHUB_OUTPUT"
+            # 利用密码学随机性生成多行定界符，防止由于开发者填写的标签信息中包含特殊字符导致的 Shell 注入风险
+            EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+            echo "message<<$EOF" >> "$GITHUB_OUTPUT"
+            echo "$TAG_MESSAGE" >> "$GITHUB_OUTPUT"
+            echo "$EOF" >> "$GITHUB_OUTPUT"
           fi
       
+      # 升级至 v3 版本，全面兼容 Node 24 架构，避免在 2026 年中旬被 GitHub 强制下线
       - name: Create Release (with tag message)
         if: steps.tag.outputs.has_message == 'true'
         uses: softprops/action-gh-release@v3
@@ -146,9 +161,7 @@ jobs:
             artifacts/windows-x64/*
             artifacts/macos-universal/*
             artifacts/linux-x64/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+        
       - name: Create Release (auto-generate)
         if: steps.tag.outputs.has_message == 'false'
         uses: softprops/action-gh-release@v3
@@ -160,5 +173,3 @@ jobs:
             artifacts/windows-x64/*
             artifacts/macos-universal/*
             artifacts/linux-x64/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
