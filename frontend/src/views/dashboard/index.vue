@@ -49,8 +49,8 @@
             <div class="b-card-title" style="margin-bottom: 0;">统计总览</div>
             <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
               <div class="b-segmented">
-                <div class="b-seg-btn" :class="{ active: metricMode === 'requests' }" @click="metricMode = 'requests'">请求数</div>
                 <div class="b-seg-btn" :class="{ active: metricMode === 'tokens' }" @click="metricMode = 'tokens'">Token</div>
+                <div class="b-seg-btn" :class="{ active: metricMode === 'requests' }" @click="metricMode = 'requests'">请求数</div>
               </div>
               <div class="b-segmented">
                 <div class="b-seg-btn" :class="{ active: dimMode === 'provider' }" @click="dimMode = 'provider'">服务商</div>
@@ -108,7 +108,7 @@ const providerStats = ref<ProviderStats[]>([])
 const advancedStats = ref<AdvancedStatsRow[]>([])
 
 // UI State
-const metricMode = ref<'requests' | 'tokens'>('requests')
+const metricMode = ref<'requests' | 'tokens'>('tokens')
 const dimMode = ref<'provider' | 'model'>('provider')
 
 const kpiData = computed(() => {
