@@ -74,23 +74,23 @@
                 <path d="m6 9 6 6 6-6"/>
               </symbol>
             </svg>
-            <div class="custom-select" style="width: 170px;" :class="{ open: providerSelectOpen }" @click.stop="toggleSelect('provider')">
+            <div class="custom-select" :class="{ open: providerSelectOpen }" @click.stop="toggleSelect('provider')">
               <div class="custom-select-trigger">{{ filterProvider === 'all' ? '所有服务商' : filterProvider }}</div>
               <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-              <div class="custom-select-options" style="width: 220px;">
-                <div class="custom-option" :class="{ selected: filterProvider === 'all' }" @click.stop="filterProvider = 'all'; providerSelectOpen = false">所有服务商<span v-if="filterProvider === 'all'" class="check">✓</span></div>
+              <div class="custom-select-options">
+                <div class="custom-option" :class="{ selected: filterProvider === 'all' }" @click.stop="filterProvider = 'all'; providerSelectOpen = false">所有服务商</div>
                 <div v-for="p in uniqueProviders" :key="p" class="custom-option" :class="{ selected: filterProvider === p }" @click.stop="filterProvider = p; providerSelectOpen = false">
-                  {{ p }}<span v-if="filterProvider === p" class="check">✓</span>
+                  {{ p }}
                 </div>
               </div>
             </div>
-            <div class="custom-select" style="width: 170px;" :class="{ open: modelSelectOpen }" @click.stop="toggleSelect('model')">
+            <div class="custom-select" :class="{ open: modelSelectOpen }" @click.stop="toggleSelect('model')">
               <div class="custom-select-trigger">{{ filterModel === 'all' ? '所有模型' : filterModel }}</div>
               <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-              <div class="custom-select-options" style="width: 220px;">
-                <div class="custom-option" :class="{ selected: filterModel === 'all' }" @click.stop="filterModel = 'all'; modelSelectOpen = false">所有模型<span v-if="filterModel === 'all'" class="check">✓</span></div>
+              <div class="custom-select-options">
+                <div class="custom-option" :class="{ selected: filterModel === 'all' }" @click.stop="filterModel = 'all'; modelSelectOpen = false">所有模型</div>
                 <div v-for="m in uniqueModels" :key="m" class="custom-option" :class="{ selected: filterModel === m }" @click.stop="filterModel = m; modelSelectOpen = false">
-                  {{ m }}<span v-if="filterModel === m" class="check">✓</span>
+                  {{ m }}
                 </div>
               </div>
             </div>
@@ -458,7 +458,7 @@ onUnmounted(() => {
 /* Stats Table Wrapper */
 .stats-table-wrapper { overflow-y: auto; }
 
-.custom-select { position: relative; width: 150px; }
+.custom-select { position: relative; width: 160px; }
 .custom-select-trigger { padding: 9px 36px 9px 16px; border: 1px solid var(--color-border); border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text); background: color-mix(in srgb, var(--color-bg) 80%, transparent); box-shadow: 0 1px 3px var(--color-shadow); cursor: pointer; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
 .custom-select:hover .custom-select-trigger { border-color: var(--color-border-hover); background: var(--color-bg); }
 .custom-select.open .custom-select-trigger { border-color: var(--color-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent); background: var(--color-bg); }
@@ -466,7 +466,7 @@ onUnmounted(() => {
 .custom-select.open .chevron { transform: translateY(-50%) rotate(180deg); color: var(--color-primary); }
 .custom-select-options { position: absolute; top: calc(100% + 6px); left: 0; right: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 10px 40px -10px var(--color-shadow-lg); padding: 4px; z-index: 50; opacity: 0; transform: translateY(-5px); pointer-events: none; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); min-width: 100%; max-height: 250px; overflow-y: auto; }
 .custom-select.open .custom-select-options { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: var(--color-text-secondary); cursor: pointer; transition: all 0.1s; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: var(--color-text-secondary); cursor: pointer; transition: all 0.1s; display: flex; align-items: center; margin-bottom: 2px; }
 .custom-option:hover { background: var(--color-bg-subtle); color: var(--color-text); }
 .custom-option.selected { font-weight: var(--fw-600); color: var(--color-primary); background: var(--color-primary-light); }
 

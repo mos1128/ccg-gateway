@@ -48,23 +48,23 @@
             <div class="custom-select-trigger">{{ getCliLabel(requestFilters.cli_type) }}</div>
             <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
             <div class="custom-select-options">
-              <div class="custom-option" :class="{ selected: !requestFilters.cli_type }" @click.stop="requestFilters.cli_type = ''; cliSelectOpen = false; fetchRequestLogs()">全部终端<span v-if="!requestFilters.cli_type" class="check">✓</span></div>
-              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'claude_code' }" @click.stop="requestFilters.cli_type = 'claude_code'; cliSelectOpen = false; fetchRequestLogs()">ClaudeCode<span v-if="requestFilters.cli_type === 'claude_code'" class="check">✓</span></div>
-              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'codex' }" @click.stop="requestFilters.cli_type = 'codex'; cliSelectOpen = false; fetchRequestLogs()">Codex<span v-if="requestFilters.cli_type === 'codex'" class="check">✓</span></div>
-              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'gemini' }" @click.stop="requestFilters.cli_type = 'gemini'; cliSelectOpen = false; fetchRequestLogs()">Gemini<span v-if="requestFilters.cli_type === 'gemini'" class="check">✓</span></div>
+              <div class="custom-option" :class="{ selected: !requestFilters.cli_type }" @click.stop="requestFilters.cli_type = ''; cliSelectOpen = false; fetchRequestLogs()">全部终端</div>
+              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'claude_code' }" @click.stop="requestFilters.cli_type = 'claude_code'; cliSelectOpen = false; fetchRequestLogs()">ClaudeCode</div>
+              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'codex' }" @click.stop="requestFilters.cli_type = 'codex'; cliSelectOpen = false; fetchRequestLogs()">Codex</div>
+              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'gemini' }" @click.stop="requestFilters.cli_type = 'gemini'; cliSelectOpen = false; fetchRequestLogs()">Gemini</div>
             </div>
           </div>
         </div>
 
         <div class="filter-group">
           <span class="filter-label">服务商</span>
-          <div class="custom-select" style="width: 170px;" :class="{ open: providerSelectOpen }" @click.stop="toggleSelect('provider')">
+          <div class="custom-select" :class="{ open: providerSelectOpen }" @click.stop="toggleSelect('provider')">
             <div class="custom-select-trigger">{{ requestFilters.provider_name || '全部服务商' }}</div>
             <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-            <div class="custom-select-options" style="width: 220px;">
-              <div class="custom-option" :class="{ selected: !requestFilters.provider_name }" @click.stop="requestFilters.provider_name = ''; providerSelectOpen = false; fetchRequestLogs()">全部服务商<span v-if="!requestFilters.provider_name" class="check">✓</span></div>
+            <div class="custom-select-options">
+              <div class="custom-option" :class="{ selected: !requestFilters.provider_name }" @click.stop="requestFilters.provider_name = ''; providerSelectOpen = false; fetchRequestLogs()">全部服务商</div>
               <div v-for="p in providerOptions" :key="p" class="custom-option" :class="{ selected: requestFilters.provider_name === p }" @click.stop="requestFilters.provider_name = p; providerSelectOpen = false; fetchRequestLogs()">
-                {{ p }}<span v-if="requestFilters.provider_name === p" class="check">✓</span>
+                {{ p }}
               </div>
             </div>
           </div>
@@ -183,13 +183,13 @@
       <div class="filters-row">
         <div class="filter-group">
           <span class="filter-label">事件类型</span>
-          <div class="custom-select" style="width: 170px;" :class="{ open: eventTypeSelectOpen }" @click.stop="toggleSelect('event')">
+          <div class="custom-select" :class="{ open: eventTypeSelectOpen }" @click.stop="toggleSelect('event')">
             <div class="custom-select-trigger">{{ formatEventType(systemFilters.event_type) || '全部事件' }}</div>
             <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-            <div class="custom-select-options" style="width: 200px;">
-              <div class="custom-option" :class="{ selected: !systemFilters.event_type }" @click.stop="systemFilters.event_type = ''; eventTypeSelectOpen = false; fetchSystemLogs()">全部事件<span v-if="!systemFilters.event_type" class="check">✓</span></div>
+            <div class="custom-select-options">
+              <div class="custom-option" :class="{ selected: !systemFilters.event_type }" @click.stop="systemFilters.event_type = ''; eventTypeSelectOpen = false; fetchSystemLogs()">全部事件</div>
               <div v-for="(label, key) in eventTypeMap" :key="key" class="custom-option" :class="{ selected: systemFilters.event_type === key }" @click.stop="systemFilters.event_type = key; eventTypeSelectOpen = false; fetchSystemLogs()">
-                {{ label }}<span v-if="systemFilters.event_type === key" class="check">✓</span>
+                {{ label }}
               </div>
             </div>
           </div>
@@ -828,7 +828,7 @@ watch(activeTab, (tab) => {
 .pagination-footer :deep(.el-select__wrapper.is-focused) { border-color: var(--color-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent); }
 
 /* Custom HTML Select (Headless UI Clone) */
-.custom-select { position: relative; width: 150px; }
+.custom-select { position: relative; width: 160px; }
 .custom-select-trigger { padding: 9px 36px 9px 16px; border: 1px solid var(--color-border); border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text); background: color-mix(in srgb, var(--color-bg) 80%, transparent); box-shadow: 0 1px 3px var(--color-shadow); cursor: pointer; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
 .custom-select:hover .custom-select-trigger { border-color: var(--color-border-hover); background: var(--color-bg); }
 .custom-select.open .custom-select-trigger { border-color: var(--color-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent); background: var(--color-bg); }
@@ -837,10 +837,9 @@ watch(activeTab, (tab) => {
 
 .custom-select-options { position: absolute; top: calc(100% + 6px); left: 0; right: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 10px 40px -10px var(--color-shadow-lg); padding: 4px; z-index: 50; opacity: 0; transform: translateY(-5px); pointer-events: none; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); min-width: 100%; max-height: 250px; overflow-y: auto; }
 .custom-select.open .custom-select-options { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: var(--color-text-secondary); cursor: pointer; transition: all 0.1s; display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: var(--color-text-secondary); cursor: pointer; transition: all 0.1s; display: flex; align-items: center; margin-bottom: 2px; }
 .custom-option:hover { background: var(--color-bg-subtle); color: var(--color-text); }
 .custom-option.selected { font-weight: var(--fw-600); color: var(--color-primary); background: var(--color-primary-light); }
-.check { color: var(--color-primary); font-weight: bold; font-size: var(--fs-14); margin-left: 8px; }
 
 /* Keep el-dialog styles clean to match ethereal frost inside detail view */
 .detail-content { max-height: 60vh; overflow-y: auto; }
