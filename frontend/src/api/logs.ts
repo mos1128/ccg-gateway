@@ -28,7 +28,7 @@ export const logsApi = {
     return {
       data: {
         debug_log: !!data.debug_log,
-        log_detail_mode: data.log_detail_mode as 'full' | 'failure_only' | 'none'
+        log_detail_mode: data.log_detail_mode as 'full' | 'failure_only'
       } as GatewaySettings
     }
   },

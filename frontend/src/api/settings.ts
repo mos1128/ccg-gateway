@@ -22,7 +22,7 @@ export const settingsApi = {
     ])
     return {
       data: {
-        gateway: { debug_log: !!gateway.debug_log, log_detail_mode: gateway.log_detail_mode as 'full' | 'failure_only' | 'none' },
+        gateway: { debug_log: !!gateway.debug_log, log_detail_mode: gateway.log_detail_mode as 'full' | 'failure_only' },
         timeouts,
         cli_settings: {
           claude_code: claudeCode,

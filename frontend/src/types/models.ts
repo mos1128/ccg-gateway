@@ -79,7 +79,7 @@ export interface TestProviderResult {
 // Settings types
 export interface GatewaySettings {
   debug_log: boolean
-  log_detail_mode: 'full' | 'failure_only' | 'none'
+  log_detail_mode: 'full' | 'failure_only'
 }
 
 export interface TimeoutSettings {
@@ -118,7 +118,7 @@ export interface AllSettings {
 
 export interface GatewaySettingsUpdate {
   debug_log?: boolean
-  log_detail_mode?: 'full' | 'failure_only' | 'none'
+  log_detail_mode?: 'full' | 'failure_only'
 }
 
 export interface TimeoutSettingsUpdate {

@@ -82,7 +82,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 9,
+            version: 8,
             tables: Self::define_log_tables(),
         }
     }

@@ -21,12 +21,6 @@
         <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
         </symbol>
-        <symbol id="icon-play" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-          <polygon points="6,3 20,12 6,21"/>
-        </symbol>
-        <symbol id="icon-pause" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-          <rect x="5" y="3" width="5" height="18" rx="1"/><rect x="14" y="3" width="5" height="18" rx="1"/>
-        </symbol>
       </defs>
     </svg>
 
@@ -71,19 +65,14 @@
         </div>
 
         <div style="flex: 1;"></div>
-        <!-- 详情模式下拉选择器 -->
-        <div class="custom-select detail-mode-select" :class="{ open: detailModeSelectOpen }" @click.stop="toggleSelect('detail')">
-          <div class="custom-select-trigger">{{ getDetailModeLabel(logDetailMode) }}</div>
+        <!-- 日志模式下拉选择器 -->
+        <span class="filter-label">日志级别</span>
+        <div class="custom-select log-mode-select" :class="{ open: logModeSelectOpen }" @click.stop="toggleSelect('logMode')">
+          <div class="custom-select-trigger">{{ logModeMap[logRecordMode] }}</div>
           <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
           <div class="custom-select-options">
-            <div class="custom-option" :class="{ selected: logDetailMode === 'full' }" @click.stop="logDetailMode = 'full'; detailModeSelectOpen = false; updateLogDetailMode()">全部详情</div>
-            <div class="custom-option" :class="{ selected: logDetailMode === 'failure_only' }" @click.stop="logDetailMode = 'failure_only'; detailModeSelectOpen = false; updateLogDetailMode()">仅失败详情</div>
-            <div class="custom-option" :class="{ selected: logDetailMode === 'none' }" @click.stop="logDetailMode = 'none'; detailModeSelectOpen = false; updateLogDetailMode()">不记录详情</div>
+            <div v-for="(label, key) in logModeMap" :key="key" class="custom-option" :class="{ selected: logRecordMode === key }" @click.stop="setLogMode(key as LogRecordMode)">{{ label }}</div>
           </div>
-        </div>
-        <div class="action-icon" :class="{ recording: logEnabled }" @click="logEnabled = !logEnabled; updateLogSettings()" :title="logEnabled ? '暂停记录' : '开启记录'">
-          <svg width="16" height="16" v-if="logEnabled"><use href="#icon-pause"/></svg>
-          <svg width="16" height="16" v-else><use href="#icon-play"/></svg>
         </div>
         <div style="width: 1px; height: 20px; background: var(--color-border); margin: 0 4px;"></div>
         <div class="action-icon" @click="fetchRequestLogs" title="查询">
@@ -165,7 +154,10 @@
                     <span v-else>-</span>
                   </td>
                   <td class="mono">{{ row.source_model || '-' }} → {{ row.target_model || '-' }}</td>
-                  <td class="col-sticky"><a class="table-link" @click="showRequestDetail(row.id)">详情</a></td>
+                  <td class="col-sticky">
+                    <a v-if="canShowDetail(row)" class="table-link" @click="showRequestDetail(row.id)">详情</a>
+                    <span v-else class="table-link-disabled">详情</span>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -342,13 +334,20 @@ import { useUiStore } from '@/stores/ui'
 import { formatJson as formatJsonUtil, formatTokens } from '@/utils/json'
 import type { RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
 
+type LogRecordMode = 'full' | 'failure_only' | 'disabled'
+
+const logModeMap: Record<LogRecordMode, string> = {
+  full: '全量记录',
+  failure_only: '失败时记录详情',
+  disabled: '停用日志'
+}
+
 const uiStore = useUiStore()
 const activeTab = computed({
   get: () => uiStore.logsActiveTab,
   set: (val) => uiStore.setLogsActiveTab(val as 'request' | 'system')
 })
-const logEnabled = ref(false)
-const logDetailMode = ref<'full' | 'failure_only' | 'none'>('full')
+const logRecordMode = ref<LogRecordMode>('failure_only')
 const gatewayUrl = ref('')
 const providerOptions = ref<string[]>([])
 let requestLogListener: (() => void) | null = null
@@ -357,27 +356,27 @@ let requestLogListener: (() => void) | null = null
 const cliSelectOpen = ref(false)
 const providerSelectOpen = ref(false)
 const eventTypeSelectOpen = ref(false)
-const detailModeSelectOpen = ref(false)
+const logModeSelectOpen = ref(false)
 
 function closeAllSelects() {
   cliSelectOpen.value = false
   providerSelectOpen.value = false
   eventTypeSelectOpen.value = false
-  detailModeSelectOpen.value = false
+  logModeSelectOpen.value = false
 }
 
 function toggleSelect(type: string) {
   const isCli = type === 'cli' && !cliSelectOpen.value
   const isProv = type === 'provider' && !providerSelectOpen.value
   const isEvent = type === 'event' && !eventTypeSelectOpen.value
-  const isDetail = type === 'detail' && !detailModeSelectOpen.value
+  const isLogMode = type === 'logMode' && !logModeSelectOpen.value
 
   closeAllSelects()
 
   if (isCli) cliSelectOpen.value = true
   if (isProv) providerSelectOpen.value = true
   if (isEvent) eventTypeSelectOpen.value = true
-  if (isDetail) detailModeSelectOpen.value = true
+  if (isLogMode) logModeSelectOpen.value = true
 }
 
 onMounted(async () => {
@@ -448,8 +447,12 @@ async function fetchProviders() {
 async function fetchLogSettings() {
   try {
     const res = await logsApi.getSettings()
-    logEnabled.value = res.data.debug_log
-    logDetailMode.value = res.data.log_detail_mode
+    const { debug_log, log_detail_mode } = res.data
+    if (!debug_log) {
+      logRecordMode.value = 'disabled'
+    } else {
+      logRecordMode.value = log_detail_mode
+    }
   } catch {}
 }
 
@@ -462,29 +465,25 @@ async function fetchGatewayStatus() {
   }
 }
 
-async function updateLogSettings() {
+async function setLogMode(mode: LogRecordMode) {
+  logRecordMode.value = mode
+  logModeSelectOpen.value = false
   try {
-    // using the toggled value
-    await logsApi.updateSettings({ debug_log: logEnabled.value })
-    if (logEnabled.value) {
-      notify('已开启日志记录', 'success')
+    if (mode === 'disabled') {
+      await logsApi.updateSettings({ debug_log: false })
     } else {
-      notify('已关闭日志记录', 'info')
+      await logsApi.updateSettings({ debug_log: true, log_detail_mode: mode })
     }
   } catch {}
 }
 
-function getDetailModeLabel(mode: string): string {
-  if (mode === 'full') return '全部详情'
-  if (mode === 'failure_only') return '仅失败详情'
-  if (mode === 'none') return '不记录详情'
-  return mode
-}
-
-async function updateLogDetailMode() {
-  try {
-    await logsApi.updateSettings({ log_detail_mode: logDetailMode.value })
-  } catch {}
+function canShowDetail(row: RequestLogListItem): boolean {
+  if (logRecordMode.value === 'disabled') return false
+  if (logRecordMode.value === 'failure_only') {
+    const isSuccess = row.status_code && row.status_code >= 200 && row.status_code < 300
+    return !isSuccess
+  }
+  return true
 }
 
 async function fetchRequestLogs() {
@@ -870,7 +869,10 @@ watch(activeTab, (tab) => {
 .custom-option:hover { background: var(--color-bg-subtle); color: var(--color-text); }
 .custom-option.selected { font-weight: var(--fw-600); color: var(--color-primary); background: var(--color-primary-light); }
 
-.detail-mode-select { width: 120px; }
+
+.log-mode-select { width: 140px; }
+
+.table-link-disabled { color: var(--color-text-muted); cursor: not-allowed; font-weight: var(--fw-400); }
 
 /* Keep el-dialog styles clean to match ethereal frost inside detail view */
 .detail-content { max-height: 60vh; overflow-y: auto; }
