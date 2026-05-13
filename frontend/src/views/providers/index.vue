@@ -1387,9 +1387,7 @@ onUnmounted(() => {
 
 .b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); margin-bottom: 24px; border: 1px solid transparent; overflow: hidden; }
 
-.b-segmented { display: inline-flex; background: var(--color-border); padding: 4px; border-radius: 10px; flex-shrink: 0; }
-.b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: var(--color-text-secondary); border-radius: 8px; cursor: pointer; font-weight: var(--fw-500); transition: all 0.2s ease; }
-.b-seg-btn.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 1px 3px var(--color-shadow-lg); }
+.b-segmented { flex-shrink: 0; }
 
 .b-button-outline { background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border); padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
 .b-button-outline:hover { background: var(--color-bg-page); }

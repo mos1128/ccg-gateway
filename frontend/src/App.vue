@@ -227,6 +227,11 @@ textarea.b-input {
   line-height: 1.6;
 }
 
+/* ========== 分段按钮 ========== */
+.b-segmented { display: inline-flex; background: var(--color-border); padding: 4px; border-radius: 10px; }
+.b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: var(--color-text-muted); border-radius: 8px; font-weight: var(--fw-500); transition: all 0.2s ease; cursor: pointer; }
+.b-seg-btn.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 1px 3px var(--color-shadow-lg); pointer-events: none; }
+
 /* ========== Global Ethereal Scrollbar ========== */
 ::-webkit-scrollbar {
   width: 14px;

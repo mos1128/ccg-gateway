@@ -37,10 +37,10 @@
               <span class="card-label">CLI 运行配置</span>
             </div>
             <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
-              <div class="frost-segmented" style="margin-bottom: 24px;">
-                <div class="seg-item" :class="{ active: activeCliTab === 'claude_code' }" @click="activeCliTab = 'claude_code'">Claude Code</div>
-                <div class="seg-item" :class="{ active: activeCliTab === 'codex' }" @click="activeCliTab = 'codex'">Codex</div>
-                <div class="seg-item" :class="{ active: activeCliTab === 'gemini' }" @click="activeCliTab = 'gemini'">Gemini</div>
+              <div class="b-segmented" style="margin-bottom: 24px;">
+                <div class="b-seg-btn" :class="{ active: activeCliTab === 'claude_code' }" @click="activeCliTab = 'claude_code'">Claude Code</div>
+                <div class="b-seg-btn" :class="{ active: activeCliTab === 'codex' }" @click="activeCliTab = 'codex'">Codex</div>
+                <div class="b-seg-btn" :class="{ active: activeCliTab === 'gemini' }" @click="activeCliTab = 'gemini'">Gemini</div>
               </div>
 
               <div class="cli-form-container">
@@ -103,9 +103,9 @@
             </div>
             <div class="card-body">
               <div class="backup-row">
-                <div class="frost-segmented backup-segmented">
-                  <div class="seg-item" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</div>
-                  <div class="seg-item" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</div>
+                <div class="b-segmented backup-segmented">
+                  <div class="b-seg-btn" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</div>
+                  <div class="b-seg-btn" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</div>
                 </div>
                 <div class="backup-actions">
                   <template v-if="activeBackupTab === 'local'">
@@ -434,14 +434,8 @@ onMounted(() => {
 .unit { font-size: var(--fs-14); color: var(--color-text-weak); font-weight: var(--fw-400); }
 
 /* Segmented Control */
-.frost-segmented {
-  display: flex; background: var(--color-overlay-8); padding: 4px; border-radius: 12px; margin-bottom: 20px;
-}
-.seg-item {
-  flex: 1; text-align: center; padding: 8px 12px; font-size: var(--fs-14); font-weight: var(--fw-600);
-  color: var(--color-text-secondary); cursor: pointer; border-radius: 9px; transition: all 0.2s;
-}
-.seg-item.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 2px 8px var(--color-shadow-lg); }
+.b-segmented { display: flex; margin-bottom: 20px; }
+.b-seg-btn { flex: 1; }
 
 /* Buttons */
 .f-button {
@@ -503,7 +497,7 @@ onMounted(() => {
 /* Backup Row */
 .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .backup-segmented { margin-bottom: 0; flex-shrink: 0; }
-.backup-segmented .seg-item { flex: none; padding: 8px 16px; }
+.backup-segmented .b-seg-btn { flex: none; }
 .backup-actions { display: flex; gap: 8px; }
 .backup-actions .action-icon.disabled { opacity: 0.5; cursor: not-allowed; }
 

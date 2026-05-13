@@ -45,9 +45,9 @@
 
     <div class="form-section write-mode-section">
       <div class="write-mode-row">
-        <div class="frost-segmented write-mode-segmented">
-          <div class="seg-item" :class="{ active: form.config_write_mode === 'merge' }" @click="form.config_write_mode = 'merge'">增量合并</div>
-          <div class="seg-item" :class="{ active: form.config_write_mode === 'overwrite' }" @click="form.config_write_mode = 'overwrite'">全量写入</div>
+        <div class="b-segmented write-mode-segmented">
+          <div class="b-seg-btn" :class="{ active: form.config_write_mode === 'merge' }" @click="form.config_write_mode = 'merge'">增量合并</div>
+          <div class="b-seg-btn" :class="{ active: form.config_write_mode === 'overwrite' }" @click="form.config_write_mode = 'overwrite'">全量写入</div>
         </div>
         <el-tooltip
           effect="light"
@@ -236,33 +236,8 @@ defineExpose({ handleSave })
 
 .write-mode-row { display: flex; align-items: center; gap: 10px; }
 
-.frost-segmented {
-  display: inline-flex;
-  background: var(--color-bg-subtle);
-  border-radius: 10px;
-  padding: 3px;
-  gap: 2px;
-}
-
-.frost-segmented .seg-item {
-  padding: 6px 14px;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-600);
-  color: var(--color-text-secondary);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.frost-segmented .seg-item:hover { color: var(--color-text); }
-
-.frost-segmented .seg-item.active {
-  background: var(--color-bg);
-  color: var(--color-primary);
-  box-shadow: 0 1px 3px var(--color-shadow-sm);
-}
+.b-seg-btn { white-space: nowrap; user-select: none; }
+.b-seg-btn:hover { color: var(--color-text); }
 
 .write-mode-segmented { flex-shrink: 0; }
 
