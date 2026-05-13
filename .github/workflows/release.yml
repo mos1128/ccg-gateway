@@ -46,6 +46,8 @@ jobs:
           # 显式开启基于 pnpm-lock.yaml 的依赖缓存
           # 将网络 I/O 负担转移至高速磁盘 I/O，极大缩短安装时间
           cache: 'pnpm' 
+          # 明确指出 pnpm-lock.yaml 所在的子目录路径
+          cache-dependency-path: 'frontend/pnpm-lock.yaml'
       
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
