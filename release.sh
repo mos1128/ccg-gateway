@@ -90,7 +90,7 @@ git commit -m "version ${VERSION}"
 
 # Create annotated tag
 echo "[5/6] Creating tag v${VERSION} ..."
-git tag -a "v${VERSION}" -m "$NOTES"
+git tag -a "v${VERSION}" --cleanup=whitespace -m "$NOTES"
 
 # Push
 echo "[6/6] Pushing to remote ..."
