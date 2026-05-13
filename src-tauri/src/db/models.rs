@@ -599,9 +599,6 @@ pub struct UsageDaily {
     pub output_tokens: i64,
 }
 
-// Daily Stats (别名，用于向后兼容)
-pub type DailyStats = UsageDaily;
-
 // Provider Stats (从 request_logs 聚合)
 #[derive(Debug, Serialize, FromRow)]
 pub struct ProviderStatsRow {

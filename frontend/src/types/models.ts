@@ -269,19 +269,6 @@ export interface SkillFavoriteItem {
 }
 
 // Stats types
-export interface DailyStats {
-  usage_date: string
-  provider_name: string
-  cli_type: string
-  request_count: number
-  success_count: number
-  failure_count: number
-  input_tokens: number
-  cache_read_input_tokens: number
-  cache_creation_input_tokens: number
-  output_tokens: number
-}
-
 export interface ProviderStats {
   provider_name: string
   total_requests: number

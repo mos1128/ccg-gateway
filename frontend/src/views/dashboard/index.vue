@@ -146,7 +146,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { statsApi } from '@/api/stats'
 import { formatTokens } from '@/utils/json'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
-import type { ProviderStats, DailyStats, AdvancedStatsRow } from '@/types/models'
+import type { ProviderStats, AdvancedStatsRow } from '@/types/models'
 
 const providerStore = useProviderStore()
 const settingsStore = useSettingsStore()
@@ -165,7 +165,6 @@ const cliLoading = reactive<Record<string, boolean>>({
 })
 
 const providerStats = ref<ProviderStats[]>([])
-const dailyStats = ref<DailyStats[]>([])
 const advancedStats = ref<AdvancedStatsRow[]>([])
 
 // UI State
@@ -271,14 +270,15 @@ async function fetchStats() {
   const today = new Date()
   const sevenDaysAgo = new Date(today)
   sevenDaysAgo.setDate(today.getDate() - 6)
-  
-  const p1 = statsApi.getProviders({})
-  const p2 = statsApi.getDaily({ start_date: formatLocalDate(sevenDaysAgo), end_date: formatLocalDate(today) })
-  const p3 = statsApi.getAdvanced({})
-  
-  const [resProv, resDaily, resAdv] = await Promise.all([p1, p2, p3])
+  const startDate = formatLocalDate(sevenDaysAgo)
+  const endDate = formatLocalDate(today)
+
+  // KPI 数据先加载
+  const resProv = await statsApi.getProviders({})
   providerStats.value = resProv.data
-  dailyStats.value = resDaily.data
+
+  // 图表和明细数据后加载
+  const resAdv = await statsApi.getAdvanced({ start_date: startDate, end_date: endDate })
   advancedStats.value = resAdv.data
 }
 

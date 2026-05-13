@@ -2,7 +2,7 @@ use crate::config::{
     expand_home_path, get_data_dir, get_default_cli_config_dir, shrink_home_path, Config,
 };
 use crate::db::models::{
-    CliSettingsResponse, CliSettingsUpdate, DailyStats, DiscoverableSkill, GatewaySettings,
+    CliSettingsResponse, CliSettingsUpdate, DiscoverableSkill, GatewaySettings,
     InstalledSkillResponse, MarketplaceInfo, McpCliFlag, McpConfig, McpCreate, McpResponse,
     McpUpdate, OfficialCredential, OfficialCredentialCreate, OfficialCredentialResponse,
     OfficialCredentialUpdate, PaginatedLogs, PaginatedProjects, PaginatedSessions,
@@ -3227,41 +3227,6 @@ async fn get_prompt_file_path(db: &SqlitePool, cli_type: &str) -> Option<std::pa
 }
 
 // Stats commands
-#[tauri::command]
-pub async fn get_daily_stats(
-    log_db: State<'_, crate::LogDb>,
-    start_date: Option<String>,
-    end_date: Option<String>,
-    cli_type: Option<String>,
-) -> Result<Vec<DailyStats>> {
-    let pool = &log_db.0;
-
-    let mut query = "SELECT * FROM usage_daily WHERE 1=1".to_string();
-    if start_date.is_some() {
-        query.push_str(" AND usage_date >= ?");
-    }
-    if end_date.is_some() {
-        query.push_str(" AND usage_date <= ?");
-    }
-    if cli_type.is_some() {
-        query.push_str(" AND cli_type = ?");
-    }
-    query.push_str(" ORDER BY usage_date DESC");
-
-    let mut q = sqlx::query_as::<_, DailyStats>(&query);
-    if let Some(ref sd) = start_date {
-        q = q.bind(sd);
-    }
-    if let Some(ref ed) = end_date {
-        q = q.bind(ed);
-    }
-    if let Some(ref ct) = cli_type {
-        q = q.bind(ct);
-    }
-
-    q.fetch_all(pool).await.map_err(|e| e.to_string())
-}
-
 #[tauri::command]
 pub async fn get_provider_stats(
     log_db: State<'_, crate::LogDb>,
