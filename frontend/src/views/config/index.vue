@@ -65,7 +65,7 @@
               <svg width="20" height="20" class="header-icon"><use href="#icon-activity"/></svg>
               <span class="card-label">基础配置</span>
               <div style="flex: 1;"></div>
-              <button class="b-button" style="padding: 6px 14px;" @click="saveTimeouts">
+              <button class="save-button" @click="saveTimeouts">
                 <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
                 保存
               </button>
@@ -140,7 +140,7 @@
     <!-- WebDAV Backup List Dialog -->
     <AppModal v-model="webdavListVisible" title="管理 WebDAV 备份" width="720px" @confirm="webdavListVisible = false" cancel-text="取消" confirm-text="关闭">
         <div v-loading="loadingWebdavList" style="max-height: 60vh; display: flex; flex-direction: column; margin: -32px;">
-            <div class="scroll-area" style="flex: 1; overflow-y: auto; padding: 32px;">
+            <div class="scroll-area">
               <table class="flat-table" style="width: 100%;">
                 <tbody>
                   <tr v-for="backup in webdavBackups" :key="backup.filename">
@@ -406,9 +406,7 @@ onMounted(() => {
 }
 
 /* Header */
-.page-header { margin-bottom: 32px; flex-shrink: 0; }
 .page-title { font-size: var(--fs-24); font-weight: var(--fw-700); color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.8px; }
-.page-subtitle { font-size: var(--fs-14); color: var(--color-text-muted); margin: 0; }
 
 /* Layout */
 .config-layout { display: flex; gap: 32px; align-items: flex-start; }
@@ -458,39 +456,12 @@ onMounted(() => {
 .action-row-end { display: flex; justify-content: flex-end; gap: 12px; align-items: center; }
 .card-footer-right { margin-top: 8px; display: flex; justify-content: flex-end; }
 
-/* Action Icon Buttons */
-.action-icon {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all 0.2s;
-  background: transparent;
-  flex-shrink: 0;
-}
-.action-icon:hover {
-  background: var(--color-bg-subtle);
-  color: var(--color-text);
-}
-
 /* CLI Column adjustment */
 .cli-settings-card { flex: 1; }
 .cli-form-container { flex: 1; min-height: 400px; display: flex; flex-direction: column; }
 
 /* Flat Table (matching logs page style) */
 .table-container { background: var(--color-bg); border-radius: 12px; padding: 0; border: 1px solid var(--color-border); box-shadow: 0 4px 15px var(--color-shadow); overflow: hidden; }
-.flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; table-layout: fixed; }
-.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
-.flat-table th { padding: 12px 20px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }
-.flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: var(--color-text); border-bottom: 1px solid var(--color-bg-subtle); }
-.flat-table tr:last-child td { border-bottom: none; }
-.flat-table tr:hover td { background: var(--color-bg-page); }
-.table-link { color: var(--color-primary); cursor: pointer; text-decoration: none; font-weight: var(--fw-400); font-size: var(--fs-14); }
-.table-link:hover { text-decoration: underline; }
 .table-link.danger { color: var(--color-danger); }
 .table-link.danger:hover { color: var(--color-danger-hover); }
 
@@ -499,17 +470,8 @@ onMounted(() => {
 .backup-segmented { margin-bottom: 0; flex-shrink: 0; }
 .backup-segmented .b-seg-btn { flex: none; }
 .backup-actions { display: flex; gap: 8px; }
-.backup-actions .action-icon.disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* WebDAV Settings Form */
 .webdav-settings-form { padding: 4px 0; }
 .webdav-settings-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
-
-.b-button {
-  background: var(--color-primary-10); color: var(--color-primary); border: none; padding: 10px 20px; border-radius: 10px;
-  font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center;
-  transition: all 0.2s;
-}
-.b-button:hover { background: var(--color-primary-20); }
-.b-button:disabled { background: var(--color-primary-5); color: var(--color-primary-muted); cursor: not-allowed; }
 </style>

@@ -24,7 +24,7 @@
 
     <div class="page-header">
       <p class="page-subtitle">配置 Model Context Protocol (MCP) 服务器</p>
-      <button class="action-icon add-btn" @click="handleAdd" title="添加 MCP">
+      <button class="action-icon primary" @click="handleAdd" title="添加 MCP">
         <svg width="20" height="20"><use href="#icon-plus"/></svg>
       </button>
     </div>
@@ -253,35 +253,6 @@ onMounted(fetchList)
   flex-direction: column;
 }
 
-/* Header */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 0 40px 32px 40px;
-  flex-shrink: 0;
-}
-
-.list-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  margin: 0 40px;
-}
-
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
-.page-subtitle {
-  font-size: var(--fs-14);
-  color: var(--color-text-muted);
-  margin: 0;
-}
-
 /* Grid & Cards */
 .mcp-grid {
   display: grid;
@@ -341,30 +312,6 @@ onMounted(fetchList)
   flex-shrink: 0;
 }
 
-/* Action Icons */
-.action-icon {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all 0.2s;
-  background: transparent;
-  border: none;
-  outline: none;
-}
-.action-icon:hover {
-  background: var(--color-bg-subtle);
-  color: var(--color-text);
-}
-.action-icon.delete:hover {
-  background: var(--color-danger-light);
-  color: var(--color-danger);
-}
-
 /* CLI Toggles */
 .cli-toggles {
   display: flex;
@@ -384,19 +331,6 @@ onMounted(fetchList)
 }
 
 /* Form Elements */
-.form-group {
-  margin-bottom: 24px;
-}
-.c-label {
-  display: block;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-400);
-  color: var(--color-text-secondary);
-  margin-bottom: 12px;
-}
-.required {
-  color: var(--color-error);
-}
 .error-tip {
   color: var(--color-error);
   font-size: var(--fs-12);
@@ -437,30 +371,4 @@ onMounted(fetchList)
   font-size: var(--fs-12);
 }
 
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  color: var(--color-text-weak);
-  background: var(--color-bg);
-  border-radius: 16px;
-  border: 2px dashed var(--color-border);
-}
-.empty-state p {
-  margin-top: 16px;
-  font-size: var(--fs-14);
-}
-
-.action-icon.add-btn {
-  width: 36px;
-  height: 36px;
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
-}
-.action-icon.add-btn:hover {
-  background: color-mix(in srgb, var(--color-primary) 20%, transparent);
-  color: var(--color-primary);
-}
 </style>

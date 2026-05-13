@@ -232,6 +232,78 @@ textarea.b-input {
 .b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: var(--color-text-muted); border-radius: 8px; font-weight: var(--fw-500); transition: all 0.2s ease; cursor: pointer; }
 .b-seg-btn.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 1px 3px var(--color-shadow-lg); pointer-events: none; }
 
+/* ========== 操作图标按钮 ========== */
+.action-icon {
+  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; color: var(--color-text-muted); cursor: pointer;
+  transition: all 0.2s; background: transparent; border: none; outline: none; flex-shrink: 0; padding: 0;
+}
+.action-icon:hover { background: var(--color-bg-subtle); color: var(--color-text); }
+.action-icon.delete:hover { background: var(--color-danger-light); color: var(--color-danger); }
+.action-icon.primary { color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 10%, transparent); }
+.action-icon.primary:hover { background: color-mix(in srgb, var(--color-primary) 20%, transparent); color: var(--color-primary); }
+.action-icon.installed { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); }
+.action-icon.star-active { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); }
+.action-icon.success { color: var(--color-success); background: color-mix(in srgb, var(--color-success) 10%, transparent); }
+.action-icon.success:hover { background: color-mix(in srgb, var(--color-success) 20%, transparent); color: var(--color-success); }
+.action-icon:disabled, .action-icon.disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+.action-icon:disabled:hover, .action-icon.disabled:hover { background: transparent; color: var(--color-text-muted); }
+
+/* ========== 顶部选项卡 ========== */
+.tab-item { padding-bottom: 12px; color: var(--color-text-weak); font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
+.tab-item:hover { color: var(--color-text-secondary); }
+.tab-item.active { color: var(--color-primary); font-weight: var(--fw-600); border-bottom: 2px solid var(--color-primary); }
+
+/* ========== 提示框 ========== */
+.tooltip-title { font-size: var(--fs-14); font-weight: var(--fw-700); color: var(--color-text); margin-bottom: 10px; }
+.tooltip-item { margin-bottom: 8px; font-size: var(--fs-12); line-height: 1.5; color: var(--color-text-muted); }
+.tooltip-item:last-child { margin-bottom: 0; }
+.tooltip-item strong { display: block; color: var(--color-text-dark); font-weight: var(--fw-600); margin-bottom: 2px; }
+
+/* ========== 帮助图标 ========== */
+.help-icon-wrapper { display: inline-flex; align-items: center; cursor: help; position: relative; }
+.help-icon { color: var(--color-text-weak); transition: color 0.2s; }
+.help-icon-wrapper:hover .help-icon { color: var(--color-text-muted); }
+
+/* ========== 标签 ========== */
+.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-600); display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px; }
+.pill-green { background: var(--color-success-light); color: var(--color-success); }
+.pill-red { background: var(--color-error-light); color: var(--color-error); }
+.pill-blue { background: var(--color-primary-light); color: var(--color-primary); }
+.pill-grey { background: var(--color-bg-subtle); color: var(--color-text-muted); font-weight: var(--fw-400); }
+
+/* ========== 表格 ========== */
+.flat-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; text-align: center; }
+.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+.flat-table th { padding: 12px 20px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }
+.flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: var(--color-text); border-bottom: 1px solid var(--color-bg-subtle); }
+.flat-table tr:last-child td { border-bottom: none; }
+.flat-table tr:hover td { background: var(--color-bg-page); }
+.table-link { color: var(--color-primary); cursor: pointer; text-decoration: none; font-weight: var(--fw-400); font-size: var(--fs-14); }
+.table-link:hover { text-decoration: underline; }
+
+/* ========== 按钮 ========== */
+.b-button { background: var(--color-primary); color: var(--color-bg); border: none; padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; display: flex; align-items: center; transition: all 0.2s; white-space: nowrap; }
+.b-button:hover:not(:disabled) { background: var(--color-primary-hover); }
+.b-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.b-button-outline { background: var(--color-bg); color: var(--color-text-secondary); border: 1px solid var(--color-border); padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center; transition: all 0.2s; }
+.b-button-outline:hover { background: var(--color-bg-page); color: var(--color-text); border-color: var(--color-border-hover); }
+.save-button { background: var(--color-primary-10); color: var(--color-primary); border: none; padding: 6px 14px; border-radius: 10px; font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center; transition: all 0.2s; flex-shrink: 0; }
+.save-button:hover { background: var(--color-primary-20); }
+
+/* ========== 表单 ========== */
+.form-group { margin-bottom: 24px; }
+.c-label { display: block; font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-secondary); margin-bottom: 12px; }
+.required { color: var(--color-error); }
+
+/* ========== 页面布局 ========== */
+.page-header { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; margin: 0 40px 32px 40px; }
+.page-subtitle { font-size: var(--fs-14); color: var(--color-text-muted); margin: 0; }
+.list-container { flex: 1; display: flex; flex-direction: column; min-height: 0; margin: 0 40px; }
+.scroll-area { flex: 1; overflow-y: auto; padding: 8px 0; }
+.empty-state { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--color-text-weak); background: var(--color-bg); border-radius: 16px; border: 2px dashed var(--color-border); }
+.empty-state p { margin-top: 16px; font-size: var(--fs-14); }
+
 /* ========== Global Ethereal Scrollbar ========== */
 ::-webkit-scrollbar {
   width: 14px;

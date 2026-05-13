@@ -152,7 +152,7 @@
         <div v-if="!currentRepo" class="repo-list-view">
           <div class="page-header">
             <p class="page-subtitle">从 GitHub 仓库发现并安装 Skill 扩展</p>
-            <button class="action-icon add-btn" @click="showAddRepoDialog = true" title="添加仓库">
+            <button class="action-icon primary" @click="showAddRepoDialog = true" title="添加仓库">
               <svg width="20" height="20"><use href="#icon-plus"/></svg>
             </button>
           </div>
@@ -258,7 +258,7 @@
                     </button>
                     <button
                       v-else
-                      class="action-icon install"
+                      class="action-icon primary"
                       title="安装技能"
                       :disabled="installingSkillId === skill.key"
                       @click="handleInstall(skill, false)"
@@ -313,7 +313,7 @@
                     </button>
                     <button
                       v-else
-                      class="action-icon install"
+                      class="action-icon primary"
                       title="安装技能"
                       :disabled="installingSkillId === favorite.key"
                       @click="handleInstallFavorite(favorite, false)"
@@ -688,16 +688,12 @@ onMounted(() => {
 
 /* Tab Underlines */
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
-.tab-item { padding-bottom: 12px; color: var(--color-text-weak); font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
-.tab-item:hover { color: var(--color-text-secondary); }
-.tab-item.active { color: var(--color-primary); font-weight: var(--fw-600); border-bottom: 2px solid var(--color-primary); }
 
 .view-content-wrapper {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin: 0 40px;
 }
 
 .tab-pane {
@@ -714,22 +710,7 @@ onMounted(() => {
   min-height: 0;
 }
 
-.list-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 0;
-}
-
 /* Header */
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; flex-shrink: 0; }
-.page-subtitle { font-size: var(--fs-14); color: var(--color-text-muted); margin: 0; }
 .page-title.text-20 { margin: 0; }
 
 /* Grid & Cards (Installed) */
@@ -756,27 +737,6 @@ onMounted(() => {
 .skill-source { font-size: var(--fs-12); color: var(--color-text-weak); }
 
 .card-actions { display: flex; gap: 4px; flex-shrink: 0; }
-.action-icon {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all 0.2s;
-  outline: none;
-  background: transparent;
-  border: none;
-}
-.action-icon:hover { background: var(--color-bg-subtle); color: var(--color-text); }
-.action-icon.delete:hover { background: var(--color-danger-light); color: var(--color-danger); }
-.action-icon.star:disabled { cursor: not-allowed; opacity: 0.45; }
-.action-icon.star:disabled:hover { background: transparent; color: var(--color-text-muted); }
-.action-icon.star-active { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); }
-.action-icon.installed { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 10%, transparent); }
-.action-icon.install { color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 15%, transparent); }
 
 /* CLI Toggles */
 .cli-toggles { display: flex; flex-direction: column; gap: 12px; background: var(--color-bg-page); padding: 16px; border-radius: 12px; }
@@ -843,35 +803,5 @@ onMounted(() => {
 .search-box { position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-weak); }
 
-.b-button {
-  background: var(--color-primary); color: var(--color-bg); border: none; padding: 8px 16px; border-radius: 8px;
-  font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; display: flex; align-items: center;
-  transition: all 0.2s; white-space: nowrap;
-}
-.b-button:hover { background: var(--color-primary-hover); }
-.b-button:disabled { background: var(--color-text-weak); cursor: not-allowed; }
 
-.b-button-outline {
-  background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border); padding: 8px 16px; border-radius: 8px;
-  font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: all 0.2s; display: flex; align-items: center;
-}
-.b-button-outline:hover { background: var(--color-bg-page); border-color: var(--color-border-hover); }
-
-.empty-state { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; color: var(--color-text-weak); background: var(--color-bg); border-radius: 16px; border: 2px dashed var(--color-border); }
-.empty-state p { margin-top: 16px; font-size: var(--fs-14); }
-
-.form-group { margin-bottom: 24px; }
-.c-label { display: block; font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-secondary); margin-bottom: 12px; }
-.required { color: var(--color-error); }
-
-.action-icon.add-btn {
-  width: 36px;
-  height: 36px;
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
-}
-.action-icon.add-btn:hover {
-  background: color-mix(in srgb, var(--color-primary) 25%, transparent);
-  color: var(--color-primary);
-}
 </style>

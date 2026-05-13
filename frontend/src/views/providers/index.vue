@@ -45,7 +45,7 @@
     </div>
 
     <!-- Page Header & Segmented Control -->
-    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div class="page-header">
       <div class="header-left">
         <div class="b-segmented">
           <div class="b-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="handleSwitchProxy">中转模式</div>
@@ -108,7 +108,7 @@
       
       <div v-if="viewMode === 'proxy'" style="display: flex; align-items: center; gap: 8px;">
         <button
-          class="action-icon detect-btn"
+          class="action-icon primary"
           @click="showDetectDialog = true"
           title="检测模型可用性"
         >
@@ -118,7 +118,7 @@
         </button>
         <button
           v-if="copiedProvider"
-          class="action-icon paste-btn"
+          class="action-icon success"
           :disabled="pasteLoading"
           @click="handlePasteProvider"
           :title="pasteButtonTitle"
@@ -126,7 +126,7 @@
           <svg width="18" height="18"><use href="#icon-paste"/></svg>
         </button>
         <button
-          class="action-icon add-btn"
+          class="action-icon primary"
           @click="handleAddProvider"
           title="添加服务商"
         >
@@ -137,7 +137,7 @@
       </div>
       <div v-else>
         <button
-          class="action-icon add-btn"
+          class="action-icon primary"
           @click="showAddCredentialDialog = true"
           title="添加凭证"
         >
@@ -1261,28 +1261,10 @@ onUnmounted(() => {
 
 /* Tab Underlines */
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid var(--color-border-light); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
-.tab-item { padding-bottom: 12px; color: var(--color-text-weak); font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
-.tab-item:hover { color: var(--color-text-secondary); }
-.tab-item.active { color: var(--color-primary); font-weight: var(--fw-600); border-bottom: 2px solid var(--color-primary); }
 
-.page-header { flex-shrink: 0; margin: 0 40px 32px 40px; }
 .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .profile-segmented .b-seg-btn { padding: 6px 12px; }
 .profile-segmented .b-seg-btn.disabled { opacity: 0.55; pointer-events: none; }
-
-.help-icon-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  cursor: help;
-}
-
-.help-icon {
-  color: var(--color-text-weak);
-  transition: color 0.2s;
-}
-
-.help-icon-wrapper:hover .help-icon { color: var(--color-text-muted); }
 
 :global(.profile-help-popper.el-popper) {
   border-radius: 12px;
@@ -1292,29 +1274,6 @@ onUnmounted(() => {
 
 .profile-help-content {
   width: 320px;
-}
-
-.tooltip-title {
-  font-size: var(--fs-14);
-  font-weight: var(--fw-700);
-  color: var(--color-text);
-  margin-bottom: 10px;
-}
-
-.tooltip-item {
-  margin-bottom: 8px;
-  font-size: var(--fs-12);
-  line-height: 1.5;
-  color: var(--color-text-muted);
-}
-
-.tooltip-item:last-child { margin-bottom: 0; }
-
-.tooltip-item strong {
-  display: block;
-  color: var(--color-text-dark);
-  font-weight: var(--fw-600);
-  margin-bottom: 2px;
 }
 
 .profile-command-panel {
@@ -1372,124 +1331,25 @@ onUnmounted(() => {
   user-select: text;
 }
 
-.list-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  margin: 0 40px 0 40px;
-}
 
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); margin-bottom: 24px; border: 1px solid transparent; overflow: hidden; }
+.b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); margin-bottom: 24px; border: none; overflow: hidden; }
 
 .b-segmented { flex-shrink: 0; }
-
-.b-button-outline { background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border); padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; transition: background 0.2s; }
-.b-button-outline:hover { background: var(--color-bg-page); }
 
 .b-button-icon { background: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text-muted); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; }
 .b-button-icon:hover { background: var(--color-danger-light); color: var(--color-danger); border-color: var(--color-danger-muted); }
 
 .tag { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-400); }
 
-.c-label { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-secondary); margin-bottom: 12px; display: block; }
-
 .drag-handle { display: flex; flex-direction: column; gap: 3px; cursor: grab; padding: 8px; margin-left: -8px; opacity: 0.3; transition: opacity 0.2s; }
 .drag-handle:hover { opacity: 0.8; }
 .drag-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--color-text-muted); }
 
-.action-icon {
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all 0.2s;
-  background: transparent;
-  border: none;
-  outline: none;
-  padding: 0;
-}
-.action-icon:hover {
-  background: var(--color-bg-subtle);
-  color: var(--color-text);
-}
-.action-icon:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.action-icon.delete:hover {
-  background: var(--color-danger-light);
-  color: var(--color-danger);
-}
 
 /* Detection Table */
-.flat-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; table-layout: fixed; }
-.flat-table th, .flat-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; text-align: left; }
-.flat-table th { padding: 12px 20px; font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-muted); text-transform: uppercase; background: var(--color-bg-page); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 10; }
-.flat-table td { padding: 12px 20px; font-size: var(--fs-14); color: var(--color-text); border-bottom: 1px solid var(--color-bg-subtle); }
-.flat-table tr:last-child td { border-bottom: none; }
-.flat-table tr:hover td { background: var(--color-bg-page); }
-.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-600); display: inline-flex; align-items: center; letter-spacing: 0.3px; }
-.pill-green { background: var(--color-success-light); color: var(--color-success); }
-.pill-red { background: var(--color-error-light); color: var(--color-error); }
-.pill-grey { background: var(--color-bg-subtle); color: var(--color-text-muted); font-weight: var(--fw-400); }
 .code-block { background: var(--color-bg-page); padding: 12px; border-radius: 6px; font-size: var(--fs-12); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
 .code-block:hover { border-color: var(--color-border-hover); }
 
-.action-icon.detect-btn {
-  width: 36px;
-  height: 36px;
-  color: var(--color-primary);
-  background: var(--color-primary-10);
-}
-.action-icon.detect-btn:hover {
-  background: var(--color-primary-20);
-  color: var(--color-primary);
-}
 
-.action-icon.paste-btn {
-  width: 36px;
-  height: 36px;
-  color: var(--color-success);
-  background: var(--color-success-10);
-}
-.action-icon.paste-btn:hover {
-  background: var(--color-success-light);
-  color: var(--color-success);
-}
-
-.action-icon.add-btn {
-  width: 36px;
-  height: 36px;
-  color: var(--color-primary);
-  background: var(--color-primary-10);
-}
-.action-icon.add-btn:hover {
-  background: var(--color-primary-20);
-  color: var(--color-primary);
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  color: var(--color-text-weak);
-}
-.empty-state p {
-  margin-top: 16px;
-  font-size: var(--fs-14);
-}
 </style>
 >

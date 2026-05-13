@@ -129,39 +129,4 @@ function handleConfirm() {
   flex-shrink: 0;
 }
 
-.b-button {
-  background: var(--color-primary);
-  color: var(--color-bg);
-  border: none;
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-600);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  transition: all 0.2s;
-}
-.b-button:hover {
-  background: var(--color-primary-hover);
-}
-
-.b-button-outline {
-  background: var(--color-bg);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-600);
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-}
-.b-button-outline:hover {
-  background: var(--color-bg-page);
-  color: var(--color-text);
-  border-color: var(--color-border-hover);
-}
 </style>

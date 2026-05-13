@@ -241,21 +241,6 @@ defineExpose({ handleSave })
 
 .write-mode-segmented { flex-shrink: 0; }
 
-/* Help icon */
-.help-icon-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  cursor: help;
-}
-
-.help-icon {
-  color: var(--color-text-weak);
-  transition: color 0.2s;
-}
-
-.help-icon-wrapper:hover .help-icon { color: var(--color-text-muted); }
-
 .write-mode-help-content {
   width: 300px;
 }
@@ -266,34 +251,4 @@ defineExpose({ handleSave })
   box-shadow: 0 8px 24px var(--color-shadow-lg);
 }
 
-.tooltip-title {
-  font-size: var(--fs-14);
-  font-weight: var(--fw-700);
-  color: var(--color-text);
-  margin-bottom: 10px;
-}
-
-.tooltip-item {
-  margin-bottom: 8px;
-  font-size: var(--fs-12);
-  line-height: 1.5;
-  color: var(--color-text-muted);
-}
-
-.tooltip-item:last-child { margin-bottom: 0; }
-
-.tooltip-item strong {
-  display: block;
-  color: var(--color-text-dark);
-  font-weight: var(--fw-600);
-  margin-bottom: 2px;
-}
-
-/* Save button */
-.save-button {
-  background: var(--color-primary-10); color: var(--color-primary); border: none; padding: 6px 14px; border-radius: 10px;
-  font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center;
-  transition: all 0.2s; flex-shrink: 0;
-}
-.save-button:hover { background: var(--color-primary-20); }
 </style>

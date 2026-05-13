@@ -81,7 +81,7 @@
     <div v-else class="session-list">
       <div class="page-header">
         <div style="display: flex; align-items: center; gap: 16px;">
-          <button class="b-button-outline" style="border: none; background: transparent; box-shadow: none; padding: 6px; color: var(--color-text-muted);" @click="handleBackToProjects">
+          <button class="action-icon" @click="handleBackToProjects">
             <svg width="20" height="20"><use href="#icon-back"/></svg>
           </button>
           <div>
@@ -353,10 +353,6 @@ onMounted(() => {
 
 /* Tab Underlines */
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid var(--color-border); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
-.tab-item { padding-bottom: 12px; color: var(--color-text-weak); font-weight: var(--fw-400); font-size: var(--fs-14); cursor: pointer; position: relative; transition: color 0.2s; }
-.tab-item:hover { color: var(--color-text-secondary); }
-.tab-item.active { color: var(--color-primary); font-weight: var(--fw-600); border-bottom: 2px solid var(--color-primary); }
-
 .project-list, .session-list {
   flex: 1;
   display: flex;
@@ -364,33 +360,11 @@ onMounted(() => {
   min-height: 0;
 }
 
-.list-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  margin: 0 40px;
-}
-
-.scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-
 /* Headers & Inputs */
-.page-header { display: flex; justify-content: space-between; align-items: center; margin: 0 40px 32px 40px; flex-shrink: 0; }
 .page-title { font-size: var(--fs-14); font-weight: var(--fw-500); margin: 0; color: var(--color-text); }
 
 .search-box { position: relative; width: 320px; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-weak); pointer-events: none; }
-
-.b-button-outline { background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border); padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 4px var(--color-shadow); transition: all 0.2s;}
-.b-button-outline:hover { background: var(--color-bg-page); border-color: var(--color-border-hover); }
-
-.pill { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-600); display: inline-flex; align-items: center; gap: 4px; letter-spacing: 0.3px; }
-.pill-grey { background: var(--color-bg-subtle); color: var(--color-text-muted); }
-.pill-blue { background: var(--color-primary-light); color: var(--color-primary); }
 
 /* Grid & Cards */
 .project-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
@@ -449,19 +423,4 @@ onMounted(() => {
 .bubble:hover .copy-btn { opacity: 0.8; }
 .bubble-user .copy-btn { color: var(--color-text); }
 
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  color: var(--color-text-weak);
-  background: var(--color-bg);
-  border-radius: 16px;
-  border: 2px dashed var(--color-border);
-}
-.empty-state p {
-  margin-top: 16px;
-  font-size: var(--fs-14);
-}
 </style>
