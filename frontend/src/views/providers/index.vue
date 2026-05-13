@@ -188,7 +188,7 @@
                       已禁用
                     </div>
                     <div v-if="element.model_maps.length > 0" class="tag" style="background: var(--color-success-10); color: var(--color-success); white-space: nowrap;">
-                      {{ element.model_maps.length }}个模型映射
+                      {{ element.model_maps.map(m => m.target_model).join('、') }}
                     </div>
                     <div v-if="element.model_blacklist && element.model_blacklist.length > 0" class="tag" style="background: var(--color-warning-10); color: var(--color-warning); white-space: nowrap;">
                       {{ element.model_blacklist.length }}个黑名单配置
