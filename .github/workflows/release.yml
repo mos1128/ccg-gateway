@@ -12,7 +12,7 @@ jobs:
     # 可防止受损的构建依赖项将恶意代码推回仓库
     permissions:
       contents: read
-      
+
     strategy:
       fail-fast: false  # 防止独立操作系统的失败取消其他并行的构建任务
       matrix:
@@ -26,46 +26,46 @@ jobs:
           - platform: 'ubuntu-22.04'
             os: 'Linux'
             arch: 'x64'
-    
+
     runs-on: ${{ matrix.platform }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-      
+
       - name: Setup pnpm
         # 升级至 v6 以原生支持 pnpm 11 的结构变化与 Node 24 兼容性
         uses: pnpm/action-setup@v6
         with:
           version: 11
-          
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '22'
           # 显式开启基于 pnpm-lock.yaml 的依赖缓存
           # 将网络 I/O 负担转移至高速磁盘 I/O，极大缩短安装时间
-          cache: 'pnpm' 
+          cache: 'pnpm'
           # 明确指出 pnpm-lock.yaml 所在的子目录路径
           cache-dependency-path: 'frontend/pnpm-lock.yaml'
-      
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           # 注入 macOS 构建通用(Fat)二进制文件所需的两个架构目标
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-      
+
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      
+
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-      
+
       # Tauri 2.0 CLI 自动根据 frontendDist 配置推断前端目录并隔离执行上下文
       - name: Build Tauri App (Windows)
         if: matrix.platform == 'windows-latest'
@@ -81,8 +81,8 @@ jobs:
       - name: Build Tauri App (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: pnpm dlx @tauri-apps/cli build --bundles appimage
-      
-      # 使用 v7 版本并设置 compression-level: 0 
+
+      # 使用 v7 版本并设置 compression-level: 0
       # 防止对本来就已压缩的体积庞大的原生包进行无效的二次 zip 压缩
       - name: Upload artifacts (Windows)
         if: matrix.platform == 'windows-latest'
@@ -92,16 +92,16 @@ jobs:
           path: src-tauri/target/release/ccg-gateway.exe
           if-no-files-found: error
           compression-level: 0
-      
+
       - name: Upload artifacts (macOS)
         if: matrix.platform == 'macos-latest'
         uses: actions/upload-artifact@v7
         with:
           name: macos-${{ matrix.arch }}
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
           compression-level: 0
-      
+
       - name: Upload artifacts (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         uses: actions/upload-artifact@v7
@@ -110,28 +110,28 @@ jobs:
           path: src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
           compression-level: 0
-  
+
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')  
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write  # 提升权限以创建 GitHub Release 对象
-    
+
     steps:
       - name: Checkout Code with Deep Fetch
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      
+
       - name: Fetch tags
         run: git fetch --tags --force
-      
+
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
-      
+
       - name: Get tag message natively
         id: tag
         run: |
@@ -139,7 +139,7 @@ jobs:
           # 优化点：直接从本地 Git 数据库提取注释标签信息
           # 完全绕过 GitHub API 延迟、网络限制及速率阈值
           TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG_NAME")
-          
+
           if; then
             echo "has_message=false" >> "$GITHUB_OUTPUT"
           else
@@ -150,7 +150,7 @@ jobs:
             echo "$TAG_MESSAGE" >> "$GITHUB_OUTPUT"
             echo "$EOF" >> "$GITHUB_OUTPUT"
           fi
-      
+
       # 升级至 v3 版本，全面兼容 Node 24 架构，避免在 2026 年中旬被 GitHub 强制下线
       - name: Create Release (with tag message)
         if: steps.tag.outputs.has_message == 'true'
@@ -163,7 +163,7 @@ jobs:
             artifacts/windows-x64/*
             artifacts/macos-universal/*
             artifacts/linux-x64/*
-        
+
       - name: Create Release (auto-generate)
         if: steps.tag.outputs.has_message == 'false'
         uses: softprops/action-gh-release@v3
