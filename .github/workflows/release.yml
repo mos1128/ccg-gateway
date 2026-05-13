@@ -140,7 +140,7 @@ jobs:
           # 完全绕过 GitHub API 延迟、网络限制及速率阈值
           TAG_MESSAGE=$(git tag -l --format='%(contents)' "$TAG_NAME")
 
-          if; then
+          if [ -z "$TAG_MESSAGE" ]; then
             echo "has_message=false" >> "$GITHUB_OUTPUT"
           else
             echo "has_message=true" >> "$GITHUB_OUTPUT"
