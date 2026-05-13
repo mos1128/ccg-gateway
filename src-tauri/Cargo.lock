@@ -428,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "ccg-gateway"
-version = "1.7.9"
+version = "1.7.10"
 dependencies = [
  "async-stream",
  "axum",
