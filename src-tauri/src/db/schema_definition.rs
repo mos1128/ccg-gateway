@@ -74,7 +74,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 21,
+            version: 22,
             tables: Self::define_main_tables(),
         }
     }
@@ -82,7 +82,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 8,
+            version: 9,
             tables: Self::define_log_tables(),
         }
     }
@@ -300,6 +300,12 @@ impl DatabaseSchema {
                         data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "log_detail_mode".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'failure_only'".to_string()),
                     },
                     ColumnDefinition {
                         name: "updated_at".to_string(),

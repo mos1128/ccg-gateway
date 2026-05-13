@@ -861,23 +861,41 @@ pub async fn test_provider_models(
 // Settings commands
 #[tauri::command]
 pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySettings> {
-    sqlx::query_as::<_, GatewaySettings>("SELECT debug_log FROM gateway_settings WHERE id = 1")
+    sqlx::query_as::<_, GatewaySettings>(
+        "SELECT debug_log, log_detail_mode FROM gateway_settings WHERE id = 1"
+    )
         .fetch_one(db.inner())
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn update_gateway_settings(db: State<'_, SqlitePool>, debug_log: bool) -> Result<()> {
+pub async fn update_gateway_settings(
+    db: State<'_, SqlitePool>,
+    debug_log: bool,
+    log_detail_mode: Option<String>,
+) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
     let debug_log_val = if debug_log { 1i64 } else { 0 };
 
-    sqlx::query("UPDATE gateway_settings SET debug_log = ?, updated_at = ? WHERE id = 1")
-        .bind(debug_log_val)
-        .bind(now)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
+    if let Some(mode) = log_detail_mode {
+        sqlx::query(
+            "UPDATE gateway_settings SET debug_log = ?, log_detail_mode = ?, updated_at = ? WHERE id = 1"
+        )
+            .bind(debug_log_val)
+            .bind(mode)
+            .bind(now)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
+    } else {
+        sqlx::query("UPDATE gateway_settings SET debug_log = ?, updated_at = ? WHERE id = 1")
+            .bind(debug_log_val)
+            .bind(now)
+            .execute(db.inner())
+            .await
+            .map_err(map_db_error)?;
+    }
 
     Ok(())
 }

@@ -877,6 +877,23 @@ async fn handle_non_streaming_request(
     Ok(builder.body(Body::from(body_bytes)).unwrap())
 }
 
+/// 根据设置过滤日志详情字段
+fn filter_log_detail(log_info: &mut RequestLogInfo, mode: &str, is_success: bool) {
+    // mode: "full" | "failure_only" | "none"
+    // 跳过条件：mode == "none" 或 (mode == "failure_only" 且 is_success)
+    let should_skip = mode == "none" || (mode == "failure_only" && is_success);
+
+    if should_skip {
+        // 清空 headers/body 详情，保留 forward_url 和 error_message
+        log_info.client_headers = None;
+        log_info.client_body = None;
+        log_info.forward_headers = None;
+        log_info.forward_body = None;
+        log_info.provider_headers = None;
+        log_info.provider_body = None;
+    }
+}
+
 async fn record_request_stats(
     state: &Arc<AppState>,
     cli_type: CliType,
@@ -896,6 +913,21 @@ async fn record_request_stats(
         .map(|code| (200..300).contains(&code))
         .unwrap_or(false);
 
+    // 读取 log_detail_mode 设置
+    let log_detail_mode: String = sqlx::query_as::<_, (String,)>(
+        "SELECT log_detail_mode FROM gateway_settings WHERE id = 1"
+    )
+    .fetch_one(&state.db)
+    .await
+    .map(|(mode,)| mode)
+    .unwrap_or_else(|_| "failure_only".to_string());
+
+    // 过滤详情字段
+    let mut filtered_log_info = log_info;
+    if let Some(ref mut info) = filtered_log_info {
+        filter_log_detail(info, &log_detail_mode, success);
+    }
+
     // Record to request_logs and get the inserted ID
     let log_id = match stats_service::record_request_log(
         &state.log_db,
@@ -912,7 +944,7 @@ async fn record_request_stats(
         client_path,
         source_model,
         target_model,
-        log_info,
+        filtered_log_info,
     )
     .await
     {

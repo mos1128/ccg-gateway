@@ -71,6 +71,16 @@
         </div>
 
         <div style="flex: 1;"></div>
+        <!-- 详情模式下拉选择器 -->
+        <div class="custom-select detail-mode-select" :class="{ open: detailModeSelectOpen }" @click.stop="toggleSelect('detail')">
+          <div class="custom-select-trigger">{{ getDetailModeLabel(logDetailMode) }}</div>
+          <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
+          <div class="custom-select-options">
+            <div class="custom-option" :class="{ selected: logDetailMode === 'full' }" @click.stop="logDetailMode = 'full'; detailModeSelectOpen = false; updateLogDetailMode()">全部详情</div>
+            <div class="custom-option" :class="{ selected: logDetailMode === 'failure_only' }" @click.stop="logDetailMode = 'failure_only'; detailModeSelectOpen = false; updateLogDetailMode()">仅失败详情</div>
+            <div class="custom-option" :class="{ selected: logDetailMode === 'none' }" @click.stop="logDetailMode = 'none'; detailModeSelectOpen = false; updateLogDetailMode()">不记录详情</div>
+          </div>
+        </div>
         <div class="action-icon" :class="{ recording: logEnabled }" @click="logEnabled = !logEnabled; updateLogSettings()" :title="logEnabled ? '暂停记录' : '开启记录'">
           <svg width="16" height="16" v-if="logEnabled"><use href="#icon-pause"/></svg>
           <svg width="16" height="16" v-else><use href="#icon-play"/></svg>
@@ -338,6 +348,7 @@ const activeTab = computed({
   set: (val) => uiStore.setLogsActiveTab(val as 'request' | 'system')
 })
 const logEnabled = ref(false)
+const logDetailMode = ref<'full' | 'failure_only' | 'none'>('full')
 const gatewayUrl = ref('')
 const providerOptions = ref<string[]>([])
 let requestLogListener: (() => void) | null = null
@@ -346,23 +357,27 @@ let requestLogListener: (() => void) | null = null
 const cliSelectOpen = ref(false)
 const providerSelectOpen = ref(false)
 const eventTypeSelectOpen = ref(false)
+const detailModeSelectOpen = ref(false)
 
 function closeAllSelects() {
   cliSelectOpen.value = false
   providerSelectOpen.value = false
   eventTypeSelectOpen.value = false
+  detailModeSelectOpen.value = false
 }
 
 function toggleSelect(type: string) {
   const isCli = type === 'cli' && !cliSelectOpen.value
   const isProv = type === 'provider' && !providerSelectOpen.value
   const isEvent = type === 'event' && !eventTypeSelectOpen.value
-  
+  const isDetail = type === 'detail' && !detailModeSelectOpen.value
+
   closeAllSelects()
-  
+
   if (isCli) cliSelectOpen.value = true
   if (isProv) providerSelectOpen.value = true
   if (isEvent) eventTypeSelectOpen.value = true
+  if (isDetail) detailModeSelectOpen.value = true
 }
 
 onMounted(async () => {
@@ -434,6 +449,7 @@ async function fetchLogSettings() {
   try {
     const res = await logsApi.getSettings()
     logEnabled.value = res.data.debug_log
+    logDetailMode.value = res.data.log_detail_mode
   } catch {}
 }
 
@@ -455,6 +471,19 @@ async function updateLogSettings() {
     } else {
       notify('已关闭日志记录', 'info')
     }
+  } catch {}
+}
+
+function getDetailModeLabel(mode: string): string {
+  if (mode === 'full') return '全部详情'
+  if (mode === 'failure_only') return '仅失败详情'
+  if (mode === 'none') return '不记录详情'
+  return mode
+}
+
+async function updateLogDetailMode() {
+  try {
+    await logsApi.updateSettings({ log_detail_mode: logDetailMode.value })
   } catch {}
 }
 
@@ -840,6 +869,8 @@ watch(activeTab, (tab) => {
 .custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: var(--color-text-secondary); cursor: pointer; transition: all 0.1s; display: flex; align-items: center; margin-bottom: 2px; }
 .custom-option:hover { background: var(--color-bg-subtle); color: var(--color-text); }
 .custom-option.selected { font-weight: var(--fw-600); color: var(--color-primary); background: var(--color-primary-light); }
+
+.detail-mode-select { width: 120px; }
 
 /* Keep el-dialog styles clean to match ethereal frost inside detail view */
 .detail-content { max-height: 60vh; overflow-y: auto; }

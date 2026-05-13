@@ -177,6 +177,7 @@ pub struct TestProviderResult {
 pub struct GatewaySettingsRow {
     pub id: i64,
     pub debug_log: i64,
+    pub log_detail_mode: String,
     pub updated_at: i64,
 }
 
@@ -184,6 +185,7 @@ pub struct GatewaySettingsRow {
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct GatewaySettings {
     pub debug_log: i64,
+    pub log_detail_mode: String,
 }
 
 // Timeout Settings (完整版 - 对应数据库表)
