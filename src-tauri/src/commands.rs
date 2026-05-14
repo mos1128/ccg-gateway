@@ -2520,7 +2520,7 @@ pub async fn clear_request_logs(log_db: State<'_, crate::LogDb>) -> Result<()> {
         .execute(&log_db.0)
         .await
         .map_err(|e| e.to_string())?;
-    crate::services::stats::clear_request_log_body_files()
+    crate::services::stats::clear_request_log_detail_files()
         .await
         .map_err(|e| e.to_string())?;
     sqlx::query("VACUUM")
@@ -2536,7 +2536,7 @@ pub async fn get_request_log_detail(
     id: i64,
 ) -> Result<RequestLogDetail> {
     let mut detail = sqlx::query_as::<_, RequestLogDetail>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, client_headers, NULL as client_body, forward_url, forward_headers, NULL as forward_body, provider_headers, NULL as provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, NULL as client_headers, NULL as client_body, forward_url, NULL as forward_headers, NULL as forward_body, NULL as provider_headers, NULL as provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&log_db.0)
@@ -2544,17 +2544,44 @@ pub async fn get_request_log_detail(
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "Log not found".to_string())?;
 
-    detail.client_body =
-        crate::services::stats::read_request_log_body(detail.id, detail.created_at, "client")
-            .await
-            .or_else(|| Some(String::new()));
-    detail.forward_body =
-        crate::services::stats::read_request_log_body(detail.id, detail.created_at, "forward")
-            .await
-            .or_else(|| Some(String::new()));
-    detail.provider_body =
-        crate::services::stats::read_request_log_body(detail.id, detail.created_at, "provider")
-            .await;
+    detail.client_headers = crate::services::stats::read_request_log_detail(
+        detail.id,
+        detail.created_at,
+        "client.headers",
+    )
+    .await;
+    detail.client_body = crate::services::stats::read_request_log_detail(
+        detail.id,
+        detail.created_at,
+        "client.body",
+    )
+    .await
+    .or_else(|| Some(String::new()));
+    detail.forward_headers = crate::services::stats::read_request_log_detail(
+        detail.id,
+        detail.created_at,
+        "forward.headers",
+    )
+    .await;
+    detail.forward_body = crate::services::stats::read_request_log_detail(
+        detail.id,
+        detail.created_at,
+        "forward.body",
+    )
+    .await
+    .or_else(|| Some(String::new()));
+    detail.provider_headers = crate::services::stats::read_request_log_detail(
+        detail.id,
+        detail.created_at,
+        "provider.headers",
+    )
+    .await;
+    detail.provider_body = crate::services::stats::read_request_log_detail(
+        detail.id,
+        detail.created_at,
+        "provider.body",
+    )
+    .await;
 
     Ok(detail)
 }
