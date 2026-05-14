@@ -18,7 +18,9 @@ CCG Gateway is a desktop management tool built for Claude Code, Codex, and Gemin
 
 This project was initiated based on the author's actual needs to solve various pain points encountered during usage. Several open-source projects were referenced during development, see [Acknowledgments](#-acknowledgments) for details.
 
-### Problems Solved
+---
+
+## 🔥 Core Pain Points
 
 **Unstable Service Providers**
 
