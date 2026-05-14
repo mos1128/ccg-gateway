@@ -2520,6 +2520,9 @@ pub async fn clear_request_logs(log_db: State<'_, crate::LogDb>) -> Result<()> {
         .execute(&log_db.0)
         .await
         .map_err(|e| e.to_string())?;
+    crate::services::stats::clear_request_log_body_files()
+        .await
+        .map_err(|e| e.to_string())?;
     sqlx::query("VACUUM")
         .execute(&log_db.0)
         .await
@@ -2532,14 +2535,28 @@ pub async fn get_request_log_detail(
     log_db: State<'_, crate::LogDb>,
     id: i64,
 ) -> Result<RequestLogDetail> {
-    sqlx::query_as::<_, RequestLogDetail>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
+    let mut detail = sqlx::query_as::<_, RequestLogDetail>(
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, client_headers, NULL as client_body, forward_url, forward_headers, NULL as forward_body, provider_headers, NULL as provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&log_db.0)
     .await
     .map_err(|e| e.to_string())?
-    .ok_or_else(|| "Log not found".to_string())
+    .ok_or_else(|| "Log not found".to_string())?;
+
+    detail.client_body =
+        crate::services::stats::read_request_log_body(detail.id, detail.created_at, "client")
+            .await
+            .or_else(|| Some(String::new()));
+    detail.forward_body =
+        crate::services::stats::read_request_log_body(detail.id, detail.created_at, "forward")
+            .await
+            .or_else(|| Some(String::new()));
+    detail.provider_body =
+        crate::services::stats::read_request_log_body(detail.id, detail.created_at, "provider")
+            .await;
+
+    Ok(detail)
 }
 
 // System logs commands

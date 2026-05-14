@@ -1,9 +1,12 @@
+use crate::config::get_data_dir;
 use crate::db::models::RequestLogInfo;
-use chrono::{Local, TimeZone};
+use chrono::{Local, TimeZone, Utc};
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 const BACKFILL_BATCH_SIZE: i64 = 500;
+const REQUEST_BODY_DIR: &str = "request-bodies";
 
 #[derive(Debug, FromRow)]
 struct UsageAggregateRow {
@@ -334,6 +337,89 @@ async fn set_meta_value_tx(
     Ok(())
 }
 
+fn request_log_body_day(created_at: i64) -> String {
+    Utc.timestamp_opt(created_at, 0)
+        .single()
+        .unwrap_or_else(Utc::now)
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
+fn request_log_body_path(log_id: i64, created_at: i64, name: &str) -> Option<PathBuf> {
+    match name {
+        "client" | "forward" | "provider" => Some(
+            get_data_dir()
+                .join(REQUEST_BODY_DIR)
+                .join(request_log_body_day(created_at))
+                .join(format!("{}-{}.body", log_id, name)),
+        ),
+        _ => None,
+    }
+}
+
+async fn write_request_log_body(log_id: i64, created_at: i64, name: &str, body: Option<&String>) {
+    let Some(body) = body else {
+        return;
+    };
+    let Some(path) = request_log_body_path(log_id, created_at, name) else {
+        return;
+    };
+    let Some(parent) = path.parent() else {
+        return;
+    };
+
+    if let Err(e) = tokio::fs::create_dir_all(parent).await {
+        tracing::error!(error = %e, path = %parent.display(), "Failed to create request body directory");
+        return;
+    }
+
+    let tmp_path = path.with_file_name(format!(
+        "{}.{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("body"),
+        uuid::Uuid::new_v4()
+    ));
+
+    if let Err(e) = tokio::fs::write(&tmp_path, body.as_bytes()).await {
+        tracing::error!(error = %e, path = %tmp_path.display(), "Failed to write request body file");
+        return;
+    }
+
+    let _ = tokio::fs::remove_file(&path).await;
+    if let Err(e) = tokio::fs::rename(&tmp_path, &path).await {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        tracing::error!(error = %e, path = %path.display(), "Failed to finalize request body file");
+    }
+}
+
+async fn write_request_log_bodies(log_id: i64, created_at: i64, info: &RequestLogInfo) {
+    write_request_log_body(log_id, created_at, "client", info.client_body.as_ref()).await;
+    write_request_log_body(log_id, created_at, "forward", info.forward_body.as_ref()).await;
+    write_request_log_body(log_id, created_at, "provider", info.provider_body.as_ref()).await;
+}
+
+pub async fn read_request_log_body(log_id: i64, created_at: i64, name: &str) -> Option<String> {
+    let path = request_log_body_path(log_id, created_at, name)?;
+    match tokio::fs::read_to_string(&path).await {
+        Ok(body) => Some(body),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            tracing::warn!(error = %e, path = %path.display(), "Failed to read request body file");
+            None
+        }
+    }
+}
+
+pub async fn clear_request_log_body_files() -> std::io::Result<()> {
+    let dir = get_data_dir().join(REQUEST_BODY_DIR);
+    match tokio::fs::remove_dir_all(&dir).await {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
 /// Record a request log entry, returns the inserted log ID
 pub async fn record_request_log(
     log_db: &SqlitePool,
@@ -357,8 +443,8 @@ pub async fn record_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, client_headers, client_body, forward_url, forward_headers, forward_body, provider_headers, provider_body, error_message, source_model, target_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, client_headers, forward_url, forward_headers, provider_headers, error_message, source_model, target_model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
@@ -374,19 +460,18 @@ pub async fn record_request_log(
     .bind(client_method)
     .bind(client_path)
     .bind(&info.client_headers)
-    .bind(&info.client_body)
     .bind(&info.forward_url)
     .bind(&info.forward_headers)
-    .bind(&info.forward_body)
     .bind(&info.provider_headers)
-    .bind(&info.provider_body)
     .bind(&info.error_message)
     .bind(source_model)
     .bind(target_model)
     .execute(log_db)
     .await?;
 
-    Ok(result.last_insert_rowid())
+    let log_id = result.last_insert_rowid();
+    write_request_log_bodies(log_id, now, &info).await;
+    Ok(log_id)
 }
 
 /// Record a system log entry

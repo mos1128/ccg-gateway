@@ -82,7 +82,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 8,
+            version: 9,
             tables: Self::define_log_tables(),
         }
     }
@@ -819,12 +819,6 @@ impl DatabaseSchema {
                         default_value: None,
                     },
                     ColumnDefinition {
-                        name: "client_body".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
                         name: "forward_url".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: true,
@@ -837,19 +831,7 @@ impl DatabaseSchema {
                         default_value: None,
                     },
                     ColumnDefinition {
-                        name: "forward_body".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
                         name: "provider_headers".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "provider_body".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: true,
                         default_value: None,
