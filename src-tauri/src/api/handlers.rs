@@ -879,8 +879,6 @@ async fn handle_non_streaming_request(
 
 /// 根据设置过滤日志详情字段
 fn filter_log_detail(log_info: &mut RequestLogInfo, mode: &str, is_success: bool) {
-    // mode: "full" | "failure_only"
-    // 仅在 failure_only 且请求成功时清空详情
     if mode == "failure_only" && is_success {
         log_info.client_headers = None;
         log_info.client_body = None;

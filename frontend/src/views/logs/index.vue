@@ -155,8 +155,7 @@
                   </td>
                   <td class="mono">{{ row.source_model || '-' }} → {{ row.target_model || '-' }}</td>
                   <td class="col-sticky">
-                    <a v-if="canShowDetail(row)" class="table-link" @click="showRequestDetail(row.id)">详情</a>
-                    <span v-else class="table-link-disabled">详情</span>
+                    <a class="table-link" @click="showRequestDetail(row.id)">详情</a>
                   </td>
                 </tr>
               </tbody>
@@ -477,14 +476,6 @@ async function setLogMode(mode: LogRecordMode) {
   } catch {}
 }
 
-function canShowDetail(row: RequestLogListItem): boolean {
-  if (logRecordMode.value === 'disabled') return false
-  if (logRecordMode.value === 'failure_only') {
-    const isSuccess = row.status_code && row.status_code >= 200 && row.status_code < 300
-    return !isSuccess
-  }
-  return true
-}
 
 async function fetchRequestLogs() {
   requestLoading.value = true
@@ -778,8 +769,6 @@ watch(activeTab, (tab) => {
 
 
 .log-mode-select { width: 140px; }
-
-.table-link-disabled { color: var(--color-text-muted); cursor: not-allowed; font-weight: var(--fw-400); }
 
 /* Keep el-dialog styles clean to match ethereal frost inside detail view */
 .detail-content { max-height: 60vh; overflow-y: auto; }
