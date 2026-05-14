@@ -58,7 +58,7 @@
               </div>
             </div>
           </div>
-          <div style="height: 260px; width: 100%;">
+          <div style="height: 260px; width: 100%;" @mouseenter="handleChartMouseEnter" @mouseleave="handleChartMouseLeave">
             <v-chart class="chart" :option="chartOption" autoresize />
           </div>
         </div>
@@ -106,6 +106,8 @@ const cliLoading = reactive<Record<string, boolean>>({
 
 const providerStats = ref<ProviderStats[]>([])
 const advancedStats = ref<AdvancedStatsRow[]>([])
+const pendingAdvancedStats = ref<AdvancedStatsRow[] | null>(null)
+const chartHovering = ref(false)
 
 // UI State
 const metricMode = ref<'requests' | 'tokens'>('tokens')
@@ -199,7 +201,26 @@ async function fetchStats() {
 
   // 图表和明细数据后加载
   const resAdv = await statsApi.getAdvanced({ start_date: startDate, end_date: endDate })
-  advancedStats.value = resAdv.data
+  applyAdvancedStats(resAdv.data)
+}
+
+function applyAdvancedStats(rows: AdvancedStatsRow[]) {
+  if (chartHovering.value) {
+    pendingAdvancedStats.value = rows
+    return
+  }
+  advancedStats.value = rows
+}
+
+function handleChartMouseEnter() {
+  chartHovering.value = true
+}
+
+function handleChartMouseLeave() {
+  chartHovering.value = false
+  if (!pendingAdvancedStats.value) return
+  advancedStats.value = pendingAdvancedStats.value
+  pendingAdvancedStats.value = null
 }
 
 useAutoRefresh(async () => {
@@ -307,35 +328,33 @@ const chartOption = computed(() => {
       textStyle: { color: '#0f172a' },
       formatter: (params: any[]) => {
         if (!params.length) return ''
+        const visibleParams = params.filter(p => Number(isTokens ? p.data?.value : p.value) > 0)
+        if (!visibleParams.length) return ''
         const date = params[0].name
         let html = `<div style="font-weight: 600; margin-bottom: 8px;">${date}</div>`
 
         if (isTokens) {
-          params.forEach(p => {
-            if (p.value > 0) {
-              const d = p.data
-              html += `<div style="margin-bottom: 6px;">
-                <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
-                  <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${p.color};"></span>
-                  ${d.name} (总计: ${formatTokenValue(d.value)})
-                </div>
-                <div style="padding-left: 16px; color: #64748b; font-size: 13px;">
-                  <div>- 输入: ${formatTokenValue(d.input)}</div>
-                  <div>- 输出: ${formatTokenValue(d.output)}</div>
-                  <div>- 缓存: ${formatTokenValue(d.cache)}</div>
-                </div>
-              </div>`
-            }
+          visibleParams.forEach(p => {
+            const d = p.data
+            html += `<div style="margin-bottom: 6px;">
+              <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${p.color};"></span>
+                ${d.name} (总计: ${formatTokenValue(d.value)})
+              </div>
+              <div style="padding-left: 16px; color: #64748b; font-size: 13px;">
+                <div>- 输入: ${formatTokenValue(d.input)}</div>
+                <div>- 输出: ${formatTokenValue(d.output)}</div>
+                <div>- 缓存: ${formatTokenValue(d.cache)}</div>
+              </div>
+            </div>`
           })
         } else {
-          params.forEach(p => {
-            if (p.value > 0) {
-              html += `<div style="margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
-                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${p.color};"></span>
-                <span style="font-weight: 500;">${p.seriesName}:</span>
-                <span>${p.value}</span>
-              </div>`
-            }
+          visibleParams.forEach(p => {
+            html += `<div style="margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${p.color};"></span>
+              <span style="font-weight: 500;">${p.seriesName}:</span>
+              <span>${p.value}</span>
+            </div>`
           })
         }
         return html
