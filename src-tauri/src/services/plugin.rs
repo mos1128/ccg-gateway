@@ -28,22 +28,29 @@ pub struct FavoriteInstallResult {
 
 /// 执行 claude 命令，返回完整输出
 fn run_claude(args: &[&str]) -> Result<String> {
-    let args_str = args
-        .iter()
-        .map(|s| {
-            if s.contains(' ') || s.contains('"') {
-                format!("\"{}\"", s.replace('"', "\\\""))
-            } else {
-                s.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
+    #[cfg(windows)]
+    let output = {
+        let args_str = args
+            .iter()
+            .map(|s| {
+                if s.contains(' ') || s.contains('"') {
+                    format!("\"{}\"", s.replace('"', "\\\""))
+                } else {
+                    s.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
 
-    let output = Command::new("cmd")
-        .args(["/c", &format!("claude {}", args_str)])
-        .output()
-        .map_err(|e| format!("执行命令遇到错误：{}", e))?;
+        Command::new("cmd")
+            .args(["/c", &format!("claude {}", args_str)])
+            .output()
+    };
+
+    #[cfg(not(windows))]
+    let output = Command::new("claude").args(args).output();
+
+    let output = output.map_err(|e| format!("执行命令遇到错误：{}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
