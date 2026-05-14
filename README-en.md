@@ -82,9 +82,8 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 
 ### Dashboard
 
-The dashboard records **request counts** and **token usage** across dual dimensions of **provider / model**, with token usage further broken down into **input / output / cache**.
-
-With provider pricing at $X / M input, $X / M cache, $X / M output — simply plug in token usage to quickly estimate costs, or make decisions about purchasing a CodingPlan.
+- The dashboard records **request counts** and **token usage** across dual dimensions of **provider / model**, with token usage further broken down into **input / output / cache**.
+- With provider pricing at $10 / M input, $5 / M cache, $30 / M output — simply plug in token usage to quickly estimate costs, or make decisions about purchasing a CodingPlan.
 
 ### Relay Providers
 
