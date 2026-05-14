@@ -586,21 +586,6 @@ pub struct SystemLogListResponse {
 
 // ==================== Usage Stats 相关实体 ====================
 
-// Daily Usage Stats (对应 usage_daily 表)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct UsageDaily {
-    pub usage_date: String,
-    pub provider_name: String,
-    pub cli_type: String,
-    pub request_count: i64,
-    pub success_count: i64,
-    pub failure_count: i64,
-    pub input_tokens: i64,
-    pub cache_read_input_tokens: i64,
-    pub cache_creation_input_tokens: i64,
-    pub output_tokens: i64,
-}
-
 // Provider Stats (从 request_logs 聚合)
 #[derive(Debug, Serialize, FromRow)]
 pub struct ProviderStatsRow {

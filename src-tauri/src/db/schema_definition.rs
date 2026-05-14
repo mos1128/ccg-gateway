@@ -82,7 +82,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 9,
+            version: 11,
             tables: Self::define_log_tables(),
         }
     }
@@ -813,25 +813,7 @@ impl DatabaseSchema {
                         default_value: None,
                     },
                     ColumnDefinition {
-                        name: "client_headers".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
                         name: "forward_url".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "forward_headers".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "provider_headers".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: true,
                         default_value: None,
@@ -892,82 +874,6 @@ impl DatabaseSchema {
                     },
                 ],
                 primary_key: vec!["id".to_string()],
-                unique_constraints: vec![],
-            },
-        );
-
-        // usage_daily 表
-        tables.insert(
-            "usage_daily".to_string(),
-            TableDefinition {
-                name: "usage_daily".to_string(),
-                columns: vec![
-                    ColumnDefinition {
-                        name: "usage_date".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "provider_name".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "cli_type".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "request_count".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "success_count".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "failure_count".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "input_tokens".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "cache_read_input_tokens".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "cache_creation_input_tokens".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "output_tokens".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                ],
-                primary_key: vec![
-                    "usage_date".to_string(),
-                    "provider_name".to_string(),
-                    "cli_type".to_string(),
-                ],
                 unique_constraints: vec![],
             },
         );
