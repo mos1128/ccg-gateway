@@ -36,19 +36,33 @@ if git tag -l "v${VERSION}" | grep -q .; then
     exit 1
 fi
 
-# Get release notes (multi-line)
+# Get release notes (multi-line, 3 consecutive empty lines to finish)
 echo ""
-echo "Release notes (empty line to finish):"
+echo "Release notes (3 consecutive empty lines to finish):"
 NOTES=""
+EMPTY_COUNT=0
 while IFS= read -r line; do
-    [[ -z "$line" ]] && break
-    if [[ -z "$NOTES" ]]; then
-        NOTES="$line"
-    else
-        NOTES="$NOTES
+    if [[ -z "$line" ]]; then
+        EMPTY_COUNT=$((EMPTY_COUNT + 1))
+        if [[ $EMPTY_COUNT -ge 3 ]]; then
+            break
+        fi
+        if [[ -n "$NOTES" ]]; then
+            NOTES="$NOTES
 $line"
+        fi
+    else
+        EMPTY_COUNT=0
+        if [[ -z "$NOTES" ]]; then
+            NOTES="$line"
+        else
+            NOTES="$NOTES
+$line"
+        fi
     fi
 done
+# Trim trailing empty lines
+NOTES=$(echo "$NOTES" | sed -e :a -e '/^\n*$/{$d;N;ba}')
 if [[ -z "$NOTES" ]]; then
     echo "[ERROR] Release notes cannot be empty"
     exit 1
