@@ -15,9 +15,9 @@
             <el-switch :model-value="getCliEnabled(cli.type)" @change="(val: string | number | boolean) => handleCliToggle(cli.type, val as boolean)" :loading="cliLoading[cli.type]" />
           </div>
           
-          <div class="b-segmented" style="width: 100%;">
-            <div class="b-seg-btn" :class="{ active: getCliMode(cli.type) === 'proxy' }" @click="handleModeSwitch(cli.type, 'proxy')" style="flex: 1;">中转模式</div>
-            <div class="b-seg-btn" :class="{ active: getCliMode(cli.type) === 'direct' }" @click="handleModeSwitch(cli.type, 'direct')" style="flex: 1;">官方模式</div>
+          <div class="b-segmented b-segmented-fill">
+            <div class="b-seg-btn" :class="{ active: getCliMode(cli.type) === 'proxy' }" @click="handleModeSwitch(cli.type, 'proxy')">中转模式</div>
+            <div class="b-seg-btn" :class="{ active: getCliMode(cli.type) === 'direct' }" @click="handleModeSwitch(cli.type, 'direct')">官方模式</div>
           </div>
         </div>
       </div>
@@ -298,6 +298,9 @@ const chartOption = computed(() => {
   return {
     tooltip: {
       trigger: 'axis',
+      appendTo: 'body',
+      transitionDuration: 0,
+      extraCssText: 'position: fixed;',
       axisPointer: { type: isTokens ? 'shadow' : 'line' },
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
       borderColor: '#e2e8f0',
@@ -383,7 +386,7 @@ onMounted(() => {
 .scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 0 40px 16px 40px;
+  padding: 8px 40px;
 }
 
 .b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); padding: 24px; margin-bottom: 24px; border: 1px solid transparent; }

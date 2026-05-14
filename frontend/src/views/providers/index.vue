@@ -52,7 +52,7 @@
           <div class="b-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方模式</div>
         </div>
 
-        <div v-if="showProfileControls" class="b-segmented profile-segmented">
+        <div v-if="showProfileControls" class="b-segmented">
           <div
             v-for="profile in profileTabs"
             :key="profile.id"
@@ -188,7 +188,7 @@
                       已禁用
                     </div>
                     <div v-if="element.model_maps.length > 0" class="tag" style="background: var(--color-success-10); color: var(--color-success); white-space: nowrap;">
-                      {{ element.model_maps.map(m => m.target_model).join('、') }}
+                      {{ formatModelMaps(element.model_maps) }}
                     </div>
                     <div v-if="element.model_blacklist && element.model_blacklist.length > 0" class="tag" style="background: var(--color-warning-10); color: var(--color-warning); white-space: nowrap;">
                       {{ element.model_blacklist.length }}个黑名单配置
@@ -289,17 +289,17 @@
     <AppModal v-model="showDialog" :title="editingProvider ? '编辑服务商' : '添加服务商'" width="720px" @confirm="handleSave">
       <div style="display: flex; gap: 32px; margin-bottom: 32px;">
             <div style="flex: 1;">
-              <label class="c-label">服务商名称 <span style="color: var(--color-danger);">*</span></label>
+              <label class="c-label">服务商名称 <span class="required">*</span></label>
               <input type="text" v-model="form.name" class="b-input" placeholder="例如: OpenAI 官方">
             </div>
             <div style="flex: 1;">
-              <label class="c-label">Base URL <span style="color: var(--color-danger);">*</span></label>
+              <label class="c-label">Base URL <span class="required">*</span></label>
               <input type="text" v-model="form.base_url" class="b-input" :placeholder="baseUrlPlaceholder">
             </div>
           </div>
           
           <div style="margin-bottom: 40px;">
-            <label class="c-label">{{ activeCliType === 'claude_code' ? 'API Token' : 'API Key' }} <span style="color: var(--color-danger);">*</span></label>
+            <label class="c-label">{{ activeCliType === 'claude_code' ? 'API Token' : 'API Key' }} <span class="required">*</span></label>
             <input type="text" v-model="form.api_key" class="b-input" placeholder="sk-...">
           </div>
 
@@ -351,7 +351,7 @@
 
             <div style="display: flex; flex-direction: column; gap: 20px;">
               <div v-for="(item, index) in form.model_blacklist" :key="'blk-'+index" style="display: flex; gap: 16px; align-items: center;">
-                 <input type="text" v-model="item.model_pattern" class="b-input" placeholder="模型规则" style="flex: 1;">
+                 <input type="text" v-model="item.model_pattern" class="b-input" placeholder="模型名称" style="flex: 1;">
                  <div class="b-button-icon" @click="removeModelBlacklist(index)">×</div>
               </div>
             </div>
@@ -362,7 +362,7 @@
     <!-- Add/Edit Credential Modal -->
     <AppModal v-model="showCredentialDialog" :title="editingCredential ? '编辑凭证' : '添加凭证'" width="720px" @confirm="handleSaveCredential">
           <div style="margin-bottom: 32px;">
-            <label class="c-label">凭证名称 <span style="color: var(--color-danger);">*</span></label>
+            <label class="c-label">凭证名称 <span class="required">*</span></label>
             <input type="text" v-model="credentialForm.name" class="b-input" placeholder="例如: 个人主账号">
           </div>
 
@@ -469,7 +469,7 @@
                 <span v-if="r.status_code === null && r.elapsed_ms === 0">-</span>
                 <span v-else>{{ r.elapsed_ms }}ms</span>
               </td>
-              <td :style="{ color: r.status_code !== null && r.status_code >= 200 && r.status_code < 300 ? 'var(--color-text-muted)' : (r.status_code === null && r.elapsed_ms === 0 ? 'var(--color-text-weak)' : 'var(--color-error)') }" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <td :style="{ color: r.status_code !== null && r.status_code >= 200 && r.status_code < 300 ? 'var(--color-text-muted)' : (r.status_code === null && r.elapsed_ms === 0 ? 'var(--color-text-weak)' : 'var(--color-error)') }">
                 <span v-if="r.status_code === null && r.elapsed_ms === 0" style="font-style: italic;">Testing...</span>
                 <el-tooltip
                   v-else
@@ -1204,6 +1204,10 @@ function handleVisibilityChange() {
   }
 }
 
+function formatModelMaps(modelMaps: Provider['model_maps']): string {
+  return modelMaps.map(modelMap => modelMap.target_model).join('、')
+}
+
 function getUnblacklistTime(provider: Provider): string {
   if (!provider.is_blacklisted || !provider.blacklisted_until) return '已拉黑'
   const diffSeconds = provider.blacklisted_until - (now.value / 1000)
@@ -1263,9 +1267,6 @@ onUnmounted(() => {
 .top-tabs { display: flex; gap: 32px; border-bottom: 1px solid var(--color-border-light); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
 
 .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.profile-segmented .b-seg-btn { padding: 6px 12px; }
-.profile-segmented .b-seg-btn.disabled { opacity: 0.55; pointer-events: none; }
-
 :global(.profile-help-popper.el-popper) {
   border-radius: 12px;
   padding: 16px;
@@ -1334,8 +1335,6 @@ onUnmounted(() => {
 
 .b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); margin-bottom: 24px; border: none; overflow: hidden; }
 
-.b-segmented { flex-shrink: 0; }
-
 .b-button-icon { background: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text-muted); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; }
 .b-button-icon:hover { background: var(--color-danger-light); color: var(--color-danger); border-color: var(--color-danger-muted); }
 
@@ -1344,11 +1343,6 @@ onUnmounted(() => {
 .drag-handle { display: flex; flex-direction: column; gap: 3px; cursor: grab; padding: 8px; margin-left: -8px; opacity: 0.3; transition: opacity 0.2s; }
 .drag-handle:hover { opacity: 0.8; }
 .drag-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--color-text-muted); }
-
-
-/* Detection Table */
-.code-block { background: var(--color-bg-page); padding: 12px; border-radius: 6px; font-size: var(--fs-12); white-space: pre-wrap; word-break: break-all; max-height: 300px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
-.code-block:hover { border-color: var(--color-border-hover); }
 
 
 </style>

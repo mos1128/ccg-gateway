@@ -338,37 +338,5 @@ onMounted(fetchList)
 }
 
 /* Buttons */
-.f-button {
-  background: var(--color-primary);
-  color: var(--color-bg);
-  border: none;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-400);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  transition: all 0.2s;
-}
-.f-button:hover {
-  background: var(--color-primary-hover);
-}
-.f-button.ghost-plain {
-  background: transparent;
-  color: var(--color-text-muted);
-  padding: 8px 12px;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-600);
-  border-radius: 8px;
-}
-.f-button.ghost-plain:hover {
-  color: var(--color-text);
-  background: var(--color-bg-subtle);
-}
-.f-button.ghost-plain.sm {
-  padding: 4px 8px;
-  font-size: var(--fs-12);
-}
 
 </style>

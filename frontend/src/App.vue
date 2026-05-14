@@ -227,10 +227,16 @@ textarea.b-input {
   line-height: 1.6;
 }
 
+.search-input {
+  padding-left: 38px;
+}
+
 /* ========== 分段按钮 ========== */
 .b-segmented { display: inline-flex; background: var(--color-border); padding: 4px; border-radius: 10px; }
 .b-seg-btn { text-align: center; padding: 6px 16px; font-size: var(--fs-14); color: var(--color-text-muted); border-radius: 8px; font-weight: var(--fw-500); transition: all 0.2s ease; cursor: pointer; }
 .b-seg-btn.active { background: var(--color-bg); color: var(--color-primary); box-shadow: 0 1px 3px var(--color-shadow-lg); pointer-events: none; }
+.b-segmented-fill { display: flex; width: 100%; }
+.b-segmented-fill .b-seg-btn { flex: 1; }
 
 /* ========== 操作图标按钮 ========== */
 .action-icon {
@@ -288,8 +294,13 @@ textarea.b-input {
 .b-button:disabled { opacity: 0.5; cursor: not-allowed; }
 .b-button-outline { background: var(--color-bg); color: var(--color-text-secondary); border: 1px solid var(--color-border); padding: 8px 16px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center; transition: all 0.2s; }
 .b-button-outline:hover { background: var(--color-bg-page); color: var(--color-text); border-color: var(--color-border-hover); }
-.save-button { background: var(--color-primary-10); color: var(--color-primary); border: none; padding: 6px 14px; border-radius: 10px; font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center; transition: all 0.2s; flex-shrink: 0; }
+.save-button { background: var(--color-primary-10); color: var(--color-primary); border: none; padding: 10px 18px; border-radius: 10px; font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center; transition: all 0.2s; flex-shrink: 0; }
 .save-button:hover { background: var(--color-primary-20); }
+
+/* Plain ghost button (used for formatting, test links, etc.) */
+.f-button.ghost-plain { background: transparent; color: var(--color-text-muted); border: none; padding: 8px 12px; border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; }
+.f-button.ghost-plain:hover { color: var(--color-text); background: var(--color-bg-subtle); }
+.f-button.ghost-plain.sm { padding: 4px 8px; font-size: var(--fs-12); }
 
 /* ========== 表单 ========== */
 .form-group { margin-bottom: 24px; }

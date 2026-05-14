@@ -68,9 +68,9 @@
                   <span class="mono text-12 text-muted">{{ formatSize(project.total_size) }}</span>
                 </div>
               </div>
-              <div class="ghost-delete" @click.stop="handleDeleteProject(project)">
+              <button class="action-icon delete" title="删除项目" @click.stop="handleDeleteProject(project)">
                 <svg width="16" height="16"><use href="#icon-trash"/></svg>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -91,7 +91,7 @@
         </div>
         <div class="search-box" style="width: 260px; position: relative;">
           <svg class="search-icon" width="16" height="16" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-weak); pointer-events: none; z-index: 1;"><use href="#icon-search"/></svg>
-          <input type="text" v-model="sessionSearchQuery" class="b-input" placeholder="搜索..." style="height: 38px; padding: 0 12px 0 36px; margin: 0; box-shadow: none;">
+          <input type="text" v-model="sessionSearchQuery" class="b-input search-input" placeholder="搜索...">
         </div>
       </div>
 
@@ -132,9 +132,9 @@
                 </div>
               </div>
               
-              <div class="ghost-delete" @click.stop="handleDeleteSession(session)">
+              <button class="action-icon delete" title="删除会话" @click.stop="handleDeleteSession(session)">
                 <svg width="16" height="16"><use href="#icon-trash"/></svg>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -376,8 +376,11 @@ onMounted(() => {
 .project-path-title { font-weight: var(--fw-500); font-size: var(--fs-14); color: var(--color-text); margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; word-break: break-all; }
 .project-meta { display: flex; align-items: center; gap: 12px; }
 
-.ghost-delete { position: absolute; right: 16px; top: 50%; transform: translateY(-50%) !important; color: var(--color-border-hover); padding: 6px; border-radius: 6px; z-index: 10; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.2s, background-color 0.2s, color 0.2s; }
-.ghost-delete:hover { background: var(--color-danger-light); color: var(--color-danger); }
+/* Session Card Delete Button */
+.session-card > .action-icon, .project-card > .action-icon {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%) !important;
+  flex-shrink: 0;
+}
 
 /* Sessions List Detail */
 .session-card { display: flex; align-items: center; padding: 20px 24px; border-radius: 16px; background: var(--color-bg); cursor: pointer; margin-bottom: 12px; position: relative; border: 1px solid var(--color-bg-subtle); box-shadow: 0 2px 8px var(--color-shadow); gap: 16px; transition: border-color 0.2s, background-color 0.2s; transform: none !important; }

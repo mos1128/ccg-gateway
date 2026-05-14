@@ -37,7 +37,7 @@
               <span class="card-label">CLI 运行配置</span>
             </div>
             <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
-              <div class="b-segmented" style="margin-bottom: 24px;">
+              <div class="b-segmented b-segmented-fill" style="margin-bottom: 24px;">
                 <div class="b-seg-btn" :class="{ active: activeCliTab === 'claude_code' }" @click="activeCliTab = 'claude_code'">Claude Code</div>
                 <div class="b-seg-btn" :class="{ active: activeCliTab === 'codex' }" @click="activeCliTab = 'codex'">Codex</div>
                 <div class="b-seg-btn" :class="{ active: activeCliTab === 'gemini' }" @click="activeCliTab = 'gemini'">Gemini</div>
@@ -103,7 +103,7 @@
             </div>
             <div class="card-body">
               <div class="backup-row">
-                <div class="b-segmented backup-segmented">
+                <div class="b-segmented">
                   <div class="b-seg-btn" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</div>
                   <div class="b-seg-btn" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</div>
                 </div>
@@ -138,23 +138,23 @@
     </div>
 
     <!-- WebDAV Backup List Dialog -->
-    <AppModal v-model="webdavListVisible" title="管理 WebDAV 备份" width="720px" @confirm="webdavListVisible = false" cancel-text="取消" confirm-text="关闭">
+    <AppModal v-model="webdavListVisible" title="管理 WebDAV 备份" :show-footer="false">
         <div v-loading="loadingWebdavList" style="max-height: 60vh; display: flex; flex-direction: column; margin: -32px;">
             <div class="scroll-area">
-              <table class="flat-table" style="width: 100%;">
+              <table class="flat-table">
                 <tbody>
                   <tr v-for="backup in webdavBackups" :key="backup.filename">
-                    <td class="mono" style="padding: 16px 0; border-bottom: 1px solid var(--color-bg-subtle);">{{ backup.filename }}</td>
-                    <td class="mono" style="width: 120px; padding: 16px 20px; border-bottom: 1px solid var(--color-bg-subtle);">{{ formatSize(backup.size) }}</td>
-                    <td style="width: 140px; text-align: right; padding: 16px 0; border-bottom: 1px solid var(--color-bg-subtle);">
-                      <div style="display: inline-flex; gap: 16px;">
-                        <a class="table-link" @click="handleImportWebdav(backup.filename)">恢复</a>
+                    <td class="mono">{{ backup.filename }}</td>
+                    <td class="mono">{{ formatSize(backup.size) }}</td>
+                    <td>
+                      <div>
+                        <a class="table-link" style="margin-right: 8px;" @click="handleImportWebdav(backup.filename)">恢复</a>
                         <a class="table-link danger" @click="handleDeleteWebdav(backup.filename)">删除</a>
                       </div>
                     </td>
                   </tr>
                   <tr v-if="webdavBackups.length === 0">
-                    <td colspan="3" class="text-center text-muted" style="padding: 60px;">暂无备份</td>
+                    <td colspan="3" class="text-center text-muted">暂无备份</td>
                   </tr>
                 </tbody>
               </table>
@@ -399,10 +399,10 @@ onMounted(() => {
   flex-direction: column;
 }
 
-.scroll-area {
+.config-page > .scroll-area {
   flex: 1;
   overflow-y: auto;
-  padding: 0 40px 16px 40px;
+  padding: 8px 40px;
 }
 
 /* Header */
@@ -431,28 +431,7 @@ onMounted(() => {
 .input-with-unit { display: flex; align-items: center; gap: 12px; }
 .unit { font-size: var(--fs-14); color: var(--color-text-weak); font-weight: var(--fw-400); }
 
-/* Segmented Control */
-.b-segmented { display: flex; margin-bottom: 20px; }
-.b-seg-btn { flex: 1; }
-
 /* Buttons */
-.f-button {
-  background: var(--color-primary); color: var(--color-bg); border: none; padding: 10px 18px; border-radius: 10px;
-  font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center;
-  transition: background 0.2s;
-}
-.f-button:hover:not(:disabled) { background: var(--color-primary-hover); }
-.f-button:disabled { background: var(--color-text-weak); box-shadow: none; cursor: not-allowed; opacity: 0.7; }
-
-.f-button.secondary { background: var(--color-bg-page); color: var(--color-text-secondary); border: 1px solid var(--color-border); box-shadow: none; }
-.f-button.secondary:hover:not(:disabled) { background: var(--color-bg-subtle); color: var(--color-text); }
-
-.f-button.ghost { background: var(--color-primary-light); color: var(--color-primary-dark); box-shadow: none; border: 1px solid var(--color-primary-border); }
-.f-button.ghost:hover:not(:disabled) { background: var(--color-primary-lighter); }
-
-.f-button.ghost-plain { background: transparent; color: var(--color-text-muted); box-shadow: none; border: 1px solid transparent; padding: 6px 12px; font-size: var(--fs-14); font-weight: var(--fw-400); }
-.f-button.ghost-plain:hover { color: var(--color-text); background: var(--color-bg-page); }
-
 .action-row-end { display: flex; justify-content: flex-end; gap: 12px; align-items: center; }
 .card-footer-right { margin-top: 8px; display: flex; justify-content: flex-end; }
 
@@ -467,8 +446,6 @@ onMounted(() => {
 
 /* Backup Row */
 .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.backup-segmented { margin-bottom: 0; flex-shrink: 0; }
-.backup-segmented .b-seg-btn { flex: none; }
 .backup-actions { display: flex; gap: 8px; }
 
 /* WebDAV Settings Form */

@@ -236,7 +236,7 @@ body {
   background: var(--color-bg-subtle); 
   border-radius: 24px; 
   box-shadow: inset 0 0 0 1px var(--color-border); 
-  padding: 40px 0; 
+  padding: 32px 0; 
   min-width: 0;
   display: flex;
   flex-direction: column;

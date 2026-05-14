@@ -19,8 +19,8 @@
       <div class="section-label">CLI 目录</div>
       <div class="input-group">
         <input type="text" v-model="form.config_dir" class="b-input" placeholder="CLI 配置目录">
-        <button class="f-button ghost-plain" @click="handleResetDir" title="恢复默认">
-          <svg width="14" height="14" style="margin-right: 4px;"><use href="#icon-rotate"/></svg>
+        <button class="action-icon" @click="handleResetDir" title="恢复默认">
+          <svg width="14" height="14"><use href="#icon-rotate"/></svg>
         </button>
       </div>
     </div>
@@ -45,7 +45,7 @@
 
     <div class="form-section write-mode-section">
       <div class="write-mode-row">
-        <div class="b-segmented write-mode-segmented">
+        <div class="b-segmented">
           <div class="b-seg-btn" :class="{ active: form.config_write_mode === 'merge' }" @click="form.config_write_mode = 'merge'">增量合并</div>
           <div class="b-seg-btn" :class="{ active: form.config_write_mode === 'overwrite' }" @click="form.config_write_mode = 'overwrite'">全量写入</div>
         </div>
@@ -219,27 +219,10 @@ defineExpose({ handleSave })
 .hint-text { font-size: var(--fs-12); color: var(--color-text-weak); margin-top: 8px; font-weight: var(--fw-400); }
 .error-text { font-size: var(--fs-12); color: var(--color-error); margin-top: 8px; font-weight: var(--fw-400); }
 
-/* Buttons */
-.f-button {
-  background: var(--color-primary); color: var(--color-bg); border: none; padding: 12px 24px; border-radius: 10px;
-  font-size: var(--fs-14); font-weight: var(--fw-600); cursor: pointer; display: flex; align-items: center;
-  transition: background 0.2s;
-}
-.f-button:hover { background: var(--color-primary-hover); }
-
-.f-button.ghost-plain { background: transparent; color: var(--color-text-muted); padding: 8px 12px; font-size: var(--fs-14); font-weight: var(--fw-600); border-radius: 8px; }
-.f-button.ghost-plain:hover { color: var(--color-text); background: var(--color-bg-subtle); }
-.f-button.ghost-plain.sm { padding: 4px 8px; font-size: var(--fs-12); }
-
 /* Write mode section */
 .write-mode-section { margin-top: 4px; margin-bottom: 0; flex-shrink: 0; }
 
 .write-mode-row { display: flex; align-items: center; gap: 10px; }
-
-.b-seg-btn { white-space: nowrap; user-select: none; }
-.b-seg-btn:hover { color: var(--color-text); }
-
-.write-mode-segmented { flex-shrink: 0; }
 
 .write-mode-help-content {
   width: 300px;
