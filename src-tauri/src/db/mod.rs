@@ -12,6 +12,19 @@ use schema_migrator::SchemaMigrator;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 use std::path::Path;
 
+fn sqlite_pool_options() -> SqlitePoolOptions {
+    SqlitePoolOptions::new()
+        .max_connections(5)
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                sqlx::query("PRAGMA busy_timeout = 2000")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+}
+
 pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     // 1. 确保父目录存在
     if let Some(parent) = path.parent() {
@@ -20,10 +33,7 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
 
     // 2. 连接数据库
     let db_url = format!("sqlite:{}?mode=rwc", path.display());
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect(&db_url)
-        .await?;
+    let pool = sqlite_pool_options().connect(&db_url).await?;
 
     // 3. 判断数据库类型
     let is_log_db = path.ends_with("ccg_logs.db") || path.ends_with("ccg_logs");
@@ -91,6 +101,54 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     }
 
     tracing::info!("数据库迁移完成");
+    Ok(pool)
+}
+
+pub async fn init_stats_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+
+    let db_url = format!("sqlite:{}?mode=rwc", path.display());
+    let pool = sqlite_pool_options().connect(&db_url).await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS usage_daily_model (
+            usage_date TEXT NOT NULL,
+            cli_type TEXT NOT NULL,
+            provider_name TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            request_count INTEGER NOT NULL DEFAULT 0,
+            success_count INTEGER NOT NULL DEFAULT 0,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            elapsed_ms INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (usage_date, cli_type, provider_name, model_id)
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS stats_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
+    create_version_table(&pool).await?;
+    update_version(&pool, 2).await?;
+
     Ok(pool)
 }
 

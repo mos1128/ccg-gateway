@@ -2,7 +2,7 @@ use crate::config::{
     expand_home_path, get_data_dir, get_default_cli_config_dir, shrink_home_path, Config,
 };
 use crate::db::models::{
-    CliSettingsResponse, CliSettingsUpdate, DiscoverableSkill, GatewaySettings,
+    AdvancedStatsRow, CliSettingsResponse, CliSettingsUpdate, DiscoverableSkill, GatewaySettings,
     InstalledSkillResponse, MarketplaceInfo, McpCliFlag, McpConfig, McpCreate, McpResponse,
     McpUpdate, OfficialCredential, OfficialCredentialCreate, OfficialCredentialResponse,
     OfficialCredentialUpdate, PaginatedLogs, PaginatedProjects, PaginatedSessions,
@@ -12,14 +12,13 @@ use crate::db::models::{
     SessionInfo, SessionMessage, SkillCliFlag, SkillFavorite, SkillFavoriteItem, SkillRepo,
     SkillRepoCreate, SystemLogItem, SystemLogListResponse, SystemStatus, TestProviderModelsInput,
     TimeoutSettings, TimeoutSettingsUpdate, WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
-    AdvancedStatsRow
 };
 use crate::services::routing::{
     gateway_path_prefix_for_profile, gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE,
     PROFILE1, PROFILE2, PROFILE3, PROVIDER_PROFILES,
 };
 use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestEntry};
-use crate::LogDb;
+use crate::{LogDb, StatsDb};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
@@ -862,11 +861,11 @@ pub async fn test_provider_models(
 #[tauri::command]
 pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySettings> {
     sqlx::query_as::<_, GatewaySettings>(
-        "SELECT debug_log, log_detail_mode FROM gateway_settings WHERE id = 1"
+        "SELECT debug_log, log_detail_mode FROM gateway_settings WHERE id = 1",
     )
-        .fetch_one(db.inner())
-        .await
-        .map_err(|e| e.to_string())
+    .fetch_one(db.inner())
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -3247,32 +3246,32 @@ async fn get_prompt_file_path(db: &SqlitePool, cli_type: &str) -> Option<std::pa
 // Stats commands
 #[tauri::command]
 pub async fn get_provider_stats(
-    log_db: State<'_, crate::LogDb>,
+    stats_db: State<'_, StatsDb>,
     start_date: Option<String>,
     end_date: Option<String>,
     cli_type: Option<String>,
     provider_name: Option<String>,
 ) -> Result<Vec<ProviderStatsResponse>> {
-    let pool = &log_db.0;
+    let pool = &stats_db.0;
 
     let mut query = r#"
         SELECT
             provider_name,
-            COUNT(*) as total_requests,
-            SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as total_success,
+            SUM(request_count) as total_requests,
+            SUM(success_count) as total_success,
             SUM(input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens) as total_tokens,
             SUM(cache_read_input_tokens) as total_cache_read_tokens,
             SUM(cache_creation_input_tokens) as total_cache_creation_tokens,
             SUM(elapsed_ms) as total_elapsed_ms
-        FROM request_logs
+        FROM usage_daily_model
         WHERE 1=1
     "#.to_string();
 
     if start_date.is_some() {
-        query.push_str(" AND datetime(created_at, 'unixepoch', 'localtime') >= ?");
+        query.push_str(" AND usage_date >= ?");
     }
     if end_date.is_some() {
-        query.push_str(" AND datetime(created_at, 'unixepoch', 'localtime') <= ?");
+        query.push_str(" AND usage_date <= ?");
     }
     if cli_type.is_some() {
         query.push_str(" AND cli_type = ?");
@@ -3321,36 +3320,36 @@ pub async fn get_provider_stats(
 
 #[tauri::command]
 pub async fn get_advanced_stats(
-    log_db: State<'_, crate::LogDb>,
+    stats_db: State<'_, StatsDb>,
     start_date: Option<String>,
     end_date: Option<String>,
     cli_type: Option<String>,
     provider_name: Option<String>,
     model_id: Option<String>,
 ) -> Result<Vec<AdvancedStatsRow>> {
-    let pool = &log_db.0;
+    let pool = &stats_db.0;
 
     let mut query = r#"
         SELECT
-            date(created_at, 'unixepoch', 'localtime') as date,
+            usage_date as date,
             provider_name,
-            COALESCE(model_id, source_model, '未知模型') as model_id,
-            COUNT(*) as total_requests,
-            SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END) as total_success,
+            model_id,
+            SUM(request_count) as total_requests,
+            SUM(success_count) as total_success,
             SUM(input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens) as total_tokens,
             SUM(input_tokens) as total_input_tokens,
             SUM(output_tokens) as total_output_tokens,
             SUM(cache_read_input_tokens) as total_cache_read_tokens,
             SUM(cache_creation_input_tokens) as total_cache_creation_tokens
-        FROM request_logs
+        FROM usage_daily_model
         WHERE 1=1
     "#.to_string();
 
     if start_date.is_some() {
-        query.push_str(" AND date(created_at, 'unixepoch', 'localtime') >= ?");
+        query.push_str(" AND usage_date >= ?");
     }
     if end_date.is_some() {
-        query.push_str(" AND date(created_at, 'unixepoch', 'localtime') <= ?");
+        query.push_str(" AND usage_date <= ?");
     }
     if cli_type.is_some() {
         query.push_str(" AND cli_type = ?");
@@ -3359,10 +3358,10 @@ pub async fn get_advanced_stats(
         query.push_str(" AND provider_name = ?");
     }
     if model_id.is_some() {
-        query.push_str(" AND COALESCE(model_id, source_model, '未知模型') = ?");
+        query.push_str(" AND model_id = ?");
     }
-    
-    query.push_str(" GROUP BY date, provider_name, model_id ORDER BY date DESC, provider_name, model_id");
+
+    query.push_str(" GROUP BY usage_date, provider_name, model_id ORDER BY usage_date DESC, provider_name, model_id");
 
     let mut q = sqlx::query_as::<_, AdvancedStatsRow>(&query);
     if let Some(ref sd) = start_date {

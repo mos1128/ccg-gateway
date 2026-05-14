@@ -5,7 +5,7 @@ pub mod db;
 pub mod services;
 
 use config::Config;
-use db::init_db;
+use db::{init_db, init_stats_db};
 use sqlx::SqlitePool;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
@@ -13,8 +13,16 @@ use tauri::Manager;
 
 // Type wrappers for Tauri state
 pub struct LogDb(pub SqlitePool);
+pub struct StatsDb(pub SqlitePool);
 
 impl std::ops::Deref for LogDb {
+    type Target = SqlitePool;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for StatsDb {
     type Target = SqlitePool;
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -35,6 +43,7 @@ pub fn run() {
             // Initialize database
             let db_path = config.database.path.clone();
             let log_db_path = config.database.log_path.clone();
+            let stats_db_path = config.database.stats_path.clone();
 
             tauri::async_runtime::block_on(async {
                 // Ensure data directory exists
@@ -56,30 +65,43 @@ pub fn run() {
                         std::process::exit(1);
                     }
                 };
+                let stats_db = match init_stats_db(&stats_db_path).await {
+                    Ok(db) => db,
+                    Err(e) => {
+                        tracing::error!("Failed to init stats database: {}", e);
+                        std::process::exit(1);
+                    }
+                };
 
                 app.manage(db.clone());
                 app.manage(LogDb(log_db.clone()));
+                app.manage(StatsDb(stats_db.clone()));
 
-                // Create shared HTTP client with connection pooling
-                let http_client = reqwest::Client::builder()
-                    .pool_max_idle_per_host(10)
-                    .pool_idle_timeout(std::time::Duration::from_secs(90))
-                    .build()
-                    .unwrap_or_default();
-
-                // Start HTTP server for proxy
-                let state = api::AppState {
-                    db: db.clone(),
-                    log_db: log_db.clone(),
-                    app_handle: app.handle().clone(),
-                    http_client,
-                };
-
-                let router = api::create_router(state);
                 let addr = config.bind_addr();
+                let app_handle = app.handle().clone();
 
                 tokio::spawn(async move {
-                    // Bind listener with better error handling
+                    if let Err(e) = ensure_historical_stats_ready(&log_db, &stats_db).await {
+                        tracing::error!("Historical stats backfill failed: {}", e);
+                        return;
+                    }
+
+                    let http_client = reqwest::Client::builder()
+                        .pool_max_idle_per_host(10)
+                        .pool_idle_timeout(std::time::Duration::from_secs(90))
+                        .build()
+                        .unwrap_or_default();
+
+                    let state = api::AppState {
+                        db,
+                        log_db,
+                        stats_db,
+                        app_handle,
+                        http_client,
+                    };
+
+                    let router = api::create_router(state);
+
                     let listener = match tokio::net::TcpListener::bind(&addr).await {
                         Ok(listener) => {
                             tracing::info!("Gateway HTTP server listening on {}", addr);
@@ -262,4 +284,20 @@ pub fn run() {
             tracing::error!("Failed to run tauri application: {}", e);
             std::process::exit(1);
         });
+}
+
+async fn ensure_historical_stats_ready(
+    log_db: &SqlitePool,
+    stats_db: &SqlitePool,
+) -> Result<(), sqlx::Error> {
+    if services::stats::is_historical_backfill_done(stats_db).await? {
+        return Ok(());
+    }
+
+    let max_log_id = services::stats::request_log_max_id(log_db).await?;
+    tracing::info!(
+        "Starting historical stats backfill before gateway startup up to log id {}",
+        max_log_id
+    );
+    services::stats::backfill_historical_stats(log_db, stats_db, max_log_id).await
 }

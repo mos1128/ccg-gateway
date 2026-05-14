@@ -11,6 +11,7 @@ use tower_http::cors::{Any, CorsLayer};
 pub struct AppState {
     pub db: SqlitePool,
     pub log_db: SqlitePool,
+    pub stats_db: SqlitePool,
     pub app_handle: AppHandle,
     pub http_client: HttpClient,
 }

@@ -907,21 +907,39 @@ async fn record_request_stats(
 ) {
     // 读取 gateway 设置
     let settings: (i64, String) = sqlx::query_as::<_, (i64, String)>(
-        "SELECT debug_log, log_detail_mode FROM gateway_settings WHERE id = 1"
+        "SELECT debug_log, log_detail_mode FROM gateway_settings WHERE id = 1",
     )
     .fetch_one(&state.db)
     .await
     .unwrap_or((0, "failure_only".to_string()));
 
-    // debug_log = 0 时跳过日志记录
-    if settings.0 == 0 {
-        return;
-    }
-
     // Derive success from status_code (200-299 = success)
     let success = status_code
         .map(|code| (200..300).contains(&code))
         .unwrap_or(false);
+
+    if let Err(e) = stats_service::record_request(
+        &state.stats_db,
+        provider_name,
+        cli_type.as_str(),
+        model_id,
+        source_model,
+        success,
+        elapsed_ms,
+        usage.input_tokens,
+        usage.cache_read_input_tokens,
+        usage.cache_creation_input_tokens,
+        usage.output_tokens,
+    )
+    .await
+    {
+        tracing::error!(error = %e, "Failed to record usage stats");
+    }
+
+    // debug_log = 0 时跳过日志记录
+    if settings.0 == 0 {
+        return;
+    }
 
     // 过滤详情字段
     let mut filtered_log_info = log_info;
@@ -970,17 +988,4 @@ async fn record_request_stats(
             tracing::error!(error = %e, "Failed to emit request log event");
         }
     }
-
-    // Record to usage_daily
-    let _ = stats_service::record_request(
-        &state.log_db,
-        provider_name,
-        cli_type.as_str(),
-        success,
-        usage.input_tokens,
-        usage.cache_read_input_tokens,
-        usage.cache_creation_input_tokens,
-        usage.output_tokens,
-    )
-    .await;
 }

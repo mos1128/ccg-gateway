@@ -21,6 +21,8 @@ pub struct DatabaseConfig {
     pub path: PathBuf,
     #[serde(default = "default_log_db_path")]
     pub log_path: PathBuf,
+    #[serde(default = "default_stats_db_path")]
+    pub stats_path: PathBuf,
 }
 
 fn default_port() -> u16 {
@@ -40,6 +42,10 @@ fn default_db_path() -> PathBuf {
 
 fn default_log_db_path() -> PathBuf {
     get_data_dir().join("ccg_logs.db")
+}
+
+fn default_stats_db_path() -> PathBuf {
+    get_data_dir().join("ccg_stats.db")
 }
 
 pub fn get_data_dir() -> PathBuf {
@@ -117,6 +123,7 @@ impl Default for Config {
             database: DatabaseConfig {
                 path: default_db_path(),
                 log_path: default_log_db_path(),
+                stats_path: default_stats_db_path(),
             },
         }
     }
