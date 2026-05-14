@@ -22,27 +22,37 @@ This project was initiated based on the author's actual needs to solve various p
 
 **Unstable Service Providers**
 
-Service providers may experience quota reset windows, rate limiting, or downtime. The gateway automatically switches to available providers and periodically re-checks, with zero user perception.
+Service providers may experience quota reset windows, rate limiting, or downtime? The gateway automatically switches to available providers and periodically re-checks — zero user perception.
 
-Even better: Concurrent testing of provider availability; model name mapping; skipping unsupported models.
+More handy features: provider availability testing; model name mapping; skipping unavailable models and auto-routing to available providers; custom request User-Agent.
 
 **Tedious Multi-Account Switching**
 
-Multiple official accounts or multiple relay providers? Quickly switch accounts / adjust priorities by dragging and dropping.
+Multiple official accounts or multiple relay providers? Quickly switch accounts / adjust priorities by drag and drop.
+
+**Multi-Project, Multi-Provider Parallel Workflow**
+
+Same Agent, multiple projects in parallel, and want different providers for different projects? Supports multiple Profiles, each with its own independent provider configuration.
+
+**Hard to Estimate Costs**
+
+Statistics dashboard covers provider / model dual-dimension token usage (input / output / cache). Plug in provider pricing rules to easily estimate costs.
+
+Using a request-count-based CodingPlan? The statistics dashboard also covers provider / model dual-dimension request counts.
 
 **Opaque Request Information**
 
-Request logs record every model call. Status, latency, token usage, and request/response information are clear at a glance.
+Request logs record status, latency, token usage (multi-dimensional), agent requests, provider responses, and more for every call — all at a glance.
 
 **Hard to Trace Sessions**
 
-Browse session history grouped by project to view the AI's thought process, tool calls, and return results.
+Browse session history grouped by project, with access to the AI's thought process, tool calls, and return results.
 
-**Repetitive Configuration Across Multiple CLIs**
+**Repetitive Configuration Across Multiple Agents**
 
-Configure tools like MCP, preset prompts, Skills, and plugins just once, and quickly apply them to multiple CLIs.
+MCP, preset prompts, Skills, plugins, and other tools only need to be configured once to be quickly applied across multiple Agents.
 
-**Repetitive Configuration Across Devices**
+**Cross-Device Configuration Sync**
 
 Supports local export and WebDAV cloud backup for quick restoration of full configurations across devices.
 
@@ -66,55 +76,53 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 
 ## 💡 Features
 
+> Only unique features are listed here for quick reference.
+
 ### Dashboard
 
-- Statistics: Request count, success rate, token consumption.
-- Provider success rate/usage statistics, request trend charts.
+The dashboard records **request counts** and **token usage** across dual dimensions of **provider / model**, with token usage further broken down into **input / output / cache**.
 
-### Provider & Account Management
+With provider pricing at $X / M input, $X / M cache, $X / M output — simply plug in token usage to quickly estimate costs, or make decisions about purchasing a CodingPlan.
 
-**Relay Providers**
+### Relay Providers
 
-- Supports multi-profile mode, each with independent provider configurations to meet isolation needs in different scenarios.
-- Model Testing: Concurrently test specified models across multiple providers to intuitively view availability and response latency, following model mapping rules.
-- Model Mapping: Automatically map when the provider's model name differs from the CLI's model name. Supports wildcards: `*` for any string length, `?` for a single character.
-  - E.g., `*opus* -> gml-5` maps models with "opus" in the name to the provider's "gml-5" model.
-- Model Blacklist: Configure models not supported by a provider to automatically skip that provider during requests.
-- Failure Blacklist: Automatically blacklist a provider for M minutes after N consecutive failures, and automatically restore periodically.
-- Custom UA: Replace the request's User-Agent.
+- Model Mapping: Automatically maps when the agent's model name differs from the provider's model name, with no need to manually edit config files.
+  - Wildcards: `*` for any length of characters, `?` for a single character.
+  - Example: `*opus* -> gml-5` maps any model with "opus" in its name to the provider's gml-5 model.
+- Model Blacklist: Configure models a provider doesn't support; requests automatically skip that provider and route to one that supports the model.
+- Failure Blacklist: Automatically blacklists a provider after N consecutive failures for M minutes, with periodic automatic recovery.
 
-**Official Accounts**
+### Official Accounts
 
-- Store multiple sets of credential configurations, supporting one-click reading from the current CLI.
-- Drag and drop to quickly switch the currently used account credentials.
-- Official accounts bypass gateway forwarding and use the CLI's own requests to avoid security risks.
+- Supports credential configuration for multiple accounts, with one-click reading from the Agent.
+- Supports drag-and-drop to quickly switch the currently active account credentials.
+- Official accounts bypass gateway forwarding and use the Agent's own requests to avoid security risks.
+
+### Global Settings
+
+- CLI Runtime Configuration: Supports configuring Agent data directories, making it easy for WSL users to write files correctly.
+- Global Presets: Written into each Agent's configuration file (e.g., `~/.claude/settings.json`). No need to configure BASE_URL or AUTH_TOKEN — the gateway writes them automatically.
+- Incremental / Full Write: Incremental writing preserves configurations made by the Agent itself; full writing does not.
 
 ### Log Management
 
-- Request Logs: Record detailed information for each request: request content, response content, latency, status code, token usage, source model, and mapped model.
-
-- System Logs: Record system events such as provider switching, failures, and blacklisting.
-
-### Session Management
-
-Browse session history of each CLI grouped by project, viewing message lists, AI thought processes, tool calls, and return results. Supports project search and session search.
+- Request Logs: Split into request metadata and request details.
+  - Metadata: request time, agent, provider, status, latency, token breakdown, model mapping, error messages, etc.
+  - Request Details: agent request headers / body, gateway forwarded request headers / body, provider response headers / body.
+- Log Levels: full logging, log details on failure only, or disable logging. Full logging records request details regardless of success; disabling logging records nothing.
+- Request detail data is stored in files, allowing cleanup of large logs while retaining metadata.
 
 ### MCP / Prompts / Skills / Plugin Management
 
-- **MCP**: Configure once, enable/disable for multiple CLIs.
-- **Preset Prompts**: Configure once, enable/disable for multiple CLIs.
+- **MCP**: Configure once, enable/disable across multiple CLIs. Codex automatically converts to Toml format.
+- **Preset Prompts**: Configure once, enable/disable across multiple CLIs.
 - **Skills**: Visual management, supports installation from local directories or remote Git repositories, providing skill favorites and quick reinstallation.
 - **Plugins**: Visual management, supports installation from local directories or remote Git repositories, providing plugin favorites and quick reinstallation.
 
-### Backup & Restore
-
-- **Local Backup**: Export database files locally, or restore from local files.
-- **WebDAV Cloud Backup**: Configure a WebDAV server to upload backups, view history lists, and select restore or delete.
-
 ### Appearance & Experience
 
-- **Theme Switching**: Supports one-click switching of global light/dark themes.
-- **Traditional Color Palette**: Manually selected color schemes provide a comfortable visual experience.
+- **Theme Switching**: Supports one-click switching between global light/dark themes.
+- **Traditional Color Palette**: Hand-picked color schemes for a comfortable visual experience.
 
 ---
 
@@ -143,23 +151,21 @@ scoop install extras/ccg-gateway
 
 **Method 3-1: One-click Start Script**
 
-The script automatically starts the frontend development server and the Tauri backend. Requires `tauri-cli` installed and supports hot reloading.
+The script automatically starts the frontend development server and the Tauri backend. Requires `tauri-cli` to be installed.
 
 ```bash
 # Start the development environment (Frontend + Backend)
-dev.bat
+./dev.bat
 ```
 
 **Method 3-2: Manual Dependency Installation and Start**
 
-Run directly via `cargo`. Does not support hot reloading, requiring manual restart of the backend.
+Run directly via `cargo`. Does not support hot reloading; the backend must be restarted manually.
 
 ```bash
-# Install frontend dependencies
+# Start the frontend development server
 cd frontend
 pnpm install
-
-# Start frontend development server
 pnpm dev
 
 # Open a new terminal, start Tauri backend
