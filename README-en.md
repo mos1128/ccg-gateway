@@ -73,17 +73,16 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
   <img src="img/PixPin_2026-04-12_17-39-14.png" width="48%" />
 </div>
 
-
 ---
 
 ## 💡 Features
 
-> Only unique features are listed here for quick reference.
+> Only unique features are listed here for quick reference!!!
 
-### Dashboard
+### Statistics Overview
 
-- The dashboard records **request counts** and **token usage** across dual dimensions of **provider / model**, with token usage further broken down into **input / output / cache**.
-- With provider pricing at $10 / M input, $5 / M cache, $30 / M output — simply plug in token usage to quickly estimate costs, or make decisions about purchasing a CodingPlan.
+- Provides statistics across provider/model dimensions, covering token usage/request counts, with token usage further broken down into input/output/cache.
+- Assuming provider pricing: $10/M input, $2/M cache, $30/M output — plug in the statistics to quickly estimate costs for choosing a CodingPlan.
 
 ### Relay Providers
 
