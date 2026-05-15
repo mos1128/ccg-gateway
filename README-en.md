@@ -26,7 +26,7 @@ This project was initiated based on the author's actual needs to solve various p
 
 Service providers may experience quota reset windows, rate limiting, or downtime? The gateway automatically switches to available providers and periodically re-checks — zero user perception.
 
-More handy features: provider availability testing; model name mapping; skipping unavailable models and auto-routing to available providers; custom request User-Agent.
+More handy features: provider availability testing; model name mapping; automatic routing of missing models to available service providers.; custom request User-Agent.
 
 **Tedious Multi-Account Switching**
 
@@ -114,15 +114,15 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 
 ### MCP / Prompts / Skills / Plugin Management
 
-- **MCP**: Configure once, enable/disable across multiple CLIs. Codex automatically converts to Toml format.
-- **Preset Prompts**: Configure once, enable/disable across multiple CLIs.
-- **Skills**: Visual management, supports installation from local directories or remote Git repositories, providing skill favorites and quick reinstallation.
-- **Plugins**: Visual management, supports installation from local directories or remote Git repositories, providing plugin favorites and quick reinstallation.
+- MCP: Configure once, enable/disable across multiple CLIs. Codex automatically converts to Toml format.
+- Prompts: Configure once, enable/disable across multiple CLIs.
+- Skills: supports installation from local directories or remote Git repositories, providing skill favorites and quick reinstallation.
+- Plugins: supports installation from local directories or remote Git repositories, providing plugin favorites and quick reinstallation.
 
 ### Appearance & Experience
 
-- **Theme Switching**: Supports one-click switching between global light/dark themes.
-- **Traditional Color Palette**: Hand-picked color schemes for a comfortable visual experience.
+- Theme Switching: Supports one-click switching between global light/dark themes.
+- Traditional Color Palette: Hand-picked color schemes for a comfortable visual experience.
 
 ---
 
