@@ -4,7 +4,7 @@ use axum::{
     http::{Response, StatusCode},
 };
 use bytes::Bytes;
-use flate2::read::GzDecoder;
+use flate2::read::{DeflateDecoder, GzDecoder, ZlibDecoder};
 use futures_util::StreamExt;
 use std::io::Read;
 use std::sync::Arc;
@@ -307,18 +307,46 @@ fn truncate_body(body: &[u8]) -> String {
     String::from_utf8_lossy(body).into_owned()
 }
 
-/// Decompress gzip data if needed
 fn maybe_decompress(body: &[u8], content_encoding: Option<&str>) -> Vec<u8> {
-    if let Some(encoding) = content_encoding {
-        if encoding.to_lowercase().contains("gzip") {
-            let mut decoder = GzDecoder::new(body);
-            let mut decompressed = Vec::new();
-            if decoder.read_to_end(&mut decompressed).is_ok() {
-                return decompressed;
-            }
-        }
+    let Some(content_encoding) = content_encoding else {
+        return body.to_vec();
+    };
+
+    let encodings: Vec<String> = content_encoding
+        .split(',')
+        .map(|encoding| encoding.trim().to_lowercase())
+        .filter(|encoding| !encoding.is_empty() && encoding != "identity")
+        .collect();
+    if encodings.is_empty() {
+        return body.to_vec();
     }
-    body.to_vec()
+
+    let mut current = body.to_vec();
+    for encoding in encodings.iter().rev() {
+        let Some(decoded) = decode_body(&current, encoding) else {
+            return body.to_vec();
+        };
+        current = decoded;
+    }
+
+    current
+}
+
+fn decode_body(body: &[u8], encoding: &str) -> Option<Vec<u8>> {
+    match encoding {
+        "gzip" | "x-gzip" => read_all(GzDecoder::new(body)),
+        "deflate" => {
+            read_all(ZlibDecoder::new(body)).or_else(|| read_all(DeflateDecoder::new(body)))
+        }
+        "br" => read_all(brotli::Decompressor::new(body, 4096)),
+        "zstd" | "zst" => zstd::decode_all(body).ok(),
+        _ => None,
+    }
+}
+
+fn read_all<R: Read>(mut reader: R) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    reader.read_to_end(&mut out).ok().map(|_| out)
 }
 
 fn parse_streaming_usage_chunk(

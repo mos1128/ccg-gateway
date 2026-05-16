@@ -43,6 +43,8 @@ bytes = "1"
 http-body-util = "0.1"
 pin-project-lite = "0.2"
 flate2 = "1.0"
+zstd = "0.13"
+brotli = "8"
 quick-xml = "0.37"
 zip = "2"
 
