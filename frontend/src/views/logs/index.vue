@@ -150,8 +150,7 @@
                     {{ (row.elapsed_ms / 1000).toFixed(2) }}s
                   </td>
                   <td class="mono">
-                    <span v-if="hasTokenUsage(row)">{{ formatTokenUsage(row) }}</span>
-                    <span v-else>-</span>
+                    {{ formatTokenUsage(row) }}
                   </td>
                   <td class="mono">{{ row.source_model || '-' }} → {{ row.target_model || '-' }}</td>
                   <td class="col-sticky">
@@ -582,15 +581,6 @@ function formatTime(timestamp: number): string {
 function formatJson(str: string | null): string {
   if (!str) return ''
   return formatJsonUtil(str)
-}
-
-function hasTokenUsage(row: RequestLogListItem | RequestLogDetail): boolean {
-  return !!(
-    row.input_tokens ||
-    row.cache_read_input_tokens ||
-    row.cache_creation_input_tokens ||
-    row.output_tokens
-  )
 }
 
 function formatTokenUsage(row: RequestLogListItem | RequestLogDetail): string {
