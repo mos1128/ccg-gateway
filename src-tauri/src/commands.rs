@@ -2034,7 +2034,7 @@ fn codex_profile_uses_gateway(
     let doc = match content.parse::<toml_edit::DocumentMut>() {
         Ok(doc) => doc,
         Err(_) => return false,
-    }
+    };
 
     let provider_name = doc
         .get("profiles")
