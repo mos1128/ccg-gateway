@@ -2774,6 +2774,14 @@ pub async fn update_mcp(
     input: McpUpdate,
 ) -> Result<McpResponse> {
     let now = chrono::Utc::now().timestamp();
+    let cli_types = ["claude_code", "codex", "gemini"];
+
+    let current = sqlx::query_as::<_, McpConfig>("SELECT * FROM mcp_configs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "MCP not found".to_string())?;
 
     // Validate JSON format if config_json is provided and not empty
     if let Some(ref config) = input.config_json {
@@ -2784,20 +2792,29 @@ pub async fn update_mcp(
         }
     }
 
-    let (name, config_json) = if input.name.is_some() || input.config_json.is_some() {
-        let current = sqlx::query_as::<_, McpConfig>("SELECT * FROM mcp_configs WHERE id = ?")
-            .bind(id)
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "MCP not found".to_string())?;
+    let current_cli_flags = {
+        let mut flags = Vec::new();
+        for cli_type in cli_types {
+            flags.push(McpCliFlag {
+                cli_type: cli_type.to_string(),
+                enabled: mcp_enabled_in_file_async(db.inner(), cli_type, &current.name).await,
+            });
+        }
+        flags
+    };
 
-        let new_name = input.name.unwrap_or(current.name.clone());
-        let new_config = input
-            .config_json
-            .map(|c| c.trim().to_string())
-            .unwrap_or(current.config_json.clone());
+    let new_name = input.name.unwrap_or_else(|| current.name.clone());
+    let new_config = input
+        .config_json
+        .map(|c| c.trim().to_string())
+        .unwrap_or_else(|| current.config_json.clone());
+    let cli_flags = input.cli_flags.unwrap_or(current_cli_flags);
 
+    if cli_flags.iter().any(|f| f.cli_type == "codex" && f.enabled) {
+        parse_codex_mcp_toml_table(&new_config)?;
+    }
+
+    if new_name != current.name || new_config != current.config_json {
         sqlx::query(
             "UPDATE mcp_configs SET name = ?, config_json = ?, updated_at = ? WHERE id = ?",
         )
@@ -2808,23 +2825,15 @@ pub async fn update_mcp(
         .execute(db.inner())
         .await
         .map_err(map_db_error)?;
-
-        (new_name, new_config)
-    } else {
-        // Get current values if not updating
-        let current = sqlx::query_as::<_, McpConfig>("SELECT * FROM mcp_configs WHERE id = ?")
-            .bind(id)
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "MCP not found".to_string())?;
-        (current.name, current.config_json)
-    };
-
-    // Sync to CLI files if cli_flags provided
-    if let Some(cli_flags) = input.cli_flags {
-        sync_single_mcp_to_cli(db.inner(), id, &name, &config_json, &cli_flags).await?;
     }
+
+    if new_name != current.name {
+        delete_mcp_from_cli(db.inner(), &current.name).await?;
+    }
+
+    // Keep already-enabled CLI config files in sync even when the frontend only
+    // submits name/config_json from the edit dialog.
+    sync_single_mcp_to_cli(db.inner(), id, &new_name, &new_config, &cli_flags).await?;
 
     get_mcp(db, id).await
 }
