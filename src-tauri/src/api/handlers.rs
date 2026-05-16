@@ -308,8 +308,12 @@ fn truncate_body(body: &[u8]) -> String {
 }
 
 fn maybe_decompress(body: &[u8], content_encoding: Option<&str>) -> Vec<u8> {
+    try_decompress(body, content_encoding).unwrap_or_else(|| body.to_vec())
+}
+
+fn try_decompress(body: &[u8], content_encoding: Option<&str>) -> Option<Vec<u8>> {
     let Some(content_encoding) = content_encoding else {
-        return body.to_vec();
+        return Some(body.to_vec());
     };
 
     let encodings: Vec<String> = content_encoding
@@ -318,18 +322,26 @@ fn maybe_decompress(body: &[u8], content_encoding: Option<&str>) -> Vec<u8> {
         .filter(|encoding| !encoding.is_empty() && encoding != "identity")
         .collect();
     if encodings.is_empty() {
-        return body.to_vec();
+        return Some(body.to_vec());
     }
 
     let mut current = body.to_vec();
     for encoding in encodings.iter().rev() {
-        let Some(decoded) = decode_body(&current, encoding) else {
-            return body.to_vec();
-        };
-        current = decoded;
+        current = decode_body(&current, encoding)?;
     }
 
-    current
+    Some(current)
+}
+
+fn has_body_encoding(content_encoding: Option<&str>) -> bool {
+    content_encoding
+        .map(|value| {
+            value.split(',').any(|encoding| {
+                let encoding = encoding.trim();
+                !encoding.is_empty() && !encoding.eq_ignore_ascii_case("identity")
+            })
+        })
+        .unwrap_or(false)
 }
 
 fn decode_body(body: &[u8], encoding: &str) -> Option<Vec<u8>> {
@@ -373,6 +385,25 @@ fn parse_streaming_usage_chunk(
         let drain_len = buffer.len() - MAX_SSE_LINE_BUFFER;
         buffer.drain(..drain_len);
     }
+}
+
+fn parse_streaming_usage_body(body: &[u8], cli_type: CliType) -> TokenUsage {
+    let mut usage = TokenUsage::default();
+    let mut buffer = String::new();
+    parse_streaming_usage_chunk(&mut buffer, body, cli_type, &mut usage);
+    if !buffer.is_empty() {
+        parse_streaming_token_usage(buffer.trim_end_matches('\r'), cli_type, &mut usage);
+    }
+    usage
+}
+
+fn streaming_body_log_text(body: &[u8], limit: usize, truncated: bool) -> String {
+    let log_len = body.len().min(limit);
+    let mut body_str = String::from_utf8_lossy(&body[..log_len]).into_owned();
+    if truncated || body.len() > limit {
+        body_str.push_str("\n\n[response body truncated at 10MB]");
+    }
+    body_str
 }
 
 async fn handle_streaming_request(
@@ -493,14 +524,21 @@ async fn handle_streaming_request(
     // Create streaming body
     let is_success = status.is_success();
 
-    // Collect body chunks for logging, capped at 1MB
-    const MAX_BODY_LOG: usize = 1 * 1024 * 1024;
+    // Collect body chunks for logging, capped at 10MB.
+    const MAX_BODY_LOG: usize = 10 * 1024 * 1024;
     let collected_chunks = Arc::new(Mutex::new(Vec::<Bytes>::new()));
     let collected_chunks_for_stream = collected_chunks.clone();
     let stream_usage = Arc::new(Mutex::new(TokenUsage::default()));
     let stream_usage_for_stream = stream_usage.clone();
+    let body_truncated_flag = Arc::new(Mutex::new(false));
+    let body_truncated_flag_for_stream = body_truncated_flag.clone();
     let idle_timeout_flag = Arc::new(Mutex::new(false));
     let idle_timeout_flag_for_stream = idle_timeout_flag.clone();
+    let response_encoded = has_body_encoding(
+        resp_headers
+            .get("content-encoding")
+            .and_then(|v| v.to_str().ok()),
+    );
 
     // 创建channel用于通知stream结束
     let (stream_end_tx, mut stream_end_rx) = mpsc::channel::<()>(1);
@@ -520,7 +558,7 @@ async fn handle_streaming_request(
                     let chunk_size = chunk.len();
                     total_bytes += chunk_size;
 
-                    {
+                    if !response_encoded {
                         let mut usage = stream_usage_for_stream.lock().await;
                         parse_streaming_usage_chunk(
                             &mut sse_buffer,
@@ -530,7 +568,7 @@ async fn handle_streaming_request(
                         );
                     }
 
-                    // Collect chunk for body logging (capped at 1MB)
+                    // Collect chunk for body logging.
                     if collected_bytes < MAX_BODY_LOG {
                         let mut chunks = collected_chunks_for_stream.lock().await;
                         let to_collect = chunk.len().min(MAX_BODY_LOG - collected_bytes);
@@ -538,6 +576,11 @@ async fn handle_streaming_request(
                             chunks.push(chunk.slice(..to_collect));
                             collected_bytes += to_collect;
                         }
+                        if to_collect < chunk.len() {
+                            *body_truncated_flag_for_stream.lock().await = true;
+                        }
+                    } else {
+                        *body_truncated_flag_for_stream.lock().await = true;
                     }
 
                     tracing::debug!(
@@ -572,7 +615,7 @@ async fn handle_streaming_request(
             }
         }
 
-        if !sse_buffer.is_empty() {
+        if !response_encoded && !sse_buffer.is_empty() {
             let mut usage = stream_usage_for_stream.lock().await;
             parse_streaming_token_usage(
                 sse_buffer.trim_end_matches('\r'),
@@ -602,11 +645,11 @@ async fn handle_streaming_request(
         let _ = stream_end_rx.recv().await;
         tracing::debug!("[{}] Received stream end notification", cli_type);
 
-        // Reconstruct body from collected chunks (up to 1MB)
+        // Reconstruct body from collected chunks (up to 10MB)
         let chunks = collected_chunks.lock().await.clone();
         drop(collected_chunks);
         let full_body: Vec<u8> = chunks.iter().flat_map(|c| c.iter()).copied().collect();
-        let body_truncated = full_body.len() >= MAX_BODY_LOG;
+        let body_truncated = *body_truncated_flag.lock().await;
 
         tracing::info!(
             "[{}] Processing stream log: {} bytes collected",
@@ -614,7 +657,37 @@ async fn handle_streaming_request(
             full_body.len()
         );
 
-        let usage = stream_usage.lock().await.clone();
+        let content_encoding = log_resp_headers
+            .get("content-encoding")
+            .and_then(|v| v.to_str().ok());
+        let response_encoded = has_body_encoding(content_encoding);
+        let (usage, body_str) = if response_encoded {
+            match try_decompress(&full_body, content_encoding) {
+                Some(body) => (
+                    parse_streaming_usage_body(&body, cli_type),
+                    streaming_body_log_text(&body, MAX_BODY_LOG, body_truncated),
+                ),
+                None => {
+                    tracing::warn!(
+                        "[{}] Failed to decompress streaming response body",
+                        cli_type
+                    );
+                    (
+                        TokenUsage::default(),
+                        streaming_body_log_text(
+                            b"[response body decompression failed]",
+                            MAX_BODY_LOG,
+                            body_truncated,
+                        ),
+                    )
+                }
+            }
+        } else {
+            (
+                stream_usage.lock().await.clone(),
+                streaming_body_log_text(&full_body, MAX_BODY_LOG, body_truncated),
+            )
+        };
 
         tracing::debug!(
             "[{}] Parsed tokens: input={}, cache_read={}, cache_creation={}, output={}",
@@ -625,16 +698,7 @@ async fn handle_streaming_request(
             usage.output_tokens
         );
 
-        // Decompress if needed for logging
-        let content_encoding = log_resp_headers
-            .get("content-encoding")
-            .and_then(|v| v.to_str().ok());
-        let decompressed_body = maybe_decompress(&full_body, content_encoding);
         let mut final_log_info = log_info;
-        let mut body_str = String::from_utf8_lossy(&decompressed_body).into_owned();
-        if body_truncated {
-            body_str.push_str("\n\n[response body truncated at 1MB]");
-        }
         final_log_info.provider_body = Some(body_str);
 
         // Check idle timeout flag
