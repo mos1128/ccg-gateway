@@ -14,8 +14,8 @@ use crate::db::models::{
     TimeoutSettings, TimeoutSettingsUpdate, WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
 };
 use crate::services::routing::{
-    gateway_path_prefix_for_profile, gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE,
-    PROFILE1, PROFILE2, PROFILE3, PROVIDER_PROFILES,
+    gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE, PROFILE1, PROFILE2, PROFILE3,
+    PROVIDER_PROFILES,
 };
 use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestEntry};
 use crate::{LogDb, StatsDb};
@@ -1024,30 +1024,18 @@ pub async fn ensure_claude_profile_settings(
 ) -> Result<ClaudeProfileSettingsStatus> {
     let profile = validate_provider_profile(Some(&profile))?.to_string();
     let gateway_url = config.gateway_base_url();
+    if profile == DEFAULT_PROFILE {
+        return claude_profile_settings_status(db.inner(), &profile, &gateway_url).await;
+    }
+
     let config_dir = get_cli_config_dir_path(db.inner(), "claude_code").await;
     let config_path = config_dir.join(claude_settings_filename(&profile));
     let gateway_token = gateway_token_for_profile(&profile).unwrap_or("ccg-gateway");
     let use_merge = get_config_write_mode(db.inner(), "claude_code").await == "merge";
-    let default_config = sqlx::query_as::<_, (Option<String>,)>(
-        "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
-    )
-    .bind("claude_code")
-    .fetch_optional(db.inner())
-    .await
-    .map_err(|e| e.to_string())?
-    .and_then(|r| r.0)
-    .unwrap_or_default();
-
-    // 非 default profile 只写网关必要字段，不合并用户预设配置
-    let profile_default_config = if profile == DEFAULT_PROFILE {
-        &default_config
-    } else {
-        ""
-    };
 
     write_claude_gateway_settings(
         &config_path,
-        profile_default_config,
+        "",
         None,
         use_merge,
         &gateway_url,
@@ -1076,7 +1064,6 @@ pub async fn ensure_codex_profile_settings(
     let profile = validate_provider_profile(Some(&profile))?.to_string();
     let gateway_url = config.gateway_base_url();
 
-    let mode = get_cli_mode(db.clone(), "codex".to_string()).await?;
     if profile == DEFAULT_PROFILE {
         return codex_profile_settings_status(db.inner(), &profile, &gateway_url).await;
     }
@@ -1104,9 +1091,6 @@ pub async fn ensure_codex_profile_settings(
         toml_edit::DocumentMut::new()
     };
 
-    if mode == "direct" {
-        remove_codex_default_gateway_entry(&mut final_doc);
-    }
     apply_codex_gateway_named_profile_config(&mut final_doc, &gateway_url, &profile)?;
     std::fs::write(&config_path, final_doc.to_string()).map_err(|e| {
         tracing::error!("Failed to write config.toml: {}", e);
@@ -1941,6 +1925,14 @@ fn claude_settings_launch_command(config_path: &std::path::Path) -> String {
     )
 }
 
+fn claude_profile_launch_command(profile: &str, config_path: &std::path::Path) -> String {
+    if profile == DEFAULT_PROFILE {
+        "claude".to_string()
+    } else {
+        claude_settings_launch_command(config_path)
+    }
+}
+
 fn codex_profile_launch_command(profile: &str) -> String {
     if profile == DEFAULT_PROFILE {
         "codex".to_string()
@@ -2004,7 +1996,12 @@ async fn claude_profile_settings_status(
     let config_path = config_dir.join(filename);
     let gateway_token = gateway_token_for_profile(profile).unwrap_or("ccg-gateway");
     let path = shrink_home_path(&config_path.to_string_lossy());
-    let launch_command = claude_settings_launch_command(&config_path);
+    let launch_command = claude_profile_launch_command(profile, &config_path);
+    let uses_gateway = if profile == DEFAULT_PROFILE {
+        true
+    } else {
+        claude_settings_uses_gateway(&config_path, gateway_url, gateway_token)
+    };
 
     Ok(ClaudeProfileSettingsStatus {
         profile: profile.to_string(),
@@ -2012,7 +2009,7 @@ async fn claude_profile_settings_status(
         path,
         launch_command,
         exists: config_path.exists(),
-        uses_gateway: claude_settings_uses_gateway(&config_path, gateway_url, gateway_token),
+        uses_gateway,
     })
 }
 
@@ -2021,6 +2018,10 @@ fn codex_profile_uses_gateway(
     profile: &str,
     gateway_url: &str,
 ) -> bool {
+    if profile == DEFAULT_PROFILE {
+        return true;
+    }
+
     if !config_path.exists() {
         return false;
     }
@@ -2033,19 +2034,14 @@ fn codex_profile_uses_gateway(
     let doc = match content.parse::<toml_edit::DocumentMut>() {
         Ok(doc) => doc,
         Err(_) => return false,
-    };
+    }
 
-    let provider_name = if profile == DEFAULT_PROFILE {
-        doc.get("model_provider")
-            .and_then(|item| item.as_str())
-            .map(|value| value.to_string())
-    } else {
-        doc.get("profiles")
-            .and_then(|item| item.get(profile))
-            .and_then(|item| item.get("model_provider"))
-            .and_then(|item| item.as_str())
-            .map(|value| value.to_string())
-    };
+    let provider_name = doc
+        .get("profiles")
+        .and_then(|item| item.get(profile))
+        .and_then(|item| item.get("model_provider"))
+        .and_then(|item| item.as_str())
+        .map(|value| value.to_string());
 
     let Some(provider_name) = provider_name else {
         return false;
@@ -2055,8 +2051,6 @@ fn codex_profile_uses_gateway(
         return false;
     };
     let expected_url = gateway_url.trim_end_matches('/');
-    let legacy_expected_url = gateway_path_prefix_for_profile(profile)
-        .map(|prefix| format!("{}{}", expected_url, prefix));
 
     doc.get("model_providers")
         .and_then(|item| item.get(&provider_name))
@@ -2067,17 +2061,13 @@ fn codex_profile_uses_gateway(
             };
 
             let base_url_matches = gateway_url_matches(base_url, expected_url);
-            let legacy_base_url_matches = legacy_expected_url
-                .as_deref()
-                .map(|expected| gateway_url_matches(base_url, expected))
-                .unwrap_or(false);
             let token = provider
                 .get("experimental_bearer_token")
                 .and_then(|item| item.as_str())
                 .map(str::trim);
             let token_matches = token.map(|token| token == expected_token).unwrap_or(false);
 
-            (base_url_matches && token_matches) || (token.is_none() && legacy_base_url_matches)
+            base_url_matches && token_matches
         })
         .unwrap_or(false)
 }
@@ -2100,13 +2090,7 @@ fn codex_default_provider_uses_gateway(doc: &toml_edit::DocumentMut, gateway_url
                 return false;
             };
 
-            let token_matches = provider
-                .get("experimental_bearer_token")
-                .and_then(|v| v.as_str())
-                .map(|token| token == "ccg-gateway")
-                .unwrap_or(true);
-
-            gateway_url_matches(base_url, gateway_url) && token_matches
+            gateway_url_matches(base_url, gateway_url)
         })
         .unwrap_or(false)
 }
