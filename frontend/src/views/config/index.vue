@@ -38,9 +38,13 @@
             </div>
             <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
               <div class="b-segmented b-segmented-fill" style="margin-bottom: 24px;">
-                <div class="b-seg-btn" :class="{ active: activeCliTab === 'claude_code' }" @click="activeCliTab = 'claude_code'">Claude Code</div>
-                <div class="b-seg-btn" :class="{ active: activeCliTab === 'codex' }" @click="activeCliTab = 'codex'">Codex</div>
-                <div class="b-seg-btn" :class="{ active: activeCliTab === 'gemini' }" @click="activeCliTab = 'gemini'">Gemini</div>
+                <div
+                  v-for="cli in CLI_TABS"
+                  :key="cli.id"
+                  class="b-seg-btn"
+                  :class="{ active: activeCliTab === cli.id }"
+                  @click="activeCliTab = cli.id"
+                >{{ cli.label }}</div>
               </div>
 
               <div class="cli-form-container">
@@ -203,18 +207,20 @@ import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import { CLI_TABS } from '@/types/models'
 import AppModal from '@/components/AppModal.vue'
 import CliSettingsForm from './components/CliSettingsForm.vue'
 import * as backupApi from '@/api/backup'
 import type { WebdavSettings, WebdavBackup } from '@/api/backup'
+import type { CliType } from '@/types/models'
 
 const settingsStore = useSettingsStore()
 const uiStore = useUiStore()
 const cliFormRef = ref<InstanceType<typeof CliSettingsForm> | null>(null)
 
-const activeCliTab = computed({
+const activeCliTab = computed<CliType>({
   get: () => uiStore.configActiveCliTab,
-  set: (val) => uiStore.setConfigActiveCliTab(val as 'claude_code' | 'codex' | 'gemini')
+  set: (val) => uiStore.setConfigActiveCliTab(val)
 })
 const activeBackupTab = computed({
   get: () => uiStore.configActiveBackupTab,
@@ -242,7 +248,7 @@ async function saveTimeouts() {
   }
 }
 
-async function saveCli(cliType: string, data: any) {
+async function saveCli(cliType: CliType, data: any) {
   try {
     await settingsStore.updateCli(cliType, data)
     notify('CLI 配置已保存')

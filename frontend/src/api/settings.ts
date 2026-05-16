@@ -1,6 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
+import { CLI_TYPES } from '@/types/models'
 import type {
   AllSettings,
+  CliType,
   GatewaySettingsUpdate,
   TimeoutSettingsUpdate,
   CliSettingsUpdate,
@@ -12,23 +14,22 @@ import type {
 
 export const settingsApi = {
   getAll: async () => {
-    const [gateway, timeouts, claudeCode, codex, gemini, status] = await Promise.all([
+    const [gateway, timeouts, cliSettingsList, status] = await Promise.all([
       invoke<{ debug_log: number; log_detail_mode: string }>('get_gateway_settings'),
       invoke<{ stream_first_byte_timeout: number; stream_idle_timeout: number; non_stream_timeout: number }>('get_timeout_settings'),
-      invoke<CliSettings>('get_cli_settings', { cliType: 'claude_code' }),
-      invoke<CliSettings>('get_cli_settings', { cliType: 'codex' }),
-      invoke<CliSettings>('get_cli_settings', { cliType: 'gemini' }),
+      Promise.all(CLI_TYPES.map((cliType) => invoke<CliSettings>('get_cli_settings', { cliType }))),
       invoke<SystemStatus>('get_system_status'),
     ])
+    const cliSettings = {} as Record<CliType, CliSettings>
+    for (const [index, cliType] of CLI_TYPES.entries()) {
+      cliSettings[cliType] = cliSettingsList[index]
+    }
+
     return {
       data: {
         gateway: { debug_log: !!gateway.debug_log, log_detail_mode: gateway.log_detail_mode as 'full' | 'failure_only' },
         timeouts,
-        cli_settings: {
-          claude_code: claudeCode,
-          codex: codex,
-          gemini: gemini
-        },
+        cli_settings: cliSettings,
         status
       } as AllSettings
     }
@@ -41,11 +42,11 @@ export const settingsApi = {
     await invoke('update_timeout_settings', { input: data })
     return { data: null }
   },
-  updateCli: async (cliType: string, data: CliSettingsUpdate) => {
+  updateCli: async (cliType: CliType, data: CliSettingsUpdate) => {
     await invoke('update_cli_settings', { cliType, input: data })
     return { data: null }
   },
-  setCliMode: async (cliType: string, mode: 'proxy' | 'direct') => {
+  setCliMode: async (cliType: CliType, mode: 'proxy' | 'direct') => {
     await invoke('set_cli_mode', { cliType, mode })
     return { data: null }
   },

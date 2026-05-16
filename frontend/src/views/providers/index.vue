@@ -507,17 +507,14 @@ import { useUiStore } from '@/stores/ui'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
+import { CLI_TABS, PROFILE_CAPABLE_CLI_TYPES } from '@/types/models'
 import type { Provider, CliType, ProviderProfile, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
 
 const providerStore = useProviderStore()
 const credentialStore = useCredentialStore()
 const uiStore = useUiStore()
 
-const cliTabs: { id: CliType; label: string }[] = [
-  { id: 'claude_code', label: 'Claude Code' },
-  { id: 'codex', label: 'Codex' },
-  { id: 'gemini', label: 'Gemini' }
-]
+const cliTabs = CLI_TABS
 
 const profileTabs: { id: ProviderProfile; label: string }[] = [
   { id: 'default', label: '默认' },
@@ -554,7 +551,7 @@ const viewMode = computed<ViewMode>({
     viewModes.value[activeCliType.value] = mode
   }
 })
-const profileCapableCliTypes: CliType[] = ['claude_code', 'codex']
+const profileCapableCliTypes = PROFILE_CAPABLE_CLI_TYPES
 const showProfileControls = computed(() => viewMode.value === 'proxy' && profileCapableCliTypes.includes(activeCliType.value))
 const currentProviderProfile = computed<ProviderProfile>(() =>
   showProfileControls.value ? activeProfile.value : 'default'

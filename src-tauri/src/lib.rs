@@ -3,6 +3,7 @@ pub mod commands;
 pub mod config;
 pub mod db;
 pub mod services;
+pub mod time;
 
 use config::Config;
 use db::{init_db, init_stats_db};

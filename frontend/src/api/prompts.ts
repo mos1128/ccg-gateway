@@ -1,13 +1,17 @@
 import { invoke } from '@tauri-apps/api/core'
+import { CLI_TYPES } from '@/types/models'
 import type { CliType, Prompt, PromptCreate, PromptUpdate } from '@/types/models'
 
 // 后端返回的 cli_flags 格式
-type PromptCliFlagBackend = { cli_type: string; enabled: boolean }
+type PromptCliFlagBackend = { cli_type: CliType; enabled: boolean }
 type PromptBackend = Omit<Prompt, 'cli_flags'> & { cli_flags: PromptCliFlagBackend[] }
 
 // 将后端数组格式转换为前端对象格式
-function transformCliFlags(cliFlags: PromptCliFlagBackend[]): Record<string, boolean> {
-  const result: Record<string, boolean> = {}
+function transformCliFlags(cliFlags: PromptCliFlagBackend[]): Record<CliType, boolean> {
+  const result = {} as Record<CliType, boolean>
+  for (const cliType of CLI_TYPES) {
+    result[cliType] = false
+  }
   for (const flag of cliFlags) {
     result[flag.cli_type] = flag.enabled
   }

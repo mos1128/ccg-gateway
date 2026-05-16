@@ -1,13 +1,17 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { SkillRepo, SkillRepoCreate, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
+import { CLI_TYPES } from '@/types/models'
+import type { CliType, SkillRepo, SkillRepoCreate, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
 
 // 后端返回的 cli_flags 格式
-type SkillCliFlagBackend = { cli_type: string; enabled: boolean }
+type SkillCliFlagBackend = { cli_type: CliType; enabled: boolean }
 type InstalledSkillBackend = Omit<InstalledSkill, 'cli_flags'> & { cli_flags: SkillCliFlagBackend[] }
 
 // 将后端数组格式转换为前端对象格式
-function transformCliFlags(cliFlags: SkillCliFlagBackend[]): Record<string, boolean> {
-  const result: Record<string, boolean> = {}
+function transformCliFlags(cliFlags: SkillCliFlagBackend[]): Record<CliType, boolean> {
+  const result = {} as Record<CliType, boolean>
+  for (const cliType of CLI_TYPES) {
+    result[cliType] = false
+  }
   for (const flag of cliFlags) {
     result[flag.cli_type] = flag.enabled
   }
@@ -65,7 +69,7 @@ export const skillsApi = {
     return data.map(transformInstalledSkill)
   },
 
-  toggleCli: async (id: string, cliType: string, enabled: boolean): Promise<void> => {
+  toggleCli: async (id: string, cliType: CliType, enabled: boolean): Promise<void> => {
     await invoke('toggle_skill_cli', { id, cliType, enabled })
   },
 

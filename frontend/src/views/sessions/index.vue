@@ -31,11 +31,11 @@
 
     <!-- Top Level Tabs -->
     <div class="top-tabs">
-      <div 
-        v-for="cli in [{label: 'Claude Code', name: 'claude_code'}, {label: 'Codex', name: 'codex'}, {label: 'Gemini', name: 'gemini'}]" 
-        :key="cli.name"
-        :class="['tab-item', { active: activeCliType === cli.name }]"
-        @click="handleCliChange(cli.name)"
+      <div
+        v-for="cli in CLI_TABS"
+        :key="cli.id"
+        :class="['tab-item', { active: activeCliType === cli.id }]"
+        @click="handleCliChange(cli.id)"
       >
         {{ cli.label }}
       </div>
@@ -187,6 +187,7 @@ import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { useSessionStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
+import { CLI_TABS } from '@/types/models'
 import type { CliType } from '@/types/models'
 import type { ProjectInfo, SessionInfo } from '@/api/sessions'
 
@@ -204,8 +205,8 @@ const showSessionDrawer = ref(false)
 const currentSessionId = ref('')
 const expandedMessages = ref(new Set<number>())
 
-function handleCliChange(name: string) {
-  activeCliType.value = name as CliType
+function handleCliChange(cliType: CliType) {
+  activeCliType.value = cliType
   if (!sessionStore.currentProject && sessionStore.projects.length === 0) {
     sessionStore.fetchProjects(1)
   }

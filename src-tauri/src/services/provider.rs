@@ -1,11 +1,12 @@
 use crate::db::models::TestProviderResult;
+use crate::time::now_timestamp;
 use sqlx::SqlitePool;
 
 /// Record a successful request for a provider
 /// Resets consecutive_failures to 0
 /// Returns (had_previous_failures) to indicate if the provider was recovering
 pub async fn record_success(db: &SqlitePool, provider_id: i64) -> Result<bool, sqlx::Error> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     // Check if provider had previous failures
     let had_failures: Option<(i64,)> =
@@ -42,7 +43,7 @@ pub async fn record_failure(
     db: &SqlitePool,
     provider_id: i64,
 ) -> Result<(bool, String), sqlx::Error> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let mut tx = db.begin().await?;
 
     let result = sqlx::query(
@@ -104,7 +105,7 @@ pub async fn record_failure(
 
 /// Reset provider failures and remove blacklist
 pub async fn reset_failures(db: &SqlitePool, provider_id: i64) -> Result<(), sqlx::Error> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     sqlx::query(
         r#"

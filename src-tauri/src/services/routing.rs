@@ -2,6 +2,7 @@ use sqlx::SqlitePool;
 
 use crate::db::models::{Provider, ProviderModelBlacklist, ProviderModelMap};
 use crate::services::proxy::wildcard_match;
+use crate::time::now_timestamp;
 
 pub const DEFAULT_PROFILE: &str = "default";
 pub const PROFILE1: &str = "profile1";
@@ -94,7 +95,7 @@ pub async fn select_provider(
     profile: &str,
     model: Option<&str>,
 ) -> Result<Option<ProviderWithMaps>, sqlx::Error> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let profile = normalize_profile(Some(profile)).unwrap_or(DEFAULT_PROFILE);
 
     // Query enabled providers ordered by sort_order, excluding blacklisted ones
@@ -154,7 +155,7 @@ pub async fn get_available_providers(
     profile: &str,
     model: Option<&str>,
 ) -> Result<Vec<ProviderWithMaps>, sqlx::Error> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let profile = normalize_profile(Some(profile)).unwrap_or(DEFAULT_PROFILE);
 
     let providers = sqlx::query_as::<_, Provider>(

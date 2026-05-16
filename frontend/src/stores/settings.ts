@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { settingsApi } from '@/api/settings'
-import type { AllSettings, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate } from '@/types/models'
+import type { AllSettings, CliType, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate } from '@/types/models'
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AllSettings | null>(null)
@@ -27,12 +27,12 @@ export const useSettingsStore = defineStore('settings', () => {
     await fetchSettings()
   }
 
-  async function updateCli(cliType: string, data: CliSettingsUpdate) {
+  async function updateCli(cliType: CliType, data: CliSettingsUpdate) {
     await settingsApi.updateCli(cliType, data)
     await fetchSettings()
   }
 
-  async function setCliMode(cliType: string, mode: 'proxy' | 'direct') {
+  async function setCliMode(cliType: CliType, mode: 'proxy' | 'direct') {
     await settingsApi.setCliMode(cliType, mode)
     await fetchSettings()
   }

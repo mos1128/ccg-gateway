@@ -1,8 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { OfficialCredential, OfficialCredentialCreate, OfficialCredentialUpdate } from '@/types/models'
+import type { CliType, OfficialCredential, OfficialCredentialCreate, OfficialCredentialUpdate } from '@/types/models'
 
 export const credentialsApi = {
-  list: async (cliType: string): Promise<{ data: OfficialCredential[] }> => {
+  list: async (cliType: CliType): Promise<{ data: OfficialCredential[] }> => {
     const data = await invoke<OfficialCredential[]>('get_credentials', { cliType })
     return { data }
   },
@@ -32,7 +32,7 @@ export const credentialsApi = {
     return { data: null }
   },
 
-  readCliCredential: async (cliType: string): Promise<{ data: string }> => {
+  readCliCredential: async (cliType: CliType): Promise<{ data: string }> => {
     const data = await invoke<string>('read_cli_credential', { cliType })
     return { data }
   },

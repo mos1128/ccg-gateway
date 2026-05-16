@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import type { CliType } from '@/types/models'
 
 export interface ProjectInfo {
   name: string
@@ -32,7 +33,7 @@ export interface PaginatedResponse<T> {
 }
 
 export const sessionsApi = {
-  listProjects: async (cliType: string, page = 1, pageSize = 20): Promise<{ data: PaginatedResponse<ProjectInfo> }> => {
+  listProjects: async (cliType: CliType, page = 1, pageSize = 20): Promise<{ data: PaginatedResponse<ProjectInfo> }> => {
     const data = await invoke<PaginatedResponse<ProjectInfo>>('get_session_projects', {
       cliType,
       page,
@@ -41,7 +42,7 @@ export const sessionsApi = {
     return { data }
   },
 
-  listSessions: async (cliType: string, projectName: string, page = 1, pageSize = 20): Promise<{ data: PaginatedResponse<SessionInfo> }> => {
+  listSessions: async (cliType: CliType, projectName: string, page = 1, pageSize = 20): Promise<{ data: PaginatedResponse<SessionInfo> }> => {
     const data = await invoke<PaginatedResponse<SessionInfo>>('get_project_sessions', {
       cliType,
       projectName,
@@ -51,7 +52,7 @@ export const sessionsApi = {
     return { data }
   },
 
-  getSessionMessages: async (cliType: string, projectName: string, sessionId: string): Promise<{ data: SessionMessage[] }> => {
+  getSessionMessages: async (cliType: CliType, projectName: string, sessionId: string): Promise<{ data: SessionMessage[] }> => {
     const data = await invoke<SessionMessage[]>('get_session_messages', {
       cliType,
       projectName,
@@ -60,12 +61,12 @@ export const sessionsApi = {
     return { data }
   },
 
-  deleteSession: async (cliType: string, projectName: string, sessionId: string) => {
+  deleteSession: async (cliType: CliType, projectName: string, sessionId: string) => {
     await invoke('delete_session', { cliType, projectName, sessionId })
     return { data: null }
   },
 
-  deleteProject: async (cliType: string, projectName: string) => {
+  deleteProject: async (cliType: CliType, projectName: string) => {
     await invoke('delete_project', { cliType, projectName })
     return { data: null }
   }

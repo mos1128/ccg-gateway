@@ -353,7 +353,7 @@ import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import AppModal from '@/components/AppModal.vue'
 import { skillsApi } from '@/api/skills'
-import type { SkillRepo, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
+import type { CliType, SkillRepo, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
 
 const activeTab = ref<'skills' | 'repos' | 'favorites'>('skills')
 
@@ -486,7 +486,7 @@ function handleBackToRepos() {
   skillSearchQuery.value = ''
 }
 
-async function handleCliToggle(skill: InstalledSkill, cliType: string, enabled: boolean) {
+async function handleCliToggle(skill: InstalledSkill, cliType: CliType, enabled: boolean) {
   loadingInstalledOperation.value = true
   try {
     await skillsApi.toggleCli(skill.id, cliType, enabled)

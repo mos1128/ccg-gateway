@@ -13,11 +13,13 @@ use crate::db::models::{
     SkillRepoCreate, SystemLogItem, SystemLogListResponse, SystemStatus, TestProviderModelsInput,
     TimeoutSettings, TimeoutSettingsUpdate, WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
 };
+use crate::services::proxy::CliType;
 use crate::services::routing::{
     gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE, PROFILE1, PROFILE2, PROFILE3,
     PROVIDER_PROFILES,
 };
 use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestEntry};
+use crate::time::{local_compact_datetime, now_timestamp};
 use crate::{LogDb, StatsDb};
 use serde::Serialize;
 use sqlx::{Row, SqlitePool};
@@ -467,7 +469,7 @@ pub async fn create_provider(
     log_db: State<'_, LogDb>,
     input: ProviderCreate,
 ) -> Result<ProviderResponse> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let cli_type = input.cli_type.unwrap_or_else(|| "claude_code".to_string());
     let profile = validate_provider_profile(input.profile.as_deref())?.to_string();
     let provider_name = input.name.clone();
@@ -553,7 +555,7 @@ pub async fn update_provider(
     id: i64,
     input: ProviderUpdate,
 ) -> Result<ProviderResponse> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     // Get provider name for logging
     let provider_name: Option<(String,)> =
@@ -870,7 +872,7 @@ pub async fn update_gateway_settings(
     debug_log: bool,
     log_detail_mode: Option<String>,
 ) -> Result<()> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let debug_log_val = if debug_log { 1i64 } else { 0 };
 
     if let Some(mode) = log_detail_mode {
@@ -910,7 +912,7 @@ pub async fn update_timeout_settings(
     db: State<'_, SqlitePool>,
     input: TimeoutSettingsUpdate,
 ) -> Result<()> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let current = get_timeout_settings(db.clone()).await?;
 
     sqlx::query(
@@ -1107,7 +1109,7 @@ pub async fn update_cli_settings(
     cli_type: String,
     input: CliSettingsUpdate,
 ) -> Result<()> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let gateway_url = config.gateway_base_url();
     let config_trimmed = input
         .default_json_config
@@ -2698,13 +2700,10 @@ pub async fn get_mcps(db: State<'_, SqlitePool>) -> Result<Vec<McpResponse>> {
         .await
         .map_err(|e| e.to_string())?;
 
-    let cli_types = vec!["claude_code", "codex", "gemini"];
-
     let mut results = Vec::new();
     for mcp in mcps {
-        // Read real status from config files
         let mut cli_flags = Vec::new();
-        for cli_type in &cli_types {
+        for cli_type in CliType::ALL.iter().map(CliType::as_str) {
             let enabled = mcp_enabled_in_file_async(db.inner(), cli_type, &mcp.name).await;
             cli_flags.push(McpCliFlag {
                 cli_type: cli_type.to_string(),
@@ -2731,10 +2730,8 @@ pub async fn get_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<McpResponse> 
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "MCP not found".to_string())?;
 
-    // Read real status from config files
-    let cli_types = vec!["claude_code", "codex", "gemini"];
     let mut cli_flags = Vec::new();
-    for cli_type in &cli_types {
+    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
         let enabled = mcp_enabled_in_file_async(db.inner(), cli_type, &mcp.name).await;
         cli_flags.push(McpCliFlag {
             cli_type: cli_type.to_string(),
@@ -2752,7 +2749,7 @@ pub async fn get_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<McpResponse> 
 
 #[tauri::command]
 pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<McpResponse> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     // Validate JSON format if config_json is not empty
     let config_trimmed = input.config_json.trim();
@@ -2787,8 +2784,7 @@ pub async fn update_mcp(
     id: i64,
     input: McpUpdate,
 ) -> Result<McpResponse> {
-    let now = chrono::Utc::now().timestamp();
-    let cli_types = ["claude_code", "codex", "gemini"];
+    let now = now_timestamp();
 
     let current = sqlx::query_as::<_, McpConfig>("SELECT * FROM mcp_configs WHERE id = ?")
         .bind(id)
@@ -2808,7 +2804,7 @@ pub async fn update_mcp(
 
     let current_cli_flags = {
         let mut flags = Vec::new();
-        for cli_type in cli_types {
+        for cli_type in CliType::ALL.iter().map(CliType::as_str) {
             flags.push(McpCliFlag {
                 cli_type: cli_type.to_string(),
                 enabled: mcp_enabled_in_file_async(db.inner(), cli_type, &current.name).await,
@@ -2817,6 +2813,7 @@ pub async fn update_mcp(
         flags
     };
 
+    let has_explicit_cli_flags = input.cli_flags.is_some();
     let new_name = input.name.unwrap_or_else(|| current.name.clone());
     let new_config = input
         .config_json
@@ -2845,9 +2842,11 @@ pub async fn update_mcp(
         delete_mcp_from_cli(db.inner(), &current.name).await?;
     }
 
-    // Keep already-enabled CLI config files in sync even when the frontend only
-    // submits name/config_json from the edit dialog.
-    sync_single_mcp_to_cli(db.inner(), id, &new_name, &new_config, &cli_flags).await?;
+    if has_explicit_cli_flags {
+        sync_single_mcp_to_cli(db.inner(), id, &new_name, &new_config, &cli_flags).await?;
+    } else {
+        sync_enabled_mcp_to_cli(db.inner(), &new_name, &new_config, &cli_flags).await?;
+    }
 
     get_mcp(db, id).await
 }
@@ -2918,8 +2917,20 @@ async fn sync_mcp_to_cli_async(
 
     let mut config = if path.exists() {
         let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        serde_json::from_str::<serde_json::Value>(&content)
-            .unwrap_or_else(|_| serde_json::json!({}))
+        match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(config) => config,
+            Err(e) => {
+                if is_enabled {
+                    return Err(format!("{} 解析失败，未写入: {}", path.display(), e));
+                }
+                tracing::warn!(
+                    "Failed to parse {}, leaving file untouched: {}",
+                    path.display(),
+                    e
+                );
+                return Ok(());
+            }
+        }
     } else {
         serde_json::json!({})
     };
@@ -2950,6 +2961,19 @@ async fn sync_mcp_to_cli_async(
     Ok(())
 }
 
+async fn sync_enabled_mcp_to_cli(
+    db: &SqlitePool,
+    mcp_name: &str,
+    mcp_config_json: &str,
+    cli_flags: &[McpCliFlag],
+) -> Result<()> {
+    for flag in cli_flags.iter().filter(|f| f.enabled) {
+        sync_mcp_to_cli_async(db, mcp_name, mcp_config_json, &flag.cli_type, true).await?;
+    }
+
+    Ok(())
+}
+
 // Sync a single MCP to CLI files based on enabled flags
 async fn sync_single_mcp_to_cli(
     db: &SqlitePool,
@@ -2958,10 +2982,7 @@ async fn sync_single_mcp_to_cli(
     mcp_config_json: &str,
     cli_flags: &[McpCliFlag],
 ) -> Result<()> {
-    let cli_types = vec!["claude_code", "codex", "gemini"];
-
-    for cli_type in cli_types {
-        // Check if this MCP is enabled for this CLI
+    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
         let is_enabled = cli_flags
             .iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
@@ -2985,12 +3006,20 @@ fn sync_single_codex_mcp(
             tracing::error!("Failed to read config.toml: {}", e);
             e.to_string()
         })?;
-        content
-            .parse::<toml_edit::DocumentMut>()
-            .unwrap_or_else(|e| {
-                tracing::warn!("Failed to parse config.toml, creating new: {}", e);
-                toml_edit::DocumentMut::new()
-            })
+        match content.parse::<toml_edit::DocumentMut>() {
+            Ok(doc) => doc,
+            Err(e) => {
+                if is_enabled {
+                    return Err(format!("{} 解析失败，未写入: {}", config_path.display(), e));
+                }
+                tracing::warn!(
+                    "Failed to parse {}, leaving file untouched: {}",
+                    config_path.display(),
+                    e
+                );
+                return Ok(());
+            }
+        }
     } else {
         toml_edit::DocumentMut::new()
     };
@@ -3027,9 +3056,7 @@ fn sync_single_codex_mcp(
 
 // Delete a single MCP from all CLI configs
 async fn delete_mcp_from_cli(db: &SqlitePool, mcp_name: &str) -> Result<()> {
-    let cli_types = vec!["claude_code", "codex", "gemini"];
-
-    for cli_type in cli_types {
+    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
         let config_path = get_mcp_config_path(db, cli_type).await;
         if let Some(path) = config_path {
             if !path.exists() {
@@ -3039,9 +3066,17 @@ async fn delete_mcp_from_cli(db: &SqlitePool, mcp_name: &str) -> Result<()> {
             if cli_type == "codex" {
                 // Handle Codex TOML format
                 let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-                let mut doc = content
-                    .parse::<toml_edit::DocumentMut>()
-                    .unwrap_or_else(|_| toml_edit::DocumentMut::new());
+                let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+                    Ok(doc) => doc,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to parse {}, leaving file untouched: {}",
+                            path.display(),
+                            e
+                        );
+                        continue;
+                    }
+                };
 
                 if let Some(table) = doc["mcp_servers"].as_table_mut() {
                     table.remove(mcp_name);
@@ -3051,8 +3086,17 @@ async fn delete_mcp_from_cli(db: &SqlitePool, mcp_name: &str) -> Result<()> {
             } else {
                 // Handle Claude/Gemini JSON format
                 let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-                let mut config: serde_json::Value =
-                    serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
+                let mut config: serde_json::Value = match serde_json::from_str(&content) {
+                    Ok(config) => config,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to parse {}, leaving file untouched: {}",
+                            path.display(),
+                            e
+                        );
+                        continue;
+                    }
+                };
 
                 if let Some(mcp_servers) =
                     config.get_mut("mcpServers").and_then(|v| v.as_object_mut())
@@ -3078,13 +3122,10 @@ pub async fn get_prompts(db: State<'_, SqlitePool>) -> Result<Vec<PromptResponse
         .await
         .map_err(|e| e.to_string())?;
 
-    let cli_types = vec!["claude_code", "codex", "gemini"];
-
     let mut results = Vec::new();
     for prompt in prompts {
-        // Read real status from prompt files
         let mut cli_flags = Vec::new();
-        for cli_type in &cli_types {
+        for cli_type in CliType::ALL.iter().map(CliType::as_str) {
             let enabled = prompt_enabled_in_file_async(db.inner(), cli_type, &prompt.content).await;
             cli_flags.push(PromptCliFlag {
                 cli_type: cli_type.to_string(),
@@ -3111,10 +3152,8 @@ pub async fn get_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<PromptResp
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Prompt not found".to_string())?;
 
-    // Read real status from prompt files
-    let cli_types = vec!["claude_code", "codex", "gemini"];
     let mut cli_flags = Vec::new();
-    for cli_type in &cli_types {
+    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
         let enabled = prompt_enabled_in_file_async(db.inner(), cli_type, &prompt.content).await;
         cli_flags.push(PromptCliFlag {
             cli_type: cli_type.to_string(),
@@ -3135,7 +3174,7 @@ pub async fn create_prompt(
     db: State<'_, SqlitePool>,
     input: PromptCreate,
 ) -> Result<PromptResponse> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     let result =
         sqlx::query("INSERT INTO prompt_presets (name, content, updated_at) VALUES (?, ?, ?)")
@@ -3163,7 +3202,7 @@ pub async fn update_prompt(
     id: i64,
     input: PromptUpdate,
 ) -> Result<PromptResponse> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     let content = if input.name.is_some() || input.content.is_some() {
         let current =
@@ -3280,10 +3319,7 @@ async fn sync_single_prompt_to_cli(
     prompt_content: &str,
     cli_flags: &[PromptCliFlag],
 ) -> Result<()> {
-    let cli_types = vec!["claude_code", "codex", "gemini"];
-
-    for cli_type in cli_types {
-        // Check if this prompt is enabled for this CLI
+    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
         let is_enabled = cli_flags
             .iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
@@ -5077,7 +5113,7 @@ pub async fn get_webdav_settings(db: State<'_, SqlitePool>) -> Result<WebdavSett
         Some(s) => Ok(s),
         None => {
             // Create default settings
-            let now = chrono::Utc::now().timestamp();
+            let now = now_timestamp();
             sqlx::query(
                 "INSERT INTO webdav_settings (id, url, username, password, updated_at) VALUES (1, '', '', '', ?)"
             )
@@ -5100,7 +5136,7 @@ pub async fn update_webdav_settings(
     db: State<'_, SqlitePool>,
     input: WebdavSettingsUpdate,
 ) -> Result<WebdavSettings> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let current = get_webdav_settings(db.clone()).await?;
 
     sqlx::query(
@@ -5172,10 +5208,7 @@ pub async fn export_to_webdav(db: State<'_, SqlitePool>) -> Result<String> {
     let content = std::fs::read(&db_path).map_err(|e| format!("Failed to read database: {}", e))?;
 
     // Generate filename
-    let filename = format!(
-        "ccg_gateway_{}.db",
-        chrono::Local::now().format("%Y%m%d_%H%M%S")
-    );
+    let filename = format!("ccg_gateway_{}.db", local_compact_datetime());
 
     // Ensure remote directory exists
     let client = Client::new();
@@ -5525,7 +5558,7 @@ fn file_modified_at(path: &std::path::Path) -> i64 {
         .and_then(|metadata| metadata.modified().ok())
         .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|duration| duration.as_secs() as i64)
-        .unwrap_or_else(|| chrono::Utc::now().timestamp())
+        .unwrap_or_else(now_timestamp)
 }
 
 // 同步 skill 到 CLI 目录（异步版本）
@@ -5566,7 +5599,7 @@ async fn remove_skill_from_cli_async(
 
 // 从所有 CLI 目录移除 skill（异步版本）
 async fn remove_skill_from_all_cli_async(db: &SqlitePool, directory: &str) -> Result<()> {
-    for cli_type in ["claude_code", "codex", "gemini"] {
+    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
         remove_skill_from_cli_async(db, directory, cli_type).await?;
     }
     Ok(())
@@ -5587,7 +5620,7 @@ async fn batch_set_skill_cli(db: &SqlitePool, directory: &str, cli_types: &[Stri
 // 检测技能在各 CLI 的启用状态（遍历文件系统）
 async fn detect_skill_cli_status(db: &SqlitePool, directory: &str) -> Vec<String> {
     let mut enabled_clis = Vec::new();
-    for cli_type in ["claude_code", "codex", "gemini"] {
+    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
         if skill_enabled_in_cli_async(db, cli_type, directory).await {
             enabled_clis.push(cli_type.to_string());
         }
@@ -6046,7 +6079,7 @@ async fn install_skill_inner(
         copy_dir_recursive(&skill_source_path, &dest_path)?;
     }
 
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     skill::upsert_installed_skill_manifest_entry(InstalledSkillManifestEntry {
         directory: directory_name.clone(),
         name: directory_name.clone(),
@@ -6291,7 +6324,7 @@ pub async fn add_skill_favorite(
     db: State<'_, SqlitePool>,
     skill_item: DiscoverableSkill,
 ) -> Result<()> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     sqlx::query(
         "INSERT OR REPLACE INTO skill_favorites (skill_key, name, description, directory, readme_url, repo_name, repo_source, repo_branch, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
@@ -6354,7 +6387,7 @@ pub async fn toggle_installed_skill_favorite(
         Ok(false)
     } else {
         // 未收藏，添加
-        let now = chrono::Utc::now().timestamp();
+        let now = now_timestamp();
         sqlx::query(
             "INSERT INTO skill_favorites (skill_key, name, description, directory, readme_url, repo_name, repo_source, repo_branch, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
@@ -7132,7 +7165,7 @@ pub async fn create_credential(
     log_db: State<'_, LogDb>,
     input: OfficialCredentialCreate,
 ) -> Result<OfficialCredentialResponse> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     // Check if this is the first credential for this cli_type
     let count: (i64,) =
@@ -7205,7 +7238,7 @@ pub async fn update_credential(
     id: i64,
     input: OfficialCredentialUpdate,
 ) -> Result<OfficialCredentialResponse> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     let cred_name: Option<(String,)> =
         sqlx::query_as("SELECT name FROM official_credentials WHERE id = ?")
@@ -7373,7 +7406,7 @@ pub async fn set_cli_mode(
     cli_type: String,
     mode: String,
 ) -> Result<()> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let gateway_url = config.gateway_base_url();
 
     let current_mode: Option<(String,)> =
@@ -7582,7 +7615,7 @@ pub async fn add_plugin_favorite(
     let source_type =
         crate::services::plugin::get_marketplace_source_type(&config_dir, &marketplace_name);
 
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     sqlx::query(
         "INSERT OR REPLACE INTO plugin_favorites (plugin_id, plugin_name, marketplace_name, created_at, marketplace_source) VALUES (?, ?, ?, ?, ?)"

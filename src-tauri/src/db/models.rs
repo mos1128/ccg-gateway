@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use crate::time::now_timestamp;
+
 // ==================== Provider 相关实体 ====================
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -117,7 +119,7 @@ pub struct ProviderResponse {
 
 impl From<Provider> for ProviderResponse {
     fn from(p: Provider) -> Self {
-        let now = chrono::Utc::now().timestamp();
+        let now = now_timestamp();
         let is_blacklisted = p.blacklisted_until.map(|t| t > now).unwrap_or(false);
         let blacklist_expired = p.blacklisted_until.map(|t| t <= now).unwrap_or(false);
         let failures = if blacklist_expired {

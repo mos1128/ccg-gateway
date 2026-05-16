@@ -86,19 +86,16 @@ import { useSettingsStore } from '@/stores/settings'
 import { statsApi } from '@/api/stats'
 import { formatTokens } from '@/utils/json'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
-import type { ProviderStats, AdvancedStatsRow } from '@/types/models'
+import { CLI_TABS } from '@/types/models'
+import type { CliType, ProviderStats, AdvancedStatsRow } from '@/types/models'
 
 const providerStore = useProviderStore()
 const settingsStore = useSettingsStore()
 const DASHBOARD_REFRESH_INTERVAL_MS = 5_000
 
-const cliList = [
-  { type: 'claude_code', label: 'Claude Code' },
-  { type: 'codex', label: 'Codex' },
-  { type: 'gemini', label: 'Gemini' }
-]
+const cliList = CLI_TABS.map(({ id, label }) => ({ type: id, label }))
 
-const cliLoading = reactive<Record<string, boolean>>({
+const cliLoading = reactive<Record<CliType, boolean>>({
   claude_code: false,
   codex: false,
   gemini: false
@@ -129,18 +126,18 @@ const kpiData = computed(() => {
   }
 })
 
-function getCliEnabled(cliType: string): boolean {
+function getCliEnabled(cliType: CliType): boolean {
   const settings = settingsStore.settings?.cli_settings?.[cliType]
   if (!settings) return false
   if (settings.cli_mode === 'direct') return false
   return settings.enabled ?? false
 }
 
-function getCliMode(cliType: string): 'proxy' | 'direct' {
+function getCliMode(cliType: CliType): 'proxy' | 'direct' {
   return settingsStore.settings?.cli_settings?.[cliType]?.cli_mode ?? 'proxy'
 }
 
-async function handleModeSwitch(cliType: string, targetMode: 'proxy' | 'direct') {
+async function handleModeSwitch(cliType: CliType, targetMode: 'proxy' | 'direct') {
   if (getCliMode(cliType) === targetMode) return
   if (cliType === 'claude_code' && targetMode === 'direct') {
     notify('Claude Code 暂不支持官方模式', 'warning')
@@ -157,7 +154,7 @@ async function handleModeSwitch(cliType: string, targetMode: 'proxy' | 'direct')
   }
 }
 
-async function handleCliToggle(cliType: string, enabled: boolean) {
+async function handleCliToggle(cliType: CliType, enabled: boolean) {
   if (enabled && getCliMode(cliType) === 'direct') {
     try {
       await confirm('当前是官方模式，是否切换至中转模式并启用代理？', '提示', {

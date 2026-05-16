@@ -13,7 +13,7 @@ fn main() {
         let _ = std::fs::create_dir_all(&log_dir);
         std::panic::set_hook(Box::new(move |info| {
             let crash_path = log_dir.join("crash.log");
-            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+            let timestamp = ccg_gateway_lib::time::local_datetime_millis();
             let message = format!(
                 "[{}] PANIC: {}\nBacktrace:\n{}",
                 timestamp,

@@ -1,5 +1,16 @@
 // CLI Type
-export type CliType = 'claude_code' | 'codex' | 'gemini'
+export const CLI_TYPES = ['claude_code', 'codex', 'gemini'] as const
+export type CliType = typeof CLI_TYPES[number]
+export const CLI_LABELS: Record<CliType, string> = {
+  claude_code: 'Claude Code',
+  codex: 'Codex',
+  gemini: 'Gemini'
+}
+export const CLI_TABS: { id: CliType; label: string }[] = CLI_TYPES.map((id) => ({
+  id,
+  label: CLI_LABELS[id]
+}))
+export const PROFILE_CAPABLE_CLI_TYPES: readonly CliType[] = ['claude_code', 'codex']
 export type ProviderProfile = 'default' | 'profile1' | 'profile2' | 'profile3'
 
 // Provider types
@@ -89,7 +100,7 @@ export interface TimeoutSettings {
 }
 
 export interface CliSettings {
-  cli_type: string
+  cli_type: CliType
   enabled: boolean
   default_json_config: string
   cli_mode: 'proxy' | 'direct'
@@ -113,7 +124,7 @@ export type CodexProfileSettingsStatus = CliProfileSettingsStatus
 export interface AllSettings {
   gateway: GatewaySettings
   timeouts: TimeoutSettings
-  cli_settings: Record<string, CliSettings>
+  cli_settings: Record<CliType, CliSettings>
 }
 
 export interface GatewaySettingsUpdate {
@@ -166,11 +177,7 @@ export interface SystemStatus {
 }
 
 // MCP types
-export interface CliFlags {
-  claude_code: boolean
-  codex: boolean
-  gemini: boolean
-}
+export type CliFlags = Record<CliType, boolean>
 
 export interface CliFlagItem {
   cli_type: CliType
@@ -182,7 +189,7 @@ export interface Mcp {
   name: string
   config_json: string
   enabled: boolean
-  cli_flags: Record<string, boolean>
+  cli_flags: CliFlags
 }
 
 export interface McpCreate {
@@ -205,7 +212,7 @@ export interface Prompt {
   name: string
   content: string
   enabled: boolean
-  cli_flags: Record<string, boolean>
+  cli_flags: CliFlags
 }
 
 export interface PromptCreate {
@@ -252,7 +259,7 @@ export interface InstalledSkill {
   repo: SkillRepo | null
   readme_url: string | null
   installed_at: number
-  cli_flags: Record<string, boolean>
+  cli_flags: CliFlags
   exists_on_disk: boolean
   is_favorited: boolean
   can_favorite: boolean
@@ -299,7 +306,7 @@ export interface AdvancedStatsRow {
 export interface RequestLogListItem {
   id: number
   created_at: number
-  cli_type: string
+  cli_type: CliType
   provider_name: string
   model_id: string | null
   status_code: number | null

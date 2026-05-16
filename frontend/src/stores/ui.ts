@@ -14,7 +14,7 @@ export const useUiStore = defineStore('ui', () => {
   const logsActiveTab = ref<'request' | 'system'>('request')
 
   // 全局配置页面的 tab 状态
-  const configActiveCliTab = ref<'claude_code' | 'codex' | 'gemini'>('claude_code')
+  const configActiveCliTab = ref<CliType>('claude_code')
   const configActiveBackupTab = ref<'local' | 'webdav'>('local')
 
   function setProvidersActiveCliType(cliType: CliType) {
@@ -33,7 +33,7 @@ export const useUiStore = defineStore('ui', () => {
     logsActiveTab.value = tab
   }
 
-  function setConfigActiveCliTab(tab: 'claude_code' | 'codex' | 'gemini') {
+  function setConfigActiveCliTab(tab: CliType) {
     configActiveCliTab.value = tab
   }
 

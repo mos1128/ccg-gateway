@@ -1,6 +1,6 @@
 use crate::config::get_data_dir;
 use crate::db::models::RequestLogInfo;
-use chrono::{Local, TimeZone, Utc};
+use crate::time::{local_date_from_timestamp, now_timestamp, today_local_date};
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -53,7 +53,7 @@ pub async fn record_request(
     cache_creation_input_tokens: i64,
     output_tokens: i64,
 ) -> Result<(), sqlx::Error> {
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let today = today_local_date();
     let stat_model_id = model_id.or(source_model).unwrap_or("未知模型");
 
     sqlx::query(
@@ -199,11 +199,7 @@ async fn fetch_usage_aggregate(
     let mut aggregates = HashMap::<(String, String, String, String), UsageAggregateRow>::new();
 
     for row in rows {
-        let usage_date = Local
-            .timestamp_opt(row.created_at, 0)
-            .single()
-            .map(|dt| dt.format("%Y-%m-%d").to_string())
-            .unwrap_or_else(|| Local::now().format("%Y-%m-%d").to_string());
+        let usage_date = local_date_from_timestamp(row.created_at);
         let model_id = row
             .model_id
             .as_deref()
@@ -298,10 +294,12 @@ async fn get_meta_i64(stats_db: &SqlitePool, key: &str) -> Result<Option<i64>, s
 }
 
 async fn set_meta_value(stats_db: &SqlitePool, key: &str, value: &str) -> Result<(), sqlx::Error> {
+    let now = now_timestamp();
+
     sqlx::query(
         r#"
         INSERT INTO stats_meta (key, value, updated_at)
-        VALUES (?, ?, strftime('%s', 'now'))
+        VALUES (?, ?, ?)
         ON CONFLICT(key) DO UPDATE SET
             value = excluded.value,
             updated_at = excluded.updated_at
@@ -309,6 +307,7 @@ async fn set_meta_value(stats_db: &SqlitePool, key: &str, value: &str) -> Result
     )
     .bind(key)
     .bind(value)
+    .bind(now)
     .execute(stats_db)
     .await?;
 
@@ -320,10 +319,12 @@ async fn set_meta_value_tx(
     key: &str,
     value: &str,
 ) -> Result<(), sqlx::Error> {
+    let now = now_timestamp();
+
     sqlx::query(
         r#"
         INSERT INTO stats_meta (key, value, updated_at)
-        VALUES (?, ?, strftime('%s', 'now'))
+        VALUES (?, ?, ?)
         ON CONFLICT(key) DO UPDATE SET
             value = excluded.value,
             updated_at = excluded.updated_at
@@ -331,6 +332,7 @@ async fn set_meta_value_tx(
     )
     .bind(key)
     .bind(value)
+    .bind(now)
     .execute(&mut **tx)
     .await?;
 
@@ -338,24 +340,24 @@ async fn set_meta_value_tx(
 }
 
 fn request_log_detail_day(created_at: i64) -> String {
-    Utc.timestamp_opt(created_at, 0)
-        .single()
-        .unwrap_or_else(Utc::now)
-        .format("%Y-%m-%d")
-        .to_string()
+    local_date_from_timestamp(created_at)
 }
 
-fn request_log_detail_path(log_id: i64, created_at: i64, name: &str) -> Option<PathBuf> {
+fn request_log_detail_path_for_day(log_id: i64, day: &str, name: &str) -> Option<PathBuf> {
     match name {
         "client.body" | "forward.body" | "provider.body" | "client.headers" | "forward.headers"
         | "provider.headers" => Some(
             get_data_dir()
                 .join(REQUEST_DETAIL_DIR)
-                .join(request_log_detail_day(created_at))
+                .join(day)
                 .join(format!("{}-{}", log_id, name)),
         ),
         _ => None,
     }
+}
+
+fn request_log_detail_path(log_id: i64, created_at: i64, name: &str) -> Option<PathBuf> {
+    request_log_detail_path_for_day(log_id, &request_log_detail_day(created_at), name)
 }
 
 async fn write_request_log_detail(
@@ -477,7 +479,7 @@ pub async fn record_request_log(
     target_model: Option<&str>,
     info: Option<RequestLogInfo>,
 ) -> Result<i64, sqlx::Error> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     let info = info.unwrap_or_default();
 
     let result = sqlx::query(
@@ -516,7 +518,7 @@ pub async fn record_system_log(
     event_type: &str,
     message: &str,
 ) -> Result<(), sqlx::Error> {
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
 
     sqlx::query(
         r#"

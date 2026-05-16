@@ -177,6 +177,8 @@ pub enum CliType {
 }
 
 impl CliType {
+    pub const ALL: [CliType; 3] = [CliType::ClaudeCode, CliType::Codex, CliType::Gemini];
+
     pub fn as_str(&self) -> &'static str {
         match self {
             CliType::ClaudeCode => "claude_code",

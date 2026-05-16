@@ -5,6 +5,7 @@ pub mod schema_inspector;
 pub mod schema_migrator;
 
 use crate::services::skill;
+use crate::time::now_timestamp;
 use schema_definition::DatabaseSchema;
 use schema_diff::SchemaDiff;
 use schema_inspector::SchemaInspector;
@@ -190,7 +191,7 @@ async fn update_version(pool: &SqlitePool, version: i64) -> Result<(), sqlx::Err
     // 先创建版本表（如果不存在）
     create_version_table(pool).await?;
 
-    let now = chrono::Utc::now().timestamp();
+    let now = now_timestamp();
     sqlx::query("INSERT OR REPLACE INTO _schema_version (version, applied_at) VALUES (?, ?)")
         .bind(version)
         .bind(now)
@@ -203,28 +204,35 @@ async fn update_version(pool: &SqlitePool, version: i64) -> Result<(), sqlx::Err
 
 /// 插入默认配置数据
 async fn init_default_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let now = now_timestamp();
+
     // gateway_settings
     sqlx::query(
-        "INSERT OR IGNORE INTO gateway_settings (id, debug_log, updated_at) VALUES (1, 0, strftime('%s', 'now'))"
+        "INSERT OR IGNORE INTO gateway_settings (id, debug_log, updated_at) VALUES (1, 0, ?)",
     )
+    .bind(now)
     .execute(pool)
     .await?;
 
     // timeout_settings
     sqlx::query(
-        "INSERT OR IGNORE INTO timeout_settings (id, stream_first_byte_timeout, stream_idle_timeout, non_stream_timeout, updated_at) VALUES (1, 30, 60, 120, strftime('%s', 'now'))"
+        "INSERT OR IGNORE INTO timeout_settings (id, stream_first_byte_timeout, stream_idle_timeout, non_stream_timeout, updated_at) VALUES (1, 30, 60, 120, ?)"
     )
+    .bind(now)
     .execute(pool)
     .await?;
 
     // cli_settings（插入默认配置）
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('claude_code', '{\n  \"env\": {},\n  \"permissions\": {}\n}', strftime('%s', 'now'))")
+    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('claude_code', '{\n  \"env\": {},\n  \"permissions\": {}\n}', ?)")
+        .bind(now)
         .execute(pool)
         .await?;
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('codex', 'model_reasoning_effort = \"high\"\nmodel_reasoning_summary = \"detailed\"', strftime('%s', 'now'))")
+    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('codex', 'model_reasoning_effort = \"high\"\nmodel_reasoning_summary = \"detailed\"', ?)")
+        .bind(now)
         .execute(pool)
         .await?;
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('gemini', '{\n  \"theme\": \"dark\"\n}', strftime('%s', 'now'))")
+    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('gemini', '{\n  \"theme\": \"dark\"\n}', ?)")
+        .bind(now)
         .execute(pool)
         .await?;
 

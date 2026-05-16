@@ -91,16 +91,16 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { notify } from '@/utils/notification'
-import type { CliSettings } from '@/types/models'
+import type { CliSettings, CliType } from '@/types/models'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 
 const props = defineProps<{
-  cliType: string
+  cliType: CliType
   settings?: CliSettings
 }>()
 
 const emit = defineEmits<{
-  save: [cliType: string, data: { default_json_config: string; config_dir: string; config_write_mode: string }]
+  save: [cliType: CliType, data: { default_json_config: string; config_dir: string; config_write_mode: string }]
 }>()
 
 const form = ref({
