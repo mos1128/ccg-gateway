@@ -48,12 +48,6 @@ fn codex_gateway_provider_name(profile: &str) -> Option<&'static str> {
     }
 }
 
-fn codex_gateway_base_url(gateway_url: &str, profile: &str) -> Result<String> {
-    let prefix = gateway_path_prefix_for_profile(profile)
-        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
-    Ok(format!("{}{}", gateway_url.trim_end_matches('/'), prefix))
-}
-
 fn ensure_toml_table<'a>(
     doc: &'a mut toml_edit::DocumentMut,
     key: &str,
@@ -98,13 +92,15 @@ fn apply_codex_gateway_provider_config(
         .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
     let provider_name = codex_gateway_provider_name(profile)
         .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
-    let base_url = codex_gateway_base_url(gateway_url, profile)?;
+    let gateway_token = gateway_token_for_profile(profile)
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
 
     let mut provider_table = toml_edit::Table::new();
     provider_table["name"] = toml_edit::value(provider_name);
-    provider_table["base_url"] = toml_edit::value(base_url);
+    provider_table["base_url"] = toml_edit::value(gateway_url.trim_end_matches('/'));
     provider_table["wire_api"] = toml_edit::value("responses");
     provider_table["requires_openai_auth"] = toml_edit::value(false);
+    provider_table["experimental_bearer_token"] = toml_edit::value(gateway_token);
 
     let model_providers = ensure_toml_table(doc, "model_providers");
     model_providers[provider_name] = toml_edit::Item::Table(provider_table);
@@ -1490,20 +1486,7 @@ async fn check_codex_uses_gateway(db: &SqlitePool, cli_type: &str, gateway_url: 
     }
 
     match content.parse::<toml_edit::DocumentMut>() {
-        Ok(doc) => {
-            if let Some(provider) = doc.get("model_provider").and_then(|v| v.as_str()) {
-                if provider == "ccg-gateway" {
-                    return doc
-                        .get("model_providers")
-                        .and_then(|providers| providers.get("ccg-gateway"))
-                        .and_then(|provider| provider.get("base_url"))
-                        .and_then(|base_url| base_url.as_str())
-                        .map(|base_url| gateway_url_matches(base_url, gateway_url))
-                        .unwrap_or(false);
-                }
-            }
-            false
-        }
+        Ok(doc) => codex_default_provider_uses_gateway(&doc, gateway_url),
         Err(_) => false,
     }
 }
@@ -2068,16 +2051,63 @@ fn codex_profile_uses_gateway(
         return false;
     };
 
-    let expected_url = match codex_gateway_base_url(gateway_url, profile) {
-        Ok(url) => url,
-        Err(_) => return false,
+    let Some(expected_token) = gateway_token_for_profile(profile) else {
+        return false;
     };
+    let expected_url = gateway_url.trim_end_matches('/');
+    let legacy_expected_url = gateway_path_prefix_for_profile(profile)
+        .map(|prefix| format!("{}{}", expected_url, prefix));
 
     doc.get("model_providers")
         .and_then(|item| item.get(&provider_name))
-        .and_then(|item| item.get("base_url"))
-        .and_then(|item| item.as_str())
-        .map(|base_url| gateway_url_matches(base_url, &expected_url))
+        .and_then(|item| item.as_table())
+        .map(|provider| {
+            let Some(base_url) = provider.get("base_url").and_then(|item| item.as_str()) else {
+                return false;
+            };
+
+            let base_url_matches = gateway_url_matches(base_url, expected_url);
+            let legacy_base_url_matches = legacy_expected_url
+                .as_deref()
+                .map(|expected| gateway_url_matches(base_url, expected))
+                .unwrap_or(false);
+            let token = provider
+                .get("experimental_bearer_token")
+                .and_then(|item| item.as_str())
+                .map(str::trim);
+            let token_matches = token.map(|token| token == expected_token).unwrap_or(false);
+
+            (base_url_matches && token_matches) || (token.is_none() && legacy_base_url_matches)
+        })
+        .unwrap_or(false)
+}
+
+fn codex_default_provider_uses_gateway(doc: &toml_edit::DocumentMut, gateway_url: &str) -> bool {
+    if doc
+        .get("model_provider")
+        .and_then(|v| v.as_str())
+        .map(|provider| provider != "ccg-gateway")
+        .unwrap_or(true)
+    {
+        return false;
+    }
+
+    doc.get("model_providers")
+        .and_then(|providers| providers.get("ccg-gateway"))
+        .and_then(|provider| provider.as_table())
+        .map(|provider| {
+            let Some(base_url) = provider.get("base_url").and_then(|v| v.as_str()) else {
+                return false;
+            };
+
+            let token_matches = provider
+                .get("experimental_bearer_token")
+                .and_then(|v| v.as_str())
+                .map(|token| token == "ccg-gateway")
+                .unwrap_or(true);
+
+            gateway_url_matches(base_url, gateway_url) && token_matches
+        })
         .unwrap_or(false)
 }
 
