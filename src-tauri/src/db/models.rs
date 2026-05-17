@@ -172,6 +172,141 @@ pub struct TestProviderResult {
     pub response_body: String,
 }
 
+// ==================== Scheduled Task 相关实体 ====================
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ScheduledTask {
+    pub id: i64,
+    pub name: String,
+    pub task_type: String,
+    pub enabled: i64,
+    pub schedule_type: String,
+    pub schedule_expr: String,
+    pub payload_json: String,
+    pub retry_limit: i64,
+    pub retry_interval_minutes: i64,
+    pub retry_count: i64,
+    pub last_run_at: Option<i64>,
+    pub next_run_at: i64,
+    pub last_status: String,
+    pub last_error: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTaskCreate {
+    pub name: String,
+    pub task_type: String,
+    pub enabled: Option<bool>,
+    pub schedule_type: String,
+    pub schedule_expr: String,
+    pub payload_json: String,
+    pub retry_limit: Option<i64>,
+    pub retry_interval_minutes: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTaskUpdate {
+    pub name: Option<String>,
+    pub enabled: Option<bool>,
+    pub schedule_type: Option<String>,
+    pub schedule_expr: Option<String>,
+    pub payload_json: Option<String>,
+    pub retry_limit: Option<i64>,
+    pub retry_interval_minutes: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTaskResponse {
+    pub id: i64,
+    pub name: String,
+    pub task_type: String,
+    pub enabled: bool,
+    pub schedule_type: String,
+    pub schedule_expr: String,
+    pub payload_json: String,
+    pub retry_limit: i64,
+    pub retry_interval_minutes: i64,
+    pub retry_count: i64,
+    pub last_run_at: Option<i64>,
+    pub next_run_at: i64,
+    pub last_status: String,
+    pub last_error: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl From<ScheduledTask> for ScheduledTaskResponse {
+    fn from(task: ScheduledTask) -> Self {
+        Self {
+            id: task.id,
+            name: task.name,
+            task_type: task.task_type,
+            enabled: task.enabled == 1,
+            schedule_type: task.schedule_type,
+            schedule_expr: task.schedule_expr,
+            payload_json: task.payload_json,
+            retry_limit: task.retry_limit,
+            retry_interval_minutes: task.retry_interval_minutes,
+            retry_count: task.retry_count,
+            last_run_at: task.last_run_at,
+            next_run_at: task.next_run_at,
+            last_status: task.last_status,
+            last_error: task.last_error,
+            created_at: task.created_at,
+            updated_at: task.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ScheduledTaskRun {
+    pub id: i64,
+    pub task_id: i64,
+    pub task_name: String,
+    pub task_type: String,
+    pub trigger_type: String,
+    pub status: String,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+    pub elapsed_ms: i64,
+    pub total_count: i64,
+    pub success_count: i64,
+    pub failure_count: i64,
+    pub skipped_count: i64,
+    pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ScheduledTaskRunItem {
+    pub id: i64,
+    pub run_id: i64,
+    pub provider_id: Option<i64>,
+    pub provider_name: String,
+    pub model_name: String,
+    pub status: String,
+    pub status_code: Option<i64>,
+    pub elapsed_ms: i64,
+    pub error_message: Option<String>,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTaskRunListResponse {
+    pub items: Vec<ScheduledTaskRun>,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderKeepalivePayload {
+    pub target_mode: String,
+    pub cli_type: Option<String>,
+    pub profile: Option<String>,
+    pub provider_ids: Option<Vec<i64>>,
+    pub model_name: String,
+}
+
 // ==================== Settings 相关实体 ====================
 
 // Gateway Settings (完整版 - 对应数据库表)

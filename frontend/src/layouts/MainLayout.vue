@@ -9,6 +9,7 @@
           <div class="nav-item" :class="{ active: route.path === '/' }" @click="router.push('/')">仪表盘</div>
           <div class="nav-item" :class="{ active: route.path === '/config' }" @click="router.push('/config')">全局设置</div>
           <div class="nav-item" :class="{ active: route.path === '/logs' }" @click="router.push('/logs')">日志记录</div>
+          <div class="nav-item" :class="{ active: route.path === '/scheduled-tasks' }" @click="router.push('/scheduled-tasks')">定时任务</div>
           <div class="nav-item" :class="{ active: route.path === '/sessions' }" @click="router.push('/sessions')">会话记录</div>
         </div>
         

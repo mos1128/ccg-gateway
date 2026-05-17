@@ -34,6 +34,11 @@ const router = createRouter({
           component: () => import('@/views/logs/index.vue')
         },
         {
+          path: 'scheduled-tasks',
+          name: 'ScheduledTasks',
+          component: () => import('@/views/scheduled-tasks/index.vue')
+        },
+        {
           path: 'mcp',
           name: 'MCP',
           component: () => import('@/views/mcp/index.vue')

@@ -87,6 +87,94 @@ export interface TestProviderResult {
   response_body: string
 }
 
+// Scheduled task types
+export type ScheduledTaskType = 'provider_keepalive'
+export type ScheduledTaskStatus = 'pending' | 'running' | 'success' | 'partial_failed' | 'failed' | 'retrying'
+export type ScheduledTaskTrigger = 'scheduled' | 'manual'
+
+export interface ProviderKeepalivePayload {
+  target_mode: 'all' | 'selected'
+  cli_type?: CliType
+  profile?: ProviderProfile
+  provider_ids?: number[]
+  model_name: string
+}
+
+export interface ScheduledTask {
+  id: number
+  name: string
+  task_type: ScheduledTaskType
+  enabled: boolean
+  schedule_type: 'daily'
+  schedule_expr: string
+  payload_json: string
+  retry_limit: number
+  retry_interval_minutes: number
+  retry_count: number
+  last_run_at: number | null
+  next_run_at: number
+  last_status: ScheduledTaskStatus
+  last_error: string | null
+  created_at: number
+  updated_at: number
+}
+
+export interface ScheduledTaskCreate {
+  name: string
+  task_type: ScheduledTaskType
+  enabled?: boolean
+  schedule_type: 'daily'
+  schedule_expr: string
+  payload_json: string
+  retry_limit?: number
+  retry_interval_minutes?: number
+}
+
+export interface ScheduledTaskUpdate {
+  name?: string
+  enabled?: boolean
+  schedule_type?: 'daily'
+  schedule_expr?: string
+  payload_json?: string
+  retry_limit?: number
+  retry_interval_minutes?: number
+}
+
+export interface ScheduledTaskRun {
+  id: number
+  task_id: number
+  task_name: string
+  task_type: ScheduledTaskType
+  trigger_type: ScheduledTaskTrigger
+  status: ScheduledTaskStatus
+  started_at: number
+  finished_at: number | null
+  elapsed_ms: number
+  total_count: number
+  success_count: number
+  failure_count: number
+  skipped_count: number
+  error_message: string | null
+}
+
+export interface ScheduledTaskRunItem {
+  id: number
+  run_id: number
+  provider_id: number | null
+  provider_name: string
+  model_name: string
+  status: 'success' | 'failed' | 'skipped'
+  status_code: number | null
+  elapsed_ms: number
+  error_message: string | null
+  created_at: number
+}
+
+export interface ScheduledTaskRunListResponse {
+  items: ScheduledTaskRun[]
+  total: number
+}
+
 // Settings types
 export interface GatewaySettings {
   debug_log: boolean

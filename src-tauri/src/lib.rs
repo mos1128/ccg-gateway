@@ -77,6 +77,7 @@ pub fn run() {
                 app.manage(db.clone());
                 app.manage(LogDb(log_db.clone()));
                 app.manage(StatsDb(stats_db.clone()));
+                services::scheduler::start_scheduler(db.clone(), log_db.clone());
 
                 let addr = config.bind_addr();
                 let app_handle = app.handle().clone();
@@ -199,6 +200,14 @@ pub fn run() {
             commands::reorder_providers,
             commands::reset_provider_failures,
             commands::test_provider_models,
+            commands::get_scheduled_tasks,
+            commands::get_scheduled_task,
+            commands::create_scheduled_task,
+            commands::update_scheduled_task,
+            commands::delete_scheduled_task,
+            commands::run_scheduled_task_now,
+            commands::get_scheduled_task_runs,
+            commands::get_scheduled_task_run_items,
             commands::get_gateway_settings,
             commands::update_gateway_settings,
             commands::get_timeout_settings,

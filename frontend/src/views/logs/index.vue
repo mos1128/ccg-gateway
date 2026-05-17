@@ -9,9 +9,6 @@
           <line x1="16" x2="8" y1="17" y2="17"/>
           <line x1="10" x2="8" y1="9" y2="9"/>
         </symbol>
-        <symbol id="icon-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="m6 9 6 6 6-6"/>
-        </symbol>
         <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
         </symbol>
@@ -38,42 +35,31 @@
       <div class="filters-row">
         <div class="filter-group">
           <span class="filter-label">终端</span>
-          <div class="custom-select" :class="{ open: cliSelectOpen }" @click.stop="toggleSelect('cli')">
-            <div class="custom-select-trigger">{{ getCliLabel(requestFilters.cli_type) }}</div>
-            <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-            <div class="custom-select-options">
-              <div class="custom-option" :class="{ selected: !requestFilters.cli_type }" @click.stop="requestFilters.cli_type = ''; cliSelectOpen = false; fetchRequestLogs()">全部终端</div>
-              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'claude_code' }" @click.stop="requestFilters.cli_type = 'claude_code'; cliSelectOpen = false; fetchRequestLogs()">ClaudeCode</div>
-              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'codex' }" @click.stop="requestFilters.cli_type = 'codex'; cliSelectOpen = false; fetchRequestLogs()">Codex</div>
-              <div class="custom-option" :class="{ selected: requestFilters.cli_type === 'gemini' }" @click.stop="requestFilters.cli_type = 'gemini'; cliSelectOpen = false; fetchRequestLogs()">Gemini</div>
-            </div>
-          </div>
+          <AppSelect
+            :model-value="requestFilters.cli_type"
+            :options="cliFilterOptions"
+            @change="handleRequestCliChange"
+          />
         </div>
 
         <div class="filter-group">
           <span class="filter-label">服务商</span>
-          <div class="custom-select" :class="{ open: providerSelectOpen }" @click.stop="toggleSelect('provider')">
-            <div class="custom-select-trigger">{{ requestFilters.provider_name || '全部服务商' }}</div>
-            <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-            <div class="custom-select-options">
-              <div class="custom-option" :class="{ selected: !requestFilters.provider_name }" @click.stop="requestFilters.provider_name = ''; providerSelectOpen = false; fetchRequestLogs()">全部服务商</div>
-              <div v-for="p in providerOptions" :key="p" class="custom-option" :class="{ selected: requestFilters.provider_name === p }" @click.stop="requestFilters.provider_name = p; providerSelectOpen = false; fetchRequestLogs()">
-                {{ p }}
-              </div>
-            </div>
-          </div>
+          <AppSelect
+            :model-value="requestFilters.provider_name"
+            :options="providerFilterOptions"
+            @change="handleRequestProviderChange"
+          />
         </div>
 
         <div style="flex: 1;"></div>
         <!-- 日志模式下拉选择器 -->
         <span class="filter-label">日志级别</span>
-        <div class="custom-select log-mode-select" :class="{ open: logModeSelectOpen }" @click.stop="toggleSelect('logMode')">
-          <div class="custom-select-trigger">{{ logModeMap[logRecordMode] }}</div>
-          <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-          <div class="custom-select-options">
-            <div v-for="(label, key) in logModeMap" :key="key" class="custom-option" :class="{ selected: logRecordMode === key }" @click.stop="setLogMode(key as LogRecordMode)">{{ label }}</div>
-          </div>
-        </div>
+        <AppSelect
+          :model-value="logRecordMode"
+          :options="logModeOptions"
+          width="140px"
+          @change="value => setLogMode(value as LogRecordMode)"
+        />
         <div style="width: 1px; height: 20px; background: var(--color-border); margin: 0 4px;"></div>
         <div class="action-icon" @click="fetchRequestLogs" title="查询">
           <svg width="18" height="18"><use href="#icon-search"/></svg>
@@ -183,16 +169,11 @@
       <div class="filters-row">
         <div class="filter-group">
           <span class="filter-label">事件类型</span>
-          <div class="custom-select" :class="{ open: eventTypeSelectOpen }" @click.stop="toggleSelect('event')">
-            <div class="custom-select-trigger">{{ formatEventType(systemFilters.event_type) || '全部事件' }}</div>
-            <svg class="chevron" width="16" height="16"><use href="#icon-chevron"/></svg>
-            <div class="custom-select-options">
-              <div class="custom-option" :class="{ selected: !systemFilters.event_type }" @click.stop="systemFilters.event_type = ''; eventTypeSelectOpen = false; fetchSystemLogs()">全部事件</div>
-              <div v-for="(label, key) in eventTypeMap" :key="key" class="custom-option" :class="{ selected: systemFilters.event_type === key }" @click.stop="systemFilters.event_type = key; eventTypeSelectOpen = false; fetchSystemLogs()">
-                {{ label }}
-              </div>
-            </div>
-          </div>
+          <AppSelect
+            :model-value="systemFilters.event_type"
+            :options="eventTypeOptions"
+            @change="handleSystemEventTypeChange"
+          />
         </div>
 
         <div style="flex: 1;"></div>
@@ -325,6 +306,7 @@ import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import AppModal from '@/components/AppModal.vue'
+import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
 import { logsApi } from '@/api/logs'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
@@ -350,35 +332,23 @@ const gatewayUrl = ref('')
 const providerOptions = ref<string[]>([])
 let requestLogListener: (() => void) | null = null
 
-// Dropdown State
-const cliSelectOpen = ref(false)
-const providerSelectOpen = ref(false)
-const eventTypeSelectOpen = ref(false)
-const logModeSelectOpen = ref(false)
+const cliFilterOptions: AppSelectOption[] = [
+  { label: '全部终端', value: '' },
+  { label: 'ClaudeCode', value: 'claude_code' },
+  { label: 'Codex', value: 'codex' },
+  { label: 'Gemini', value: 'gemini' }
+]
 
-function closeAllSelects() {
-  cliSelectOpen.value = false
-  providerSelectOpen.value = false
-  eventTypeSelectOpen.value = false
-  logModeSelectOpen.value = false
-}
+const providerFilterOptions = computed<AppSelectOption[]>(() => [
+  { label: '全部服务商', value: '' },
+  ...providerOptions.value.map(provider => ({ label: provider, value: provider }))
+])
 
-function toggleSelect(type: string) {
-  const isCli = type === 'cli' && !cliSelectOpen.value
-  const isProv = type === 'provider' && !providerSelectOpen.value
-  const isEvent = type === 'event' && !eventTypeSelectOpen.value
-  const isLogMode = type === 'logMode' && !logModeSelectOpen.value
-
-  closeAllSelects()
-
-  if (isCli) cliSelectOpen.value = true
-  if (isProv) providerSelectOpen.value = true
-  if (isEvent) eventTypeSelectOpen.value = true
-  if (isLogMode) logModeSelectOpen.value = true
-}
+const logModeOptions = computed<AppSelectOption[]>(() =>
+  Object.entries(logModeMap).map(([value, label]) => ({ value, label }))
+)
 
 onMounted(async () => {
-  document.addEventListener('click', closeAllSelects)
   fetchLogSettings()
   fetchGatewayStatus()
   fetchProviders()
@@ -403,7 +373,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  document.removeEventListener('click', closeAllSelects)
   if (requestLogListener) {
     requestLogListener()
     requestLogListener = null
@@ -465,7 +434,6 @@ async function fetchGatewayStatus() {
 
 async function setLogMode(mode: LogRecordMode) {
   logRecordMode.value = mode
-  logModeSelectOpen.value = false
   try {
     if (mode === 'disabled') {
       await logsApi.updateSettings({ debug_log: false })
@@ -475,6 +443,23 @@ async function setLogMode(mode: LogRecordMode) {
   } catch {}
 }
 
+function handleRequestCliChange(value: string | number) {
+  requestFilters.value.cli_type = String(value)
+  requestPage.value = 1
+  fetchRequestLogs()
+}
+
+function handleRequestProviderChange(value: string | number) {
+  requestFilters.value.provider_name = String(value)
+  requestPage.value = 1
+  fetchRequestLogs()
+}
+
+function handleSystemEventTypeChange(value: string | number) {
+  systemFilters.value.event_type = String(value)
+  systemPage.value = 1
+  fetchSystemLogs()
+}
 
 async function fetchRequestLogs() {
   requestLoading.value = true
@@ -600,19 +585,17 @@ const eventTypeMap: Record<string, string> = {
   provider_updated: '服务商更新',
   provider_deleted: '服务商删除',
   provider_reset: '状态重置',
+  scheduled_task_failed: '定时任务失败',
 }
+
+const eventTypeOptions = computed<AppSelectOption[]>(() => [
+  { label: '全部事件', value: '' },
+  ...Object.entries(eventTypeMap).map(([value, label]) => ({ value, label }))
+])
 
 function formatEventType(eventType: string): string {
   if (!eventType) return ''
   return eventTypeMap[eventType] || eventType
-}
-
-function getCliLabel(type: string): string {
-  if (!type) return '全部终端'
-  if (type === 'claude_code') return 'ClaudeCode'
-  if (type === 'codex') return 'Codex'
-  if (type === 'gemini') return 'Gemini'
-  return type
 }
 
 // Flat table styling purely depends on specific css pills
@@ -742,23 +725,6 @@ watch(activeTab, (tab) => {
 .pagination-footer :deep(.el-select__wrapper) { padding: 4px 12px; border: 1px solid var(--color-border); border-radius: 8px; background: color-mix(in srgb, var(--color-bg) 80%, transparent); box-shadow: 0 1px 3px var(--color-shadow); min-height: auto; transition: all 0.2s; }
 .pagination-footer :deep(.el-select__wrapper:hover) { border-color: var(--color-border-hover); }
 .pagination-footer :deep(.el-select__wrapper.is-focused) { border-color: var(--color-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent); }
-
-/* Custom HTML Select (Headless UI Clone) */
-.custom-select { position: relative; width: 160px; }
-.custom-select-trigger { padding: 9px 36px 9px 16px; border: 1px solid var(--color-border); border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text); background: color-mix(in srgb, var(--color-bg) 80%, transparent); box-shadow: 0 1px 3px var(--color-shadow); cursor: pointer; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
-.custom-select:hover .custom-select-trigger { border-color: var(--color-border-hover); background: var(--color-bg); }
-.custom-select.open .custom-select-trigger { border-color: var(--color-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent); background: var(--color-bg); }
-.custom-select .chevron { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); pointer-events: none; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-.custom-select.open .chevron { transform: translateY(-50%) rotate(180deg); color: var(--color-primary); }
-
-.custom-select-options { position: absolute; top: calc(100% + 6px); left: 0; right: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 10px 40px -10px var(--color-shadow-lg); padding: 4px; z-index: 50; opacity: 0; transform: translateY(-5px); pointer-events: none; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); min-width: 100%; max-height: 250px; overflow-y: auto; }
-.custom-select.open .custom-select-options { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: var(--color-text-secondary); cursor: pointer; transition: all 0.1s; display: flex; align-items: center; margin-bottom: 2px; }
-.custom-option:hover { background: var(--color-bg-subtle); color: var(--color-text); }
-.custom-option.selected { font-weight: var(--fw-600); color: var(--color-primary); background: var(--color-primary-light); }
-
-
-.log-mode-select { width: 140px; }
 
 /* Keep el-dialog styles clean to match ethereal frost inside detail view */
 .detail-content { max-height: 60vh; overflow-y: auto; }
