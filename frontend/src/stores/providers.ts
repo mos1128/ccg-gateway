@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { providersApi } from '@/api/providers'
-import type { Provider, ProviderCreate, ProviderProfile, ProviderUpdate } from '@/types/models'
+import type { CliType, Provider, ProviderCreate, ProviderProfile, ProviderUpdate } from '@/types/models'
 import { useUiStore } from './ui'
 
 export const useProviderStore = defineStore('providers', () => {
@@ -14,7 +14,7 @@ export const useProviderStore = defineStore('providers', () => {
   const activeCacheKey = computed(() => {
     const type = uiStore.providersActiveCliType
     const profile = type === 'claude_code' || type === 'codex' 
-      ? uiStore.providersActiveProfile 
+      ? uiStore.getProvidersActiveProfile(type)
       : 'default'
     return `${type}_${profile}`
   })
@@ -26,20 +26,20 @@ export const useProviderStore = defineStore('providers', () => {
     }
   })
 
-  function getCacheKey(cliType?: string, profile?: ProviderProfile) {
+  function getCacheKey(cliType?: CliType, profile?: ProviderProfile) {
     const type = cliType || uiStore.providersActiveCliType
     const targetProfile = type === 'claude_code' || type === 'codex'
-      ? (profile || uiStore.providersActiveProfile)
+      ? (profile || uiStore.getProvidersActiveProfile(type))
       : 'default'
     return `${type}_${targetProfile}`
   }
 
-  async function fetchProviders(cliType?: string, profile?: ProviderProfile) {
+  async function fetchProviders(cliType?: CliType, profile?: ProviderProfile) {
     loading.value = true
     try {
       const type = cliType || uiStore.providersActiveCliType
       const targetProfile = type === 'claude_code' || type === 'codex'
-        ? (profile || uiStore.providersActiveProfile)
+        ? (profile || uiStore.getProvidersActiveProfile(type))
         : 'default'
       const key = `${type}_${targetProfile}`
       

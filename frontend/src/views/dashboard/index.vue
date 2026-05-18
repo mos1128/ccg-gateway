@@ -59,7 +59,7 @@
             </div>
           </div>
           <div style="height: 260px; width: 100%;" @mouseenter="handleChartMouseEnter" @mouseleave="handleChartMouseLeave">
-            <v-chart class="chart" :option="chartOption" autoresize />
+            <v-chart class="chart" :option="chartOption" autoresize @legendselectchanged="handleLegendSelectChanged" />
           </div>
         </div>
       </div>
@@ -105,10 +105,12 @@ const providerStats = ref<ProviderStats[]>([])
 const advancedStats = ref<AdvancedStatsRow[]>([])
 const pendingAdvancedStats = ref<AdvancedStatsRow[] | null>(null)
 const chartHovering = ref(false)
+const legendSelectedMap = ref<Record<string, Record<string, boolean>>>({})
 
 // UI State
 const metricMode = ref<'requests' | 'tokens'>('tokens')
 const dimMode = ref<'provider' | 'model'>('provider')
+const legendStateKey = computed(() => dimMode.value)
 
 const kpiData = computed(() => {
   const stats = providerStats.value
@@ -218,6 +220,14 @@ function handleChartMouseLeave() {
   if (!pendingAdvancedStats.value) return
   advancedStats.value = pendingAdvancedStats.value
   pendingAdvancedStats.value = null
+}
+
+function handleLegendSelectChanged(event: { selected?: Record<string, boolean> }) {
+  if (!event.selected) return
+  legendSelectedMap.value = {
+    ...legendSelectedMap.value,
+    [legendStateKey.value]: { ...event.selected }
+  }
 }
 
 useAutoRefresh(async () => {
@@ -357,7 +367,14 @@ const chartOption = computed(() => {
         return html
       }
     },
-    legend: { bottom: 0, left: 'center', type: 'scroll', icon: 'circle', textStyle: { color: '#64748b' } },
+    legend: {
+      bottom: 0,
+      left: 'center',
+      type: 'scroll',
+      icon: 'circle',
+      selected: legendSelectedMap.value[legendStateKey.value],
+      textStyle: { color: '#64748b' }
+    },
     grid: { top: 20, right: '4%', bottom: 40, left: '3%', containLabel: true },
     xAxis: { 
       type: 'category', 
