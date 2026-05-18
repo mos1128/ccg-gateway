@@ -367,7 +367,7 @@ fn parse_streaming_usage_chunk(
     cli_type: CliType,
     usage: &mut TokenUsage,
 ) {
-    const MAX_SSE_LINE_BUFFER: usize = 64 * 1024;
+    const MAX_SSE_LINE_BUFFER: usize = 1024 * 1024;
 
     buffer.push_str(&String::from_utf8_lossy(chunk));
     while let Some(pos) = buffer.find('\n') {
@@ -382,8 +382,12 @@ fn parse_streaming_usage_chunk(
     }
 
     if buffer.len() > MAX_SSE_LINE_BUFFER {
-        let drain_len = buffer.len() - MAX_SSE_LINE_BUFFER;
-        buffer.drain(..drain_len);
+        tracing::warn!(
+            "[{}] SSE line exceeded {} bytes before newline; dropping buffered line, token usage in this event may be missed",
+            cli_type,
+            MAX_SSE_LINE_BUFFER
+        );
+        buffer.clear();
     }
 }
 
