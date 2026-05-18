@@ -1,11 +1,16 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { CliType, ProviderProfile } from '@/types/models'
 
 export const useUiStore = defineStore('ui', () => {
   // 服务商管理页面的 CLI 类型 tab
   const providersActiveCliType = ref<CliType>('claude_code')
-  const providersActiveProfile = ref<ProviderProfile>('default')
+  const providersActiveProfiles = ref<Record<CliType, ProviderProfile>>({
+    claude_code: 'default',
+    codex: 'default',
+    gemini: 'default'
+  })
+  const providersActiveProfile = computed(() => getProvidersActiveProfile(providersActiveCliType.value))
 
   // 会话管理页面的 CLI 类型 tab
   const sessionsActiveCliType = ref<CliType>('claude_code')
@@ -21,8 +26,12 @@ export const useUiStore = defineStore('ui', () => {
     providersActiveCliType.value = cliType
   }
 
-  function setProvidersActiveProfile(profile: ProviderProfile) {
-    providersActiveProfile.value = profile
+  function getProvidersActiveProfile(cliType: CliType) {
+    return providersActiveProfiles.value[cliType] ?? 'default'
+  }
+
+  function setProvidersActiveProfile(profile: ProviderProfile, cliType = providersActiveCliType.value) {
+    providersActiveProfiles.value = { ...providersActiveProfiles.value, [cliType]: profile }
   }
 
   function setSessionsActiveCliType(cliType: CliType) {
@@ -49,6 +58,7 @@ export const useUiStore = defineStore('ui', () => {
     configActiveCliTab,
     configActiveBackupTab,
     setProvidersActiveCliType,
+    getProvidersActiveProfile,
     setProvidersActiveProfile,
     setSessionsActiveCliType,
     setLogsActiveTab,
