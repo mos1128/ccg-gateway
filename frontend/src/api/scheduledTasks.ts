@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
   ScheduledTask,
   ScheduledTaskCreate,
@@ -7,6 +8,11 @@ import type {
   ScheduledTaskRunListResponse,
   ScheduledTaskUpdate
 } from '@/types/models'
+
+export interface ScheduledTaskChangeEvent {
+  task_id: number | null
+  run_id: number | null
+}
 
 export const scheduledTasksApi = {
   list: async (): Promise<{ data: ScheduledTask[] }> => {
@@ -44,5 +50,10 @@ export const scheduledTasksApi = {
   runItems: async (runId: number): Promise<{ data: ScheduledTaskRunItem[] }> => {
     const data = await invoke<ScheduledTaskRunItem[]>('get_scheduled_task_run_items', { runId })
     return { data }
+  },
+  listenChanges: (callback: (event: ScheduledTaskChangeEvent) => void): Promise<UnlistenFn> => {
+    return listen<ScheduledTaskChangeEvent>('scheduled-task-changed', (event) => {
+      callback(event.payload)
+    })
   }
 }

@@ -22,14 +22,22 @@
         <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
         </symbol>
+        <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
+        </symbol>
       </defs>
     </svg>
 
     <div class="page-header">
       <p class="page-subtitle">统一管理保活和后续扩展的后台任务</p>
-      <button class="action-icon primary" @click="handleAdd" title="添加定时任务">
-        <svg width="20" height="20"><use href="#icon-plus"/></svg>
-      </button>
+      <div class="header-actions">
+        <button class="action-icon" @click="handleRefresh" title="刷新" :disabled="loading">
+          <svg width="18" height="18"><use href="#icon-refresh"/></svg>
+        </button>
+        <button class="action-icon primary" @click="handleAdd" title="添加定时任务">
+          <svg width="20" height="20"><use href="#icon-plus"/></svg>
+        </button>
+      </div>
     </div>
 
     <div class="list-container" v-loading="loading">
@@ -38,13 +46,12 @@
         <p>暂无定时任务</p>
       </div>
       <div v-else class="task-table-wrap">
-        <table class="flat-table task-table">
+        <table class="flat-table">
           <thead>
             <tr>
               <th>启用</th>
               <th>任务名称</th>
               <th>类型</th>
-              <th>执行对象</th>
               <th>计划时间</th>
               <th>上次结果</th>
               <th>下次执行</th>
@@ -59,7 +66,6 @@
               </td>
               <td class="task-name">{{ task.name }}</td>
               <td>{{ taskTypeLabel(task.task_type) }}</td>
-              <td>{{ formatTarget(task) }}</td>
               <td>{{ task.schedule_expr }}</td>
               <td>
                 <span class="pill" :class="statusClass(task.last_status)">{{ statusLabel(task.last_status) }}</span>
@@ -68,7 +74,7 @@
               <td class="mono">{{ task.retry_count }}/{{ task.retry_limit }}</td>
               <td>
                 <div class="row-actions">
-                  <button class="action-icon success" title="立即执行" :disabled="runningIds.includes(task.id)" @click="handleRunNow(task)">
+                  <button class="action-icon" title="立即执行" :disabled="runningIds.includes(task.id)" @click="handleRunNow(task)">
                     <svg width="16" height="16"><use href="#icon-play"/></svg>
                   </button>
                   <button class="action-icon" title="执行记录" @click="openRuns(task)">
@@ -191,11 +197,6 @@
           当前终端和 Profile 下暂无已启用服务商
         </div>
       </div>
-
-      <div class="form-footer-row">
-        <span class="text-secondary">创建后由后台调度器按时间执行</span>
-        <el-switch v-model="form.enabled" active-text="启用" inactive-text="停用" />
-      </div>
     </AppModal>
 
     <AppModal v-model="runsVisible" title="执行记录" width="980px" :show-footer="false">
@@ -258,7 +259,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppModal from '@/components/AppModal.vue'
 import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
 import { scheduledTasksApi } from '@/api/scheduledTasks'
@@ -267,7 +268,6 @@ import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import {
-  CLI_LABELS,
   CLI_TABS,
   PROFILE_CAPABLE_CLI_TYPES,
   type CliType,
@@ -305,7 +305,6 @@ const minuteOptions: AppSelectOption[] = Array.from({ length: 12 }, (_, index) =
 
 interface FormState {
   name: string
-  enabled: boolean
   cli_type: CliType
   profile: ProviderProfile
   target_mode: 'all' | 'selected'
@@ -337,6 +336,8 @@ const selectedRun = ref<ScheduledTaskRun | null>(null)
 const runItems = ref<ScheduledTaskRunItem[]>([])
 
 const form = ref<FormState>(defaultForm())
+let hasLoadedTasks = false
+let scheduledTaskListener: (() => void) | null = null
 
 const showProfileSelect = computed(() => PROFILE_CAPABLE_CLI_TYPES.includes(form.value.cli_type))
 const selectableProviders = computed(() => providerOptions.value.filter(provider => provider.enabled))
@@ -347,7 +348,6 @@ const isAllProvidersSelected = computed(() =>
 function defaultForm(): FormState {
   return {
     name: '',
-    enabled: true,
     cli_type: 'claude_code',
     profile: 'default',
     target_mode: 'all',
@@ -359,13 +359,33 @@ function defaultForm(): FormState {
   }
 }
 
-async function fetchTasks() {
-  loading.value = true
+async function fetchTasks(options: { silent?: boolean } = {}) {
+  if (!options.silent) loading.value = true
   try {
     const { data } = await scheduledTasksApi.list()
     tasks.value = data
   } finally {
-    loading.value = false
+    if (!options.silent) loading.value = false
+  }
+}
+
+async function refreshScheduledTasks() {
+  await fetchTasks({ silent: hasLoadedTasks })
+  hasLoadedTasks = true
+  if (runsVisible.value && activeTask.value) {
+    await fetchRuns({ silent: true, preserveSelection: true })
+  }
+}
+
+async function handleRefresh() {
+  try {
+    await fetchTasks()
+    hasLoadedTasks = true
+    if (runsVisible.value && activeTask.value) {
+      await fetchRuns({ preserveSelection: true })
+    }
+  } catch (e: any) {
+    notify(getErrorMessage(e, '刷新失败'), 'error')
   }
 }
 
@@ -412,7 +432,6 @@ function handleEdit(task: ScheduledTask) {
   editingTask.value = task
   form.value = {
     name: task.name,
-    enabled: task.enabled,
     cli_type: payload?.cli_type || 'claude_code',
     profile: payload?.profile || 'default',
     target_mode: payload?.target_mode || 'all',
@@ -450,7 +469,7 @@ async function handleSave() {
   const input = {
     name: form.value.name.trim(),
     task_type: 'provider_keepalive' as ScheduledTaskType,
-    enabled: form.value.enabled,
+    enabled: editingTask.value?.enabled ?? true,
     schedule_type: 'daily' as const,
     schedule_expr: scheduleExpr(),
     payload_json: JSON.stringify(payload),
@@ -517,28 +536,34 @@ async function openRuns(task: ScheduledTask) {
   await fetchRuns()
 }
 
-async function fetchRuns() {
+async function fetchRuns(options: { silent?: boolean; preserveSelection?: boolean } = {}) {
   if (!activeTask.value) return
-  runsLoading.value = true
+  if (!options.silent) runsLoading.value = true
   try {
     const { data } = await scheduledTasksApi.runs({ task_id: activeTask.value.id, page: 1, page_size: 30 })
     runs.value = data.items
-    if (runs.value.length > 0) {
-      await selectRun(runs.value[0])
+    if (runs.value.length === 0) {
+      selectedRun.value = null
+      runItems.value = []
+      return
     }
+    const currentRun = options.preserveSelection && selectedRun.value
+      ? runs.value.find(run => run.id === selectedRun.value?.id)
+      : null
+    await selectRun(currentRun || runs.value[0], { silent: options.silent })
   } finally {
-    runsLoading.value = false
+    if (!options.silent) runsLoading.value = false
   }
 }
 
-async function selectRun(run: ScheduledTaskRun) {
+async function selectRun(run: ScheduledTaskRun, options: { silent?: boolean } = {}) {
   selectedRun.value = run
-  itemsLoading.value = true
+  if (!options.silent) itemsLoading.value = true
   try {
     const { data } = await scheduledTasksApi.runItems(run.id)
     runItems.value = data
   } finally {
-    itemsLoading.value = false
+    if (!options.silent) itemsLoading.value = false
   }
 }
 
@@ -558,17 +583,6 @@ function setScheduleParts(value: string) {
 
 function scheduleExpr(): string {
   return `${scheduleHour.value}:${scheduleMinute.value}`
-}
-
-function formatTarget(task: ScheduledTask): string {
-  const payload = parsePayload(task)
-  if (!payload) return '-'
-  if (payload.target_mode === 'all') {
-    const cli = payload.cli_type ? CLI_LABELS[payload.cli_type] : '-'
-    const profile = profileTabs.find(p => p.id === payload.profile)?.label || '默认'
-    return `${cli} / ${profile} / 全部`
-  }
-  return `指定 ${payload.provider_ids?.length || 0} 个服务商`
 }
 
 function taskTypeLabel(type: ScheduledTaskType): string {
@@ -600,6 +614,34 @@ function formatTime(timestamp: number | null): string {
   return new Date(timestamp * 1000).toLocaleString()
 }
 
+function handleScheduledTaskChange() {
+  void refreshScheduledTasks().catch((e) => {
+    notify(getErrorMessage(e, '定时任务刷新失败'), 'error')
+  })
+}
+
+onMounted(async () => {
+  try {
+    await fetchTasks()
+    hasLoadedTasks = true
+  } catch (e: any) {
+    notify(getErrorMessage(e, '定时任务加载失败'), 'error')
+  }
+
+  try {
+    scheduledTaskListener = await scheduledTasksApi.listenChanges(handleScheduledTaskChange)
+  } catch (e: any) {
+    notify(getErrorMessage(e, '定时任务事件监听失败'), 'error')
+  }
+})
+
+onUnmounted(() => {
+  if (scheduledTaskListener) {
+    scheduledTaskListener()
+    scheduledTaskListener = null
+  }
+})
+
 watch(() => form.value.cli_type, (cliType, oldCliType) => {
   if (!PROFILE_CAPABLE_CLI_TYPES.includes(cliType)) {
     form.value.profile = 'default'
@@ -614,7 +656,6 @@ watch(() => form.value.profile, () => {
   if (showDialog.value) void fetchProviders()
 })
 
-onMounted(fetchTasks)
 </script>
 
 <style scoped>
@@ -631,13 +672,15 @@ onMounted(fetchTasks)
   border-radius: 16px;
 }
 
-.task-table {
-  min-width: 1100px;
-}
-
 .task-name {
   font-weight: var(--fw-600);
   color: var(--color-text);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .row-actions {
@@ -750,13 +793,6 @@ onMounted(fetchTasks)
   padding-bottom: 2px;
 }
 
-.form-footer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
 .runs-layout {
   display: grid;
   grid-template-columns: 1fr;
@@ -772,6 +808,7 @@ onMounted(fetchTasks)
 }
 
 .compact-table {
+  width: 100%;
   min-width: 860px;
 }
 

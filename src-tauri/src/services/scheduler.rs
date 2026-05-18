@@ -6,9 +6,11 @@ use crate::services::provider as provider_service;
 use crate::services::routing::{normalize_profile, DEFAULT_PROFILE};
 use crate::time::now_timestamp;
 use chrono::{Duration, Local, NaiveTime, TimeZone};
+use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 
 const TASK_TYPE_PROVIDER_KEEPALIVE: &str = "provider_keepalive";
@@ -21,10 +23,34 @@ const STATUS_PARTIAL_FAILED: &str = "partial_failed";
 const STATUS_RETRYING: &str = "retrying";
 const TRIGGER_MANUAL: &str = "manual";
 const TRIGGER_SCHEDULED: &str = "scheduled";
+const EVENT_SCHEDULED_TASK_CHANGED: &str = "scheduled-task-changed";
 
 type TaskLocks = Arc<Mutex<HashSet<i64>>>;
 
 static TASK_LOCKS: OnceLock<TaskLocks> = OnceLock::new();
+
+#[derive(Clone, Serialize)]
+pub struct ScheduledTaskChangeEvent {
+    task_id: Option<i64>,
+    run_id: Option<i64>,
+}
+
+pub fn emit_task_changed(app_handle: &AppHandle, task_id: Option<i64>, run_id: Option<i64>) {
+    let event = ScheduledTaskChangeEvent { task_id, run_id };
+    if let Err(e) = app_handle.emit(EVENT_SCHEDULED_TASK_CHANGED, event) {
+        tracing::error!(error = %e, "Failed to emit scheduled task event");
+    }
+}
+
+fn emit_task_changed_if_present(
+    app_handle: Option<&AppHandle>,
+    task_id: Option<i64>,
+    run_id: Option<i64>,
+) {
+    if let Some(app_handle) = app_handle {
+        emit_task_changed(app_handle, task_id, run_id);
+    }
+}
 
 #[derive(Debug)]
 struct KeepaliveTarget {
@@ -55,12 +81,14 @@ impl RunOutcome {
     }
 
     fn status(&self) -> &'static str {
-        if self.success_count > 0 && self.failure_count == 0 && self.skipped_count == 0 {
-            STATUS_SUCCESS
-        } else if self.success_count > 0 {
-            STATUS_PARTIAL_FAILED
-        } else {
+        if self.total_count == 0 {
             STATUS_FAILED
+        } else if self.success_count == self.total_count {
+            STATUS_SUCCESS
+        } else if self.failure_count == self.total_count {
+            STATUS_FAILED
+        } else {
+            STATUS_PARTIAL_FAILED
         }
     }
 
@@ -73,10 +101,10 @@ impl RunOutcome {
     }
 }
 
-pub fn start_scheduler(db: SqlitePool, log_db: SqlitePool) {
+pub fn start_scheduler(db: SqlitePool, log_db: SqlitePool, app_handle: AppHandle) {
     tokio::spawn(async move {
         loop {
-            if let Err(e) = run_due_tasks(&db, &log_db).await {
+            if let Err(e) = run_due_tasks(&db, &log_db, &app_handle).await {
                 tracing::error!(error = %e, "Scheduled task tick failed");
             }
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
@@ -264,8 +292,9 @@ pub async fn run_task_now(
     db: &SqlitePool,
     log_db: &SqlitePool,
     id: i64,
+    app_handle: Option<&AppHandle>,
 ) -> Result<ScheduledTaskRun, String> {
-    execute_task(db, Some(log_db), id, TRIGGER_MANUAL).await
+    execute_task(db, Some(log_db), id, TRIGGER_MANUAL, app_handle).await
 }
 
 pub async fn list_runs(
@@ -340,7 +369,11 @@ pub async fn list_run_items(
     .map_err(|e| e.to_string())
 }
 
-async fn run_due_tasks(db: &SqlitePool, log_db: &SqlitePool) -> Result<(), String> {
+async fn run_due_tasks(
+    db: &SqlitePool,
+    log_db: &SqlitePool,
+    app_handle: &AppHandle,
+) -> Result<(), String> {
     let now = now_timestamp();
     let task_ids = sqlx::query_as::<_, (i64,)>(
         r#"
@@ -356,7 +389,15 @@ async fn run_due_tasks(db: &SqlitePool, log_db: &SqlitePool) -> Result<(), Strin
     .map_err(|e| e.to_string())?;
 
     for (task_id,) in task_ids {
-        if let Err(e) = execute_task(db, Some(log_db), task_id, TRIGGER_SCHEDULED).await {
+        if let Err(e) = execute_task(
+            db,
+            Some(log_db),
+            task_id,
+            TRIGGER_SCHEDULED,
+            Some(app_handle),
+        )
+        .await
+        {
             if e != "任务正在执行" {
                 tracing::error!(task_id = task_id, error = %e, "Scheduled task execution failed");
             }
@@ -371,12 +412,13 @@ async fn execute_task(
     log_db: Option<&SqlitePool>,
     task_id: i64,
     trigger_type: &str,
+    app_handle: Option<&AppHandle>,
 ) -> Result<ScheduledTaskRun, String> {
     if !try_lock_task(task_id).await {
         return Err("任务正在执行".to_string());
     }
 
-    let result = execute_task_locked(db, log_db, task_id, trigger_type).await;
+    let result = execute_task_locked(db, log_db, task_id, trigger_type, app_handle).await;
     unlock_task(task_id).await;
     result
 }
@@ -386,6 +428,7 @@ async fn execute_task_locked(
     log_db: Option<&SqlitePool>,
     task_id: i64,
     trigger_type: &str,
+    app_handle: Option<&AppHandle>,
 ) -> Result<ScheduledTaskRun, String> {
     let task = load_task(db, task_id).await?;
     if task.enabled == 0 && trigger_type == TRIGGER_SCHEDULED {
@@ -406,8 +449,6 @@ async fn execute_task_locked(
     .await
     .map_err(|e| e.to_string())?;
 
-    let run_id = insert_run(db, &task, trigger_type, started_at).await?;
-
     let retry_provider_ids = if trigger_type == TRIGGER_SCHEDULED
         && task.retry_count > 0
         && task.last_status == STATUS_RETRYING
@@ -416,6 +457,9 @@ async fn execute_task_locked(
     } else {
         None
     };
+
+    let run_id = insert_run(db, &task, trigger_type, started_at).await?;
+    emit_task_changed_if_present(app_handle, Some(task.id), Some(run_id));
 
     let outcome = match task.task_type.as_str() {
         TASK_TYPE_PROVIDER_KEEPALIVE => {
@@ -459,7 +503,9 @@ async fn execute_task_locked(
     )
     .await?;
 
-    load_run(db, run_id).await
+    let run = load_run(db, run_id).await?;
+    emit_task_changed_if_present(app_handle, Some(task.id), Some(run_id));
+    Ok(run)
 }
 
 async fn execute_keepalive_task(

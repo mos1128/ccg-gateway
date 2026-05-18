@@ -872,33 +872,46 @@ pub async fn get_scheduled_task(
 
 #[tauri::command]
 pub async fn create_scheduled_task(
+    app: tauri::AppHandle,
     db: State<'_, SqlitePool>,
     input: ScheduledTaskCreate,
 ) -> Result<ScheduledTaskResponse> {
-    crate::services::scheduler::create_task(db.inner(), input).await
+    let task = crate::services::scheduler::create_task(db.inner(), input).await?;
+    crate::services::scheduler::emit_task_changed(&app, Some(task.id), None);
+    Ok(task)
 }
 
 #[tauri::command]
 pub async fn update_scheduled_task(
+    app: tauri::AppHandle,
     db: State<'_, SqlitePool>,
     id: i64,
     input: ScheduledTaskUpdate,
 ) -> Result<ScheduledTaskResponse> {
-    crate::services::scheduler::update_task(db.inner(), id, input).await
+    let task = crate::services::scheduler::update_task(db.inner(), id, input).await?;
+    crate::services::scheduler::emit_task_changed(&app, Some(task.id), None);
+    Ok(task)
 }
 
 #[tauri::command]
-pub async fn delete_scheduled_task(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
-    crate::services::scheduler::delete_task(db.inner(), id).await
+pub async fn delete_scheduled_task(
+    app: tauri::AppHandle,
+    db: State<'_, SqlitePool>,
+    id: i64,
+) -> Result<()> {
+    crate::services::scheduler::delete_task(db.inner(), id).await?;
+    crate::services::scheduler::emit_task_changed(&app, Some(id), None);
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn run_scheduled_task_now(
+    app: tauri::AppHandle,
     db: State<'_, SqlitePool>,
     log_db: State<'_, LogDb>,
     id: i64,
 ) -> Result<ScheduledTaskRun> {
-    crate::services::scheduler::run_task_now(db.inner(), &log_db.0, id).await
+    crate::services::scheduler::run_task_now(db.inner(), &log_db.0, id, Some(&app)).await
 }
 
 #[tauri::command]

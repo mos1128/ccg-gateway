@@ -77,10 +77,14 @@ pub fn run() {
                 app.manage(db.clone());
                 app.manage(LogDb(log_db.clone()));
                 app.manage(StatsDb(stats_db.clone()));
-                services::scheduler::start_scheduler(db.clone(), log_db.clone());
+                let app_handle = app.handle().clone();
+                services::scheduler::start_scheduler(
+                    db.clone(),
+                    log_db.clone(),
+                    app_handle.clone(),
+                );
 
                 let addr = config.bind_addr();
-                let app_handle = app.handle().clone();
 
                 tokio::spawn(async move {
                     if let Err(e) = ensure_historical_stats_ready(&log_db, &stats_db).await {
