@@ -89,7 +89,7 @@ export interface TestProviderResult {
 
 // Scheduled task types
 export type ScheduledTaskType = 'provider_keepalive'
-export type ScheduledTaskStatus = 'pending' | 'running' | 'success' | 'partial_failed' | 'failed' | 'retrying'
+export type ScheduledTaskStatus = 'pending' | 'running' | 'success' | 'partial_failed' | 'failed' | 'retrying' | 'skipped'
 export type ScheduledTaskTrigger = 'scheduled' | 'manual'
 
 export interface ProviderKeepalivePayload {

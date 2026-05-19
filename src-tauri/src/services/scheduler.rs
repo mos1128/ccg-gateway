@@ -21,6 +21,7 @@ const STATUS_SUCCESS: &str = "success";
 const STATUS_FAILED: &str = "failed";
 const STATUS_PARTIAL_FAILED: &str = "partial_failed";
 const STATUS_RETRYING: &str = "retrying";
+const STATUS_SKIPPED: &str = "skipped";
 const TRIGGER_MANUAL: &str = "manual";
 const TRIGGER_SCHEDULED: &str = "scheduled";
 const EVENT_SCHEDULED_TASK_CHANGED: &str = "scheduled-task-changed";
@@ -83,12 +84,25 @@ impl RunOutcome {
     fn status(&self) -> &'static str {
         if self.total_count == 0 {
             STATUS_FAILED
-        } else if self.success_count == self.total_count {
-            STATUS_SUCCESS
-        } else if self.failure_count == self.total_count {
-            STATUS_FAILED
+        } else if self.skipped_count == self.total_count {
+            // 全部跳过：单独状态，不重试
+            STATUS_SKIPPED
         } else {
-            STATUS_PARTIAL_FAILED
+            // 跳过不参与决策，只看成功和失败
+            let effective_count = self.success_count + self.failure_count;
+            if effective_count == 0 {
+                // 理论上不会走到这里（已排除全部跳过），兜底
+                STATUS_SKIPPED
+            } else if self.failure_count == 0 {
+                // 无失败（可能有跳过）：成功
+                STATUS_SUCCESS
+            } else if self.success_count == 0 {
+                // 无成功（可能有跳过）：失败
+                STATUS_FAILED
+            } else {
+                // 有成功有失败：部分失败
+                STATUS_PARTIAL_FAILED
+            }
         }
     }
 
@@ -103,6 +117,11 @@ impl RunOutcome {
 
 pub fn start_scheduler(db: SqlitePool, log_db: SqlitePool, app_handle: AppHandle) {
     tokio::spawn(async move {
+        // 启动时恢复因崩溃而卡在 running 状态的任务
+        if let Err(e) = recover_stuck_tasks(&db).await {
+            tracing::error!(error = %e, "Failed to recover stuck tasks");
+        }
+
         loop {
             if let Err(e) = run_due_tasks(&db, &log_db, &app_handle).await {
                 tracing::error!(error = %e, "Scheduled task tick failed");
@@ -110,6 +129,65 @@ pub fn start_scheduler(db: SqlitePool, log_db: SqlitePool, app_handle: AppHandle
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         }
     });
+}
+
+/// 应用启动时将卡在 running 状态的任务重置为 failed，并重新计算 next_run_at
+async fn recover_stuck_tasks(db: &SqlitePool) -> Result<(), String> {
+    let now = now_timestamp();
+    let error_message = "应用异常退出，任务中断";
+    let stuck_tasks =
+        sqlx::query_as::<_, ScheduledTask>("SELECT * FROM scheduled_tasks WHERE last_status = ?")
+            .bind(STATUS_RUNNING)
+            .fetch_all(db)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if stuck_tasks.is_empty() {
+        return Ok(());
+    }
+
+    for task in &stuck_tasks {
+        let next_run_at = if task.next_run_at <= now {
+            next_run_after(&task.schedule_type, &task.schedule_expr, now).unwrap_or(now + 60)
+        } else {
+            task.next_run_at
+        };
+
+        sqlx::query(
+            r#"
+            UPDATE scheduled_tasks
+            SET last_status = ?, last_error = ?, next_run_at = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(STATUS_FAILED)
+        .bind(error_message)
+        .bind(next_run_at)
+        .bind(now)
+        .bind(task.id)
+        .execute(db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        sqlx::query(
+            r#"
+            UPDATE scheduled_task_runs
+            SET status = ?, finished_at = ?, error_message = ?
+            WHERE task_id = ? AND status = ? AND finished_at IS NULL
+            "#,
+        )
+        .bind(STATUS_FAILED)
+        .bind(now)
+        .bind(error_message)
+        .bind(task.id)
+        .bind(STATUS_RUNNING)
+        .execute(db)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tracing::warn!(count = stuck_tasks.len(), "Recovered stuck scheduled tasks");
+    Ok(())
 }
 
 pub async fn list_tasks(db: &SqlitePool) -> Result<Vec<ScheduledTaskResponse>, String> {
@@ -389,6 +467,10 @@ async fn run_due_tasks(
     .map_err(|e| e.to_string())?;
 
     for (task_id,) in task_ids {
+        // 先检查锁，避免对正在执行的任务产生多余日志
+        if is_task_locked(task_id).await {
+            continue;
+        }
         if let Err(e) = execute_task(
             db,
             Some(log_db),
@@ -698,8 +780,16 @@ async fn update_task_after_run(
         && task.retry_count < task.retry_limit;
 
     let (last_status, retry_count, next_run_at) = if is_manual {
+        // 手动执行不打断自动重试链
+        let keep_retrying = !is_success && task.last_status == STATUS_RETRYING;
         (
-            status.to_string(),
+            if keep_retrying {
+                STATUS_RETRYING.to_string()
+            } else if is_success {
+                STATUS_SUCCESS.to_string()
+            } else {
+                status.to_string()
+            },
             if is_success { 0 } else { task.retry_count },
             if task.next_run_at <= now {
                 next_run_after(&task.schedule_type, &task.schedule_expr, now)?
@@ -744,7 +834,7 @@ async fn update_task_after_run(
     .await
     .map_err(|e| e.to_string())?;
 
-    if !is_manual && !is_success && !should_retry {
+    if !is_manual && !is_success && !should_retry && status != STATUS_SKIPPED {
         if let Some(log_db) = log_db {
             let message = format!(
                 "定时任务 {} 执行失败: {}",
@@ -861,9 +951,15 @@ async fn insert_run_item(
 
 async fn latest_failed_provider_ids(db: &SqlitePool, task_id: i64) -> Result<Vec<i64>, String> {
     let run_id = sqlx::query_as::<_, (i64,)>(
-        "SELECT id FROM scheduled_task_runs WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+        r#"
+        SELECT id FROM scheduled_task_runs
+        WHERE task_id = ? AND trigger_type = ? AND failure_count > 0
+        ORDER BY id DESC
+        LIMIT 1
+        "#,
     )
     .bind(task_id)
+    .bind(TRIGGER_SCHEDULED)
     .fetch_optional(db)
     .await
     .map_err(|e| e.to_string())?
@@ -904,6 +1000,14 @@ async fn load_run(db: &SqlitePool, id: i64) -> Result<ScheduledTaskRun, String> 
         .fetch_one(db)
         .await
         .map_err(|e| e.to_string())
+}
+
+async fn is_task_locked(task_id: i64) -> bool {
+    let locks = TASK_LOCKS
+        .get_or_init(|| Arc::new(Mutex::new(HashSet::new())))
+        .clone();
+    let guard = locks.lock().await;
+    guard.contains(&task_id)
 }
 
 async fn try_lock_task(task_id: i64) -> bool {

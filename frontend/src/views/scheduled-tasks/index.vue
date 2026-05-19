@@ -145,7 +145,7 @@
             <span class="time-separator">:</span>
             <AppSelect
               :model-value="scheduleMinute"
-              :options="minuteOptions"
+              :options="effectiveMinuteOptions"
               width="100%"
               @update:model-value="value => scheduleMinute = String(value)"
             />
@@ -341,6 +341,14 @@ let scheduledTaskListener: (() => void) | null = null
 
 const showProfileSelect = computed(() => PROFILE_CAPABLE_CLI_TYPES.includes(form.value.cli_type))
 const selectableProviders = computed(() => providerOptions.value.filter(provider => provider.enabled))
+const effectiveMinuteOptions = computed(() => {
+  const base = [...minuteOptions]
+  if (!base.some(opt => opt.value === scheduleMinute.value)) {
+    base.push({ label: scheduleMinute.value, value: scheduleMinute.value })
+    base.sort((a, b) => String(a.value).localeCompare(String(b.value)))
+  }
+  return base
+})
 const isAllProvidersSelected = computed(() =>
   selectableProviders.value.length > 0 && form.value.provider_ids.length === selectableProviders.value.length
 )
@@ -597,7 +605,7 @@ function statusLabel(status: ScheduledTaskStatus | 'skipped'): string {
     partial_failed: '部分失败',
     failed: '失败',
     retrying: '重试中',
-    skipped: '跳过'
+    skipped: '全部跳过'
   }
   return labels[status] || status
 }
@@ -606,6 +614,7 @@ function statusClass(status: ScheduledTaskStatus | 'skipped'): string {
   if (status === 'success') return 'pill-green'
   if (status === 'failed') return 'pill-red'
   if (status === 'partial_failed' || status === 'retrying') return 'pill-blue'
+  if (status === 'skipped') return 'pill-grey'
   return 'pill-grey'
 }
 
