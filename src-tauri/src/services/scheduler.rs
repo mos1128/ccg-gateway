@@ -5,7 +5,7 @@ use crate::db::models::{
 use crate::services::provider as provider_service;
 use crate::services::routing::{normalize_profile, DEFAULT_PROFILE};
 use crate::time::now_timestamp;
-use chrono::{Duration, Local, NaiveTime, TimeZone};
+use futures_util::future::join_all;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
@@ -14,7 +14,11 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 
 const TASK_TYPE_PROVIDER_KEEPALIVE: &str = "provider_keepalive";
-const SCHEDULE_TYPE_DAILY: &str = "daily";
+const SCHEDULE_TYPE_INTERVAL: &str = "interval";
+const SCHEDULER_POLL_SECONDS: u64 = 5;
+const SCHEDULER_DUE_TASK_LIMIT: i64 = 10;
+const RUNNING_STALE_SECONDS: i64 = 60 * 60;
+const RUN_RETENTION_PER_TASK: i64 = 500;
 const STATUS_PENDING: &str = "pending";
 const STATUS_RUNNING: &str = "running";
 const STATUS_SUCCESS: &str = "success";
@@ -113,51 +117,80 @@ impl RunOutcome {
             Some(truncate_text(&self.errors.join("；"), 2000))
         }
     }
+
+    fn merge(&mut self, other: Self) {
+        self.total_count += other.total_count;
+        self.success_count += other.success_count;
+        self.failure_count += other.failure_count;
+        self.skipped_count += other.skipped_count;
+        self.errors.extend(other.errors);
+    }
 }
 
 pub fn start_scheduler(db: SqlitePool, log_db: SqlitePool, app_handle: AppHandle) {
     tokio::spawn(async move {
+        if let Err(e) = migrate_run_history_to_log_db(&db, &log_db).await {
+            tracing::error!(error = %e, "Failed to migrate scheduled task history");
+        }
+
         // 启动时恢复因崩溃而卡在 running 状态的任务
-        if let Err(e) = recover_stuck_tasks(&db).await {
+        if let Err(e) = recover_stuck_tasks(&db, &log_db, None).await {
             tracing::error!(error = %e, "Failed to recover stuck tasks");
         }
 
         loop {
+            if let Err(e) = recover_stuck_tasks(&db, &log_db, Some(RUNNING_STALE_SECONDS)).await {
+                tracing::error!(error = %e, "Failed to recover stale running tasks");
+            }
             if let Err(e) = run_due_tasks(&db, &log_db, &app_handle).await {
                 tracing::error!(error = %e, "Scheduled task tick failed");
             }
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(SCHEDULER_POLL_SECONDS)).await;
         }
     });
 }
 
 /// 应用启动时将卡在 running 状态的任务重置为 failed，并重新计算 next_run_at
-async fn recover_stuck_tasks(db: &SqlitePool) -> Result<(), String> {
+async fn recover_stuck_tasks(
+    db: &SqlitePool,
+    log_db: &SqlitePool,
+    stale_after_seconds: Option<i64>,
+) -> Result<(), String> {
     let now = now_timestamp();
     let error_message = "应用异常退出，任务中断";
-    let stuck_tasks =
-        sqlx::query_as::<_, ScheduledTask>("SELECT * FROM scheduled_tasks WHERE last_status = ?")
-            .bind(STATUS_RUNNING)
-            .fetch_all(db)
-            .await
-            .map_err(|e| e.to_string())?;
+    let mut sql = "SELECT * FROM scheduled_tasks WHERE last_status = ?".to_string();
+    if stale_after_seconds.is_some() {
+        sql.push_str(" AND last_run_at IS NOT NULL AND last_run_at <= ?");
+    }
+
+    let mut query = sqlx::query_as::<_, ScheduledTask>(&sql).bind(STATUS_RUNNING);
+    if let Some(seconds) = stale_after_seconds {
+        query = query.bind(now - seconds);
+    }
+
+    let stuck_tasks = query.fetch_all(db).await.map_err(|e| e.to_string())?;
 
     if stuck_tasks.is_empty() {
         return Ok(());
     }
 
+    let mut recovered_count = 0;
     for task in &stuck_tasks {
+        if stale_after_seconds.is_some() && is_task_locked(task.id).await {
+            continue;
+        }
+
         let next_run_at = if task.next_run_at <= now {
             next_run_after(&task.schedule_type, &task.schedule_expr, now).unwrap_or(now + 60)
         } else {
             task.next_run_at
         };
 
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             UPDATE scheduled_tasks
             SET last_status = ?, last_error = ?, next_run_at = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND last_status = ?
             "#,
         )
         .bind(STATUS_FAILED)
@@ -165,9 +198,14 @@ async fn recover_stuck_tasks(db: &SqlitePool) -> Result<(), String> {
         .bind(next_run_at)
         .bind(now)
         .bind(task.id)
+        .bind(STATUS_RUNNING)
         .execute(db)
         .await
         .map_err(|e| e.to_string())?;
+
+        if result.rows_affected() == 0 {
+            continue;
+        }
 
         sqlx::query(
             r#"
@@ -181,12 +219,16 @@ async fn recover_stuck_tasks(db: &SqlitePool) -> Result<(), String> {
         .bind(error_message)
         .bind(task.id)
         .bind(STATUS_RUNNING)
-        .execute(db)
+        .execute(log_db)
         .await
         .map_err(|e| e.to_string())?;
+
+        recovered_count += 1;
     }
 
-    tracing::warn!(count = stuck_tasks.len(), "Recovered stuck scheduled tasks");
+    if recovered_count > 0 {
+        tracing::warn!(count = recovered_count, "Recovered stuck scheduled tasks");
+    }
     Ok(())
 }
 
@@ -344,7 +386,34 @@ pub async fn update_task(
     get_task(db, id).await
 }
 
-pub async fn delete_task(db: &SqlitePool, id: i64) -> Result<(), String> {
+pub async fn delete_task(db: &SqlitePool, log_db: &SqlitePool, id: i64) -> Result<(), String> {
+    if !try_lock_task(id).await {
+        return Err("任务正在执行，稍后再删除".to_string());
+    }
+
+    let result = delete_task_locked(db, log_db, id).await;
+    unlock_task(id).await;
+    result
+}
+
+async fn delete_task_locked(db: &SqlitePool, log_db: &SqlitePool, id: i64) -> Result<(), String> {
+    let task = load_task(db, id).await?;
+    if task.last_status == STATUS_RUNNING {
+        return Err("任务正在执行，稍后再删除".to_string());
+    }
+
+    sqlx::query("DELETE FROM scheduled_task_run_items WHERE run_id IN (SELECT id FROM scheduled_task_runs WHERE task_id = ?)")
+        .bind(id)
+        .execute(log_db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM scheduled_task_runs WHERE task_id = ?")
+        .bind(id)
+        .execute(log_db)
+        .await
+        .map_err(|e| e.to_string())?;
+
     sqlx::query("DELETE FROM scheduled_task_run_items WHERE run_id IN (SELECT id FROM scheduled_task_runs WHERE task_id = ?)")
         .bind(id)
         .execute(db)
@@ -372,11 +441,11 @@ pub async fn run_task_now(
     id: i64,
     app_handle: Option<&AppHandle>,
 ) -> Result<ScheduledTaskRun, String> {
-    execute_task(db, Some(log_db), id, TRIGGER_MANUAL, app_handle).await
+    execute_task(db, log_db, id, TRIGGER_MANUAL, app_handle).await
 }
 
 pub async fn list_runs(
-    db: &SqlitePool,
+    log_db: &SqlitePool,
     task_id: Option<i64>,
     page: Option<i64>,
     page_size: Option<i64>,
@@ -389,7 +458,7 @@ pub async fn list_runs(
         let (total,): (i64,) =
             sqlx::query_as("SELECT COUNT(*) FROM scheduled_task_runs WHERE task_id = ?")
                 .bind(task_id)
-                .fetch_one(db)
+                .fetch_one(log_db)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -404,14 +473,14 @@ pub async fn list_runs(
         .bind(task_id)
         .bind(page_size)
         .bind(offset)
-        .fetch_all(db)
+        .fetch_all(log_db)
         .await
         .map_err(|e| e.to_string())?;
 
         (items, total)
     } else {
         let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM scheduled_task_runs")
-            .fetch_one(db)
+            .fetch_one(log_db)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -424,7 +493,7 @@ pub async fn list_runs(
         )
         .bind(page_size)
         .bind(offset)
-        .fetch_all(db)
+        .fetch_all(log_db)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -435,14 +504,14 @@ pub async fn list_runs(
 }
 
 pub async fn list_run_items(
-    db: &SqlitePool,
+    log_db: &SqlitePool,
     run_id: i64,
 ) -> Result<Vec<ScheduledTaskRunItem>, String> {
     sqlx::query_as::<_, ScheduledTaskRunItem>(
         "SELECT * FROM scheduled_task_run_items WHERE run_id = ? ORDER BY id",
     )
     .bind(run_id)
-    .fetch_all(db)
+    .fetch_all(log_db)
     .await
     .map_err(|e| e.to_string())
 }
@@ -456,34 +525,36 @@ async fn run_due_tasks(
     let task_ids = sqlx::query_as::<_, (i64,)>(
         r#"
         SELECT id FROM scheduled_tasks
-        WHERE enabled = 1 AND next_run_at <= ?
+        WHERE enabled = 1 AND schedule_type = ? AND next_run_at <= ? AND last_status != ?
         ORDER BY next_run_at, id
-        LIMIT 10
+        LIMIT ?
         "#,
     )
+    .bind(SCHEDULE_TYPE_INTERVAL)
     .bind(now)
+    .bind(STATUS_RUNNING)
+    .bind(SCHEDULER_DUE_TASK_LIMIT)
     .fetch_all(db)
     .await
     .map_err(|e| e.to_string())?;
 
     for (task_id,) in task_ids {
-        // 先检查锁，避免对正在执行的任务产生多余日志
         if is_task_locked(task_id).await {
             continue;
         }
-        if let Err(e) = execute_task(
-            db,
-            Some(log_db),
-            task_id,
-            TRIGGER_SCHEDULED,
-            Some(app_handle),
-        )
-        .await
-        {
-            if e != "任务正在执行" {
-                tracing::error!(task_id = task_id, error = %e, "Scheduled task execution failed");
+
+        let db = db.clone();
+        let log_db = log_db.clone();
+        let app_handle = app_handle.clone();
+        tokio::spawn(async move {
+            if let Err(e) =
+                execute_task(&db, &log_db, task_id, TRIGGER_SCHEDULED, Some(&app_handle)).await
+            {
+                if e != "任务正在执行" {
+                    tracing::error!(task_id = task_id, error = %e, "Scheduled task execution failed");
+                }
             }
-        }
+        });
     }
 
     Ok(())
@@ -491,7 +562,7 @@ async fn run_due_tasks(
 
 async fn execute_task(
     db: &SqlitePool,
-    log_db: Option<&SqlitePool>,
+    log_db: &SqlitePool,
     task_id: i64,
     trigger_type: &str,
     app_handle: Option<&AppHandle>,
@@ -501,13 +572,16 @@ async fn execute_task(
     }
 
     let result = execute_task_locked(db, log_db, task_id, trigger_type, app_handle).await;
+    if let Err(e) = &result {
+        cleanup_failed_execution(db, log_db, task_id, e, app_handle).await;
+    }
     unlock_task(task_id).await;
     result
 }
 
 async fn execute_task_locked(
     db: &SqlitePool,
-    log_db: Option<&SqlitePool>,
+    log_db: &SqlitePool,
     task_id: i64,
     trigger_type: &str,
     app_handle: Option<&AppHandle>,
@@ -530,22 +604,23 @@ async fn execute_task_locked(
     .execute(db)
     .await
     .map_err(|e| e.to_string())?;
+    let running_updated_at = started_at;
 
     let retry_provider_ids = if trigger_type == TRIGGER_SCHEDULED
         && task.retry_count > 0
         && task.last_status == STATUS_RETRYING
     {
-        Some(latest_failed_provider_ids(db, task.id).await?)
+        Some(latest_failed_provider_ids(log_db, task.id).await?)
     } else {
         None
     };
 
-    let run_id = insert_run(db, &task, trigger_type, started_at).await?;
+    let run_id = insert_run(log_db, &task, trigger_type, started_at).await?;
     emit_task_changed_if_present(app_handle, Some(task.id), Some(run_id));
 
     let outcome = match task.task_type.as_str() {
         TASK_TYPE_PROVIDER_KEEPALIVE => {
-            execute_keepalive_task(db, run_id, &task, retry_provider_ids.as_deref()).await
+            execute_keepalive_task(db, log_db, run_id, &task, retry_provider_ids.as_deref()).await
         }
         _ => Err(format!("不支持的任务类型: {}", task.task_type)),
     };
@@ -564,7 +639,7 @@ async fn execute_task_locked(
     let error_message = outcome.error_message();
 
     finish_run(
-        db,
+        log_db,
         run_id,
         &status,
         finished_at,
@@ -578,6 +653,7 @@ async fn execute_task_locked(
         db,
         log_db,
         &task,
+        running_updated_at,
         &status,
         &outcome,
         error_message.as_deref(),
@@ -585,13 +661,16 @@ async fn execute_task_locked(
     )
     .await?;
 
-    let run = load_run(db, run_id).await?;
+    prune_old_runs(log_db, task.id).await?;
+
+    let run = load_run(log_db, run_id).await?;
     emit_task_changed_if_present(app_handle, Some(task.id), Some(run_id));
     Ok(run)
 }
 
 async fn execute_keepalive_task(
     db: &SqlitePool,
+    log_db: &SqlitePool,
     run_id: i64,
     task: &ScheduledTask,
     retry_provider_ids: Option<&[i64]>,
@@ -607,70 +686,90 @@ async fn execute_keepalive_task(
         return Ok(outcome);
     }
 
-    for target in targets {
-        outcome.total_count += 1;
+    let results = join_all(
+        targets
+            .into_iter()
+            .map(|target| execute_keepalive_target(db, log_db, run_id, target, &model_name)),
+    )
+    .await;
 
-        if let Some(reason) = target.skip_reason {
-            outcome.skipped_count += 1;
-            outcome
-                .errors
-                .push(format!("{}: {}", target.provider_name, reason));
-            insert_run_item(
-                db,
-                run_id,
-                target.provider_id,
-                &target.provider_name,
-                &model_name,
-                "skipped",
-                None,
-                0,
-                Some(&reason),
-            )
-            .await?;
-            continue;
-        }
+    for result in results {
+        outcome.merge(result?);
+    }
 
-        let Some(provider) = target.provider else {
-            continue;
-        };
+    Ok(outcome)
+}
 
-        let result = provider_service::test_provider_model(db, provider.id, &model_name).await;
-        let ok = result
-            .status_code
-            .map(|code| (200..300).contains(&code))
-            .unwrap_or(false)
-            && result.response_text == "请求成功";
+async fn execute_keepalive_target(
+    db: &SqlitePool,
+    log_db: &SqlitePool,
+    run_id: i64,
+    target: KeepaliveTarget,
+    model_name: &str,
+) -> Result<RunOutcome, String> {
+    let mut outcome = RunOutcome::empty();
+    outcome.total_count = 1;
 
-        if ok {
-            outcome.success_count += 1;
-        } else {
-            outcome.failure_count += 1;
-            outcome.errors.push(format!(
-                "{}: {}",
-                result.provider_name,
-                truncate_text(&result.response_text, 300)
-            ));
-        }
-
-        let error_message = if ok {
-            None
-        } else {
-            Some(truncate_text(&result.response_text, 2000))
-        };
-
+    if let Some(reason) = target.skip_reason {
+        outcome.skipped_count = 1;
+        outcome
+            .errors
+            .push(format!("{}: {}", target.provider_name, reason));
         insert_run_item(
-            db,
+            log_db,
             run_id,
-            Some(result.provider_id),
-            &result.provider_name,
-            &result.actual_model,
-            if ok { STATUS_SUCCESS } else { STATUS_FAILED },
-            result.status_code.map(|code| code as i64),
-            result.elapsed_ms as i64,
-            error_message.as_deref(),
+            target.provider_id,
+            &target.provider_name,
+            model_name,
+            "skipped",
+            None,
+            0,
+            Some(&reason),
         )
         .await?;
+        return Ok(outcome);
     }
+
+    let Some(provider) = target.provider else {
+        return Ok(outcome);
+    };
+
+    let result = provider_service::test_provider_model(db, provider.id, model_name).await;
+    let ok = result
+        .status_code
+        .map(|code| (200..300).contains(&code))
+        .unwrap_or(false)
+        && result.response_text == "请求成功";
+
+    if ok {
+        outcome.success_count = 1;
+    } else {
+        outcome.failure_count = 1;
+        outcome.errors.push(format!(
+            "{}: {}",
+            result.provider_name,
+            truncate_text(&result.response_text, 300)
+        ));
+    }
+
+    let error_message = if ok {
+        None
+    } else {
+        Some(truncate_text(&result.response_text, 2000))
+    };
+
+    insert_run_item(
+        log_db,
+        run_id,
+        Some(result.provider_id),
+        &result.provider_name,
+        &result.actual_model,
+        if ok { STATUS_SUCCESS } else { STATUS_FAILED },
+        result.status_code.map(|code| code as i64),
+        result.elapsed_ms as i64,
+        error_message.as_deref(),
+    )
+    .await?;
 
     Ok(outcome)
 }
@@ -764,8 +863,9 @@ async fn resolve_provider_ids(
 
 async fn update_task_after_run(
     db: &SqlitePool,
-    log_db: Option<&SqlitePool>,
+    log_db: &SqlitePool,
     task: &ScheduledTask,
+    running_updated_at: i64,
     status: &str,
     outcome: &RunOutcome,
     error_message: Option<&str>,
@@ -817,11 +917,13 @@ async fn update_task_after_run(
         )
     };
 
-    sqlx::query(
+    let update_result = sqlx::query(
         r#"
         UPDATE scheduled_tasks
         SET retry_count = ?, next_run_at = ?, last_status = ?, last_error = ?, updated_at = ?
-        WHERE id = ?
+        WHERE id = ? AND last_status = ? AND updated_at = ? AND enabled = ?
+          AND schedule_type = ? AND schedule_expr = ? AND payload_json = ?
+          AND retry_limit = ? AND retry_interval_minutes = ?
         "#,
     )
     .bind(retry_count)
@@ -830,24 +932,46 @@ async fn update_task_after_run(
     .bind(error_message)
     .bind(now)
     .bind(task.id)
+    .bind(STATUS_RUNNING)
+    .bind(running_updated_at)
+    .bind(task.enabled)
+    .bind(&task.schedule_type)
+    .bind(&task.schedule_expr)
+    .bind(&task.payload_json)
+    .bind(task.retry_limit)
+    .bind(task.retry_interval_minutes)
     .execute(db)
     .await
     .map_err(|e| e.to_string())?;
 
+    if update_result.rows_affected() == 0 {
+        sqlx::query(
+            r#"
+            UPDATE scheduled_tasks
+            SET last_status = ?, last_error = ?, updated_at = ?
+            WHERE id = ? AND last_status = ?
+            "#,
+        )
+        .bind(&last_status)
+        .bind(error_message)
+        .bind(now)
+        .bind(task.id)
+        .bind(STATUS_RUNNING)
+        .execute(db)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())?;
+    }
+
     if !is_manual && !is_success && !should_retry && status != STATUS_SKIPPED {
-        if let Some(log_db) = log_db {
-            let message = format!(
-                "定时任务 {} 执行失败: {}",
-                task.name,
-                error_message.unwrap_or("未知错误")
-            );
-            let _ = crate::services::stats::record_system_log(
-                log_db,
-                "scheduled_task_failed",
-                &message,
-            )
-            .await;
-        }
+        let message = format!(
+            "定时任务 {} 执行失败: {}",
+            task.name,
+            error_message.unwrap_or("未知错误")
+        );
+        let _ =
+            crate::services::stats::record_system_log(log_db, "scheduled_task_failed", &message)
+                .await;
     }
 
     Ok(())
@@ -985,6 +1109,189 @@ async fn latest_failed_provider_ids(db: &SqlitePool, task_id: i64) -> Result<Vec
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
+async fn prune_old_runs(log_db: &SqlitePool, task_id: i64) -> Result<(), String> {
+    sqlx::query(
+        r#"
+        DELETE FROM scheduled_task_run_items
+        WHERE run_id IN (
+            SELECT id FROM scheduled_task_runs
+            WHERE task_id = ?
+            ORDER BY started_at DESC, id DESC
+            LIMIT -1 OFFSET ?
+        )
+        "#,
+    )
+    .bind(task_id)
+    .bind(RUN_RETENTION_PER_TASK)
+    .execute(log_db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM scheduled_task_runs
+        WHERE id IN (
+            SELECT id FROM scheduled_task_runs
+            WHERE task_id = ?
+            ORDER BY started_at DESC, id DESC
+            LIMIT -1 OFFSET ?
+        )
+        "#,
+    )
+    .bind(task_id)
+    .bind(RUN_RETENTION_PER_TASK)
+    .execute(log_db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+async fn cleanup_failed_execution(
+    db: &SqlitePool,
+    log_db: &SqlitePool,
+    task_id: i64,
+    error: &str,
+    app_handle: Option<&AppHandle>,
+) {
+    let now = now_timestamp();
+    let next_run_at = match load_task(db, task_id).await {
+        Ok(task) if task.last_status == STATUS_RUNNING => {
+            next_run_after(&task.schedule_type, &task.schedule_expr, now).unwrap_or(now + 60)
+        }
+        _ => now + 60,
+    };
+
+    if let Err(e) = sqlx::query(
+        r#"
+        UPDATE scheduled_tasks
+        SET last_status = ?, last_error = ?, next_run_at = ?, updated_at = ?
+        WHERE id = ? AND last_status = ?
+        "#,
+    )
+    .bind(STATUS_FAILED)
+    .bind(truncate_text(error, 2000))
+    .bind(next_run_at)
+    .bind(now)
+    .bind(task_id)
+    .bind(STATUS_RUNNING)
+    .execute(db)
+    .await
+    {
+        tracing::error!(task_id = task_id, error = %e, "Failed to cleanup scheduled task state");
+    }
+
+    if let Err(e) = sqlx::query(
+        r#"
+        UPDATE scheduled_task_runs
+        SET status = ?, finished_at = ?, error_message = ?
+        WHERE task_id = ? AND status = ? AND finished_at IS NULL
+        "#,
+    )
+    .bind(STATUS_FAILED)
+    .bind(now)
+    .bind(truncate_text(error, 2000))
+    .bind(task_id)
+    .bind(STATUS_RUNNING)
+    .execute(log_db)
+    .await
+    {
+        tracing::error!(task_id = task_id, error = %e, "Failed to cleanup scheduled task run state");
+    }
+
+    emit_task_changed_if_present(app_handle, Some(task_id), None);
+}
+
+async fn migrate_run_history_to_log_db(db: &SqlitePool, log_db: &SqlitePool) -> Result<(), String> {
+    let (log_run_max_id,): (i64,) =
+        sqlx::query_as("SELECT COALESCE(MAX(id), 0) FROM scheduled_task_runs")
+            .fetch_one(log_db)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let runs = match sqlx::query_as::<_, ScheduledTaskRun>(
+        "SELECT * FROM scheduled_task_runs WHERE id > ? ORDER BY id",
+    )
+    .bind(log_run_max_id)
+    .fetch_all(db)
+    .await
+    {
+        Ok(runs) => runs,
+        Err(e) => {
+            tracing::warn!(error = %e, "Skipped scheduled task run history migration");
+            return Ok(());
+        }
+    };
+
+    for run in runs {
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO scheduled_task_runs
+                (id, task_id, task_name, task_type, trigger_type, status, started_at, finished_at,
+                 elapsed_ms, total_count, success_count, failure_count, skipped_count, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(run.id)
+        .bind(run.task_id)
+        .bind(run.task_name)
+        .bind(run.task_type)
+        .bind(run.trigger_type)
+        .bind(run.status)
+        .bind(run.started_at)
+        .bind(run.finished_at)
+        .bind(run.elapsed_ms)
+        .bind(run.total_count)
+        .bind(run.success_count)
+        .bind(run.failure_count)
+        .bind(run.skipped_count)
+        .bind(run.error_message)
+        .execute(log_db)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    let (log_item_max_id,): (i64,) =
+        sqlx::query_as("SELECT COALESCE(MAX(id), 0) FROM scheduled_task_run_items")
+            .fetch_one(log_db)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let items = sqlx::query_as::<_, ScheduledTaskRunItem>(
+        "SELECT * FROM scheduled_task_run_items WHERE id > ? ORDER BY id",
+    )
+    .bind(log_item_max_id)
+    .fetch_all(db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    for item in items {
+        sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO scheduled_task_run_items
+                (id, run_id, provider_id, provider_name, model_name, status, status_code,
+                 elapsed_ms, error_message, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(item.id)
+        .bind(item.run_id)
+        .bind(item.provider_id)
+        .bind(item.provider_name)
+        .bind(item.model_name)
+        .bind(item.status)
+        .bind(item.status_code)
+        .bind(item.elapsed_ms)
+        .bind(item.error_message)
+        .bind(item.created_at)
+        .execute(log_db)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 async fn load_task(db: &SqlitePool, id: i64) -> Result<ScheduledTask, String> {
     sqlx::query_as::<_, ScheduledTask>("SELECT * FROM scheduled_tasks WHERE id = ?")
         .bind(id)
@@ -1035,10 +1342,10 @@ fn validate_task_type(task_type: &str) -> Result<(), String> {
 }
 
 fn validate_schedule_type(schedule_type: &str) -> Result<(), String> {
-    if schedule_type == SCHEDULE_TYPE_DAILY {
+    if schedule_type == SCHEDULE_TYPE_INTERVAL {
         Ok(())
     } else {
-        Err("第一版只支持每天固定时间执行".to_string())
+        Err("只支持间隔执行".to_string())
     }
 }
 
@@ -1087,35 +1394,24 @@ fn validate_retry(retry_limit: i64, retry_interval_minutes: i64) -> Result<(), S
 
 fn next_run_after(schedule_type: &str, schedule_expr: &str, after_ts: i64) -> Result<i64, String> {
     validate_schedule_type(schedule_type)?;
-    next_daily_run_after(schedule_expr, after_ts)
+    match schedule_type {
+        SCHEDULE_TYPE_INTERVAL => next_interval_run_after(schedule_expr, after_ts),
+        _ => unreachable!(),
+    }
 }
 
-fn next_daily_run_after(schedule_expr: &str, after_ts: i64) -> Result<i64, String> {
-    let time = NaiveTime::parse_from_str(schedule_expr.trim(), "%H:%M")
-        .map_err(|_| "执行时间格式必须是 HH:mm".to_string())?;
-    let after = Local
-        .timestamp_opt(after_ts, 0)
-        .single()
-        .unwrap_or_else(Local::now);
-    let mut date = after.date_naive();
-
-    for _ in 0..3 {
-        let naive = date.and_time(time);
-        let candidate = Local
-            .from_local_datetime(&naive)
-            .single()
-            .or_else(|| Local.from_local_datetime(&naive).earliest());
-
-        if let Some(candidate) = candidate {
-            if candidate.timestamp() > after_ts {
-                return Ok(candidate.timestamp());
-            }
-        }
-
-        date += Duration::days(1);
+fn next_interval_run_after(schedule_expr: &str, after_ts: i64) -> Result<i64, String> {
+    let minutes = schedule_expr
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| "执行间隔必须是整数分钟".to_string())?;
+    if minutes <= 0 {
+        return Err("执行间隔必须大于 0 分钟".to_string());
     }
-
-    Ok((after + Duration::days(1)).timestamp())
+    minutes
+        .checked_mul(60)
+        .and_then(|seconds| after_ts.checked_add(seconds))
+        .ok_or_else(|| "执行间隔过大".to_string())
 }
 
 fn truncate_text(text: &str, max_chars: usize) -> String {

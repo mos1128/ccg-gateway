@@ -897,9 +897,10 @@ pub async fn update_scheduled_task(
 pub async fn delete_scheduled_task(
     app: tauri::AppHandle,
     db: State<'_, SqlitePool>,
+    log_db: State<'_, LogDb>,
     id: i64,
 ) -> Result<()> {
-    crate::services::scheduler::delete_task(db.inner(), id).await?;
+    crate::services::scheduler::delete_task(db.inner(), &log_db.0, id).await?;
     crate::services::scheduler::emit_task_changed(&app, Some(id), None);
     Ok(())
 }
@@ -916,20 +917,20 @@ pub async fn run_scheduled_task_now(
 
 #[tauri::command]
 pub async fn get_scheduled_task_runs(
-    db: State<'_, SqlitePool>,
+    log_db: State<'_, LogDb>,
     task_id: Option<i64>,
     page: Option<i64>,
     page_size: Option<i64>,
 ) -> Result<ScheduledTaskRunListResponse> {
-    crate::services::scheduler::list_runs(db.inner(), task_id, page, page_size).await
+    crate::services::scheduler::list_runs(&log_db.0, task_id, page, page_size).await
 }
 
 #[tauri::command]
 pub async fn get_scheduled_task_run_items(
-    db: State<'_, SqlitePool>,
+    log_db: State<'_, LogDb>,
     run_id: i64,
 ) -> Result<Vec<ScheduledTaskRunItem>> {
-    crate::services::scheduler::list_run_items(db.inner(), run_id).await
+    crate::services::scheduler::list_run_items(&log_db.0, run_id).await
 }
 
 // Settings commands

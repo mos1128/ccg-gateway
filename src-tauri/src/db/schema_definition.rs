@@ -82,7 +82,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 11,
+            version: 12,
             tables: Self::define_log_tables(),
         }
     }
@@ -317,7 +317,7 @@ impl DatabaseSchema {
                         name: "schedule_type".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: false,
-                        default_value: Some("'daily'".to_string()),
+                        default_value: Some("'interval'".to_string()),
                     },
                     ColumnDefinition {
                         name: "schedule_expr".to_string(),
@@ -1145,6 +1145,174 @@ impl DatabaseSchema {
                     ColumnDefinition {
                         name: "message".to_string(),
                         data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![],
+            },
+        );
+
+        // scheduled_task_runs 表
+        tables.insert(
+            "scheduled_task_runs".to_string(),
+            TableDefinition {
+                name: "scheduled_task_runs".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "task_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "task_name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "task_type".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "trigger_type".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'scheduled'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "status".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'running'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "started_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "finished_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "elapsed_ms".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "total_count".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "success_count".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "failure_count".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "skipped_count".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "error_message".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![],
+            },
+        );
+
+        // scheduled_task_run_items 表
+        tables.insert(
+            "scheduled_task_run_items".to_string(),
+            TableDefinition {
+                name: "scheduled_task_run_items".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "run_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "provider_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "provider_name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "model_name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "status".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "status_code".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "elapsed_ms".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "error_message".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "created_at".to_string(),
+                        data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: None,
                     },

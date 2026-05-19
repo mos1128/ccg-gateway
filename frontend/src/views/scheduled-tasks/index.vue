@@ -22,18 +22,12 @@
         <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
         </symbol>
-        <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
-        </symbol>
       </defs>
     </svg>
 
     <div class="page-header">
       <p class="page-subtitle">统一管理保活和后续扩展的后台任务</p>
       <div class="header-actions">
-        <button class="action-icon" @click="handleRefresh" title="刷新" :disabled="loading">
-          <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-        </button>
         <button class="action-icon primary" @click="handleAdd" title="添加定时任务">
           <svg width="20" height="20"><use href="#icon-plus"/></svg>
         </button>
@@ -52,7 +46,7 @@
               <th>启用</th>
               <th>任务名称</th>
               <th>类型</th>
-              <th>计划时间</th>
+              <th>执行间隔</th>
               <th>上次结果</th>
               <th>下次执行</th>
               <th>失败次数</th>
@@ -66,7 +60,7 @@
               </td>
               <td class="task-name">{{ task.name }}</td>
               <td>{{ taskTypeLabel(task.task_type) }}</td>
-              <td>{{ task.schedule_expr }}</td>
+              <td>{{ scheduleLabel(task) }}</td>
               <td>
                 <span class="pill" :class="statusClass(task.last_status)">{{ statusLabel(task.last_status) }}</span>
               </td>
@@ -134,22 +128,8 @@
           <input v-model="form.model_name" class="b-input mono" placeholder="claude-sonnet-4-5">
         </div>
         <div class="form-group">
-          <label class="c-label">每日执行时间</label>
-          <div class="time-picker">
-            <AppSelect
-              :model-value="scheduleHour"
-              :options="hourOptions"
-              width="100%"
-              @update:model-value="value => scheduleHour = String(value)"
-            />
-            <span class="time-separator">:</span>
-            <AppSelect
-              :model-value="scheduleMinute"
-              :options="effectiveMinuteOptions"
-              width="100%"
-              @update:model-value="value => scheduleMinute = String(value)"
-            />
-          </div>
+          <label class="c-label">执行间隔（分钟）</label>
+          <input v-model.number="form.interval_minutes" type="number" min="1" class="b-input" placeholder="例如: 60">
         </div>
       </div>
 
@@ -294,15 +274,6 @@ const defaultModels: Record<CliType, string> = {
   gemini: 'gemini-3.1-pro-preview'
 }
 
-const hourOptions: AppSelectOption[] = Array.from({ length: 24 }, (_, hour) => {
-  const value = String(hour).padStart(2, '0')
-  return { label: value, value }
-})
-const minuteOptions: AppSelectOption[] = Array.from({ length: 12 }, (_, index) => {
-  const value = String(index * 5).padStart(2, '0')
-  return { label: value, value }
-})
-
 interface FormState {
   name: string
   cli_type: CliType
@@ -310,7 +281,7 @@ interface FormState {
   target_mode: 'all' | 'selected'
   provider_ids: number[]
   model_name: string
-  schedule_expr: string
+  interval_minutes: number
   retry_limit: number
   retry_interval_minutes: number
 }
@@ -324,8 +295,6 @@ const editingTask = ref<ScheduledTask | null>(null)
 const providersLoading = ref(false)
 const providerOptions = ref<Provider[]>([])
 const runningIds = ref<number[]>([])
-const scheduleHour = ref('09')
-const scheduleMinute = ref('00')
 
 const runsVisible = ref(false)
 const runsLoading = ref(false)
@@ -341,14 +310,6 @@ let scheduledTaskListener: (() => void) | null = null
 
 const showProfileSelect = computed(() => PROFILE_CAPABLE_CLI_TYPES.includes(form.value.cli_type))
 const selectableProviders = computed(() => providerOptions.value.filter(provider => provider.enabled))
-const effectiveMinuteOptions = computed(() => {
-  const base = [...minuteOptions]
-  if (!base.some(opt => opt.value === scheduleMinute.value)) {
-    base.push({ label: scheduleMinute.value, value: scheduleMinute.value })
-    base.sort((a, b) => String(a.value).localeCompare(String(b.value)))
-  }
-  return base
-})
 const isAllProvidersSelected = computed(() =>
   selectableProviders.value.length > 0 && form.value.provider_ids.length === selectableProviders.value.length
 )
@@ -361,7 +322,7 @@ function defaultForm(): FormState {
     target_mode: 'all',
     provider_ids: [],
     model_name: defaultModels.claude_code,
-    schedule_expr: '09:00',
+    interval_minutes: 60,
     retry_limit: 3,
     retry_interval_minutes: 10
   }
@@ -382,18 +343,6 @@ async function refreshScheduledTasks() {
   hasLoadedTasks = true
   if (runsVisible.value && activeTask.value) {
     await fetchRuns({ silent: true, preserveSelection: true })
-  }
-}
-
-async function handleRefresh() {
-  try {
-    await fetchTasks()
-    hasLoadedTasks = true
-    if (runsVisible.value && activeTask.value) {
-      await fetchRuns({ preserveSelection: true })
-    }
-  } catch (e: any) {
-    notify(getErrorMessage(e, '刷新失败'), 'error')
   }
 }
 
@@ -429,7 +378,6 @@ function toggleAllProviders() {
 function handleAdd() {
   editingTask.value = null
   form.value = defaultForm()
-  setScheduleParts(form.value.schedule_expr)
   providerOptions.value = []
   showDialog.value = true
   void fetchProviders()
@@ -445,11 +393,10 @@ function handleEdit(task: ScheduledTask) {
     target_mode: payload?.target_mode || 'all',
     provider_ids: payload?.provider_ids || [],
     model_name: payload?.model_name || defaultModels.claude_code,
-    schedule_expr: task.schedule_expr,
+    interval_minutes: parseIntervalMinutes(task),
     retry_limit: task.retry_limit,
     retry_interval_minutes: task.retry_interval_minutes
   }
-  setScheduleParts(task.schedule_expr)
   showDialog.value = true
   void fetchProviders()
 }
@@ -461,6 +408,11 @@ async function handleSave() {
   }
   if (form.value.target_mode === 'selected' && form.value.provider_ids.length === 0) {
     notify('请至少选择一个服务商', 'error')
+    return
+  }
+  const intervalMinutes = Number(form.value.interval_minutes)
+  if (!Number.isInteger(intervalMinutes) || intervalMinutes <= 0) {
+    notify('执行间隔必须是大于 0 的整数分钟', 'error')
     return
   }
 
@@ -478,8 +430,8 @@ async function handleSave() {
     name: form.value.name.trim(),
     task_type: 'provider_keepalive' as ScheduledTaskType,
     enabled: editingTask.value?.enabled ?? true,
-    schedule_type: 'daily' as const,
-    schedule_expr: scheduleExpr(),
+    schedule_type: 'interval' as const,
+    schedule_expr: String(intervalMinutes),
     payload_json: JSON.stringify(payload),
     retry_limit: Number(form.value.retry_limit),
     retry_interval_minutes: Number(form.value.retry_interval_minutes)
@@ -583,14 +535,17 @@ function parsePayload(task: ScheduledTask): ProviderKeepalivePayload | null {
   }
 }
 
-function setScheduleParts(value: string) {
-  const match = /^(\d{2}):(\d{2})$/.exec(value)
-  scheduleHour.value = match?.[1] || '09'
-  scheduleMinute.value = match?.[2] || '00'
+function parseIntervalMinutes(task: ScheduledTask): number {
+  const minutes = Number(task.schedule_expr)
+  return Number.isInteger(minutes) && minutes > 0 ? minutes : 60
 }
 
-function scheduleExpr(): string {
-  return `${scheduleHour.value}:${scheduleMinute.value}`
+function scheduleLabel(task: ScheduledTask): string {
+  const minutes = Number(task.schedule_expr)
+  if (!Number.isInteger(minutes) || minutes <= 0) return task.schedule_expr
+  if (minutes % 1440 === 0) return `每 ${minutes / 1440} 天`
+  if (minutes % 60 === 0) return `每 ${minutes / 60} 小时`
+  return `每 ${minutes} 分钟`
 }
 
 function taskTypeLabel(type: ScheduledTaskType): string {
@@ -785,21 +740,6 @@ watch(() => form.value.profile, () => {
 
 .provider-empty {
   padding: 8px 0;
-}
-
-.time-picker {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-}
-
-.time-separator {
-  color: var(--color-text-muted);
-  font-size: var(--fs-20);
-  line-height: 1;
-  font-weight: var(--fw-600);
-  padding-bottom: 2px;
 }
 
 .runs-layout {

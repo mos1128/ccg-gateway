@@ -91,6 +91,7 @@ export interface TestProviderResult {
 export type ScheduledTaskType = 'provider_keepalive'
 export type ScheduledTaskStatus = 'pending' | 'running' | 'success' | 'partial_failed' | 'failed' | 'retrying' | 'skipped'
 export type ScheduledTaskTrigger = 'scheduled' | 'manual'
+export type ScheduledTaskScheduleType = 'interval'
 
 export interface ProviderKeepalivePayload {
   target_mode: 'all' | 'selected'
@@ -105,7 +106,7 @@ export interface ScheduledTask {
   name: string
   task_type: ScheduledTaskType
   enabled: boolean
-  schedule_type: 'daily'
+  schedule_type: ScheduledTaskScheduleType
   schedule_expr: string
   payload_json: string
   retry_limit: number
@@ -123,7 +124,7 @@ export interface ScheduledTaskCreate {
   name: string
   task_type: ScheduledTaskType
   enabled?: boolean
-  schedule_type: 'daily'
+  schedule_type: ScheduledTaskScheduleType
   schedule_expr: string
   payload_json: string
   retry_limit?: number
@@ -133,7 +134,7 @@ export interface ScheduledTaskCreate {
 export interface ScheduledTaskUpdate {
   name?: string
   enabled?: boolean
-  schedule_type?: 'daily'
+  schedule_type?: ScheduledTaskScheduleType
   schedule_expr?: string
   payload_json?: string
   retry_limit?: number
