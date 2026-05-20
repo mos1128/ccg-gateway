@@ -27,11 +27,11 @@ This project was initiated based on the author's actual needs to solve various p
 
 Service providers may experience quota reset windows, rate limiting, or downtime? The gateway automatically switches to available providers and periodically re-checks — zero user perception.
 
-More handy features: provider availability testing; model name mapping; automatic routing of missing models to available service providers.; custom request User-Agent.
+More handy features: provider availability checks; model name mapping; automatic routing of missing models to available providers; custom request User-Agent.
 
-**Tedious Multi-Account Switching**
+**Provider Keep-Alive & Refresh Windows**
 
-Multiple official accounts or multiple relay providers? Quickly switch accounts / adjust priorities by drag and drop.
+Scheduled tasks automatically make a small call to refresh provider windows in advance, improving quota usage efficiency for the next N hours.
 
 **Multi-Project, Multi-Provider Parallel Workflow**
 
@@ -99,7 +99,12 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 - Supports drag-and-drop to quickly switch the currently active account credentials.
 - Official accounts bypass gateway forwarding and use the Agent's own requests to avoid security risks.
 
-### Global Settings
+### Scheduled Tasks
+
+- Call providers during idle periods to trigger billing window updates and move the next reset time forward.
+- Periodically call providers for keep-alive, preventing accounts from being removed by providers.
+
+### Global Official Account Settings
 
 - CLI Runtime Configuration: Supports configuring Agent data directories, making it easy for WSL users to write files correctly.
 - Global Presets: Written into each Agent's configuration file (e.g., `~/.claude/settings.json`). No need to configure BASE_URL or AUTH_TOKEN — the gateway writes them automatically.
