@@ -69,14 +69,16 @@ export async function checkForUpdates(silent: boolean = true): Promise<void> {
     
     if (compareVersions(latestVersion, currentVersion) > 0) {
       // 有新版本
-      const releaseNotes = latestRelease.body
-        ? `\n\n更新日志:\n${latestRelease.body.slice(0, 500)}${latestRelease.body.length > 500 ? '...' : ''}`
-        : ''
+      const updateTitle = `发现新版本 ${latestVersion}（当前版本: v${currentVersion}）`
+      const releaseBody = latestRelease.body?.trim()
+      const releaseNotes = releaseBody
+        ? releaseBody
+        : '暂无更新日志。'
 
       confirm(
-        `发现新版本 ${latestVersion}（当前版本: v${currentVersion}）${releaseNotes}`,
-        '更新提示',
-        { confirmText: '前往下载', cancelText: '稍后再说' }
+        releaseNotes,
+        updateTitle,
+        { confirmText: '前往下载', cancelText: '稍后再说', markdown: true }
       ).then(() => {
         open(latestRelease.html_url)
       }).catch(() => {})
