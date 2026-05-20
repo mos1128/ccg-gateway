@@ -26,7 +26,7 @@
     </svg>
 
     <div class="page-header">
-      <p class="page-subtitle">统一管理保活和后续扩展的后台任务</p>
+      <p class="page-subtitle">统一管理定时调度任务</p>
       <div class="header-actions">
         <button class="action-icon primary" @click="handleAdd" title="添加定时任务">
           <svg width="20" height="20"><use href="#icon-plus"/></svg>
@@ -125,7 +125,7 @@
       <div class="form-grid">
         <div class="form-group">
           <label class="c-label">模型名 <span class="required">*</span></label>
-          <input v-model="form.model_name" class="b-input mono" placeholder="claude-sonnet-4-5">
+          <input v-model="form.model_name" class="b-input mono" placeholder="claude-opus-4-7">
         </div>
         <div class="form-group">
           <label class="c-label">执行间隔（分钟）</label>
@@ -269,7 +269,7 @@ const profileTabs: { id: ProviderProfile; label: string }[] = [
 ]
 
 const defaultModels: Record<CliType, string> = {
-  claude_code: 'claude-sonnet-4-5',
+  claude_code: 'claude-opus-4-7',
   codex: 'gpt-5.5',
   gemini: 'gemini-3.1-pro-preview'
 }
