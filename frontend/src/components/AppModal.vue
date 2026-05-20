@@ -118,6 +118,8 @@ function handleConfirm() {
 .modal-body {
   padding: 32px;
   overflow-y: auto;
+  flex: 0 1 auto;
+  scrollbar-gutter: stable;
 }
 .modal-footer {
   padding: 20px 32px;

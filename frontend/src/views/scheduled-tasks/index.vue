@@ -46,10 +46,10 @@
               <th>启用</th>
               <th>任务名称</th>
               <th>类型</th>
-              <th>执行间隔</th>
+              <th>执行计划</th>
               <th>上次结果</th>
               <th>下次执行</th>
-              <th>失败次数</th>
+              <th>目标失败次数</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -92,11 +92,11 @@
       <div class="form-grid">
         <div class="form-group">
           <label class="c-label">任务名称 <span class="required">*</span></label>
-          <input v-model="form.name" class="b-input" placeholder="例如: Claude 默认服务商保活">
+          <input v-model="form.name" class="b-input" placeholder="例如: Claude 默认服务商调用">
         </div>
         <div class="form-group">
           <label class="c-label">任务类型</label>
-          <input class="b-input" value="服务商保活" disabled>
+          <input class="b-input" value="服务商调用" disabled>
         </div>
       </div>
 
@@ -128,27 +128,61 @@
           <input v-model="form.model_name" class="b-input mono" placeholder="claude-opus-4-7">
         </div>
         <div class="form-group">
-          <label class="c-label">执行间隔（分钟）</label>
-          <input v-model.number="form.interval_minutes" type="number" min="1" class="b-input" placeholder="例如: 60">
+          <label class="c-label">执行对象</label>
+          <AppSelect
+            :model-value="form.target_mode"
+            :options="targetModeOptions"
+            width="100%"
+            @update:model-value="value => form.target_mode = value as FormState['target_mode']"
+          />
         </div>
       </div>
 
       <div class="form-grid">
         <div class="form-group">
-          <label class="c-label">失败重试次数</label>
+          <label class="c-label">执行方式</label>
+          <AppSelect
+            :model-value="form.schedule_type"
+            :options="scheduleTypeOptions"
+            width="100%"
+            @update:model-value="value => form.schedule_type = value as ScheduledTaskScheduleType"
+          />
+        </div>
+        <div v-if="form.schedule_type === 'interval'" class="form-group">
+          <label class="c-label">执行间隔（分钟）</label>
+          <input v-model.number="form.interval_minutes" type="number" min="1" class="b-input" placeholder="例如: 60">
+        </div>
+        <div v-else class="form-group">
+          <label class="c-label">定期执行</label>
+          <div class="periodic-schedule">
+            <span class="schedule-unit">每</span>
+            <input v-model.number="form.period_days" type="number" min="1" max="365" class="b-input schedule-days">
+            <span class="schedule-unit">天</span>
+            <AppSelect
+              :model-value="form.period_hour"
+              :options="hourOptions"
+              width="100%"
+              @update:model-value="value => form.period_hour = String(value)"
+            />
+            <span class="schedule-separator">:</span>
+            <AppSelect
+              :model-value="form.period_minute"
+              :options="minuteOptions"
+              width="100%"
+              @update:model-value="value => form.period_minute = String(value)"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="c-label">目标失败重试次数</label>
           <input v-model.number="form.retry_limit" type="number" min="0" class="b-input">
         </div>
         <div class="form-group">
           <label class="c-label">重试间隔（分钟）</label>
           <input v-model.number="form.retry_interval_minutes" type="number" min="1" class="b-input">
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="c-label">执行对象</label>
-        <div class="b-segmented">
-          <div class="b-seg-btn" :class="{ active: form.target_mode === 'all' }" @click="form.target_mode = 'all'">全部服务商</div>
-          <div class="b-seg-btn" :class="{ active: form.target_mode === 'selected' }" @click="form.target_mode = 'selected'">指定服务商</div>
         </div>
       </div>
 
@@ -257,6 +291,7 @@ import {
   type ScheduledTask,
   type ScheduledTaskRun,
   type ScheduledTaskRunItem,
+  type ScheduledTaskScheduleType,
   type ScheduledTaskStatus,
   type ScheduledTaskType
 } from '@/types/models'
@@ -274,6 +309,23 @@ const defaultModels: Record<CliType, string> = {
   gemini: 'gemini-3.1-pro-preview'
 }
 
+const hourOptions: AppSelectOption[] = Array.from({ length: 24 }, (_, hour) => {
+  const value = String(hour).padStart(2, '0')
+  return { label: value, value }
+})
+const minuteOptions: AppSelectOption[] = Array.from({ length: 60 }, (_, minute) => {
+  const value = String(minute).padStart(2, '0')
+  return { label: value, value }
+})
+const targetModeOptions: AppSelectOption[] = [
+  { label: '全部服务商', value: 'all' },
+  { label: '指定服务商', value: 'selected' }
+]
+const scheduleTypeOptions: AppSelectOption[] = [
+  { label: '执行间隔', value: 'interval' },
+  { label: '定期执行', value: 'daily' }
+]
+
 interface FormState {
   name: string
   cli_type: CliType
@@ -281,7 +333,11 @@ interface FormState {
   target_mode: 'all' | 'selected'
   provider_ids: number[]
   model_name: string
+  schedule_type: ScheduledTaskScheduleType
   interval_minutes: number
+  period_days: number
+  period_hour: string
+  period_minute: string
   retry_limit: number
   retry_interval_minutes: number
 }
@@ -322,7 +378,11 @@ function defaultForm(): FormState {
     target_mode: 'all',
     provider_ids: [],
     model_name: defaultModels.claude_code,
+    schedule_type: 'interval',
     interval_minutes: 60,
+    period_days: 1,
+    period_hour: '09',
+    period_minute: '00',
     retry_limit: 3,
     retry_interval_minutes: 10
   }
@@ -385,6 +445,7 @@ function handleAdd() {
 
 function handleEdit(task: ScheduledTask) {
   const payload = parsePayload(task)
+  const dailySchedule = parseDailySchedule(task.schedule_expr)
   editingTask.value = task
   form.value = {
     name: task.name,
@@ -393,7 +454,11 @@ function handleEdit(task: ScheduledTask) {
     target_mode: payload?.target_mode || 'all',
     provider_ids: payload?.provider_ids || [],
     model_name: payload?.model_name || defaultModels.claude_code,
+    schedule_type: normalizeScheduleType(task.schedule_type),
     interval_minutes: parseIntervalMinutes(task),
+    period_days: dailySchedule?.days || 1,
+    period_hour: dailySchedule?.hour || '09',
+    period_minute: dailySchedule?.minute || '00',
     retry_limit: task.retry_limit,
     retry_interval_minutes: task.retry_interval_minutes
   }
@@ -410,11 +475,8 @@ async function handleSave() {
     notify('请至少选择一个服务商', 'error')
     return
   }
-  const intervalMinutes = Number(form.value.interval_minutes)
-  if (!Number.isInteger(intervalMinutes) || intervalMinutes <= 0) {
-    notify('执行间隔必须是大于 0 的整数分钟', 'error')
-    return
-  }
+  const scheduleInput = buildScheduleInput()
+  if (!scheduleInput) return
 
   const payload: ProviderKeepalivePayload = {
     target_mode: form.value.target_mode,
@@ -430,8 +492,8 @@ async function handleSave() {
     name: form.value.name.trim(),
     task_type: 'provider_keepalive' as ScheduledTaskType,
     enabled: editingTask.value?.enabled ?? true,
-    schedule_type: 'interval' as const,
-    schedule_expr: String(intervalMinutes),
+    schedule_type: scheduleInput.type,
+    schedule_expr: scheduleInput.expr,
     payload_json: JSON.stringify(payload),
     retry_limit: Number(form.value.retry_limit),
     retry_interval_minutes: Number(form.value.retry_interval_minutes)
@@ -535,12 +597,90 @@ function parsePayload(task: ScheduledTask): ProviderKeepalivePayload | null {
   }
 }
 
+function normalizeScheduleType(type: ScheduledTaskScheduleType): ScheduledTaskScheduleType {
+  return type === 'daily' ? 'daily' : 'interval'
+}
+
 function parseIntervalMinutes(task: ScheduledTask): number {
   const minutes = Number(task.schedule_expr)
   return Number.isInteger(minutes) && minutes > 0 ? minutes : 60
 }
 
+interface DailySchedule {
+  days: number
+  hour: string
+  minute: string
+}
+
+function parseDailySchedule(scheduleExpr: string): DailySchedule | null {
+  const value = scheduleExpr.trim()
+  try {
+    const data = JSON.parse(value) as { days?: number; hour?: number; minute?: number }
+    const days = Number(data.days)
+    const hour = Number(data.hour)
+    const minute = Number(data.minute)
+    if (isValidDailyParts(days, hour, minute)) {
+      return {
+        days,
+        hour: String(hour).padStart(2, '0'),
+        minute: String(minute).padStart(2, '0')
+      }
+    }
+  } catch {
+    const match = /^(\d{1,2}):(\d{1,2})$/.exec(value)
+    if (match) {
+      const hour = Number(match[1])
+      const minute = Number(match[2])
+      if (isValidDailyParts(1, hour, minute)) {
+        return {
+          days: 1,
+          hour: String(hour).padStart(2, '0'),
+          minute: String(minute).padStart(2, '0')
+        }
+      }
+    }
+  }
+  return null
+}
+
+function isValidDailyParts(days: unknown, hour: unknown, minute: unknown): boolean {
+  return Number.isInteger(days)
+    && Number(days) >= 1
+    && Number(days) <= 365
+    && Number.isInteger(hour)
+    && Number(hour) >= 0
+    && Number(hour) <= 23
+    && Number.isInteger(minute)
+    && Number(minute) >= 0
+    && Number(minute) <= 59
+}
+
+function buildScheduleInput(): { type: ScheduledTaskScheduleType; expr: string } | null {
+  if (form.value.schedule_type === 'interval') {
+    const intervalMinutes = Number(form.value.interval_minutes)
+    if (!Number.isInteger(intervalMinutes) || intervalMinutes <= 0) {
+      notify('执行间隔必须是大于 0 的整数分钟', 'error')
+      return null
+    }
+    return { type: 'interval', expr: String(intervalMinutes) }
+  }
+
+  const days = Number(form.value.period_days)
+  const hour = Number(form.value.period_hour)
+  const minute = Number(form.value.period_minute)
+  if (!isValidDailyParts(days, hour, minute)) {
+    notify('定期执行必须是 1-365 天、0-23 时、0-59 分', 'error')
+    return null
+  }
+  return { type: 'daily', expr: JSON.stringify({ days, hour, minute }) }
+}
+
 function scheduleLabel(task: ScheduledTask): string {
+  if (task.schedule_type === 'daily') {
+    const schedule = parseDailySchedule(task.schedule_expr)
+    return schedule ? `每 ${schedule.days} 天 ${schedule.hour}:${schedule.minute}` : task.schedule_expr
+  }
+
   const minutes = Number(task.schedule_expr)
   if (!Number.isInteger(minutes) || minutes <= 0) return task.schedule_expr
   if (minutes % 1440 === 0) return `每 ${minutes / 1440} 天`
@@ -549,7 +689,7 @@ function scheduleLabel(task: ScheduledTask): string {
 }
 
 function taskTypeLabel(type: ScheduledTaskType): string {
-  return type === 'provider_keepalive' ? '服务商保活' : type
+  return type === 'provider_keepalive' ? '服务商调用' : type
 }
 
 function statusLabel(status: ScheduledTaskStatus | 'skipped'): string {
@@ -660,8 +800,42 @@ watch(() => form.value.profile, () => {
 
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
+}
+
+.form-grid > .form-group {
+  min-width: 0;
+}
+
+.periodic-schedule {
+  display: grid;
+  grid-template-columns: auto minmax(72px, 1fr) auto 80px auto 80px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.schedule-unit,
+.schedule-separator {
+  color: var(--color-text-muted);
+  font-size: var(--fs-14);
+  white-space: nowrap;
+}
+
+.schedule-separator {
+  font-size: var(--fs-18);
+  line-height: 1;
+}
+
+.schedule-days {
+  min-width: 0;
+}
+
+.periodic-schedule :deep(.app-select) {
+  min-width: 0;
 }
 
 .provider-select-header {

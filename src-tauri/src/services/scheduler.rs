@@ -5,8 +5,9 @@ use crate::db::models::{
 use crate::services::provider as provider_service;
 use crate::services::routing::{normalize_profile, DEFAULT_PROFILE};
 use crate::time::now_timestamp;
+use chrono::{Duration, Local, NaiveTime, TimeZone};
 use futures_util::future::join_all;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
@@ -15,6 +16,7 @@ use tokio::sync::Mutex;
 
 const TASK_TYPE_PROVIDER_KEEPALIVE: &str = "provider_keepalive";
 const SCHEDULE_TYPE_INTERVAL: &str = "interval";
+const SCHEDULE_TYPE_DAILY: &str = "daily";
 const SCHEDULER_POLL_SECONDS: u64 = 5;
 const SCHEDULER_DUE_TASK_LIMIT: i64 = 10;
 const RUNNING_STALE_SECONDS: i64 = 60 * 60;
@@ -38,6 +40,13 @@ static TASK_LOCKS: OnceLock<TaskLocks> = OnceLock::new();
 pub struct ScheduledTaskChangeEvent {
     task_id: Option<i64>,
     run_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct DailyScheduleExpr {
+    days: i64,
+    hour: u32,
+    minute: u32,
 }
 
 pub fn emit_task_changed(app_handle: &AppHandle, task_id: Option<i64>, run_id: Option<i64>) {
@@ -525,12 +534,13 @@ async fn run_due_tasks(
     let task_ids = sqlx::query_as::<_, (i64,)>(
         r#"
         SELECT id FROM scheduled_tasks
-        WHERE enabled = 1 AND schedule_type = ? AND next_run_at <= ? AND last_status != ?
+        WHERE enabled = 1 AND schedule_type IN (?, ?) AND next_run_at <= ? AND last_status != ?
         ORDER BY next_run_at, id
         LIMIT ?
         "#,
     )
     .bind(SCHEDULE_TYPE_INTERVAL)
+    .bind(SCHEDULE_TYPE_DAILY)
     .bind(now)
     .bind(STATUS_RUNNING)
     .bind(SCHEDULER_DUE_TASK_LIMIT)
@@ -675,8 +685,8 @@ async fn execute_keepalive_task(
     task: &ScheduledTask,
     retry_provider_ids: Option<&[i64]>,
 ) -> Result<RunOutcome, String> {
-    let payload: ProviderKeepalivePayload =
-        serde_json::from_str(&task.payload_json).map_err(|e| format!("保活参数解析失败: {}", e))?;
+    let payload: ProviderKeepalivePayload = serde_json::from_str(&task.payload_json)
+        .map_err(|e| format!("服务商调用参数解析失败: {}", e))?;
     let model_name = payload.model_name.trim().to_string();
     let targets = resolve_keepalive_targets(db, &payload, retry_provider_ids).await?;
     let mut outcome = RunOutcome::empty();
@@ -1337,15 +1347,15 @@ fn validate_task_type(task_type: &str) -> Result<(), String> {
     if task_type == TASK_TYPE_PROVIDER_KEEPALIVE {
         Ok(())
     } else {
-        Err("第一版只支持服务商保活任务".to_string())
+        Err("只支持服务商调用任务".to_string())
     }
 }
 
 fn validate_schedule_type(schedule_type: &str) -> Result<(), String> {
-    if schedule_type == SCHEDULE_TYPE_INTERVAL {
+    if schedule_type == SCHEDULE_TYPE_INTERVAL || schedule_type == SCHEDULE_TYPE_DAILY {
         Ok(())
     } else {
-        Err("只支持间隔执行".to_string())
+        Err("只支持间隔执行或定期执行".to_string())
     }
 }
 
@@ -1396,6 +1406,7 @@ fn next_run_after(schedule_type: &str, schedule_expr: &str, after_ts: i64) -> Re
     validate_schedule_type(schedule_type)?;
     match schedule_type {
         SCHEDULE_TYPE_INTERVAL => next_interval_run_after(schedule_expr, after_ts),
+        SCHEDULE_TYPE_DAILY => next_daily_run_after(schedule_expr, after_ts),
         _ => unreachable!(),
     }
 }
@@ -1412,6 +1423,64 @@ fn next_interval_run_after(schedule_expr: &str, after_ts: i64) -> Result<i64, St
         .checked_mul(60)
         .and_then(|seconds| after_ts.checked_add(seconds))
         .ok_or_else(|| "执行间隔过大".to_string())
+}
+
+fn next_daily_run_after(schedule_expr: &str, after_ts: i64) -> Result<i64, String> {
+    let (days, time) = parse_daily_schedule(schedule_expr)?;
+    let after = Local
+        .timestamp_opt(after_ts, 0)
+        .single()
+        .unwrap_or_else(Local::now);
+    let mut date = after.date_naive();
+
+    for _ in 0..5 {
+        let naive = date.and_time(time);
+        let candidate = Local
+            .from_local_datetime(&naive)
+            .single()
+            .or_else(|| Local.from_local_datetime(&naive).earliest());
+
+        if let Some(candidate) = candidate {
+            if candidate.timestamp() > after_ts {
+                return Ok(candidate.timestamp());
+            }
+        }
+
+        date += Duration::days(days);
+    }
+
+    Err("无法计算下次定期执行时间".to_string())
+}
+
+fn parse_daily_schedule(schedule_expr: &str) -> Result<(i64, NaiveTime), String> {
+    let value = schedule_expr.trim();
+    if value.is_empty() {
+        return Err("定期执行时间不能为空".to_string());
+    }
+
+    if let Ok(expr) = serde_json::from_str::<DailyScheduleExpr>(value) {
+        validate_daily_parts(expr.days, expr.hour, expr.minute)?;
+        let time = NaiveTime::from_hms_opt(expr.hour, expr.minute, 0)
+            .ok_or_else(|| "定期执行时间无效".to_string())?;
+        return Ok((expr.days, time));
+    }
+
+    let time = NaiveTime::parse_from_str(value, "%H:%M")
+        .map_err(|_| "定期执行格式必须是 HH:mm 或 JSON".to_string())?;
+    Ok((1, time))
+}
+
+fn validate_daily_parts(days: i64, hour: u32, minute: u32) -> Result<(), String> {
+    if !(1..=365).contains(&days) {
+        return Err("执行周期必须是 1 到 365 天".to_string());
+    }
+    if hour > 23 {
+        return Err("执行小时必须是 0 到 23".to_string());
+    }
+    if minute > 59 {
+        return Err("执行分钟必须是 0 到 59".to_string());
+    }
+    Ok(())
 }
 
 fn truncate_text(text: &str, max_chars: usize) -> String {
