@@ -28,16 +28,16 @@ pub struct FavoriteInstallResult {
 
 /// 执行 claude 命令，返回完整输出
 async fn run_claude(args: &[&str]) -> Result<String> {
-    let output = Command::new("claude").args(args).output().await;
-
     #[cfg(windows)]
-    let output = match output {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            tracing::info!("claude binary not found, falling back to claude.cmd");
-            Command::new("claude.cmd").args(args).output().await
-        }
-        output => output,
+    let output = {
+        // Windows 上直接用 cmd /c 执行，可自动解析 .cmd/.bat/.exe 等 PATHEXT 扩展名
+        let mut cmd_args = vec!["/c", "claude"];
+        cmd_args.extend_from_slice(args);
+        Command::new("cmd").args(&cmd_args).output().await
     };
+
+    #[cfg(not(windows))]
+    let output = Command::new("claude").args(args).output().await;
 
     let output = output.map_err(|e| format!("执行命令遇到错误：{}", e))?;
 
