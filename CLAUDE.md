@@ -28,13 +28,30 @@
 | 文件/目录 | 职责 |
 | --- | --- |
 | `src-tauri/src/lib.rs` | Tauri 应用装配、状态注册、command 注册、托盘与服务启动 |
-| `src-tauri/src/commands.rs` | Tauri 命令入口与桌面侧编排；允许保留现有聚合逻辑，但新增复杂业务优先下沉 `services/` |
+| `src-tauri/src/commands/` | Tauri 命令入口目录，按领域拆分为独立模块 |
+| `src-tauri/src/commands.rs` | commands 目录的 mod 入口，统一 re-export 子模块 |
+| `src-tauri/src/commands/provider_commands.rs` | Provider 相关命令 |
+| `src-tauri/src/commands/credential_commands.rs` | 凭证管理命令 |
+| `src-tauri/src/commands/session_commands.rs` | 会话管理命令 |
+| `src-tauri/src/commands/skill_commands.rs` | Skill 相关命令 |
+| `src-tauri/src/commands/plugin_commands.rs` | Plugin 相关命令 |
+| `src-tauri/src/commands/mcp_commands.rs` | MCP 配置命令 |
+| `src-tauri/src/commands/prompt_commands.rs` | Prompt 管理命令 |
+| `src-tauri/src/commands/settings_commands.rs` | 设置相关命令 |
+| `src-tauri/src/commands/log_commands.rs` | 日志查询命令 |
+| `src-tauri/src/commands/stats_commands.rs` | 统计相关命令 |
+| `src-tauri/src/commands/backup_commands.rs` | 备份/恢复命令 |
+| `src-tauri/src/commands/scheduled_task_commands.rs` | 定时任务命令 |
+| `src-tauri/src/commands/system_commands.rs` | 系统级命令（退出等） |
+| `src-tauri/src/commands/update_commands.rs` | 应用更新命令 |
+| `src-tauri/src/commands/cli_helpers.rs` | CLI 调用辅助函数 |
 | `src-tauri/src/services/` | 业务逻辑层，外部请求、文件操作、CLI/插件/Skill 处理放在这里 |
 | `src-tauri/src/services/provider.rs` | Provider 管理、配置同步 |
 | `src-tauri/src/services/proxy.rs` | 请求转发、模型映射 |
 | `src-tauri/src/services/routing.rs` | 路由规则、负载均衡 |
 | `src-tauri/src/services/skill.rs` | Skill 仓库、发现、安装、收藏管理 |
 | `src-tauri/src/services/plugin.rs` | Plugin 市场、安装、收藏管理 |
+| `src-tauri/src/services/scheduler.rs` | 定时任务调度 |
 | `src-tauri/src/services/stats.rs` | 统计记录、系统日志写入 |
 | `src-tauri/src/api/handlers.rs` | HTTP 代理处理，不直接承载桌面侧 command |
 | `src-tauri/src/db/models.rs` | 数据模型、响应结构、DTO |
@@ -42,19 +59,21 @@
 | `frontend/src/api/` | 前端 API 封装，禁止页面直接拼命令名和参数 |
 | `frontend/src/stores/` | Pinia 状态管理 |
 | `frontend/src/views/` | 页面级 UI 与交互组织 |
+| `frontend/src/views/*/components/` | 页面级子组件，从大页面中拆出的可复用展示块 |
 | `frontend/src/types/models.ts` | 前端共享类型定义 |
+| `frontend/src/utils/cliFlags.ts` | CLI 启动参数解析工具 |
 
 ---
 
 ## 三、Rust 侧约束
 
-- `commands.rs` 新增接口时，优先保持薄入口：
+- `commands/` 目录按领域划分模块，新增命令按归属领域放入对应文件；只有确实不属于任何现有领域时才新建 `*_commands.rs`。
+- 每个 command 函数保持薄入口：
   - 参数接收
   - 少量组装/编排
   - 调用 `services/` 或 `db` 能力
   - 返回统一错误
-
-- 现有历史逻辑若仍在 `commands.rs`，修改时优先局部收敛，禁止继续扩大单函数职责。
+- `commands.rs`（mod 入口）只做 re-export，禁止在其中写业务逻辑。
 
 - 返回值统一使用 `Result<T, String>` 或项目内等价别名；错误信息要对最终用户可读，禁止直接抛原始技术栈长报错。
 
@@ -75,6 +94,7 @@
 - 所有后端返回结构、表单模型、列表项类型，优先复用 `frontend/src/types/models.ts`，不要在页面内重复定义同构接口。
 - 页面不得直接写 `invoke('xxx')`，统一经过 `frontend/src/api/*` 封装后再给 Store 或 View 使用。
 - 可复用的状态放 Store，可复用的请求放 `api/`，可复用的展示块放 `components/`，不要把请求、状态、视图细节糊在单个页面文件里。
+- 页面级子组件放在对应 `views/xxx/components/` 目录下；仅当组件确实跨多个页面复用时，才提升到顶层 `src/components/`。
 - 项目已启用 `unplugin-auto-import`，新增 Vue / Pinia / Router 常用 API 时先遵循现有自动导入方式，不要重复引入无意义 import。
 
 ---
