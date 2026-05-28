@@ -67,20 +67,25 @@
         <div class="action-icon" @click="resetRequestFilters" title="重置">
           <svg width="18" height="18"><use href="#icon-refresh"/></svg>
         </div>
-        <div class="action-icon delete" @click="clearRequestLogs" title="清空">
-          <svg width="18" height="18"><use href="#icon-trash"/></svg>
-        </div>
+        <AppSelect mode="menu" :options="cleanMenuItems" @select="handleClean">
+          <template #trigger>
+            <div class="action-icon delete" title="清理">
+              <svg width="18" height="18"><use href="#icon-trash"/></svg>
+            </div>
+          </template>
+        </AppSelect>
       </div>
 
       <!-- Super Clean Flat Table -->
-      <div class="table-container" v-loading="requestLoading">
+      <div v-loading="requestLoading" class="list-container">
         <div v-if="requestLogs.length === 0" class="empty-state">
           <svg width="64" height="64" color="var(--color-border)"><use href="#icon-file-text"/></svg>
           <p>暂无日志记录</p>
         </div>
         <template v-else>
-          <div class="table-wrapper">
-            <table class="flat-table">
+          <div class="table-container">
+            <div class="table-wrapper">
+              <table class="flat-table">
               <thead>
                 <tr>
                   <th style="min-width: 60px;">ID</th>
@@ -159,6 +164,7 @@
               @current-change="fetchRequestLogs"
             />
           </div>
+          </div>
         </template>
       </div>
     </div>
@@ -189,14 +195,15 @@
       </div>
 
       <!-- Super Clean Flat Table -->
-      <div class="table-container" v-loading="systemLoading">
+      <div v-loading="systemLoading" class="list-container">
         <div v-if="systemLogs.length === 0" class="empty-state">
           <svg width="64" height="64" color="var(--color-border)"><use href="#icon-file-text"/></svg>
           <p>暂无日志记录</p>
         </div>
         <template v-else>
-          <div class="table-wrapper">
-            <table class="flat-table">
+          <div class="table-container">
+            <div class="table-wrapper">
+              <table class="flat-table">
               <thead>
                 <tr>
                   <th style="min-width: 60px;">ID</th>
@@ -227,6 +234,7 @@
               @size-change="fetchSystemLogs"
               @current-change="fetchSystemLogs"
             />
+          </div>
           </div>
         </template>
       </div>
@@ -311,6 +319,7 @@ import { logsApi } from '@/api/logs'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { useUiStore } from '@/stores/ui'
+import { getErrorMessage } from '@/utils/error'
 import { formatJson as formatJsonUtil, formatTokens } from '@/utils/json'
 import type { RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
 
@@ -328,6 +337,12 @@ const activeTab = computed({
   set: (val) => uiStore.setLogsActiveTab(val as 'request' | 'system')
 })
 const logRecordMode = ref<LogRecordMode>('failure_only')
+const cleanMenuItems: AppSelectOption[] = [
+  { label: '清理全部日志', value: 'all_logs' },
+  { label: '清理全部详情', value: 'all_details' },
+  { label: '清理30天前日志', value: 'old_logs' },
+  { label: '清理30天前详情', value: 'old_details' }
+]
 const gatewayUrl = ref('')
 const providerOptions = ref<string[]>([])
 let requestLogListener: (() => void) | null = null
@@ -485,20 +500,45 @@ function resetRequestFilters() {
   fetchRequestLogs()
 }
 
-async function clearRequestLogs() {
+type CleanAction = 'all_logs' | 'all_details' | 'old_logs' | 'old_details'
+
+async function handleClean(action: string | number) {
+  const confirmMap: Record<CleanAction, string> = {
+    all_logs: '确定要清空所有请求日志吗？',
+    all_details: '确定要清空所有请求详情文件吗？',
+    old_logs: '确定要清理30天前的请求日志吗？',
+    old_details: '确定要清理30天前的请求详情文件吗？'
+  }
+
   try {
-    await confirm('确定要清空所有请求日志吗？', '清理确认')
+    await confirm(confirmMap[action as CleanAction], '清理确认')
   } catch {
     return
   }
 
   requestLoading.value = true
   try {
-    await logsApi.clearRequestLogs()
-    notify('请求日志已清空')
+    switch (action as CleanAction) {
+      case 'all_logs':
+        await logsApi.clearRequestLogs()
+        notify('请求日志已清空')
+        break
+      case 'all_details':
+        await logsApi.clearRequestDetailFiles()
+        notify('请求详情文件已清空')
+        break
+      case 'old_logs':
+        await logsApi.clearOldRequestLogs(30)
+        notify('30天前的请求日志已清理')
+        break
+      case 'old_details':
+        await logsApi.clearOldRequestDetailFiles(30)
+        notify('30天前的请求详情文件已清理')
+        break
+    }
     await fetchRequestLogs()
   } catch (e: any) {
-    notify(e?.message || '清空失败', 'error')
+    notify(getErrorMessage(e, '清理失败'), 'error')
     requestLoading.value = false
   }
 }
@@ -677,7 +717,6 @@ watch(activeTab, (tab) => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin: 0 40px 16px 40px;
 }
 .table-wrapper {
   flex: 1;

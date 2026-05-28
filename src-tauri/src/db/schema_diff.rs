@@ -1,4 +1,4 @@
-use super::schema_definition::{DatabaseSchema, TableDefinition};
+use super::schema_definition::{ColumnDefinition, DatabaseSchema, TableDefinition};
 use super::schema_inspector::SchemaInspector;
 use std::collections::HashSet;
 
@@ -10,6 +10,12 @@ pub enum SchemaChange {
 
     /// 创建表
     CreateTable { definition: TableDefinition },
+
+    /// 新增列
+    AddColumn {
+        table: String,
+        column: ColumnDefinition,
+    },
 
     /// 重建表（表结构有变化）
     RebuildTable { name: String },
@@ -54,15 +60,32 @@ impl SchemaDiff {
 
                 if let Some(actual_sql) = actual_sql {
                     if Self::table_structure_differs(&expected_sql, &actual_sql) {
-                        tracing::info!(
-                            "表 {} 的结构有变化，将被重建\n期望: {}\n实际: {}",
+                        if let Some(add_columns) = Self::detect_add_columns(
+                            expected_table,
+                            &actual_sql,
                             table_name,
-                            Self::normalize_sql(&expected_sql),
-                            Self::normalize_sql(&actual_sql)
-                        );
-                        changes.push(SchemaChange::RebuildTable {
-                            name: table_name.clone(),
-                        });
+                            inspector,
+                        )
+                        .await?
+                        {
+                            for column in add_columns {
+                                tracing::info!("表 {} 将新增列 {}", table_name, column.name);
+                                changes.push(SchemaChange::AddColumn {
+                                    table: table_name.clone(),
+                                    column,
+                                });
+                            }
+                        } else {
+                            tracing::info!(
+                                "表 {} 的结构有变化，将被重建（存在列删除/类型变更/约束变更，无法仅用 ADD COLUMN）\n期望: {}\n实际: {}",
+                                table_name,
+                                Self::normalize_sql(&expected_sql),
+                                Self::normalize_sql(&actual_sql)
+                            );
+                            changes.push(SchemaChange::RebuildTable {
+                                name: table_name.clone(),
+                            });
+                        }
                     }
                 }
             }
@@ -99,5 +122,51 @@ impl SchemaDiff {
 
         // 忽略大小写比较
         !normalized_expected.eq_ignore_ascii_case(&normalized_actual)
+    }
+
+    async fn detect_add_columns(
+        expected_table: &TableDefinition,
+        actual_sql: &str,
+        table_name: &str,
+        inspector: &SchemaInspector<'_>,
+    ) -> Result<Option<Vec<ColumnDefinition>>, sqlx::Error> {
+        let actual_columns = inspector.get_table_columns(table_name).await?;
+        let actual_names: HashSet<String> = actual_columns
+            .iter()
+            .map(|column| column.name.clone())
+            .collect();
+
+        let add_columns: Vec<ColumnDefinition> = expected_table
+            .columns
+            .iter()
+            .filter(|column| !actual_names.contains(&column.name))
+            .cloned()
+            .collect();
+
+        if add_columns.is_empty()
+            || add_columns
+                .iter()
+                .any(|column| !column.nullable && column.default_value.is_none())
+        {
+            return Ok(None);
+        }
+
+        let expected_without_additions = TableDefinition {
+            name: expected_table.name.clone(),
+            columns: expected_table
+                .columns
+                .iter()
+                .filter(|column| actual_names.contains(&column.name))
+                .cloned()
+                .collect(),
+            primary_key: expected_table.primary_key.clone(),
+            unique_constraints: expected_table.unique_constraints.clone(),
+        };
+
+        if !Self::table_structure_differs(&expected_without_additions.to_create_sql(), actual_sql) {
+            return Ok(Some(add_columns));
+        }
+
+        Ok(None)
     }
 }

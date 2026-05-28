@@ -7,6 +7,7 @@ import type {
   TimeoutSettingsUpdate,
   CliSettingsUpdate,
   CliSettings,
+  GatewaySettingsRaw,
   SystemStatus,
   ProviderProfile,
   CliProfileSettingsStatus
@@ -15,7 +16,7 @@ import type {
 export const settingsApi = {
   getAll: async () => {
     const [gateway, timeouts, cliSettingsList, status] = await Promise.all([
-      invoke<{ debug_log: number; log_detail_mode: string }>('get_gateway_settings'),
+      invoke<GatewaySettingsRaw>('get_gateway_settings'),
       invoke<{ stream_first_byte_timeout: number; stream_idle_timeout: number; non_stream_timeout: number }>('get_timeout_settings'),
       Promise.all(CLI_TYPES.map((cliType) => invoke<CliSettings>('get_cli_settings', { cliType }))),
       invoke<SystemStatus>('get_system_status'),
@@ -27,7 +28,10 @@ export const settingsApi = {
 
     return {
       data: {
-        gateway: { debug_log: !!gateway.debug_log, log_detail_mode: gateway.log_detail_mode as 'full' | 'failure_only' },
+        gateway: {
+          debug_log: !!gateway.debug_log,
+          log_detail_mode: gateway.log_detail_mode as 'full' | 'failure_only',
+        },
         timeouts,
         cli_settings: cliSettings,
         status
@@ -35,7 +39,10 @@ export const settingsApi = {
     }
   },
   updateGateway: async (data: GatewaySettingsUpdate) => {
-    await invoke('update_gateway_settings', { debugLog: data.debug_log, logDetailMode: data.log_detail_mode })
+    await invoke('update_gateway_settings', {
+      debugLog: data.debug_log,
+      logDetailMode: data.log_detail_mode,
+    })
     return { data: null }
   },
   updateTimeouts: async (data: TimeoutSettingsUpdate) => {

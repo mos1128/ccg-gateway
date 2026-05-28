@@ -57,47 +57,17 @@
           </template>
           <div v-else class="scroll-area">
             <div class="skill-grid">
-              <div v-for="plugin in installedPlugins" :key="getPluginId(plugin)" class="skill-card">
-                <div class="card-top">
-                  <div class="skill-icon">
-                    <svg width="24" height="24"><use href="#icon-puzzle"/></svg>
-                  </div>
-                  <div class="skill-info">
-                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                      <h3 class="skill-name">{{ plugin.name }}</h3>
-                      <span v-if="plugin.version" class="plugin-ver mono">v{{ plugin.version }}</span>
-                    </div>
-                    <div class="skill-market">@{{ plugin.marketplace_name }}</div>
-                  </div>
-                  <div class="card-actions">
-                    <button
-                      class="action-icon star"
-                      :class="{ 'star-active': favoriteIds.has(getPluginId(plugin)) }"
-                      title="收藏/取消"
-                      @click="favoriteIds.has(getPluginId(plugin)) ? handleRemoveFavorite(plugin) : handleAddFavorite(plugin)"
-                    >
-                      <svg width="18" height="18" :style="favoriteIds.has(getPluginId(plugin)) ? 'fill: var(--color-warning);' : ''"><use href="#icon-star"/></svg>
-                    </button>
-                    <button class="action-icon" title="更新" :disabled="loadingInstalledOperation" @click="handleUpdate(plugin)">
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </button>
-                    <button class="action-icon delete" title="卸载" :disabled="loadingInstalledOperation" @click="handleUninstall(plugin)">
-                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
-                    </button>
-                  </div>
-                </div>
-
-                <div class="cli-toggles">
-                  <div class="toggle-item">
-                    <span class="toggle-label">Claude Code</span>
-                    <el-switch
-                      size="small"
-                      :model-value="plugin.is_enabled ?? false"
-                      @change="handleToggleEnable(plugin, $event as boolean)"
-                    />
-                  </div>
-                </div>
-              </div>
+              <InstalledPluginCard
+                v-for="plugin in installedPlugins"
+                :key="getPluginId(plugin)"
+                :plugin="plugin"
+                :is-favorite="favoriteIds.has(getPluginId(plugin))"
+                :operation-disabled="loadingInstalledOperation"
+                @favorite="handleInstalledPluginFavorite"
+                @update="handleUpdate"
+                @uninstall="handleUninstall"
+                @toggle-enable="handleToggleEnable"
+              />
             </div>
           </div>
         </div>
@@ -122,23 +92,14 @@
             </div>
             <div v-else class="scroll-area">
               <div class="repo-grid">
-                <div v-for="market in marketplaceList" :key="market.name" class="repo-card" @click="handleMarketClick(market)">
-                  <div class="repo-icon-box">
-                    <svg width="24" height="24"><use href="#icon-store"/></svg>
-                  </div>
-                  <div class="repo-info-main">
-                    <div class="repo-name-title">{{ market.name }}</div>
-                    <div class="repo-source-subtitle mono">{{ market.marketplace_source || '内建市场' }}</div>
-                  </div>
-                  <div class="repo-actions-overlay" @click.stop>
-                    <button class="action-icon" title="同步市场" @click="handleUpdateMarketplace(market)">
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </button>
-                    <button class="action-icon delete" title="删除市场" @click="handleRemoveMarketplace(market)">
-                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
-                    </button>
-                  </div>
-                </div>
+                <MarketplaceCard
+                  v-for="market in marketplaceList"
+                  :key="market.name"
+                  :marketplace="market"
+                  @open="handleMarketClick"
+                  @update="handleUpdateMarketplace"
+                  @remove="handleRemoveMarketplace"
+                />
               </div>
             </div>
           </div>
@@ -176,51 +137,15 @@
             </template>
             <div v-else class="scroll-area">
               <div class="discover-list">
-                <div v-for="plugin in filteredMarketPlugins" :key="getPluginId(plugin)" class="discover-item">
-                  <div class="discover-info">
-                    <div class="discover-name-row">
-                      <span class="discover-name">{{ plugin.name }}</span>
-                      <span v-if="plugin.version" class="mono text-12 text-muted">v{{ plugin.version }}</span>
-                    </div>
-                    <el-tooltip
-                      v-if="plugin.description"
-                      effect="light"
-                      placement="top"
-                      :enterable="true"
-                      :show-after="200"
-                    >
-                      <template #content>
-                        <div class="text-14" style="max-width: 350px; line-height: 1.6; word-break: break-word; user-select: text; color: var(--color-text-dark);">
-                          {{ plugin.description }}
-                        </div>
-                      </template>
-                      <div class="discover-desc" @click="copyDescription(plugin.description)">
-                        {{ plugin.description }}
-                      </div>
-                    </el-tooltip>
-                    <div v-else class="discover-desc">暂无描述</div>
-                  </div>
-                  <div class="discover-actions">
-                    <button
-                      v-if="plugin.is_installed"
-                      class="action-icon installed"
-                      title="更新"
-                      :disabled="installingPluginId === getPluginId(plugin)"
-                      @click="handleUpdate(plugin)"
-                    >
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </button>
-                    <button
-                      v-else
-                      class="action-icon primary"
-                      title="安装插件"
-                      :disabled="installingPluginId === getPluginId(plugin)"
-                      @click="handleInstall(plugin)"
-                    >
-                      <svg width="18" height="18"><use href="#icon-plus"/></svg>
-                    </button>
-                  </div>
-                </div>
+                <MarketplacePluginItem
+                  v-for="plugin in filteredMarketPlugins"
+                  :key="getPluginId(plugin)"
+                  :plugin="plugin"
+                  :installing="installingPluginId === getPluginId(plugin)"
+                  @update="handleUpdate"
+                  @install="handleInstall"
+                  @copy-description="copyDescription"
+                />
               </div>
             </div>
           </div>
@@ -241,41 +166,14 @@
           </div>
           <div v-else class="scroll-area">
             <div class="favorite-grid">
-              <div v-for="fav in favoriteList" :key="fav.plugin_id" class="fav-card">
-                <div class="fav-main">
-                  <div class="fav-info">
-                    <div class="fav-name">{{ fav.plugin_name }}</div>
-                    <div class="fav-market" :title="fav.marketplace_source ?? undefined">来自市场: {{ fav.marketplace_name }}</div>
-                  </div>
-                  <div class="fav-actions">
-                    <button
-                      class="action-icon star-active"
-                      title="取消收藏"
-                      @click="handleRemoveFavoriteById(fav)"
-                    >
-                      <svg width="18" height="18" style="fill: var(--color-warning);"><use href="#icon-star"/></svg>
-                    </button>
-                    <button
-                      v-if="fav.is_installed"
-                      class="action-icon installed"
-                      title="已安装(点击更新)"
-                      :disabled="installingPluginId === fav.plugin_id"
-                      @click="handleInstallFavorite(fav)"
-                    >
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </button>
-                    <button
-                      v-else
-                      class="action-icon primary"
-                      title="安装插件"
-                      :disabled="installingPluginId === fav.plugin_id"
-                      @click="handleInstallFavorite(fav)"
-                    >
-                      <svg width="18" height="18"><use href="#icon-plus"/></svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <PluginFavoriteCard
+                v-for="fav in favoriteList"
+                :key="fav.plugin_id"
+                :favorite="fav"
+                :installing="installingPluginId === fav.plugin_id"
+                @remove="handleRemoveFavoriteById"
+                @install="handleInstallFavorite"
+              />
             </div>
           </div>
         </div>
@@ -284,18 +182,11 @@
 
     </div>
 
-    <!-- Modals -->
-    <AppModal v-model="showAddMarketDialog" title="添加插件市场" width="500px" @confirm="handleAddMarketplace">
-        <div class="form-group">
-            <label class="c-label">市场源地址 <span class="required">*</span></label>
-            <input
-              type="text"
-              v-model="marketForm.url"
-              class="b-input"
-              placeholder="支持 URL 地址、GitHub owner/repo、本地路径"
-            >
-          </div>
-    </AppModal>
+    <AddMarketplaceModal
+      v-model="showAddMarketDialog"
+      v-model:url="marketForm.url"
+      @confirm="handleAddMarketplace"
+    />
 
   </div>
 </template>
@@ -304,7 +195,11 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElNotification } from 'element-plus'
 import { confirm } from '@/utils/confirm'
-import AppModal from '@/components/AppModal.vue'
+import InstalledPluginCard from './components/InstalledPluginCard.vue'
+import MarketplaceCard from './components/MarketplaceCard.vue'
+import MarketplacePluginItem from './components/MarketplacePluginItem.vue'
+import PluginFavoriteCard from './components/PluginFavoriteCard.vue'
+import AddMarketplaceModal from './components/AddMarketplaceModal.vue'
 import { pluginsApi } from '@/api/plugins'
 import { getErrorMessage } from '@/utils/error'
 import type { MarketplaceInfo, PluginItem, PluginFavoriteItem } from '@/types/models'
@@ -531,6 +426,14 @@ async function handleAddFavorite(plugin: PluginItem) {
   }
 }
 
+async function handleInstalledPluginFavorite(plugin: PluginItem) {
+  if (favoriteIds.value.has(getPluginId(plugin))) {
+    await handleRemoveFavorite(plugin)
+  } else {
+    await handleAddFavorite(plugin)
+  }
+}
+
 async function handleRemoveFavorite(plugin: PluginItem) {
   loadingInstalledOperation.value = true
   const pluginId = getPluginId(plugin)
@@ -703,90 +606,14 @@ onMounted(() => {
 /* Header */
 .page-title.text-20 { margin: 0; }
 
-/* Grid & Cards (Installed) */
 .skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 24px; }
-.skill-card {
-  background: var(--color-bg); border-radius: 16px; border: 1px solid var(--color-border); padding: 24px;
-  box-shadow: 0 4px 12px var(--color-shadow); display: flex; flex-direction: column; gap: 20px;
-}
 
-.card-top { display: flex; gap: 16px; align-items: flex-start; }
-.skill-icon {
-  width: 48px; height: 48px; border-radius: 12px; background: var(--color-primary-lighter); color: var(--color-primary);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.skill-info { flex: 1; min-width: 0; }
-.skill-name {
-  font-size: var(--fs-16); font-weight: var(--fw-700); color: var(--color-text); margin: 0 0 4px 0;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; text-overflow: ellipsis;
-}.plugin-ver { font-size: var(--fs-12); color: var(--color-text-weak); }
-.skill-market {
-  font-size: var(--fs-12); color: var(--color-text-muted); font-weight: var(--fw-400);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
-.card-actions { display: flex; gap: 4px; flex-shrink: 0; }
-
-/* CLI Toggles */
-.cli-toggles { display: flex; flex-direction: column; gap: 12px; background: var(--color-bg-page); padding: 16px; border-radius: 12px; }
-.toggle-item { display: flex; justify-content: space-between; align-items: center; }
-.toggle-label { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-secondary); }
-
-/* Repo Grid (Available) */
 .repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
-.repo-card {
-  background: var(--color-bg); border-radius: 16px; border: 1px solid var(--color-bg-subtle); padding: 20px;
-  cursor: pointer; position: relative; transition: all 0.2s; display: flex; align-items: center; gap: 16px;
-}
-.repo-card:hover { border-color: var(--color-primary); background: var(--color-bg-page); }
 
-.repo-icon-box {
-  width: 40px; height: 40px; border-radius: 10px; background: var(--color-bg-subtle); color: var(--color-text-muted);
-  display: flex; align-items: center; justify-content: center;
-}
-.repo-info-main { flex: 1; min-width: 0; }
-.repo-name-title { font-weight: var(--fw-700); font-size: var(--fs-14); color: var(--color-text); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.repo-source-subtitle { font-size: var(--fs-12); color: var(--color-text-weak); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.repo-actions-overlay { display: flex; gap: 4px; flex-shrink: 0; }
-
-/* Discover List */
 .discover-list { background: var(--color-bg); border-radius: 16px; overflow: hidden; border: 1px solid var(--color-bg-subtle); }
-.discover-item {
-  display: flex; justify-content: space-between; align-items: center; padding: 20px 24px;
-  border-bottom: 1px solid var(--color-bg-subtle); transition: background 0.2s;
-}
-.discover-item:last-child { border-bottom: none; }
-.discover-item:hover { background: var(--color-bg-page); }
-.discover-info { flex: 1; min-width: 0; padding-right: 40px; }
-.discover-name-row { margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
-.discover-name { font-weight: var(--fw-700); font-size: var(--fs-14); color: var(--color-text); }
-.discover-desc {
-  font-size: var(--fs-14); color: var(--color-text-muted); line-height: 1.5; cursor: pointer;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.discover-actions { flex-shrink: 0; display: flex; gap: 4px; }
 
-/* Favorites */
 .favorite-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
-.fav-card { background: var(--color-bg); border-radius: 16px; border: 1px solid var(--color-bg-subtle); padding: 20px; }
-.fav-main { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-.fav-info { min-width: 0; flex: 1; }
-.fav-name {
-  font-weight: var(--fw-700); font-size: var(--fs-16); color: var(--color-text); margin-bottom: 4px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; text-overflow: ellipsis;
-}.fav-market {
-  font-size: var(--fs-12); color: var(--color-text-weak);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.fav-actions { flex-shrink: 0; display: flex; gap: 4px; }
 
-/* Shared styles */
 .search-box { position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-weak); }
 

@@ -9,7 +9,6 @@
               <div class="status-dot" :class="{ running: getCliEnabled(cli.type) }"></div>
               <div class="cli-title">
                 {{ cli.label }}
-                <span v-if="!getCliEnabled(cli.type)" class="cli-disabled">(已禁用)</span>
               </div>
             </div>
             <el-switch :model-value="getCliEnabled(cli.type)" @change="(val: string | number | boolean) => handleCliToggle(cli.type, val as boolean)" :loading="cliLoading[cli.type]" />
@@ -444,17 +443,5 @@ onMounted(() => {
 
 /* Stats Table Wrapper */
 .stats-table-wrapper { overflow-y: auto; }
-
-.custom-select { position: relative; width: 160px; }
-.custom-select-trigger { padding: 9px 36px 9px 16px; border: 1px solid var(--color-border); border-radius: 8px; font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text); background: color-mix(in srgb, var(--color-bg) 80%, transparent); box-shadow: 0 1px 3px var(--color-shadow); cursor: pointer; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
-.custom-select:hover .custom-select-trigger { border-color: var(--color-border-hover); background: var(--color-bg); }
-.custom-select.open .custom-select-trigger { border-color: var(--color-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent); background: var(--color-bg); }
-.custom-select .chevron { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); pointer-events: none; transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-.custom-select.open .chevron { transform: translateY(-50%) rotate(180deg); color: var(--color-primary); }
-.custom-select-options { position: absolute; top: calc(100% + 6px); left: 0; right: auto; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 10px 40px -10px var(--color-shadow-lg); padding: 4px; z-index: 50; opacity: 0; transform: translateY(-5px); pointer-events: none; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); min-width: 100%; max-height: 250px; overflow-y: auto; }
-.custom-select.open .custom-select-options { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.custom-option { padding: 10px 12px; border-radius: 8px; font-size: var(--fs-14); color: var(--color-text-secondary); cursor: pointer; transition: all 0.1s; display: flex; align-items: center; margin-bottom: 2px; }
-.custom-option:hover { background: var(--color-bg-subtle); color: var(--color-text); }
-.custom-option.selected { font-weight: var(--fw-600); color: var(--color-primary); background: var(--color-primary-light); }
 
 </style>

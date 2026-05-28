@@ -32,6 +32,9 @@ impl<'a> SchemaMigrator<'a> {
                 SchemaChange::CreateTable { definition } => {
                     self.create_table_tx(&mut tx, &definition).await?;
                 }
+                SchemaChange::AddColumn { table, column } => {
+                    self.add_column_tx(&mut tx, &table, &column).await?;
+                }
                 SchemaChange::RebuildTable { name } => {
                     self.rebuild_table_tx(&mut tx, &name).await?;
                 }
@@ -63,6 +66,18 @@ impl<'a> SchemaMigrator<'a> {
     ) -> Result<(), sqlx::Error> {
         tracing::info!("创建表: {}", definition.name);
         let sql = definition.to_create_sql();
+        sqlx::query(&sql).execute(&mut **tx).await?;
+        Ok(())
+    }
+
+    async fn add_column_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        table: &str,
+        column: &super::schema_definition::ColumnDefinition,
+    ) -> Result<(), sqlx::Error> {
+        tracing::info!("表 {} 新增列: {}", table, column.name);
+        let sql = format!("ALTER TABLE {} ADD COLUMN {}", table, column.to_sql());
         sqlx::query(&sql).execute(&mut **tx).await?;
         Ok(())
     }
@@ -108,7 +123,8 @@ impl<'a> SchemaMigrator<'a> {
 
         // 4. 重建表
         // 4.1 重命名旧表
-        let rename_sql = format!("ALTER TABLE {} RENAME TO {}_old", table, table);
+        let old_table = format!("{}_old_{}", table, uuid::Uuid::new_v4().simple());
+        let rename_sql = format!("ALTER TABLE {} RENAME TO {}", table, old_table);
         sqlx::query(&rename_sql).execute(&mut **tx).await?;
 
         // 4.2 创建新表（使用期望的结构）
@@ -117,13 +133,13 @@ impl<'a> SchemaMigrator<'a> {
         // 4.3 复制数据（只复制共同列）
         let column_list = keep_columns.join(", ");
         let copy_sql = format!(
-            "INSERT INTO {} ({}) SELECT {} FROM {}_old",
-            table, column_list, column_list, table
+            "INSERT INTO {} ({}) SELECT {} FROM {}",
+            table, column_list, column_list, old_table
         );
         sqlx::query(&copy_sql).execute(&mut **tx).await?;
 
         // 4.4 删除旧表
-        let drop_sql = format!("DROP TABLE {}_old", table);
+        let drop_sql = format!("DROP TABLE {}", old_table);
         sqlx::query(&drop_sql).execute(&mut **tx).await?;
 
         tracing::info!("表 {} 重建完成", table);

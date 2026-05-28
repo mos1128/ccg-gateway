@@ -72,6 +72,7 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
 
     // 8. 版本检查
     if current_version >= expected_schema.version {
+        create_schema_indexes(&pool, &expected_schema).await?;
         tracing::info!("数据库已是最新版本，跳过迁移");
         return Ok(pool);
     }
@@ -92,6 +93,8 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
         migrator.apply(diff).await?;
         tracing::info!("数据库迁移完成");
     }
+
+    create_schema_indexes(&pool, &expected_schema).await?;
 
     // 13. 更新版本
     update_version(&pool, expected_schema.version).await?;
@@ -170,6 +173,16 @@ async fn create_fresh_database(
     update_version(pool, schema.version).await?;
 
     tracing::info!("全新数据库创建完成，版本: {}", schema.version);
+    Ok(())
+}
+
+async fn create_schema_indexes(
+    pool: &SqlitePool,
+    schema: &DatabaseSchema,
+) -> Result<(), sqlx::Error> {
+    for index in &schema.indexes {
+        sqlx::query(&index.to_create_sql()).execute(pool).await?;
+    }
     Ok(())
 }
 

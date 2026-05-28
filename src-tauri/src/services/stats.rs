@@ -1,6 +1,7 @@
 use crate::config::get_data_dir;
 use crate::db::models::RequestLogInfo;
 use crate::time::{local_date_from_timestamp, now_timestamp, today_local_date};
+use chrono::{Duration, Local, NaiveDate};
 use sqlx::{FromRow, Sqlite, SqlitePool, Transaction};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -459,6 +460,47 @@ pub async fn clear_request_log_detail_files() -> std::io::Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+pub async fn cleanup_request_log_detail_files(retention_days: i64) -> std::io::Result<()> {
+    if retention_days <= 0 {
+        return Ok(());
+    }
+
+    let dir = get_data_dir().join(REQUEST_DETAIL_DIR);
+    let mut entries = match tokio::fs::read_dir(&dir).await {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+
+    let cutoff = Local::now().date_naive() - Duration::days(retention_days);
+    while let Some(entry) = entries.next_entry().await? {
+        let file_type = entry.file_type().await?;
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let Some(day) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        let Ok(day) = NaiveDate::parse_from_str(&day, "%Y-%m-%d") else {
+            continue;
+        };
+
+        if day < cutoff {
+            let path = entry.path();
+            if let Err(e) = tokio::fs::remove_dir_all(&path).await {
+                tracing::warn!(
+                    error = %e,
+                    path = %path.display(),
+                    "Failed to remove expired request detail directory"
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Record a request log entry, returns the inserted log ID

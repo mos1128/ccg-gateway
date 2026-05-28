@@ -6,6 +6,7 @@ import type {
   RequestLogListItem,
   SystemLogListResponse,
   GatewaySettings,
+  GatewaySettingsRaw,
   GatewaySettingsUpdate
 } from '@/types/models'
 
@@ -24,18 +25,18 @@ export interface SystemLogQuery {
 
 export const logsApi = {
   getSettings: async () => {
-    const data = await invoke<{ debug_log: number; log_detail_mode: string }>('get_gateway_settings')
+    const data = await invoke<GatewaySettingsRaw>('get_gateway_settings')
     return {
       data: {
         debug_log: !!data.debug_log,
-        log_detail_mode: data.log_detail_mode as 'full' | 'failure_only'
+        log_detail_mode: data.log_detail_mode as 'full' | 'failure_only',
       } as GatewaySettings
     }
   },
   updateSettings: async (data: GatewaySettingsUpdate) => {
     await invoke('update_gateway_settings', {
       debugLog: data.debug_log,
-      logDetailMode: data.log_detail_mode
+      logDetailMode: data.log_detail_mode,
     })
     return { data: null }
   },
@@ -55,6 +56,18 @@ export const logsApi = {
   },
   clearRequestLogs: async () => {
     await invoke('clear_request_logs')
+    return { data: null }
+  },
+  clearRequestDetailFiles: async () => {
+    await invoke('clear_request_detail_files')
+    return { data: null }
+  },
+  clearOldRequestLogs: async (days: number) => {
+    await invoke('clear_old_request_logs', { days })
+    return { data: null }
+  },
+  clearOldRequestDetailFiles: async (days: number) => {
+    await invoke('clear_old_request_detail_files', { days })
     return { data: null }
   },
   listenRequestLogs: (callback: (log: RequestLogListItem) => void): Promise<UnlistenFn> => {

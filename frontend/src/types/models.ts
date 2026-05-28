@@ -182,6 +182,11 @@ export interface GatewaySettings {
   log_detail_mode: 'full' | 'failure_only'
 }
 
+export interface GatewaySettingsRaw {
+  debug_log: number
+  log_detail_mode: string
+}
+
 export interface TimeoutSettings {
   stream_first_byte_timeout: number
   stream_idle_timeout: number
@@ -214,6 +219,7 @@ export interface AllSettings {
   gateway: GatewaySettings
   timeouts: TimeoutSettings
   cli_settings: Record<CliType, CliSettings>
+  status: SystemStatus
 }
 
 export interface GatewaySettingsUpdate {

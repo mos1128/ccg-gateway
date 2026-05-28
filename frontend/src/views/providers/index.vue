@@ -149,13 +149,15 @@
     </div>
 
     <!-- PROXY MODE LIST -->
-    <div v-if="viewMode === 'proxy'" class="b-card list-container" v-loading="providerStore.loading">
-      <div v-if="providerStore.providers.length === 0" class="empty-state">
-        <svg width="64" height="64" color="var(--color-border)"><use href="#icon-cloud"/></svg>
-        <p>暂无服务商</p>
+    <template v-if="viewMode === 'proxy'">
+      <div v-if="providerStore.providers.length === 0" v-loading="providerStore.loading" class="list-container">
+        <div class="empty-state">
+          <svg width="64" height="64" color="var(--color-border)"><use href="#icon-cloud"/></svg>
+          <p>暂无服务商</p>
+        </div>
       </div>
-      
-      <div v-else class="scroll-area">
+      <div v-else class="b-card list-container" v-loading="providerStore.loading">
+        <div class="scroll-area">
         <draggable
           v-model="providerStore.providers"
           item-key="id"
@@ -163,86 +165,34 @@
           @end="handleDragEnd"
         >
           <template #item="{ element, index }">
-            <div :style="{
-              padding: '24px',
-              borderBottom: index === providerStore.providers.length - 1 ? 'none' : '1px solid var(--color-bg-subtle)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: element.is_blacklisted ? 'var(--color-error-2)' : 'var(--color-bg)'
-            }">
-              <div style="display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0;">
-                <div class="drag-handle" aria-label="拖拽排序" style="flex-shrink: 0;">
-                  <div class="drag-dot"></div><div class="drag-dot"></div><div class="drag-dot"></div>
-                </div>
-                
-                <div style="flex: 1; min-width: 0;">
-                  <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                    <div class="text-16 fw-medium text-primary" style="white-space: nowrap;" :style="{ color: !element.enabled ? 'var(--color-text-weak)' : 'var(--color-text)' }">
-                      {{ element.name }}
-                    </div>
-                    <div v-if="element.is_blacklisted" class="tag" style="background: var(--color-error-10); color: var(--color-error); white-space: nowrap;">
-                      {{ getUnblacklistTime(element) }}
-                    </div>
-                    <div v-else-if="!element.enabled" class="tag" style="background: var(--color-bg-subtle); color: var(--color-text-muted); white-space: nowrap;">
-                      已禁用
-                    </div>
-                    <div v-if="element.model_maps.length > 0" class="tag" style="background: var(--color-success-10); color: var(--color-success); white-space: nowrap;">
-                      {{ formatModelMaps(element.model_maps) }}
-                    </div>
-                    <div v-if="element.model_blacklist && element.model_blacklist.length > 0" class="tag" style="background: var(--color-warning-10); color: var(--color-warning); white-space: nowrap;">
-                      {{ element.model_blacklist.length }}个黑名单配置
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div style="display: flex; align-items: center; gap: 40px; flex-shrink: 0; margin-left: 24px;">
-                <div style="display: flex; gap: 24px;">
-                  <div style="display: flex; flex-direction: column; align-items: center; min-width: 64px;">
-                    <div class="text-12 text-muted" style="margin-bottom: 2px; white-space: nowrap;">失败阈值</div>
-                    <div class="mono text-16" :style="{ 'font-weight': 'var(--fw-500)', color: element.consecutive_failures >= element.failure_threshold ? 'var(--color-danger)' : 'var(--color-text)' }">
-                      {{ element.consecutive_failures }}/{{ element.failure_threshold }}
-                    </div>
-                  </div>
-                </div>
-                
-                <div style="display: flex; align-items: center; gap: 24px;">
-                  <el-switch v-model="element.enabled" @change="handleToggle(element)" />
-                  
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <div class="action-icon" @click="handleCopyProvider(element)" title="复制">
-                      <svg width="18" height="18"><use href="#icon-copy"/></svg>
-                    </div>
-
-                    <div class="action-icon" @click="handleEdit(element)" title="编辑">
-                      <svg width="18" height="18"><use href="#icon-edit"/></svg>
-                    </div>
-                    
-                    <div class="action-icon" @click="handleReset(element)" title="重置并解除拉黑">
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </div>
-
-                    <div class="action-icon delete" @click="handleCommand('delete', element)" title="删除">
-                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ProviderListItem
+              :provider="element"
+              :is-last="index === providerStore.providers.length - 1"
+              :model-maps-text="formatModelMaps(element.model_maps)"
+              :unblacklist-text="getUnblacklistTime(element)"
+              :toggle-loading="toggleLoadingId === element.id"
+              @copy="handleCopyProvider"
+              @edit="handleEdit"
+              @reset="handleReset"
+              @delete="provider => handleCommand('delete', provider)"
+              @toggle="handleToggle"
+            />
           </template>
         </draggable>
+        </div>
       </div>
-    </div>
+    </template>
 
     <!-- DIRECT MODE -->
-    <div v-else class="b-card list-container" v-loading="credentialStore.loading">
-      <div v-if="credentialStore.credentials.length === 0" class="empty-state">
-        <svg width="64" height="64" color="var(--color-border)"><use href="#icon-key"/></svg>
-        <p>暂无凭证</p>
+    <template v-else>
+      <div v-if="credentialStore.credentials.length === 0" v-loading="credentialStore.loading" class="list-container">
+        <div class="empty-state">
+          <svg width="64" height="64" color="var(--color-border)"><use href="#icon-key"/></svg>
+          <p>暂无凭证</p>
+        </div>
       </div>
-      
-      <div v-else class="scroll-area">
+      <div v-else class="b-card list-container" v-loading="credentialStore.loading">
+        <div class="scroll-area">
         <draggable
           v-model="credentialStore.credentials"
           item-key="id"
@@ -250,247 +200,53 @@
           @end="handleCredentialDragEnd"
         >
           <template #item="{ element, index }">
-            <div :style="{
-              padding: '24px',
-              borderBottom: index === credentialStore.credentials.length - 1 ? 'none' : '1px solid var(--color-bg-subtle)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              background: 'var(--color-bg)'
-            }">
-              <div style="display: flex; align-items: center; gap: 16px;">
-                <div class="drag-handle" aria-label="拖拽排序">
-                  <div class="drag-dot"></div><div class="drag-dot"></div><div class="drag-dot"></div>
-                </div>
-                
-                <div>
-                  <div style="display: flex; align-items: center; gap: 12px;">
-                    <div class="text-16 fw-medium text-primary">{{ element.name }}</div>
-                    <div v-if="element.is_active" class="tag" style="background: var(--color-success-10); color: var(--color-success);">激活中</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <div class="action-icon" @click="handleEditCredential(element)" title="编辑">
-                  <svg width="18" height="18"><use href="#icon-edit"/></svg>
-                </div>
-                <div class="action-icon delete" @click="handleDeleteCredential(element)" title="删除">
-                  <svg width="18" height="18"><use href="#icon-trash"/></svg>
-                </div>
-              </div>
-            </div>
+            <CredentialListItem
+              :credential="element"
+              :is-last="index === credentialStore.credentials.length - 1"
+              @edit="handleEditCredential"
+              @delete="handleDeleteCredential"
+            />
           </template>
         </draggable>
-      </div>
-    </div>
-
-    <!-- Add/Edit Provider Modal -->
-    <AppModal v-model="showDialog" :title="editingProvider ? '编辑服务商' : '添加服务商'" width="720px" @confirm="handleSave">
-      <div style="display: flex; gap: 32px; margin-bottom: 32px;">
-            <div style="flex: 1;">
-              <label class="c-label">服务商名称 <span class="required">*</span></label>
-              <input type="text" v-model="form.name" class="b-input" placeholder="例如: OpenAI 官方">
-            </div>
-            <div style="flex: 1;">
-              <label class="c-label">Base URL <span class="required">*</span></label>
-              <input type="text" v-model="form.base_url" class="b-input" :placeholder="baseUrlPlaceholder">
-            </div>
-          </div>
-          
-          <div style="margin-bottom: 40px;">
-            <label class="c-label">{{ activeCliType === 'claude_code' ? 'API Token' : 'API Key' }} <span class="required">*</span></label>
-            <input type="text" v-model="form.api_key" class="b-input" placeholder="sk-...">
-          </div>
-
-          <!-- Advanced Params -->
-          <div style="display: flex; gap: 32px; margin-bottom: 40px; padding: 32px 24px; background: var(--color-bg-page); border-radius: 12px; border: 1px solid var(--color-bg-subtle);">
-            <div style="flex: 1;">
-              <label class="c-label">失败鉴权阈值 (次)</label>
-              <input type="number" v-model.number="form.failure_threshold" class="b-input">
-            </div>
-            <div style="flex: 1;">
-              <label class="c-label">拉黑时长 (分钟)</label>
-              <input type="number" v-model.number="form.blacklist_minutes" class="b-input">
-            </div>
-            <div style="flex: 1;">
-              <label class="c-label">自定义 UA (选填)</label>
-              <input type="text" v-model="form.custom_useragent" class="b-input" placeholder="留空则使用原始">
-            </div>
-          </div>
-
-          <!-- Model Maps Section -->
-          <div style="margin-bottom: 40px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-              <div>
-                <div class="text-16 fw-normal text-primary">模型映射</div>
-                <div class="text-12 text-secondary" style="margin-top: 6px;">映射 CLI 请求的源模型名称为服务商模型</div>
-              </div>
-              <button class="b-button-outline text-14" style="padding: 6px 12px;" @click="addModelMap">+ 添加</button>
-            </div>
-
-            <div style="display: flex; flex-direction: column; gap: 20px;">
-              <div v-for="(map, index) in form.model_maps" :key="'map-'+index" style="display: flex; gap: 16px; align-items: center;">
-                <input type="text" v-model="map.source_model" class="b-input" placeholder="CLI 源模型" style="flex: 1;">
-                <div class="text-secondary fw-normal">→</div>
-                <input type="text" v-model="map.target_model" class="b-input" placeholder="服务商模型" style="flex: 1;">
-                <div class="b-button-icon" @click="removeModelMap(index)">×</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Model Blacklist Section -->
-          <div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-              <div>
-                <div class="text-16 fw-normal text-primary">模型黑名单</div>
-                <div class="text-12 text-secondary" style="margin-top: 6px;">配置服务商不支持的模型名称</div>
-              </div>
-              <button class="b-button-outline text-14" style="padding: 6px 12px;" @click="addModelBlacklist">+ 添加</button>
-            </div>
-
-            <div style="display: flex; flex-direction: column; gap: 20px;">
-              <div v-for="(item, index) in form.model_blacklist" :key="'blk-'+index" style="display: flex; gap: 16px; align-items: center;">
-                 <input type="text" v-model="item.model_pattern" class="b-input" placeholder="模型名称" style="flex: 1;">
-                 <div class="b-button-icon" @click="removeModelBlacklist(index)">×</div>
-              </div>
-            </div>
-          </div>
-    </AppModal>
-    <!-- / Add Provider Modal -->
-
-    <!-- Add/Edit Credential Modal -->
-    <AppModal v-model="showCredentialDialog" :title="editingCredential ? '编辑凭证' : '添加凭证'" width="720px" @confirm="handleSaveCredential">
-          <div style="margin-bottom: 32px;">
-            <label class="c-label">凭证名称 <span class="required">*</span></label>
-            <input type="text" v-model="credentialForm.name" class="b-input" placeholder="例如: 个人主账号">
-          </div>
-
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-            <div class="text-16 fw-normal text-primary">配置文件</div>
-            <button class="b-button-outline text-14" style="padding: 6px 12px;" @click="handleReadFromCli">读取当前 CLI 配置</button>
-          </div>
-
-          <template v-if="activeCliType === 'claude_code'">
-             <div style="margin-bottom: 24px;">
-               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.claude/settings.json</div>
-               <textarea class="b-input mono" rows="10" v-model="credentialForm.claude_settings" placeholder='{"ANTHROPIC_API_KEY": "..."}'></textarea>
-             </div>
-          </template>
-
-          <template v-if="activeCliType === 'codex'">
-            <div style="margin-bottom: 24px;">
-               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.codex/auth.json</div>
-               <textarea class="b-input mono" rows="10" v-model="credentialForm.codex_auth"></textarea>
-             </div>
-          </template>
-
-          <template v-if="activeCliType === 'gemini'">
-             <div style="margin-bottom: 24px;">
-               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.gemini/oauth_creds.json</div>
-               <textarea class="b-input mono" rows="4" v-model="credentialForm.gemini_oauth"></textarea>
-             </div>
-             <div style="margin-bottom: 24px;">
-               <div class="text-12 text-secondary" style="margin-bottom: 8px;">~/.gemini/google_accounts.json</div>
-               <textarea class="b-input mono" rows="3" v-model="credentialForm.gemini_accounts"></textarea>
-             </div>
-          </template>
-    </AppModal>
-
-    <!-- Model Detection Modal -->
-    <AppModal v-model="showDetectDialog" title="检测模型可用性" width="800px" :show-footer="true" confirm-text="开始检测" @confirm="handleStartDetect">
-      <!-- Model Input -->
-      <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px;">
-        <div style="flex: 1;">
-          <label class="c-label">检测模型</label>
-          <input type="text" v-model="detectModel" class="b-input" placeholder="输入模型名称">
         </div>
       </div>
+    </template>
 
-      <!-- Provider Checkboxes -->
-      <div style="margin-bottom: 24px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <label class="c-label" style="margin-bottom: 0;">选择服务商</label>
-          <span class="text-12 text-info fw-normal" style="cursor: pointer;" @click="toggleAllDetectProviders">
-            {{ isAllDetectSelected ? '取消全选' : '全选' }}
-          </span>
-        </div>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <label
-            v-for="p in detectProviderList"
-            :key="p.id"
-            class="text-14"
-            style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border-radius: 8px; transition: all 0.2s; user-select: none;"
-            :style="{
-              color: detectSelectedIds.includes(p.id) ? 'var(--color-text)' : 'var(--color-text-weak)',
-              border: detectSelectedIds.includes(p.id) ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-              background: detectSelectedIds.includes(p.id) ? 'var(--color-primary-5)' : 'var(--color-bg)'
-            }"
-            @click="toggleDetectProvider(p.id)"
-          >
-            <div
-              style="width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0;"
-              :style="{
-                border: detectSelectedIds.includes(p.id) ? '2px solid var(--color-primary)' : '2px solid var(--color-border)',
-                background: detectSelectedIds.includes(p.id) ? 'var(--color-primary)' : 'transparent'
-              }"
-            >
-              <span v-if="detectSelectedIds.includes(p.id)" class="text-12 fw-bold" style="color: var(--color-bg);">✓</span>
-            </div>
-            {{ p.name }}
-          </label>
-        </div>
-        <div v-if="detectProviderList.length === 0" class="text-muted text-14" style="padding: 8px 0;">
-          当前 CLI 类型无已启用的服务商
-        </div>
-      </div>
+    <ProviderEditModal
+      v-model="showDialog"
+      :title="editingProvider ? '编辑服务商' : '添加服务商'"
+      :form="form"
+      :active-cli-type="activeCliType"
+      :base-url-placeholder="baseUrlPlaceholder"
+      @confirm="handleSave"
+      @add-model-map="addModelMap"
+      @remove-model-map="removeModelMap"
+      @add-model-blacklist="addModelBlacklist"
+      @remove-model-blacklist="removeModelBlacklist"
+    />
 
-      <!-- Results Table -->
-      <div v-if="detectResults.length > 0 || detectLoading" style="border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px var(--color-shadow);">
-        <table class="flat-table">
-          <colgroup>
-            <col style="width: 20%;"><col style="width: 25%;"><col style="width: 12%;"><col style="width: 13%;"><col style="width: 30%;">
-          </colgroup>
-          <thead>
-            <tr>
-              <th>服务商</th><th>测试模型</th><th>状态码</th><th>耗时</th><th>响应</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in detectResults" :key="r.provider_id">
-              <td class="fw-normal">{{ r.provider_name }}</td>
-              <td class="mono">{{ r.actual_model }}</td>
-              <td>
-                <span v-if="r.status_code === null && r.elapsed_ms === 0" class="pill pill-grey">...</span>
-                <span v-else-if="r.status_code !== null" :class="['pill', getDetectPill(r.status_code)]">{{ r.status_code }}</span>
-                <span v-else class="pill pill-red">ERR</span>
-              </td>
-              <td class="mono">
-                <span v-if="r.status_code === null && r.elapsed_ms === 0">-</span>
-                <span v-else>{{ r.elapsed_ms }}ms</span>
-              </td>
-              <td :style="{ color: r.status_code !== null && r.status_code >= 200 && r.status_code < 300 ? 'var(--color-text-muted)' : (r.status_code === null && r.elapsed_ms === 0 ? 'var(--color-text-weak)' : 'var(--color-error)') }">
-                <span v-if="r.status_code === null && r.elapsed_ms === 0" style="font-style: italic;">Testing...</span>
-                <el-tooltip
-                  v-else
-                  effect="light"
-                  placement="top"
-                  :enterable="true"
-                  :show-after="200"
-                >
-                  <template #content>
-                    <div class="text-14" style="max-width: 350px; line-height: 1.6; word-break: break-word; user-select: text; color: var(--color-text-dark);">
-                      {{ r.response_text }}
-                    </div>
-                  </template>
-                  <span style="cursor: pointer;" @click="copyResponseText(r.response_text)">{{ r.response_text }}</span>
-                </el-tooltip>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </AppModal>
+    <CredentialEditModal
+      v-model="showCredentialDialog"
+      :title="editingCredential ? '编辑凭证' : '添加凭证'"
+      :form="credentialForm"
+      :active-cli-type="activeCliType"
+      @confirm="handleSaveCredential"
+      @read-from-cli="handleReadFromCli"
+    />
+
+    <ModelDetectionModal
+      v-model="showDetectDialog"
+      v-model:model="detectModel"
+      :providers="detectProviderList"
+      :selected-ids="detectSelectedIds"
+      :is-all-selected="isAllDetectSelected"
+      :loading="detectLoading"
+      :results="detectResults"
+      @confirm="handleStartDetect"
+      @toggle-all="toggleAllDetectProviders"
+      @toggle-provider="toggleDetectProvider"
+      @copy-response="copyResponseText"
+    />
   </div>
 </template>
 
@@ -500,7 +256,11 @@ import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import draggable from 'vuedraggable'
-import AppModal from '@/components/AppModal.vue'
+import ProviderListItem from './components/ProviderListItem.vue'
+import CredentialListItem from './components/CredentialListItem.vue'
+import ProviderEditModal from './components/ProviderEditModal.vue'
+import CredentialEditModal from './components/CredentialEditModal.vue'
+import ModelDetectionModal from './components/ModelDetectionModal.vue'
 import { useProviderStore } from '@/stores/providers'
 import { useCredentialStore } from '@/stores/credentials'
 import { useUiStore } from '@/stores/ui'
@@ -638,6 +398,9 @@ interface ProviderDraft {
   model_maps: FormModelMap[]
   model_blacklist: FormModelBlacklist[]
 }
+interface ProviderTogglePayload { provider: Provider; enabled: boolean }
+
+const toggleLoadingId = ref<number | null>(null)
 
 const form = ref({
   name: '',
@@ -822,14 +585,6 @@ async function handleStartDetect() {
     notify(getErrorMessage(e, '检测失败'), 'error')
     detectLoading.value = false
   }
-}
-
-function getDetectPill(code: number | null): string {
-  if (!code) return 'pill-grey'
-  if (code >= 200 && code < 300) return 'pill-green'
-  if (code >= 400 && code < 500) return 'pill-grey'
-  if (code >= 500) return 'pill-red'
-  return 'pill-grey'
 }
 
 async function copyResponseText(text: string) {
@@ -1056,12 +811,16 @@ async function handleSave() {
   }
 }
 
-async function handleToggle(provider: Provider) {
+async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
+  toggleLoadingId.value = provider.id
   try {
-    await providerStore.updateProvider(provider.id, { enabled: provider.enabled })
-    notify(provider.enabled ? '已启用' : '已停用')
-  } catch {
-    provider.enabled = !provider.enabled
+    await providerStore.updateProvider(provider.id, { enabled })
+    provider.enabled = enabled
+    notify(enabled ? '已启用' : '已停用')
+  } catch (e: any) {
+    notify(getErrorMessage(e, '切换失败'), 'error')
+  } finally {
+    toggleLoadingId.value = null
   }
 }
 
@@ -1331,16 +1090,4 @@ onUnmounted(() => {
 
 
 .b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); margin-bottom: 24px; border: none; overflow: hidden; }
-
-.b-button-icon { background: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text-muted); width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; }
-.b-button-icon:hover { background: var(--color-danger-light); color: var(--color-danger); border-color: var(--color-danger-muted); }
-
-.tag { padding: 4px 10px; border-radius: 999px; font-size: var(--fs-12); font-weight: var(--fw-400); }
-
-.drag-handle { display: flex; flex-direction: column; gap: 3px; cursor: grab; padding: 8px; margin-left: -8px; opacity: 0.3; transition: opacity 0.2s; }
-.drag-handle:hover { opacity: 0.8; }
-.drag-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--color-text-muted); }
-
-
 </style>
->

@@ -22,7 +22,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onUnmounted, watch } from 'vue'
+
+// Global stack to track open modals - only the topmost responds to ESC
+const modalStack: symbol[] = []
+const modalId = Symbol('modal')
 
 const props = withDefaults(defineProps<{
   modelValue: boolean
@@ -54,6 +58,16 @@ function handleClose() {
   emit('update:modelValue', false)
 }
 
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && props.modelValue) {
+    // Only the topmost modal in the stack responds to ESC
+    if (modalStack[modalStack.length - 1] !== modalId) return
+    if (props.cancelDisabled) return
+    event.stopPropagation()
+    handleCancel()
+  }
+}
+
 function handleCancel() {
   emit('cancel')
   handleClose()
@@ -62,6 +76,27 @@ function handleCancel() {
 function handleConfirm() {
   emit('confirm')
 }
+
+watch(
+  () => props.modelValue,
+  (visible) => {
+    if (visible) {
+      modalStack.push(modalId)
+      window.addEventListener('keydown', handleKeydown)
+    } else {
+      const idx = modalStack.indexOf(modalId)
+      if (idx >= 0) modalStack.splice(idx, 1)
+      window.removeEventListener('keydown', handleKeydown)
+    }
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  const idx = modalStack.indexOf(modalId)
+  if (idx >= 0) modalStack.splice(idx, 1)
+  window.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <style scoped>

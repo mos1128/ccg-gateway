@@ -9,6 +9,40 @@ pub struct ColumnDefinition {
     pub default_value: Option<String>,
 }
 
+impl ColumnDefinition {
+    pub fn to_sql(&self) -> String {
+        let mut parts = vec![self.name.clone(), self.data_type.clone()];
+
+        if !self.nullable {
+            parts.push("NOT NULL".to_string());
+        }
+
+        if let Some(ref default) = self.default_value {
+            parts.push(format!("DEFAULT {}", default));
+        }
+
+        parts.join(" ")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IndexDefinition {
+    pub name: String,
+    pub table: String,
+    pub columns: Vec<String>,
+}
+
+impl IndexDefinition {
+    pub fn to_create_sql(&self) -> String {
+        format!(
+            "CREATE INDEX IF NOT EXISTS {} ON {} ({})",
+            self.name,
+            self.table,
+            self.columns.join(", ")
+        )
+    }
+}
+
 /// 表定义
 #[derive(Debug, Clone)]
 pub struct TableDefinition {
@@ -27,19 +61,7 @@ impl TableDefinition {
         let column_defs: Vec<String> = self
             .columns
             .iter()
-            .map(|col| {
-                let mut parts = vec![col.name.clone(), col.data_type.clone()];
-
-                if !col.nullable {
-                    parts.push("NOT NULL".to_string());
-                }
-
-                if let Some(ref default) = col.default_value {
-                    parts.push(format!("DEFAULT {}", default));
-                }
-
-                format!("    {}", parts.join(" "))
-            })
+            .map(|col| format!("    {}", col.to_sql()))
             .collect();
 
         sql.push_str(&column_defs.join(",\n"));
@@ -68,31 +90,37 @@ impl TableDefinition {
 pub struct DatabaseSchema {
     pub version: i64,
     pub tables: HashMap<String, TableDefinition>,
+    pub indexes: Vec<IndexDefinition>,
 }
 
 impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 23,
+            version: 25,
             tables: Self::define_main_tables(),
+            indexes: Vec::new(),
         }
     }
 
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 12,
+            version: 13,
             tables: Self::define_log_tables(),
+            indexes: Self::define_log_indexes(),
         }
     }
 
     /// 生成所有表的 CREATE SQL
     pub fn to_create_all_sql(&self) -> Vec<String> {
-        self.tables
+        let mut sql: Vec<String> = self
+            .tables
             .values()
             .map(|table| table.to_create_sql())
-            .collect()
+            .collect();
+        sql.extend(self.indexes.iter().map(|index| index.to_create_sql()));
+        sql
     }
 
     /// 定义主数据库表
@@ -1323,5 +1351,35 @@ impl DatabaseSchema {
         );
 
         tables
+    }
+
+    fn define_log_indexes() -> Vec<IndexDefinition> {
+        vec![
+            IndexDefinition {
+                name: "idx_request_logs_created_at".to_string(),
+                table: "request_logs".to_string(),
+                columns: vec!["created_at".to_string()],
+            },
+            IndexDefinition {
+                name: "idx_request_logs_cli_created_at".to_string(),
+                table: "request_logs".to_string(),
+                columns: vec!["cli_type".to_string(), "created_at".to_string()],
+            },
+            IndexDefinition {
+                name: "idx_request_logs_provider_created_at".to_string(),
+                table: "request_logs".to_string(),
+                columns: vec!["provider_name".to_string(), "created_at".to_string()],
+            },
+            IndexDefinition {
+                name: "idx_request_logs_model_created_at".to_string(),
+                table: "request_logs".to_string(),
+                columns: vec!["model_id".to_string(), "created_at".to_string()],
+            },
+            IndexDefinition {
+                name: "idx_request_logs_status_created_at".to_string(),
+                table: "request_logs".to_string(),
+                columns: vec!["status_code".to_string(), "created_at".to_string()],
+            },
+        ]
     }
 }

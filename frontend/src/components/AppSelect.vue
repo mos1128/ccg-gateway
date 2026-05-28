@@ -1,5 +1,28 @@
 <template>
+  <!-- Menu mode: slot trigger, no selected state -->
   <div
+    v-if="mode === 'menu'"
+    class="app-select app-select-menu"
+    :class="{ open }"
+    @click.stop="toggle"
+  >
+    <slot name="trigger" />
+    <div class="app-select-options" :class="[menuAlign]">
+      <div
+        v-for="option in options"
+        :key="String(option.value)"
+        class="app-select-option"
+        :class="{ disabled: option.disabled }"
+        @click.stop="selectOption(option)"
+      >
+        {{ option.label }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Default select mode -->
+  <div
+    v-else
     class="app-select"
     :class="{ open, disabled }"
     :style="{ width }"
@@ -37,12 +60,17 @@ let selectSeed = 0
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const props = withDefaults(defineProps<{
-  modelValue: string | number
+  modelValue?: string | number
   options: AppSelectOption[]
+  mode?: 'select' | 'menu'
+  menuAlign?: 'left' | 'right'
   width?: string
   placeholder?: string
   disabled?: boolean
 }>(), {
+  modelValue: '',
+  mode: 'select',
+  menuAlign: 'right',
   width: '160px',
   placeholder: '请选择',
   disabled: false
@@ -51,6 +79,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string | number]
   'change': [value: string | number]
+  'select': [value: string | number]
 }>()
 
 const open = ref(false)
@@ -73,8 +102,12 @@ function toggle() {
 
 function selectOption(option: AppSelectOption) {
   if (props.disabled || option.disabled) return
-  emit('update:modelValue', option.value)
-  emit('change', option.value)
+  if (props.mode === 'menu') {
+    emit('select', option.value)
+  } else {
+    emit('update:modelValue', option.value)
+    emit('change', option.value)
+  }
   close()
 }
 
@@ -97,6 +130,11 @@ onUnmounted(() => {
 <style scoped>
 .app-select {
   position: relative;
+}
+
+.app-select-menu {
+  display: inline-flex;
+  cursor: pointer;
 }
 
 .app-select.disabled {
@@ -169,6 +207,15 @@ onUnmounted(() => {
   min-width: 100%;
   max-height: 250px;
   overflow-y: auto;
+}
+
+.app-select-menu .app-select-options {
+  min-width: 140px;
+}
+
+.app-select-menu .app-select-options.right {
+  left: auto;
+  right: 0;
 }
 
 .app-select.open .app-select-options {

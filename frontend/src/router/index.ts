@@ -57,6 +57,10 @@ const router = createRouter({
           path: 'plugins',
           name: 'Plugins',
           component: () => import('@/views/plugins/index.vue')
+        },
+        {
+          path: ':pathMatch(.*)*',
+          redirect: { name: 'Dashboard' }
         }
       ]
     }

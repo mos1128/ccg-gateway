@@ -1,22 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
-import { CLI_TYPES } from '@/types/models'
-import type { CliType, Mcp, McpCreate, McpUpdate } from '@/types/models'
+import { transformCliFlags } from '@/utils/cliFlags'
+import type { CliFlagItem, CliType, Mcp, McpCreate, McpUpdate } from '@/types/models'
 
 // 后端返回的 cli_flags 格式
-type McpCliFlagBackend = { cli_type: CliType; enabled: boolean }
+type McpCliFlagBackend = CliFlagItem
 type McpBackend = Omit<Mcp, 'cli_flags'> & { cli_flags: McpCliFlagBackend[] }
-
-// 将后端数组格式转换为前端对象格式
-function transformCliFlags(cliFlags: McpCliFlagBackend[]): Record<CliType, boolean> {
-  const result = {} as Record<CliType, boolean>
-  for (const cliType of CLI_TYPES) {
-    result[cliType] = false
-  }
-  for (const flag of cliFlags) {
-    result[flag.cli_type] = flag.enabled
-  }
-  return result
-}
 
 function transformMcp(mcp: McpBackend): Mcp {
   return {

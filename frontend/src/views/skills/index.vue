@@ -70,75 +70,16 @@
           </template>
           <div v-else class="scroll-area">
             <div class="skill-grid">
-              <div v-for="skill in installedList" :key="skill.id" class="skill-card">
-                <div class="card-top">
-                  <div class="skill-icon">
-                    <svg width="24" height="24"><use href="#icon-zap"/></svg>
-                  </div>
-                  <div class="skill-info">
-                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                      <h3 class="skill-name">{{ skill.name }}</h3>
-                      <div v-if="!skill.exists_on_disk" class="tag tag-red" style="flex-shrink: 0;">缺失文件</div>
-                    </div>
-                    <div 
-                      class="skill-market" 
-                      v-if="skill.market_display" 
-                      :title="skill.market_display"
-                    >
-                      {{ skill.repo?.name ? `@${skill.repo.name}` : skill.market_display }}
-                    </div>
-                    <div class="skill-source mono" v-else>本地安装</div>
-                  </div>
-                  <div class="card-actions">
-                    <button
-                      class="action-icon star"
-                      :class="{ 'star-active': skill.is_favorited }"
-                      :title="skill.is_favorited ? '取消收藏' : '收藏技能'"
-                      :disabled="!skill.can_favorite"
-                      @click="toggleInstalledFavorite(skill)"
-                    >
-                      <svg
-                        width="18"
-                        height="18"
-                        :style="skill.is_favorited ? 'fill: var(--color-warning);' : ''"
-                      ><use href="#icon-star"/></svg>
-                    </button>
-                    <button class="action-icon" title="重装/更新" :disabled="installingSkillId === `installed-${skill.id}`" @click="handleReinstallFromInstalled(skill)">
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </button>
-                    <button class="action-icon delete" title="卸载" @click="handleUninstall(skill)">
-                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
-                    </button>
-                  </div>
-                </div>
-
-                <div class="cli-toggles">
-                  <div class="toggle-item">
-                    <span class="toggle-label">Claude Code</span>
-                    <el-switch
-                      size="small"
-                      :model-value="skill.cli_flags?.claude_code"
-                      @change="handleCliToggle(skill, 'claude_code', $event as boolean)"
-                    />
-                  </div>
-                  <div class="toggle-item">
-                    <span class="toggle-label">Codex</span>
-                    <el-switch
-                      size="small"
-                      :model-value="skill.cli_flags?.codex"
-                      @change="handleCliToggle(skill, 'codex', $event as boolean)"
-                    />
-                  </div>
-                  <div class="toggle-item">
-                    <span class="toggle-label">Gemini</span>
-                    <el-switch
-                      size="small"
-                      :model-value="skill.cli_flags?.gemini"
-                      @change="handleCliToggle(skill, 'gemini', $event as boolean)"
-                    />
-                  </div>
-                </div>
-              </div>
+              <InstalledSkillCard
+                v-for="skill in installedList"
+                :key="skill.id"
+                :skill="skill"
+                :reinstalling="installingSkillId === `installed-${skill.id}`"
+                @favorite="toggleInstalledFavorite"
+                @reinstall="handleReinstallFromInstalled"
+                @uninstall="handleUninstall"
+                @cli-toggle="handleCliToggle"
+              />
             </div>
           </div>
         </div>
@@ -166,23 +107,15 @@
             </template>
             <div v-else class="scroll-area">
               <div class="repo-grid">
-                <div v-for="repo in repoList" :key="repo.name" class="repo-card" @click="handleRepoClick(repo)">
-                  <div class="repo-icon-box">
-                    <svg width="24" height="24"><use href="#icon-store"/></svg>
-                  </div>
-                  <div class="repo-info-main">
-                    <div class="repo-name-title">{{ repo.name }}</div>
-                    <div class="repo-source-subtitle mono">{{ repo.source }}</div>
-                  </div>
-                  <div class="repo-actions-overlay" @click.stop>
-                    <button class="action-icon" title="重装仓库" :disabled="loadingRepos" @click="handleReinstallRepo(repo)">
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </button>
-                    <button class="action-icon delete" title="删除" @click="handleRemoveRepo(repo)">
-                      <svg width="18" height="18"><use href="#icon-trash"/></svg>
-                    </button>
-                  </div>
-                </div>
+                <SkillRepoCard
+                  v-for="repo in repoList"
+                  :key="repo.name"
+                  :repo="repo"
+                  :loading="loadingRepos"
+                  @open="handleRepoClick"
+                  @reinstall="handleReinstallRepo"
+                  @remove="handleRemoveRepo"
+                />
               </div>
             </div>
           </div>
@@ -220,53 +153,14 @@
             </template>
             <div v-else class="scroll-area">
               <div class="discover-list">
-                <div v-for="skill in filteredSkillList" :key="skill.key" class="discover-item">
-                  <div class="discover-info">
-                    <div class="discover-name-row">
-                      <span class="discover-name">{{ skill.name }}</span>
-                      <span class="mono text-12 text-muted">{{ skill.directory }}</span>
-                    </div>
-                    <el-tooltip
-                      v-if="skill.description"
-                      effect="light"
-                      placement="top"
-                      :enterable="true"
-                      :show-after="200"
-                    >
-                      <template #content>
-                        <div class="text-14" style="max-width: 350px; line-height: 1.6; word-break: break-word; user-select: text; color: var(--color-text-dark);">
-                          {{ skill.description }}
-                        </div>
-                      </template>
-                      <div class="discover-desc" @click="copyDescription(skill.description)">
-                        {{ skill.description }}
-                      </div>
-                    </el-tooltip>
-                    <div v-else class="discover-desc">
-                      暂无描述
-                    </div>
-                  </div>
-                  <div class="discover-actions">
-                    <button
-                      v-if="skill.is_installed"
-                      class="action-icon installed"
-                      title="重装"
-                      :disabled="installingSkillId === skill.key"
-                      @click="handleInstall(skill, true)"
-                    >
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </button>
-                    <button
-                      v-else
-                      class="action-icon primary"
-                      title="安装技能"
-                      :disabled="installingSkillId === skill.key"
-                      @click="handleInstall(skill, false)"
-                    >
-                      <svg width="18" height="18"><use href="#icon-plus"/></svg>
-                    </button>
-                  </div>
-                </div>
+                <DiscoverableSkillItem
+                  v-for="skill in filteredSkillList"
+                  :key="skill.key"
+                  :skill="skill"
+                  :installing="installingSkillId === skill.key"
+                  @install="handleInstall"
+                  @copy-description="copyDescription"
+                />
               </div>
             </div>
           </div>
@@ -286,43 +180,14 @@
           </div>
           <div v-else class="scroll-area">
             <div class="favorite-grid">
-              <div v-for="favorite in favoriteList" :key="favorite.key" class="fav-card">
-                <div class="fav-main">
-                  <div class="fav-info">
-                    <div class="fav-name">{{ favorite.name }}</div>
-                    <div class="fav-market" :title="favorite.repo.source">
-                      来自仓库: {{ favorite.repo.name || favorite.repo.source }}
-                    </div>
-                  </div>
-                  <div class="fav-actions">
-                    <button
-                      class="action-icon star-active"
-                      title="取消收藏"
-                      @click="handleRemoveFavoriteById(favorite)"
-                    >
-                      <svg width="18" height="18" style="fill: var(--color-warning);"><use href="#icon-star"/></svg>
-                    </button>
-                    <button
-                      v-if="favorite.is_installed"
-                      class="action-icon installed"
-                      title="重装"
-                      :disabled="installingSkillId === favorite.key"
-                      @click="handleInstallFavorite(favorite, true)"
-                    >
-                      <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-                    </button>
-                    <button
-                      v-else
-                      class="action-icon primary"
-                      title="安装技能"
-                      :disabled="installingSkillId === favorite.key"
-                      @click="handleInstallFavorite(favorite, false)"
-                    >
-                      <svg width="18" height="18"><use href="#icon-plus"/></svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <SkillFavoriteCard
+                v-for="favorite in favoriteList"
+                :key="favorite.key"
+                :favorite="favorite"
+                :installing="installingSkillId === favorite.key"
+                @remove="handleRemoveFavoriteById"
+                @install="handleInstallFavorite"
+              />
             </div>
           </div>
         </div>
@@ -330,18 +195,11 @@
       </div>
     </div>
 
-    <!-- Modals -->
-    <AppModal v-model="showAddRepoDialog" title="添加 Skill 仓库" width="500px" @confirm="handleAddRepo">
-        <div class="form-group">
-            <label class="c-label">仓库地址 <span class="required">*</span></label>
-            <input
-              type="text"
-              v-model="repoForm.url"
-              class="b-input"
-              placeholder="仓库地址 、 owner/repo 、 本地目录"
-            >
-          </div>
-    </AppModal>
+    <AddSkillRepoModal
+      v-model="showAddRepoDialog"
+      v-model:url="repoForm.url"
+      @confirm="handleAddRepo"
+    />
   </div>
 
     </template>
@@ -351,7 +209,11 @@ import { ref, onMounted, computed } from 'vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
-import AppModal from '@/components/AppModal.vue'
+import InstalledSkillCard from './components/InstalledSkillCard.vue'
+import SkillRepoCard from './components/SkillRepoCard.vue'
+import DiscoverableSkillItem from './components/DiscoverableSkillItem.vue'
+import SkillFavoriteCard from './components/SkillFavoriteCard.vue'
+import AddSkillRepoModal from './components/AddSkillRepoModal.vue'
 import { skillsApi } from '@/api/skills'
 import type { CliType, SkillRepo, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
 
@@ -713,92 +575,13 @@ onMounted(() => {
 /* Header */
 .page-title.text-20 { margin: 0; }
 
-/* Grid & Cards (Installed) */
 .skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 24px; }
-.skill-card {
-  background: var(--color-bg); border-radius: 16px; border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent); padding: 24px;
-  box-shadow: 0 4px 12px var(--color-shadow); display: flex; flex-direction: column; gap: 20px;
-}
 
-.card-top { display: flex; gap: 16px; align-items: flex-start; }
-.skill-icon {
-  width: 48px; height: 48px; border-radius: 12px; background: var(--color-violet-light); color: var(--color-violet);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.skill-info { flex: 1; min-width: 0; }
-.skill-name {
-  font-size: var(--fs-16); font-weight: var(--fw-700); color: var(--color-text); margin: 0 0 4px 0;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; text-overflow: ellipsis;
-}.skill-market {
-  font-size: var(--fs-12); color: var(--color-text-muted); font-weight: var(--fw-400);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.skill-source { font-size: var(--fs-12); color: var(--color-text-weak); }
-
-.card-actions { display: flex; gap: 4px; flex-shrink: 0; }
-
-/* CLI Toggles */
-.cli-toggles { display: flex; flex-direction: column; gap: 12px; background: var(--color-bg-page); padding: 16px; border-radius: 12px; }
-.toggle-item { display: flex; justify-content: space-between; align-items: center; }
-.toggle-label { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-secondary); }
-
-/* Repo Grid (Available) */
 .repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
-.repo-card {
-  background: var(--color-bg); border-radius: 16px; border: 1px solid var(--color-bg-subtle); padding: 20px;
-  cursor: pointer; position: relative; transition: all 0.2s; display: flex; align-items: center; gap: 16px;
-}
-.repo-card:hover { border-color: var(--color-primary); background: var(--color-bg-page); }
 
-.repo-icon-box {
-  width: 40px; height: 40px; border-radius: 10px; background: var(--color-bg-subtle); color: var(--color-text-muted);
-  display: flex; align-items: center; justify-content: center;
-}
-.repo-info-main { flex: 1; min-width: 0; }
-.repo-name-title { font-weight: var(--fw-700); font-size: var(--fs-14); color: var(--color-text); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.repo-source-subtitle { font-size: var(--fs-12); color: var(--color-text-weak); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.repo-actions-overlay { display: flex; gap: 4px; flex-shrink: 0; }
-
-/* Discover List */
 .discover-list { background: var(--color-bg); border-radius: 16px; overflow: hidden; border: 1px solid var(--color-bg-subtle); }
-.discover-item {
-  display: flex; justify-content: space-between; align-items: center; padding: 20px 24px;
-  border-bottom: 1px solid var(--color-bg-subtle); transition: background 0.2s;
-}
-.discover-item:last-child { border-bottom: none; }
-.discover-item:hover { background: var(--color-bg-page); }
-.discover-info { flex: 1; min-width: 0; padding-right: 40px; }
-.discover-name-row { margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
-.discover-name { font-weight: var(--fw-700); font-size: var(--fs-14); color: var(--color-text); }
-.discover-desc {
-  font-size: var(--fs-14); color: var(--color-text-muted); line-height: 1.5; cursor: pointer;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.discover-actions { flex-shrink: 0; display: flex; gap: 4px; }
 
-/* Favorites */
 .favorite-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
-.fav-card { background: var(--color-bg); border-radius: 16px; border: 1px solid var(--color-bg-subtle); padding: 20px; }
-.fav-main { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-.fav-info { min-width: 0; flex: 1; }
-.fav-name {
-  font-weight: var(--fw-700); font-size: var(--fs-16); color: var(--color-text); margin-bottom: 4px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; text-overflow: ellipsis;
-}.fav-market {
-  font-size: var(--fs-12); color: var(--color-text-weak);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.fav-actions { flex-shrink: 0; display: flex; gap: 4px; }
-
-/* Shared styles */
-.tag { padding: 2px 8px; border-radius: 4px; font-size: var(--fs-12); font-weight: var(--fw-700); text-transform: uppercase; }
-.tag-red { background: var(--color-error-light); color: var(--color-error); }
 
 .search-box { position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-weak); }

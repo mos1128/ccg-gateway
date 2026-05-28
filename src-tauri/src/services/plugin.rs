@@ -1,6 +1,6 @@
 use crate::db::models::{MarketplaceInfo, MarketplacePlugin, PluginFavoriteItem, PluginItem};
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use tokio::process::Command;
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -27,28 +27,17 @@ pub struct FavoriteInstallResult {
 // ==================== CLI 执行 ====================
 
 /// 执行 claude 命令，返回完整输出
-fn run_claude(args: &[&str]) -> Result<String> {
+async fn run_claude(args: &[&str]) -> Result<String> {
+    let output = Command::new("claude").args(args).output().await;
+
     #[cfg(windows)]
-    let output = {
-        let args_str = args
-            .iter()
-            .map(|s| {
-                if s.contains(' ') || s.contains('"') {
-                    format!("\"{}\"", s.replace('"', "\\\""))
-                } else {
-                    s.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        Command::new("cmd")
-            .args(["/c", &format!("claude {}", args_str)])
-            .output()
+    let output = match output {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::info!("claude binary not found, falling back to claude.cmd");
+            Command::new("claude.cmd").args(args).output().await
+        }
+        output => output,
     };
-
-    #[cfg(not(windows))]
-    let output = Command::new("claude").args(args).output();
 
     let output = output.map_err(|e| format!("执行命令遇到错误：{}", e))?;
 
@@ -75,9 +64,9 @@ fn parse_plugin_id(id: &str) -> (String, Option<String>) {
 }
 
 /// 获取已安装插件列表（同步版本，内部使用）
-fn get_installed_plugins_sync() -> Result<std::collections::HashMap<String, (Option<String>, bool)>>
-{
-    let stdout = run_claude(&["plugin", "list", "--json"])?;
+async fn get_installed_plugins_map(
+) -> Result<std::collections::HashMap<String, (Option<String>, bool)>> {
+    let stdout = run_claude(&["plugin", "list", "--json"]).await?;
 
     if stdout.is_empty() {
         return Ok(std::collections::HashMap::new());
@@ -312,8 +301,8 @@ fn read_marketplace_plugins(
 /// 获取已安装插件列表
 /// 以 CLI `claude plugin list --json` 为权威数据源，
 /// 用 marketplace 元数据补充 description 等字段
-pub fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<PluginItem>> {
-    let installed_map = get_installed_plugins_sync()?;
+pub async fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<PluginItem>> {
+    let installed_map = get_installed_plugins_map().await?;
     let marketplaces = get_marketplaces_from_known_json(config_dir)?;
 
     // 构建 marketplace 插件的元数据索引: "name@market" -> MarketplacePlugin
@@ -355,11 +344,11 @@ pub fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<PluginI
 
 /// 获取指定市场中的插件列表（按需加载，用户点击市场时调用）
 /// 只标记 is_installed，不需要 is_enabled/is_favorited（市场视图不展示这些）
-pub fn get_marketplace_plugins(
+pub async fn get_marketplace_plugins(
     market_name: &str,
     config_dir: &std::path::Path,
 ) -> Result<Vec<PluginItem>> {
-    let installed_map = get_installed_plugins_sync()?;
+    let installed_map = get_installed_plugins_map().await?;
     let plugins = read_marketplace_plugins(market_name, config_dir)?;
 
     let mut result: Vec<PluginItem> = plugins
@@ -393,10 +382,10 @@ pub fn get_marketplaces(config_dir: &std::path::Path) -> Result<Vec<MarketplaceI
 }
 
 /// 获取收藏列表（独立接口）
-pub fn get_favorites(
+pub async fn get_favorites(
     favorites: Vec<(String, String, String, Option<String>)>,
 ) -> Result<Vec<PluginFavoriteItem>> {
-    let installed_map = get_installed_plugins_sync()?;
+    let installed_map = get_installed_plugins_map().await?;
 
     Ok(favorites
         .into_iter()
@@ -416,31 +405,31 @@ pub fn get_favorites(
 }
 
 /// 插件操作
-pub fn plugin_action(action: &str, plugin_id: &str) -> Result<PluginActionResult> {
+pub async fn plugin_action(action: &str, plugin_id: &str) -> Result<PluginActionResult> {
     let cli_output = match action {
-        "install" => run_claude(&["plugin", "install", plugin_id]),
-        "uninstall" => run_claude(&["plugin", "uninstall", plugin_id]),
-        "enable" => run_claude(&["plugin", "enable", plugin_id]),
-        "disable" => run_claude(&["plugin", "disable", plugin_id]),
-        "update" => run_claude(&["plugin", "update", plugin_id]),
+        "install" => run_claude(&["plugin", "install", plugin_id]).await,
+        "uninstall" => run_claude(&["plugin", "uninstall", plugin_id]).await,
+        "enable" => run_claude(&["plugin", "enable", plugin_id]).await,
+        "disable" => run_claude(&["plugin", "disable", plugin_id]).await,
+        "update" => run_claude(&["plugin", "update", plugin_id]).await,
         _ => return Err(format!("未知操作: {}", action)),
     }?;
     Ok(PluginActionResult { cli_output })
 }
 
 /// 市场操作
-pub fn marketplace_action(action: &str, param: &str) -> Result<MarketplaceActionResult> {
+pub async fn marketplace_action(action: &str, param: &str) -> Result<MarketplaceActionResult> {
     let cli_output = match action {
-        "add" => run_claude(&["plugin", "marketplace", "add", param]),
-        "remove" => run_claude(&["plugin", "marketplace", "remove", param]),
-        "update" => run_claude(&["plugin", "marketplace", "update", param]),
+        "add" => run_claude(&["plugin", "marketplace", "add", param]).await,
+        "remove" => run_claude(&["plugin", "marketplace", "remove", param]).await,
+        "update" => run_claude(&["plugin", "marketplace", "update", param]).await,
         _ => return Err(format!("未知操作: {}", action)),
     }?;
     Ok(MarketplaceActionResult { cli_output })
 }
 
 /// 安装收藏的插件（包含市场检查和安装）
-pub fn install_favorite_plugin(
+pub async fn install_favorite_plugin(
     plugin_id: &str,
     marketplace_name: &str,
     marketplace_source: Option<&str>,
@@ -465,11 +454,11 @@ pub fn install_favorite_plugin(
             return Err("该插件来自本地市场，无法自动恢复".to_string());
         }
 
-        let market_output = run_claude(&["plugin", "marketplace", "add", source])?;
+        let market_output = run_claude(&["plugin", "marketplace", "add", source]).await?;
         cli_outputs.push(format!("[安装市场] {}", market_output));
     }
 
-    let plugin_output = run_claude(&["plugin", "install", plugin_id])?;
+    let plugin_output = run_claude(&["plugin", "install", plugin_id]).await?;
     cli_outputs.push(format!("[安装插件] {}", plugin_output));
 
     Ok(FavoriteInstallResult {
