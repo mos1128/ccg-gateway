@@ -579,13 +579,17 @@ pub async fn test_provider_models(
     let db_pool = db.inner().clone();
     let model_name = input.model_name.clone();
 
+    let timeout_secs = provider_service::get_stream_first_byte_timeout(db.inner()).await;
+
     for provider_id in input.provider_ids {
         let pool = db_pool.clone();
         let model = model_name.clone();
         let app_handle = app.clone();
 
         tokio::spawn(async move {
-            let result = provider_service::test_provider_model(&pool, provider_id, &model).await;
+            let result =
+                provider_service::test_provider_model(&pool, provider_id, &model, timeout_secs)
+                    .await;
             if let Err(e) = app_handle.emit("provider-test-result", result) {
                 tracing::error!(error = %e, "Failed to emit test result");
             }

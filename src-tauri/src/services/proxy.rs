@@ -163,7 +163,8 @@ pub fn extract_model_from_body(body: &[u8]) -> Option<String> {
 
 /// Extract model name from URL path (Gemini)
 pub fn extract_model_from_path(path: &str) -> Option<String> {
-    let re = Regex::new(r"/models/([^/:]+)").ok()?;
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"/models/([^/:]+)").unwrap());
     let caps = re.captures(path)?;
     caps.get(1).map(|m| m.as_str().to_string())
 }
@@ -293,44 +294,53 @@ pub fn apply_body_model_mapping(
     body: &[u8],
     path: &str,
 ) -> ModelMappingResult {
-    let mut result = ModelMappingResult {
-        body: body.to_vec(),
-        path: path.to_string(),
-        source_model: None,
-        target_model: None,
-    };
-
     let Some(model) = extract_model_from_body(body) else {
-        return result;
+        return ModelMappingResult {
+            body: body.to_vec(),
+            path: path.to_string(),
+            source_model: None,
+            target_model: None,
+        };
     };
-
-    // Always record the source model
-    result.source_model = Some(model.clone());
 
     if provider.model_maps.is_empty() {
-        return result;
+        return ModelMappingResult {
+            body: body.to_vec(),
+            path: path.to_string(),
+            source_model: Some(model),
+            target_model: None,
+        };
     }
 
     // Find matching model map (supports wildcard: * matches any, ? matches single char)
     for map in &provider.model_maps {
         if wildcard_match(&map.source_model, &model) {
-            result.target_model = Some(map.target_model.clone());
-
-            // Replace model in body
-            if let Ok(mut json) = serde_json::from_slice::<Value>(body) {
+            // Only clone and modify body when a mapping is found
+            let mapped_body = if let Ok(mut json) = serde_json::from_slice::<Value>(body) {
                 if let Some(obj) = json.as_object_mut() {
                     obj.insert("model".to_string(), Value::String(map.target_model.clone()));
                 }
-                if let Ok(new_body) = serde_json::to_vec(&json) {
-                    result.body = new_body;
-                }
-            }
+                serde_json::to_vec(&json).unwrap_or_else(|_| body.to_vec())
+            } else {
+                body.to_vec()
+            };
 
-            break;
+            return ModelMappingResult {
+                body: mapped_body,
+                path: path.to_string(),
+                source_model: Some(model),
+                target_model: Some(map.target_model.clone()),
+            };
         }
     }
 
-    result
+    // No mapping matched
+    ModelMappingResult {
+        body: body.to_vec(),
+        path: path.to_string(),
+        source_model: Some(model),
+        target_model: None,
+    }
 }
 
 /// Apply model mapping for URL-based APIs (Gemini)

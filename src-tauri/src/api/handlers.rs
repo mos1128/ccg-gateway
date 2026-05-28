@@ -303,8 +303,17 @@ fn serialize_reqwest_headers(headers: &reqwest::header::HeaderMap) -> String {
     serde_json::to_string(&map).unwrap_or_default()
 }
 
+/// Maximum body size to store in logs (2MB)
+const MAX_LOG_BODY_SIZE: usize = 2 * 1024 * 1024;
+
 fn truncate_body(body: &[u8]) -> String {
-    String::from_utf8_lossy(body).into_owned()
+    if body.len() <= MAX_LOG_BODY_SIZE {
+        String::from_utf8_lossy(body).into_owned()
+    } else {
+        let mut s = String::from_utf8_lossy(&body[..MAX_LOG_BODY_SIZE]).into_owned();
+        s.push_str("\n\n[body truncated at 2MB]");
+        s
+    }
 }
 
 fn maybe_decompress(body: &[u8], content_encoding: Option<&str>) -> Vec<u8> {

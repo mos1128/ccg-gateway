@@ -2,6 +2,23 @@ use crate::db::models::TestProviderResult;
 use crate::time::now_timestamp;
 use sqlx::SqlitePool;
 
+/// Default timeout (seconds) used when the DB setting is unavailable.
+const DEFAULT_STREAM_FIRST_BYTE_TIMEOUT: u64 = 30;
+
+/// Read `stream_first_byte_timeout` from timeout_settings.
+/// Falls back to 30s if the row is missing or the query fails.
+pub async fn get_stream_first_byte_timeout(db: &SqlitePool) -> u64 {
+    sqlx::query_as::<_, (i64,)>(
+        "SELECT stream_first_byte_timeout FROM timeout_settings WHERE id = 1",
+    )
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
+    .map(|(v,)| v as u64)
+    .unwrap_or(DEFAULT_STREAM_FIRST_BYTE_TIMEOUT)
+}
+
 /// Record a successful request for a provider
 /// Resets consecutive_failures to 0
 /// Returns (had_previous_failures) to indicate if the provider was recovering
@@ -130,6 +147,7 @@ pub async fn test_provider_model(
     db: &SqlitePool,
     provider_id: i64,
     model_name: &str,
+    timeout_secs: u64,
 ) -> TestProviderResult {
     // 1. Load provider
     let provider = match sqlx::query_as::<_, crate::db::models::Provider>(
@@ -196,10 +214,12 @@ pub async fn test_provider_model(
     }
 
     // 3. Build request per CLI type (all use stream mode)
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_default();
+    let client = {
+        static TEST_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+        TEST_CLIENT
+            .get_or_init(|| reqwest::Client::builder().build().unwrap_or_default())
+            .clone()
+    };
 
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert("content-type", "application/json".parse().unwrap());
@@ -364,6 +384,7 @@ pub async fn test_provider_model(
         .post(&url)
         .headers(headers)
         .json(&body_json)
+        .timeout(std::time::Duration::from_secs(timeout_secs))
         .send()
         .await;
     let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -377,7 +398,7 @@ pub async fn test_provider_model(
                 use futures_util::StreamExt;
                 let mut stream = resp.bytes_stream();
                 let first_chunk =
-                    tokio::time::timeout(std::time::Duration::from_secs(30), stream.next()).await;
+                    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), stream.next()).await;
                 let first_chunk_ms = start.elapsed().as_millis() as u64;
 
                 let (response_text, raw_chunk) = match first_chunk {

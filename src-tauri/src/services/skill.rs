@@ -87,7 +87,15 @@ fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<()> {
     }
 
     let content = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
-    std::fs::write(path, content).map_err(|e| e.to_string())
+
+    // Atomic write: write to temp file then rename to avoid corruption on crash
+    let tmp_path = path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, &content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp_path, path).map_err(|e| {
+        // Clean up temp file on rename failure
+        let _ = std::fs::remove_file(&tmp_path);
+        e.to_string()
+    })
 }
 
 fn read_json_or_default<T>(path: &Path) -> Result<T>

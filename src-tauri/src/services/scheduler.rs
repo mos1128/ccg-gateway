@@ -744,7 +744,8 @@ async fn execute_keepalive_target(
         return Ok(outcome);
     };
 
-    let result = provider_service::test_provider_model(db, provider.id, model_name).await;
+    let timeout_secs = provider_service::get_stream_first_byte_timeout(db).await;
+    let result = provider_service::test_provider_model(db, provider.id, model_name, timeout_secs).await;
     let ok = result
         .status_code
         .map(|code| (200..300).contains(&code))
@@ -839,11 +840,23 @@ async fn resolve_provider_ids(
     db: &SqlitePool,
     provider_ids: &[i64],
 ) -> Result<Vec<KeepaliveTarget>, String> {
-    let providers =
-        sqlx::query_as::<_, Provider>("SELECT * FROM providers ORDER BY sort_order, id")
-            .fetch_all(db)
-            .await
-            .map_err(|e| e.to_string())?;
+    if provider_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Build WHERE IN query with placeholders
+    let placeholders: Vec<&str> = provider_ids.iter().map(|_| "?").collect();
+    let query = format!(
+        "SELECT * FROM providers WHERE id IN ({})",
+        placeholders.join(", ")
+    );
+
+    let mut q = sqlx::query_as::<_, Provider>(&query);
+    for id in provider_ids {
+        q = q.bind(id);
+    }
+
+    let providers = q.fetch_all(db).await.map_err(|e| e.to_string())?;
     let provider_map: HashMap<i64, Provider> = providers.into_iter().map(|p| (p.id, p)).collect();
 
     Ok(provider_ids

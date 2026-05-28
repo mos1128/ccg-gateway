@@ -155,7 +155,7 @@ pub fn run() {
                         }
                     }
                     "quit" => {
-                        std::process::exit(0);
+                        app.exit(0);
                     }
                     _ => {}
                 })
