@@ -143,7 +143,7 @@
                   <td class="mono">
                     {{ formatTokenUsage(row) }}
                   </td>
-                  <td class="mono">{{ row.source_model || '-' }} → {{ row.target_model || '-' }}</td>
+                  <td class="mono text-left">{{ row.source_model || '-' }} → {{ row.target_model || '-' }}</td>
                   <td class="col-sticky">
                     <a class="table-link" @click="showRequestDetail(row.id)">详情</a>
                   </td>
@@ -753,6 +753,7 @@ watch(activeTab, (tab) => {
   z-index: 20;
 }
 
+.flat-table td.text-left { text-align: left; }
 .text-danger { color: var(--color-error); font-weight: var(--fw-600); }
 
 .pagination-footer { padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed color-mix(in srgb, var(--color-border) 80%, transparent); flex-shrink: 0; }
