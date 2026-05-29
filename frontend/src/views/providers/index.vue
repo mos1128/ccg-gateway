@@ -342,10 +342,7 @@ const isCurrentProfileCommandLoading = computed(() =>
   profileCommandLoading.value === profileStatusKey(activeCliType.value, activeProfile.value)
 )
 const profileUsageText = computed(() => {
-  if (activeCliType.value === 'codex') {
-    return '切换到非默认 Profile 时只会写入当前 Codex profile 的原生配置，不会修改默认窗口的官方模式'
-  }
-  return '切换到 Profile 时会自动生成对应的配置文件，通过对应启动命令启动的 Claude Code 会路由到对应 Profile 配置的服务商'
+  return '切换到 Profile 时会自动生成对应配置文件，通过对应启动命令启动的 Agent 会路由到对应 Profile 配置的服务商'
 })
 
 function handleSwitchProxy() {

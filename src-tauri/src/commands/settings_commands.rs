@@ -203,34 +203,69 @@ pub async fn ensure_codex_profile_settings(
 
     let codex_dir = get_cli_config_dir_path(db.inner(), "codex").await;
     let config_path = codex_dir.join("config.toml");
+    let profile_path = codex_profile_config_path(&codex_dir, &profile);
+    let profile_filename = codex_profile_config_filename(&profile);
 
     tokio::fs::create_dir_all(&codex_dir).await.map_err(|e| {
         tracing::error!("Failed to create Codex directory: {}", e);
         e.to_string()
     })?;
 
-    let mut final_doc = if tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
-        let content = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
-            tracing::error!("Failed to read config.toml: {}", e);
-            e.to_string()
-        })?;
+    let mut profile_doc = if tokio::fs::try_exists(&profile_path).await.unwrap_or(false) {
+        let content = tokio::fs::read_to_string(&profile_path)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to read {}: {}", profile_filename, e);
+                e.to_string()
+            })?;
         content.parse::<toml_edit::DocumentMut>().map_err(|e| {
             format!(
-                "Codex config.toml TOML 格式错误，未写入 Profile 配置: {}",
-                e
+                "Codex {} TOML 格式错误，未写入 Profile 配置: {}",
+                profile_filename, e
             )
         })?
     } else {
         toml_edit::DocumentMut::new()
     };
 
-    apply_codex_gateway_named_profile_config(&mut final_doc, &gateway_url, &profile)?;
-    tokio::fs::write(&config_path, final_doc.to_string())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to write config.toml: {}", e);
+    let mut base_doc = if tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+        let content = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
+            tracing::error!("Failed to read config.toml: {}", e);
             e.to_string()
         })?;
+        Some(content.parse::<toml_edit::DocumentMut>().map_err(|e| {
+            format!(
+                "Codex config.toml TOML 格式错误，未迁移旧 Profile 配置: {}",
+                e
+            )
+        })?)
+    } else {
+        None
+    };
+
+    let base_changed = base_doc
+        .as_mut()
+        .map(|doc| migrate_codex_legacy_profile_config(doc, &mut profile_doc, &profile))
+        .unwrap_or(false);
+
+    apply_codex_gateway_named_profile_config(&mut profile_doc, &gateway_url, &profile)?;
+    tokio::fs::write(&profile_path, profile_doc.to_string())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to write {}: {}", profile_filename, e);
+            e.to_string()
+        })?;
+
+    if base_changed {
+        if let Some(base_doc) = base_doc {
+            tokio::fs::write(&config_path, base_doc.to_string())
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to write config.toml: {}", e);
+                    e.to_string()
+                })?;
+        }
+    }
 
     codex_profile_settings_status(db.inner(), &profile, &gateway_url).await
 }

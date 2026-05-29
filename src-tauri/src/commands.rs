@@ -67,6 +67,18 @@ fn codex_gateway_provider_name(profile: &str) -> Option<&'static str> {
     }
 }
 
+fn codex_profile_config_filename(profile: &str) -> String {
+    if profile == DEFAULT_PROFILE {
+        "config.toml".to_string()
+    } else {
+        format!("{}.config.toml", profile)
+    }
+}
+
+fn codex_profile_config_path(config_dir: &std::path::Path, profile: &str) -> std::path::PathBuf {
+    config_dir.join(codex_profile_config_filename(profile))
+}
+
 fn ensure_toml_table<'a>(
     doc: &'a mut toml_edit::DocumentMut,
     key: &str,
@@ -82,24 +94,6 @@ fn ensure_toml_table<'a>(
     doc.get_mut(key)
         .and_then(|item| item.as_table_mut())
         .expect("table should exist after normalization")
-}
-
-fn ensure_child_toml_table<'a>(
-    table: &'a mut toml_edit::Table,
-    key: &str,
-) -> &'a mut toml_edit::Table {
-    if table.get(key).and_then(|item| item.as_table()).is_none() {
-        let child = table
-            .remove(key)
-            .and_then(|item| item.into_table().ok())
-            .unwrap_or_else(toml_edit::Table::new);
-        table[key] = toml_edit::Item::Table(child);
-    }
-
-    table
-        .get_mut(key)
-        .and_then(|item| item.as_table_mut())
-        .expect("child table should exist after normalization")
 }
 
 fn apply_codex_gateway_provider_config(
@@ -149,11 +143,70 @@ fn apply_codex_gateway_named_profile_config(
     }
 
     let provider_name = apply_codex_gateway_provider_config(doc, gateway_url, profile)?;
-    let profiles = ensure_toml_table(doc, "profiles");
-    let profile_table = ensure_child_toml_table(profiles, profile);
-    profile_table["model_provider"] = toml_edit::value(provider_name);
+    doc["model_provider"] = toml_edit::value(provider_name);
 
     Ok(())
+}
+
+fn migrate_codex_legacy_profile_config(
+    base_doc: &mut toml_edit::DocumentMut,
+    profile_doc: &mut toml_edit::DocumentMut,
+    profile: &str,
+) -> bool {
+    let mut changed = false;
+
+    let legacy_profile = base_doc
+        .get("profiles")
+        .and_then(|item| item.get(profile))
+        .and_then(|item| item.as_table())
+        .cloned();
+
+    if let Some(legacy_profile) = legacy_profile {
+        for (key, value) in legacy_profile.iter() {
+            if profile_doc.get(key).is_none() {
+                profile_doc.insert(key, value.clone());
+            }
+        }
+
+        let remove_profiles = if let Some(profiles) = base_doc
+            .get_mut("profiles")
+            .and_then(|item| item.as_table_mut())
+        {
+            if profiles.remove(profile).is_some() {
+                changed = true;
+            }
+            profiles.is_empty()
+        } else {
+            false
+        };
+        if remove_profiles {
+            base_doc.remove("profiles");
+        }
+    }
+
+    if base_doc.get("profile").is_some() {
+        base_doc.remove("profile");
+        changed = true;
+    }
+
+    if let Some(provider_name) = codex_gateway_provider_name(profile) {
+        let remove_model_providers = if let Some(model_providers) = base_doc
+            .get_mut("model_providers")
+            .and_then(|item| item.as_table_mut())
+        {
+            if model_providers.remove(provider_name).is_some() {
+                changed = true;
+            }
+            model_providers.is_empty()
+        } else {
+            false
+        };
+        if remove_model_providers {
+            base_doc.remove("model_providers");
+        }
+    }
+
+    changed
 }
 
 fn remove_codex_default_gateway_entry(doc: &mut toml_edit::DocumentMut) {
@@ -1026,8 +1079,40 @@ async fn claude_profile_settings_status(
     })
 }
 
+fn codex_provider_uses_gateway(
+    doc: &toml_edit::DocumentMut,
+    provider_name: &str,
+    gateway_url: &str,
+    expected_token: Option<&str>,
+) -> bool {
+    doc.get("model_providers")
+        .and_then(|item| item.get(provider_name))
+        .and_then(|item| item.as_table())
+        .map(|provider| {
+            let Some(base_url) = provider.get("base_url").and_then(|item| item.as_str()) else {
+                return false;
+            };
+
+            if !gateway_url_matches(base_url, gateway_url) {
+                return false;
+            }
+
+            if let Some(expected_token) = expected_token {
+                return provider
+                    .get("experimental_bearer_token")
+                    .and_then(|item| item.as_str())
+                    .map(str::trim)
+                    .map(|token| token == expected_token)
+                    .unwrap_or(false);
+            }
+
+            true
+        })
+        .unwrap_or(false)
+}
+
 async fn codex_profile_uses_gateway(
-    config_path: &std::path::Path,
+    config_dir: &std::path::Path,
     profile: &str,
     gateway_url: &str,
 ) -> bool {
@@ -1035,24 +1120,23 @@ async fn codex_profile_uses_gateway(
         return true;
     }
 
-    if !tokio::fs::try_exists(config_path).await.unwrap_or(false) {
+    let profile_path = codex_profile_config_path(config_dir, profile);
+    if !tokio::fs::try_exists(&profile_path).await.unwrap_or(false) {
         return false;
     }
 
-    let content = match tokio::fs::read_to_string(config_path).await {
+    let content = match tokio::fs::read_to_string(&profile_path).await {
         Ok(content) => content,
         Err(_) => return false,
     };
 
-    let doc = match content.parse::<toml_edit::DocumentMut>() {
+    let profile_doc = match content.parse::<toml_edit::DocumentMut>() {
         Ok(doc) => doc,
         Err(_) => return false,
     };
 
-    let provider_name = doc
-        .get("profiles")
-        .and_then(|item| item.get(profile))
-        .and_then(|item| item.get("model_provider"))
+    let provider_name = profile_doc
+        .get("model_provider")
         .and_then(|item| item.as_str())
         .map(|value| value.to_string());
 
@@ -1065,24 +1149,31 @@ async fn codex_profile_uses_gateway(
     };
     let expected_url = gateway_url.trim_end_matches('/');
 
-    doc.get("model_providers")
-        .and_then(|item| item.get(&provider_name))
-        .and_then(|item| item.as_table())
-        .map(|provider| {
-            let Some(base_url) = provider.get("base_url").and_then(|item| item.as_str()) else {
-                return false;
-            };
+    if codex_provider_uses_gateway(
+        &profile_doc,
+        &provider_name,
+        expected_url,
+        Some(expected_token),
+    ) {
+        return true;
+    }
 
-            let base_url_matches = gateway_url_matches(base_url, expected_url);
-            let token = provider
-                .get("experimental_bearer_token")
-                .and_then(|item| item.as_str())
-                .map(str::trim);
-            let token_matches = token.map(|token| token == expected_token).unwrap_or(false);
+    let config_path = config_dir.join("config.toml");
+    let content = match tokio::fs::read_to_string(&config_path).await {
+        Ok(content) => content,
+        Err(_) => return false,
+    };
+    let base_doc = match content.parse::<toml_edit::DocumentMut>() {
+        Ok(doc) => doc,
+        Err(_) => return false,
+    };
 
-            base_url_matches && token_matches
-        })
-        .unwrap_or(false)
+    codex_provider_uses_gateway(
+        &base_doc,
+        &provider_name,
+        expected_url,
+        Some(expected_token),
+    )
 }
 
 fn codex_default_provider_uses_gateway(doc: &toml_edit::DocumentMut, gateway_url: &str) -> bool {
@@ -1095,17 +1186,7 @@ fn codex_default_provider_uses_gateway(doc: &toml_edit::DocumentMut, gateway_url
         return false;
     }
 
-    doc.get("model_providers")
-        .and_then(|providers| providers.get("ccg-gateway"))
-        .and_then(|provider| provider.as_table())
-        .map(|provider| {
-            let Some(base_url) = provider.get("base_url").and_then(|v| v.as_str()) else {
-                return false;
-            };
-
-            gateway_url_matches(base_url, gateway_url)
-        })
-        .unwrap_or(false)
+    codex_provider_uses_gateway(doc, "ccg-gateway", gateway_url, None)
 }
 
 async fn codex_profile_settings_status(
@@ -1116,17 +1197,18 @@ async fn codex_profile_settings_status(
     let profile = normalize_profile(Some(profile))
         .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
     let config_dir = get_cli_config_dir_path(db, "codex").await;
-    let config_path = config_dir.join("config.toml");
+    let config_path = codex_profile_config_path(&config_dir, profile);
     let path = shrink_home_path(&config_path.to_string_lossy());
     let exists = tokio::fs::try_exists(&config_path).await.unwrap_or(false);
+    let filename = codex_profile_config_filename(profile);
 
     Ok(CodexProfileSettingsStatus {
         profile: profile.to_string(),
-        filename: "config.toml".to_string(),
+        filename,
         path,
         launch_command: codex_profile_launch_command(profile),
         exists,
-        uses_gateway: codex_profile_uses_gateway(&config_path, profile, gateway_url).await,
+        uses_gateway: codex_profile_uses_gateway(&config_dir, profile, gateway_url).await,
     })
 }
 
