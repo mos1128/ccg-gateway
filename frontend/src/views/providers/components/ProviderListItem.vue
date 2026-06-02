@@ -1,7 +1,7 @@
 <template>
   <div
     class="provider-row"
-    :class="{ blacklisted: provider.is_blacklisted }"
+    :class="{ blacklisted: isRouteMode && provider.is_blacklisted }"
     :style="{ borderBottom: isLast ? 'none' : '1px solid var(--color-bg-subtle)' }"
   >
     <div class="provider-main">
@@ -13,17 +13,18 @@
 
       <div class="provider-info">
         <div class="provider-title-row">
-          <div class="text-16 fw-medium text-primary provider-name" :class="{ disabled: !provider.enabled }">
+          <div class="text-16 fw-medium text-primary provider-name" :class="{ disabled: isRouteMode && !provider.enabled }">
             {{ provider.name }}
           </div>
-          <div v-if="provider.is_blacklisted" class="tag tag-error">
+          <div v-if="isDirectMode && provider.is_direct_active" class="tag tag-success">已写入</div>
+          <div v-if="isRouteMode && provider.is_blacklisted" class="tag tag-error">
             {{ unblacklistText }}
           </div>
-          <div v-else-if="!provider.enabled" class="tag tag-muted">已禁用</div>
-          <div v-if="provider.model_maps.length > 0" class="tag tag-success">
+          <div v-else-if="isRouteMode && !provider.enabled" class="tag tag-muted">已禁用</div>
+          <div v-if="isRouteMode && provider.model_maps.length > 0" class="tag tag-success">
             {{ modelMapsText }}
           </div>
-          <div v-if="provider.model_blacklist?.length" class="tag tag-warning">
+          <div v-if="isRouteMode && provider.model_blacklist?.length" class="tag tag-warning">
             {{ provider.model_blacklist.length }}个黑名单配置
           </div>
         </div>
@@ -31,7 +32,7 @@
     </div>
 
     <div class="provider-side">
-      <div class="failure-box">
+      <div v-if="isRouteMode" class="failure-box">
         <div class="text-12 text-muted failure-label">失败阈值</div>
         <div
           class="mono text-16 failure-value"
@@ -42,16 +43,19 @@
       </div>
 
       <div class="provider-actions">
-        <el-switch :model-value="provider.enabled" :loading="toggleLoading" @change="emitToggle" />
+        <el-switch v-if="isRouteMode" :model-value="provider.enabled" :loading="toggleLoading" @change="emitToggle" />
 
         <div class="icon-row">
+          <div v-if="isDirectMode" class="action-icon" :class="{ disabled: writeLoading }" @click="emitWrite" title="写入配置">
+            <svg width="18" height="18"><use href="#icon-write"/></svg>
+          </div>
           <div class="action-icon" @click="$emit('copy', provider)" title="复制">
             <svg width="18" height="18"><use href="#icon-copy"/></svg>
           </div>
           <div class="action-icon" @click="$emit('edit', provider)" title="编辑">
             <svg width="18" height="18"><use href="#icon-edit"/></svg>
           </div>
-          <div class="action-icon" @click="$emit('reset', provider)" title="重置并解除拉黑">
+          <div v-if="isRouteMode" class="action-icon" @click="$emit('reset', provider)" title="重置并解除拉黑">
             <svg width="18" height="18"><use href="#icon-refresh"/></svg>
           </div>
           <div class="action-icon delete" @click="$emit('delete', provider)" title="删除">
@@ -64,14 +68,16 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { Provider } from '@/types/models'
 
 const props = defineProps<{
   provider: Provider
   isLast: boolean
-  modelMapsText: string
+  mode?: 'route' | 'direct'
   unblacklistText: string
   toggleLoading?: boolean
+  writeLoading?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -79,11 +85,21 @@ const emit = defineEmits<{
   edit: [provider: Provider]
   reset: [provider: Provider]
   delete: [provider: Provider]
+  write: [provider: Provider]
   toggle: [payload: { provider: Provider; enabled: boolean }]
 }>()
 
+const isDirectMode = computed(() => props.mode === 'direct')
+const isRouteMode = computed(() => props.mode !== 'direct')
+const modelMapsText = computed(() => props.provider.model_maps.map(modelMap => modelMap.target_model).join('、'))
+
 function emitToggle(value: string | number | boolean) {
   emit('toggle', { provider: props.provider, enabled: Boolean(value) })
+}
+
+function emitWrite() {
+  if (props.writeLoading) return
+  emit('write', props.provider)
 }
 </script>
 
@@ -108,6 +124,7 @@ function emitToggle(value: string | number | boolean) {
 .failure-value.danger { color: var(--color-danger); }
 .provider-actions { display: flex; align-items: center; gap: 24px; }
 .icon-row { display: flex; align-items: center; gap: 8px; }
+.action-icon.disabled { opacity: 0.5; pointer-events: none; }
 .tag {
   padding: 4px 10px;
   border-radius: 999px;

@@ -397,8 +397,11 @@ pub async fn test_provider_model(
                 // Stream mode: wait for first chunk only
                 use futures_util::StreamExt;
                 let mut stream = resp.bytes_stream();
-                let first_chunk =
-                    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), stream.next()).await;
+                let first_chunk = tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout_secs),
+                    stream.next(),
+                )
+                .await;
                 let first_chunk_ms = start.elapsed().as_millis() as u64;
 
                 let (response_text, raw_chunk) = match first_chunk {

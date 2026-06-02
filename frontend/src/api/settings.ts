@@ -10,7 +10,8 @@ import type {
   GatewaySettingsRaw,
   SystemStatus,
   ProviderProfile,
-  CliProfileSettingsStatus
+  CliProfileSettingsStatus,
+  CliMode
 } from '@/types/models'
 
 export const settingsApi = {
@@ -53,8 +54,12 @@ export const settingsApi = {
     await invoke('update_cli_settings', { cliType, input: data })
     return { data: null }
   },
-  setCliMode: async (cliType: CliType, mode: 'proxy' | 'direct') => {
+  setCliMode: async (cliType: CliType, mode: CliMode) => {
     await invoke('set_cli_mode', { cliType, mode })
+    return { data: null }
+  },
+  setDashboardCliMode: async (cliType: CliType, mode: CliMode) => {
+    await invoke('set_dashboard_cli_mode', { cliType, mode })
     return { data: null }
   },
   getClaudeProfileSettingsStatus: async (profile: ProviderProfile) => {

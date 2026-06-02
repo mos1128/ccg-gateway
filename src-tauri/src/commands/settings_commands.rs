@@ -110,7 +110,9 @@ pub async fn get_cli_settings(
             cli_type: row.cli_type,
             enabled,
             default_json_config: row.default_json_config.unwrap_or_default(),
-            cli_mode: row.cli_mode,
+            cli_mode: normalize_cli_mode(&row.cli_mode)
+                .unwrap_or(CLI_MODE_PROXY_ROUTE)
+                .to_string(),
             config_dir,
             default_config_dir,
             config_write_mode: row.config_write_mode,
@@ -120,7 +122,7 @@ pub async fn get_cli_settings(
             cli_type: cli_type.clone(),
             enabled: false,
             default_json_config: String::new(),
-            cli_mode: "proxy".to_string(),
+            cli_mode: CLI_MODE_PROXY_ROUTE.to_string(),
             config_dir,
             default_config_dir,
             config_write_mode: "merge".to_string(),
@@ -270,6 +272,115 @@ pub async fn ensure_codex_profile_settings(
     codex_profile_settings_status(db.inner(), &profile, &gateway_url).await
 }
 
+async fn collect_provider_direct_rewrite_ids(db: &SqlitePool, cli_type: &str) -> Result<Vec<i64>> {
+    let mut ids = Vec::new();
+    for profile in PROVIDER_PROFILES {
+        if cli_type == "gemini" && profile != DEFAULT_PROFILE {
+            continue;
+        }
+
+        if let Some(id) = provider_direct_active_provider_id(db, cli_type, profile).await? {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+    }
+    Ok(ids)
+}
+
+fn validate_provider_direct_provider(provider: &Provider) -> Result<()> {
+    if provider.base_url.trim().is_empty() || provider.api_key.trim().is_empty() {
+        return Err(format!(
+            "服务商 {} 的 Base URL 或 API Key 为空",
+            provider.name
+        ));
+    }
+    Ok(())
+}
+
+async fn provider_direct_rewrite_providers(
+    db: &SqlitePool,
+    cli_type: &str,
+    preferred_ids: &[i64],
+) -> Result<Vec<Provider>> {
+    let mut providers = Vec::new();
+    for id in preferred_ids {
+        if let Some(provider) =
+            sqlx::query_as::<_, Provider>("SELECT * FROM providers WHERE id = ? AND cli_type = ?")
+                .bind(id)
+                .bind(cli_type)
+                .fetch_optional(db)
+                .await
+                .map_err(|e| e.to_string())?
+        {
+            validate_provider_direct_provider(&provider)?;
+            providers.push(provider);
+        }
+    }
+
+    if !providers.is_empty() {
+        return Ok(providers);
+    }
+
+    let provider = sqlx::query_as::<_, Provider>(
+        "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id LIMIT 1",
+    )
+    .bind(cli_type)
+    .bind(DEFAULT_PROFILE)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "default Profile 下没有可用服务商，请先添加服务商".to_string())?;
+
+    validate_provider_direct_provider(&provider)?;
+    Ok(vec![provider])
+}
+
+async fn rewrite_cli_config_for_current_mode(
+    db: &SqlitePool,
+    cli_type: &str,
+    mode: &str,
+    default_config: &str,
+    previous_default_config: Option<&str>,
+    gateway_url: &str,
+    provider_direct_ids: &[i64],
+    proxy_was_enabled: bool,
+) -> Result<()> {
+    match mode {
+        CLI_MODE_PROXY_ROUTE => {
+            if proxy_was_enabled || check_cli_enabled(db, cli_type, gateway_url).await {
+                sync_cli_config(
+                    db,
+                    cli_type,
+                    true,
+                    default_config,
+                    previous_default_config,
+                    gateway_url,
+                )
+                .await?;
+            }
+        }
+        CLI_MODE_PROVIDER_DIRECT => {
+            let providers =
+                provider_direct_rewrite_providers(db, cli_type, provider_direct_ids).await?;
+            for provider in providers {
+                write_provider_direct_config_with_previous(db, &provider, previous_default_config)
+                    .await?;
+            }
+        }
+        CLI_MODE_OFFICIAL_DIRECT => {
+            credential_commands::auto_sync_credential_in_direct_mode(
+                db,
+                cli_type,
+                previous_default_config,
+            )
+            .await?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn update_cli_settings(
     db: State<'_, SqlitePool>,
@@ -296,6 +407,65 @@ pub async fn update_cli_settings(
         }
     }
 
+    let current_settings =
+        sqlx::query_as::<_, (Option<String>, Option<String>, String, String)>(
+            "SELECT default_json_config, config_dir, config_write_mode, cli_mode FROM cli_settings WHERE cli_type = ?",
+        )
+        .bind(&cli_type)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let previous_default_config = current_settings
+        .as_ref()
+        .and_then(|row| row.0.clone())
+        .unwrap_or_default();
+    let previous_write_mode = current_settings
+        .as_ref()
+        .map(|row| row.2.clone())
+        .unwrap_or_else(|| "merge".to_string());
+    let previous_effective_config_dir = current_settings
+        .as_ref()
+        .and_then(|row| row.1.clone())
+        .map(|path| expand_home_path(&path))
+        .unwrap_or_else(|| {
+            get_default_cli_config_dir(&cli_type)
+                .to_string_lossy()
+                .to_string()
+        });
+    let mode_before = current_settings
+        .as_ref()
+        .and_then(|row| normalize_cli_mode(&row.3))
+        .unwrap_or(CLI_MODE_PROXY_ROUTE);
+
+    let default_config_changed = config_trimmed
+        .as_ref()
+        .map(|config| config != &previous_default_config)
+        .unwrap_or(false);
+    let write_mode_changed = input
+        .config_write_mode
+        .as_ref()
+        .map(|write_mode| write_mode != &previous_write_mode)
+        .unwrap_or(false);
+    let config_dir_changed = input
+        .config_dir
+        .as_ref()
+        .map(|config_dir| {
+            std::path::PathBuf::from(expand_home_path(config_dir))
+                != std::path::PathBuf::from(previous_effective_config_dir.clone())
+        })
+        .unwrap_or(false);
+
+    let provider_direct_ids_before = if mode_before == CLI_MODE_PROVIDER_DIRECT {
+        collect_provider_direct_rewrite_ids(db.inner(), &cli_type)
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let proxy_was_enabled = mode_before == CLI_MODE_PROXY_ROUTE
+        && check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
+
     if let Some(ref write_mode) = input.config_write_mode {
         sqlx::query(
             "UPDATE cli_settings SET config_write_mode = ?, updated_at = ? WHERE cli_type = ?",
@@ -320,16 +490,6 @@ pub async fn update_cli_settings(
     }
 
     if let Some(ref config_trimmed) = config_trimmed {
-        let previous_default_config = sqlx::query_as::<_, (Option<String>,)>(
-            "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
-        )
-        .bind(&cli_type)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?
-        .and_then(|r| r.0)
-        .unwrap_or_default();
-
         sqlx::query(
             "UPDATE cli_settings SET default_json_config = ?, updated_at = ? WHERE cli_type = ?",
         )
@@ -339,72 +499,36 @@ pub async fn update_cli_settings(
         .execute(db.inner())
         .await
         .map_err(map_db_error)?;
+    }
 
-        let mode: String =
-            sqlx::query_as::<_, (String,)>("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
-                .bind(&cli_type)
-                .fetch_optional(db.inner())
-                .await
-                .map_err(|e| e.to_string())?
-                .map(|r| r.0)
-                .unwrap_or_else(|| "proxy".to_string());
-
-        if cli_type == "claude_code" {
-            sync_claude_code_preset_update(
-                db.inner(),
-                config_trimmed,
-                &previous_default_config,
-                &gateway_url,
-            )
-            .await?;
-
-            if mode == "direct" {
-                tracing::info!("{} 直连模式，配置变更后自动同步凭证配置", cli_type);
-                credential_commands::auto_sync_credential_in_direct_mode(
-                    db.inner(),
-                    &cli_type,
-                    Some(&previous_default_config),
-                )
-                .await?;
-            }
-        } else if mode == "proxy" {
-            let enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
-            if enabled {
-                tracing::info!("{} CLI 已启用，配置变更后自动同步配置文件", cli_type);
-                sync_cli_config(
-                    db.inner(),
-                    &cli_type,
-                    true,
-                    config_trimmed,
-                    Some(&previous_default_config),
-                    &gateway_url,
-                )
-                .await?;
-            }
+    if default_config_changed || write_mode_changed || config_dir_changed {
+        let mode = get_normalized_cli_mode(db.inner(), &cli_type).await?;
+        let current_default_config = config_trimmed
+            .clone()
+            .unwrap_or_else(|| previous_default_config.clone());
+        let previous_for_sync = if default_config_changed {
+            Some(previous_default_config.as_str())
         } else {
-            tracing::info!("{} 直连模式，配置变更后自动同步凭证配置", cli_type);
-            credential_commands::auto_sync_credential_in_direct_mode(
-                db.inner(),
-                &cli_type,
-                Some(&previous_default_config),
-            )
-            .await?;
-        }
+            None
+        };
+
+        rewrite_cli_config_for_current_mode(
+            db.inner(),
+            &cli_type,
+            mode,
+            &current_default_config,
+            previous_for_sync,
+            &gateway_url,
+            &provider_direct_ids_before,
+            proxy_was_enabled,
+        )
+        .await?;
     }
 
     if let Some(enabled) = input.enabled {
-        let current_mode: Option<(String,)> =
-            sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
-                .bind(&cli_type)
-                .fetch_optional(db.inner())
-                .await
-                .map_err(|e| e.to_string())?;
+        let mode = get_normalized_cli_mode(db.inner(), &cli_type).await?;
 
-        let mode = current_mode
-            .map(|r| r.0)
-            .unwrap_or_else(|| "proxy".to_string());
-
-        if mode == "proxy" {
+        if mode == CLI_MODE_PROXY_ROUTE {
             let current_enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
 
             if current_enabled == enabled {
@@ -438,7 +562,7 @@ pub async fn update_cli_settings(
                 .await?;
             }
         } else {
-            tracing::info!("{} 处于直连模式，忽略 enabled 参数", cli_type);
+            tracing::info!("{} 处于非中转路由模式，忽略 enabled 参数", cli_type);
         }
     }
 

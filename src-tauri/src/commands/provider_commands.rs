@@ -1,4 +1,4 @@
-use super::{map_db_error, validate_provider_profile, Result};
+use super::*;
 use crate::db::models::{
     Provider, ProviderCreate, ProviderResponse, ProviderUpdate, TestProviderModelsInput,
 };
@@ -16,6 +16,12 @@ pub async fn get_providers(
     let profile = match profile {
         Some(value) => Some(validate_provider_profile(Some(&value))?.to_string()),
         None => None,
+    };
+    let active_provider_id = match (&cli_type, &profile) {
+        (Some(ct), Some(profile)) => provider_direct_active_provider_id(db.inner(), ct, profile)
+            .await
+            .unwrap_or(None),
+        _ => None,
     };
 
     let providers = match (cli_type, profile) {
@@ -113,6 +119,7 @@ pub async fn get_providers(
         .into_iter()
         .map(|provider| {
             let mut response = ProviderResponse::from(provider.clone());
+            response.is_direct_active = active_provider_id == Some(provider.id);
 
             // 从分组数据中获取 model_maps
             response.model_maps = maps_by_provider
@@ -163,7 +170,12 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Provider not found".to_string())?;
 
+    let active_provider_id =
+        provider_direct_active_provider_id(db.inner(), &provider.cli_type, &provider.profile)
+            .await
+            .unwrap_or(None);
     let mut response = ProviderResponse::from(provider);
+    response.is_direct_active = active_provider_id == Some(response.id);
 
     // Load model maps
     let maps: Vec<(i64, String, String, i64)> = sqlx::query_as(
@@ -201,6 +213,38 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
         .collect();
 
     Ok(response)
+}
+
+#[tauri::command]
+pub async fn write_provider_direct_config_command(
+    db: State<'_, SqlitePool>,
+    log_db: State<'_, LogDb>,
+    id: i64,
+) -> Result<ProviderResponse> {
+    let provider = sqlx::query_as::<_, Provider>("SELECT * FROM providers WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "服务商不存在".to_string())?;
+
+    write_provider_direct_config(db.inner(), &provider).await?;
+    set_normalized_cli_mode(
+        db.inner(),
+        &provider.cli_type,
+        CLI_MODE_PROVIDER_DIRECT,
+        now_timestamp(),
+    )
+    .await?;
+
+    let _ = crate::services::stats::record_system_log(
+        &log_db.0,
+        "provider_direct_written",
+        &format!("服务商 {} 已写入 CLI 配置", provider.name),
+    )
+    .await;
+
+    get_provider(db, id).await
 }
 
 #[tauri::command]

@@ -23,6 +23,12 @@
           <path d="M9 14h6"/>
           <path d="M12 11v6"/>
         </symbol>
+        <symbol id="icon-write" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
+          <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+          <path d="M12 18v-6"/>
+          <path d="m9 15 3 3 3-3"/>
+        </symbol>
         <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
         </symbol>
@@ -48,8 +54,8 @@
     <div class="page-header">
       <div class="header-left">
         <div class="b-segmented">
-          <div class="b-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="handleSwitchProxy">中转模式</div>
-          <div class="b-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方模式</div>
+          <div class="b-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="handleSwitchProxy">中转路由</div>
+          <div class="b-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方直连</div>
         </div>
 
         <div v-if="showProfileControls" class="b-segmented">
@@ -64,7 +70,7 @@
           </div>
         </div>
         <el-tooltip
-          v-if="showProfileControls"
+          v-if="showProfileHelp"
           effect="light"
           placement="top"
           :fallback-placements="['bottom', 'top', 'right', 'left']"
@@ -168,11 +174,13 @@
             <ProviderListItem
               :provider="element"
               :is-last="index === providerStore.providers.length - 1"
-              :model-maps-text="formatModelMaps(element.model_maps)"
+              :mode="isProviderDirectMode ? 'direct' : 'route'"
               :unblacklist-text="getUnblacklistTime(element)"
               :toggle-loading="toggleLoadingId === element.id"
+              :write-loading="writeProviderLoadingId === element.id"
               @copy="handleCopyProvider"
               @edit="handleEdit"
+              @write="handleWriteProviderDirect"
               @reset="handleReset"
               @delete="provider => handleCommand('delete', provider)"
               @toggle="handleToggle"
@@ -203,6 +211,8 @@
             <CredentialListItem
               :credential="element"
               :is-last="index === credentialStore.credentials.length - 1"
+              :write-loading="writeCredentialLoadingId === element.id"
+              @write="handleWriteCredential"
               @edit="handleEditCredential"
               @delete="handleDeleteCredential"
             />
@@ -264,15 +274,17 @@ import ModelDetectionModal from './components/ModelDetectionModal.vue'
 import { useProviderStore } from '@/stores/providers'
 import { useCredentialStore } from '@/stores/credentials'
 import { useUiStore } from '@/stores/ui'
+import { useSettingsStore } from '@/stores/settings'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { CLI_TABS, PROFILE_CAPABLE_CLI_TYPES } from '@/types/models'
-import type { Provider, CliType, ProviderProfile, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
+import type { Provider, CliType, CliMode, ProviderProfile, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
 
 const providerStore = useProviderStore()
 const credentialStore = useCredentialStore()
 const uiStore = useUiStore()
+const settingsStore = useSettingsStore()
 
 const cliTabs = CLI_TABS
 
@@ -305,14 +317,20 @@ const viewMode = computed<ViewMode>({
   set: (mode) => {
     if (activeCliType.value === 'claude_code') {
       viewModes.value.claude_code = 'proxy'
-      if (mode === 'direct') notify('Claude Code 暂未实现官方模式功能', 'warning')
+      if (mode === 'direct') notify('Claude Code 暂未实现官方直连功能', 'warning')
       return
     }
     viewModes.value[activeCliType.value] = mode
   }
 })
+const currentCliMode = computed<CliMode>(() =>
+  settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'proxy_route'
+)
+const isProviderDirectMode = computed(() => currentCliMode.value === 'provider_direct')
+const isProxyRouteMode = computed(() => currentCliMode.value === 'proxy_route')
 const profileCapableCliTypes = PROFILE_CAPABLE_CLI_TYPES
 const showProfileControls = computed(() => viewMode.value === 'proxy' && profileCapableCliTypes.includes(activeCliType.value))
+const showProfileHelp = computed(() => showProfileControls.value)
 const currentProviderProfile = computed<ProviderProfile>(() =>
   showProfileControls.value ? activeProfile.value : 'default'
 )
@@ -342,6 +360,9 @@ const isCurrentProfileCommandLoading = computed(() =>
   profileCommandLoading.value === profileStatusKey(activeCliType.value, activeProfile.value)
 )
 const profileUsageText = computed(() => {
+  if (isProviderDirectMode.value) {
+    return '中转直连会将服务商写入当前 Profile 对应配置文件，通过对应启动命令启动的 Agent 会直连该服务商'
+  }
   return '切换到 Profile 时会自动生成对应配置文件，通过对应启动命令启动的 Agent 会路由到对应 Profile 配置的服务商'
 })
 
@@ -398,6 +419,8 @@ interface ProviderDraft {
 interface ProviderTogglePayload { provider: Provider; enabled: boolean }
 
 const toggleLoadingId = ref<number | null>(null)
+const writeProviderLoadingId = ref<number | null>(null)
+const writeCredentialLoadingId = ref<number | null>(null)
 
 const form = ref({
   name: '',
@@ -491,7 +514,7 @@ const detectSelectedIds = ref<number[]>([])
 const detectResults = ref<TestProviderResult[]>([])
 
 const detectProviderList = computed(() =>
-  providerStore.providers.filter(p => p.enabled)
+  isProviderDirectMode.value ? providerStore.providers : providerStore.providers.filter(p => p.enabled)
 )
 
 const isAllDetectSelected = computed(() =>
@@ -646,7 +669,7 @@ function removeModelBlacklist(index: number) { form.value.model_blacklist.splice
 
 async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
   const cliType = activeCliType.value
-  if (!profileCapableCliTypes.includes(cliType) || viewMode.value !== 'proxy') {
+  if (!profileCapableCliTypes.includes(cliType) || viewMode.value !== 'proxy' || !isProxyRouteMode.value) {
     return true
   }
   if (profile === 'default') {
@@ -726,7 +749,16 @@ watch(() => viewMode.value, async (mode) => {
   }
 })
 
-watch([showProfileControls, activeCliType, activeProfile], ([visible, cliType, profile]) => {
+watch(() => currentCliMode.value, async () => {
+  if (viewMode.value === 'proxy') {
+    const profile = await ensureCurrentProfileOrFallback()
+    providerStore.fetchProviders(activeCliType.value as CliType, profile)
+  } else {
+    credentialStore.fetchCredentials(activeCliType.value as CliType)
+  }
+})
+
+watch([showProfileHelp, activeCliType, activeProfile], ([visible, cliType, profile]) => {
   if (!visible || profileSettingsStatusMap.value[profileStatusKey(cliType, profile)]) return
   loadProfileSettingsStatus(cliType, profile, true)
 }, { immediate: true })
@@ -809,6 +841,7 @@ async function handleSave() {
 }
 
 async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
+  if (isProviderDirectMode.value) return
   toggleLoadingId.value = provider.id
   try {
     await providerStore.updateProvider(provider.id, { enabled })
@@ -818,6 +851,20 @@ async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
     notify(getErrorMessage(e, '切换失败'), 'error')
   } finally {
     toggleLoadingId.value = null
+  }
+}
+
+async function handleWriteProviderDirect(provider: Provider) {
+  writeProviderLoadingId.value = provider.id
+  try {
+    await providersApi.writeDirectConfig(provider.id)
+    await settingsStore.fetchSettings()
+    await providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
+    notify(`已写入服务商：${provider.name}`)
+  } catch (e: any) {
+    notify(getErrorMessage(e, '写入失败'), 'error')
+  } finally {
+    writeProviderLoadingId.value = null
   }
 }
 
@@ -877,6 +924,20 @@ async function handleDeleteCredential(credential: OfficialCredential) {
     notify('已删除')
   } catch (e) {
     if (e !== 'cancel') notify(getErrorMessage(e, '删除失败'), 'error')
+  }
+}
+
+async function handleWriteCredential(credential: OfficialCredential) {
+  writeCredentialLoadingId.value = credential.id
+  try {
+    await credentialsApi.writeConfig(credential.id)
+    await settingsStore.fetchSettings()
+    await credentialStore.fetchCredentials(activeCliType.value as CliType)
+    notify(`已写入凭证：${credential.name}`)
+  } catch (e: any) {
+    notify(getErrorMessage(e, '写入失败'), 'error')
+  } finally {
+    writeCredentialLoadingId.value = null
   }
 }
 
@@ -957,10 +1018,6 @@ function handleVisibilityChange() {
   }
 }
 
-function formatModelMaps(modelMaps: Provider['model_maps']): string {
-  return modelMaps.map(modelMap => modelMap.target_model).join('、')
-}
-
 function getUnblacklistTime(provider: Provider): string {
   if (!provider.is_blacklisted || !provider.blacklisted_until) return '已拉黑'
   const diffSeconds = provider.blacklisted_until - (now.value / 1000)
@@ -970,6 +1027,7 @@ function getUnblacklistTime(provider: Provider): string {
 }
 
 onMounted(async () => {
+  await settingsStore.fetchSettings()
   const profile = await ensureCurrentProfileOrFallback()
   providerStore.fetchProviders(activeCliType.value as CliType, profile)
   credentialStore.fetchCredentials(activeCliType.value as CliType)

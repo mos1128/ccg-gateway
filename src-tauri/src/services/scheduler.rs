@@ -745,7 +745,8 @@ async fn execute_keepalive_target(
     };
 
     let timeout_secs = provider_service::get_stream_first_byte_timeout(db).await;
-    let result = provider_service::test_provider_model(db, provider.id, model_name, timeout_secs).await;
+    let result =
+        provider_service::test_provider_model(db, provider.id, model_name, timeout_secs).await;
     let ok = result
         .status_code
         .map(|code| (200..300).contains(&code))

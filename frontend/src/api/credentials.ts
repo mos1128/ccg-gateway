@@ -22,6 +22,11 @@ export const credentialsApi = {
     return { data: result }
   },
 
+  writeConfig: async (id: number): Promise<{ data: OfficialCredential }> => {
+    const result = await invoke<OfficialCredential>('write_credential_config', { id })
+    return { data: result }
+  },
+
   delete: async (id: number) => {
     await invoke('delete_credential', { id })
     return { data: null }

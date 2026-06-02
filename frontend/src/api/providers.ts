@@ -22,6 +22,10 @@ export const providersApi = {
     const result = await invoke<Provider>('update_provider', { id, input: data })
     return { data: result }
   },
+  writeDirectConfig: async (id: number): Promise<{ data: Provider }> => {
+    const result = await invoke<Provider>('write_provider_direct_config_command', { id })
+    return { data: result }
+  },
   delete: async (id: number) => {
     await invoke('delete_provider', { id })
     return { data: null }

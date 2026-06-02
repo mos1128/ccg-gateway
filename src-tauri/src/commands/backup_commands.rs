@@ -280,7 +280,11 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
 }
 
 #[tauri::command]
-pub async fn import_from_webdav(app: tauri::AppHandle, db: State<'_, SqlitePool>, filename: String) -> Result<()> {
+pub async fn import_from_webdav(
+    app: tauri::AppHandle,
+    db: State<'_, SqlitePool>,
+    filename: String,
+) -> Result<()> {
     use reqwest::Client;
 
     let settings = get_webdav_settings(db).await?;

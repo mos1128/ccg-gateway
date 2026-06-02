@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { settingsApi } from '@/api/settings'
-import type { AllSettings, CliType, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate } from '@/types/models'
+import type { AllSettings, CliType, CliMode, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate } from '@/types/models'
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AllSettings | null>(null)
@@ -32,10 +32,15 @@ export const useSettingsStore = defineStore('settings', () => {
     await fetchSettings()
   }
 
-  async function setCliMode(cliType: CliType, mode: 'proxy' | 'direct') {
+  async function setCliMode(cliType: CliType, mode: CliMode) {
     await settingsApi.setCliMode(cliType, mode)
     await fetchSettings()
   }
 
-  return { settings, loading, fetchSettings, updateGateway, updateTimeouts, updateCli, setCliMode }
+  async function setDashboardCliMode(cliType: CliType, mode: CliMode) {
+    await settingsApi.setDashboardCliMode(cliType, mode)
+    await fetchSettings()
+  }
+
+  return { settings, loading, fetchSettings, updateGateway, updateTimeouts, updateCli, setCliMode, setDashboardCliMode }
 })

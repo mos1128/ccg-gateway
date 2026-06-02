@@ -7,8 +7,8 @@ use crate::db::models::{
     McpUpdate, OfficialCredential, OfficialCredentialCreate, OfficialCredentialResponse,
     OfficialCredentialUpdate, PaginatedLogs, PaginatedProjects, PaginatedSessions,
     PluginFavoriteItem, PluginItem, ProjectInfo, PromptCliFlag, PromptCreate, PromptPreset,
-    PromptResponse, PromptUpdate, ProviderStatsResponse, ProviderStatsRow, RequestLogDetail,
-    RequestLogItem, ScheduledTaskCreate, ScheduledTaskResponse, ScheduledTaskRun,
+    PromptResponse, PromptUpdate, Provider, ProviderStatsResponse, ProviderStatsRow,
+    RequestLogDetail, RequestLogItem, ScheduledTaskCreate, ScheduledTaskResponse, ScheduledTaskRun,
     ScheduledTaskRunItem, ScheduledTaskRunListResponse, ScheduledTaskUpdate, SessionInfo,
     SessionMessage, SkillCliFlag, SkillFavorite, SkillFavoriteItem, SkillRepo, SkillRepoCreate,
     SystemLogItem, SystemLogListResponse, SystemStatus, TimeoutSettings, TimeoutSettingsUpdate,
@@ -44,6 +44,50 @@ pub mod system_commands;
 pub mod update_commands;
 
 type Result<T> = std::result::Result<T, String>;
+
+const CLI_MODE_PROXY_ROUTE: &str = "proxy_route";
+const CLI_MODE_PROVIDER_DIRECT: &str = "provider_direct";
+const CLI_MODE_OFFICIAL_DIRECT: &str = "official_direct";
+
+fn normalize_cli_mode(mode: &str) -> Option<&'static str> {
+    match mode.trim() {
+        "proxy" | CLI_MODE_PROXY_ROUTE => Some(CLI_MODE_PROXY_ROUTE),
+        "direct" | CLI_MODE_OFFICIAL_DIRECT => Some(CLI_MODE_OFFICIAL_DIRECT),
+        CLI_MODE_PROVIDER_DIRECT => Some(CLI_MODE_PROVIDER_DIRECT),
+        _ => None,
+    }
+}
+
+async fn get_normalized_cli_mode(db: &SqlitePool, cli_type: &str) -> Result<&'static str> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
+            .bind(cli_type)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    Ok(row
+        .as_ref()
+        .and_then(|r| normalize_cli_mode(&r.0))
+        .unwrap_or(CLI_MODE_PROXY_ROUTE))
+}
+
+async fn set_normalized_cli_mode(
+    db: &SqlitePool,
+    cli_type: &str,
+    mode: &str,
+    now: i64,
+) -> Result<()> {
+    sqlx::query("UPDATE cli_settings SET cli_mode = ?, updated_at = ? WHERE cli_type = ?")
+        .bind(mode)
+        .bind(now)
+        .bind(cli_type)
+        .execute(db)
+        .await
+        .map_err(map_db_error)?;
+
+    Ok(())
+}
 
 fn serialize_toml_document<T: Serialize>(
     value: &T,
@@ -148,6 +192,180 @@ fn apply_codex_gateway_named_profile_config(
     Ok(())
 }
 
+fn codex_provider_direct_provider_name(profile: &str) -> Result<&'static str> {
+    let profile = normalize_profile(Some(profile))
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
+    codex_gateway_provider_name(profile)
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))
+}
+
+fn codex_legacy_provider_direct_provider_name(profile: &str) -> Result<Option<String>> {
+    let profile = normalize_profile(Some(profile))
+        .ok_or_else(|| format!("profile 只能是 {}", PROVIDER_PROFILES.join(" / ")))?;
+    Ok((profile != DEFAULT_PROFILE).then(|| format!("ccg-provider-direct-{}", profile)))
+}
+
+fn codex_provider_entry_uses_gateway_token(
+    doc: &toml_edit::DocumentMut,
+    provider_name: &str,
+    profile: &str,
+) -> bool {
+    let Some(expected_token) = gateway_token_for_profile(profile) else {
+        return false;
+    };
+
+    doc.get("model_providers")
+        .and_then(|item| item.get(provider_name))
+        .and_then(|item| item.as_table())
+        .and_then(|provider| provider.get("experimental_bearer_token"))
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .map(|token| token == expected_token)
+        .unwrap_or(false)
+}
+
+fn remove_codex_provider_entry(doc: &mut toml_edit::DocumentMut, provider_name: &str) {
+    let selected = doc
+        .get("model_provider")
+        .and_then(|item| item.as_str())
+        .map(|value| value == provider_name)
+        .unwrap_or(false);
+    if selected {
+        doc.remove("model_provider");
+    }
+
+    let remove_model_providers = if let Some(model_providers) = doc
+        .get_mut("model_providers")
+        .and_then(|item| item.as_table_mut())
+    {
+        model_providers.remove(provider_name);
+        model_providers.is_empty()
+    } else {
+        false
+    };
+
+    if remove_model_providers {
+        doc.remove("model_providers");
+    }
+}
+
+fn remove_codex_provider_direct_entry(
+    doc: &mut toml_edit::DocumentMut,
+    profile: &str,
+) -> Result<()> {
+    let provider_name = codex_provider_direct_provider_name(profile)?;
+    if let Some(legacy_provider_name) = codex_legacy_provider_direct_provider_name(profile)? {
+        remove_codex_provider_entry(doc, &legacy_provider_name);
+    }
+    if !codex_provider_entry_uses_gateway_token(doc, provider_name, profile) {
+        remove_codex_provider_entry(doc, provider_name);
+    }
+    Ok(())
+}
+
+fn apply_codex_provider_direct_config(
+    doc: &mut toml_edit::DocumentMut,
+    provider: &Provider,
+) -> Result<String> {
+    let provider_name = codex_provider_direct_provider_name(&provider.profile)?;
+
+    let mut provider_table = toml_edit::Table::new();
+    provider_table["name"] = toml_edit::value(provider_name);
+    provider_table["base_url"] = toml_edit::value(provider.base_url.trim_end_matches('/'));
+    provider_table["wire_api"] = toml_edit::value("responses");
+    provider_table["requires_openai_auth"] = toml_edit::value(false);
+    provider_table["experimental_bearer_token"] = toml_edit::value(provider.api_key.as_str());
+
+    let model_providers = ensure_toml_table(doc, "model_providers");
+    model_providers[provider_name] = toml_edit::Item::Table(provider_table);
+    doc["model_provider"] = toml_edit::value(provider_name);
+
+    Ok(provider_name.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn codex_provider(profile: &str) -> Provider {
+        Provider {
+            id: 1,
+            cli_type: "codex".to_string(),
+            profile: profile.to_string(),
+            name: "Upstream Provider".to_string(),
+            base_url: "https://provider.example/v1".to_string(),
+            api_key: "provider-key".to_string(),
+            enabled: 1,
+            failure_threshold: 3,
+            blacklist_minutes: 10,
+            consecutive_failures: 0,
+            blacklisted_until: None,
+            sort_order: 0,
+            custom_useragent: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn codex_provider_direct_profile_uses_gateway_profile_name() {
+        let mut doc = toml_edit::DocumentMut::new();
+
+        apply_codex_provider_direct_config(&mut doc, &codex_provider(PROFILE1)).unwrap();
+
+        assert_eq!(
+            doc.get("model_provider").and_then(|item| item.as_str()),
+            Some("ccg-gateway-profile1")
+        );
+        let provider = doc
+            .get("model_providers")
+            .and_then(|item| item.get("ccg-gateway-profile1"))
+            .and_then(|item| item.as_table())
+            .unwrap();
+        assert_eq!(
+            provider.get("name").and_then(|item| item.as_str()),
+            Some("ccg-gateway-profile1")
+        );
+        assert!(doc
+            .get("model_providers")
+            .and_then(|item| item.get("ccg-provider-direct-profile1"))
+            .is_none());
+    }
+
+    #[test]
+    fn remove_codex_provider_direct_profile_removes_direct_and_legacy_names() {
+        let mut doc = toml_edit::DocumentMut::new();
+        apply_codex_provider_direct_config(&mut doc, &codex_provider(PROFILE1)).unwrap();
+        let mut legacy_provider = toml_edit::Table::new();
+        legacy_provider["name"] = toml_edit::value("Upstream Provider");
+        ensure_toml_table(&mut doc, "model_providers")["ccg-provider-direct-profile1"] =
+            toml_edit::Item::Table(legacy_provider);
+
+        remove_codex_provider_direct_entry(&mut doc, PROFILE1).unwrap();
+
+        assert!(doc.get("model_provider").is_none());
+        assert!(doc.get("model_providers").is_none());
+    }
+
+    #[test]
+    fn remove_codex_provider_direct_profile_preserves_gateway_profile() {
+        let mut doc = toml_edit::DocumentMut::new();
+        apply_codex_gateway_named_profile_config(&mut doc, "http://127.0.0.1:3456/v1", PROFILE1)
+            .unwrap();
+
+        remove_codex_provider_direct_entry(&mut doc, PROFILE1).unwrap();
+
+        assert_eq!(
+            doc.get("model_provider").and_then(|item| item.as_str()),
+            Some("ccg-gateway-profile1")
+        );
+        assert!(doc
+            .get("model_providers")
+            .and_then(|item| item.get("ccg-gateway-profile1"))
+            .is_some());
+    }
+}
+
 fn migrate_codex_legacy_profile_config(
     base_doc: &mut toml_edit::DocumentMut,
     profile_doc: &mut toml_edit::DocumentMut,
@@ -247,10 +465,7 @@ async fn remove_codex_direct_mode_files(
     config_dir: &std::path::Path,
     use_merge: bool,
 ) -> Result<()> {
-    let auth_path = config_dir.join("auth.json");
     let config_path = config_dir.join("config.toml");
-
-    remove_file_if_exists(&auth_path, "auth.json").await?;
 
     if use_merge {
         tracing::info!("Codex 增量模式切换到中转时保留 config.toml，供后续合并");
@@ -731,60 +946,6 @@ async fn remove_json_config_content(
     Ok(())
 }
 
-async fn remove_codex_gateway_auth_content(auth_path: &std::path::Path) -> Result<()> {
-    if !tokio::fs::try_exists(auth_path).await.unwrap_or(false) {
-        return Ok(());
-    }
-
-    let content = tokio::fs::read_to_string(auth_path).await.map_err(|e| {
-        tracing::error!("Failed to read auth.json: {}", e);
-        e.to_string()
-    })?;
-
-    let mut auth = match serde_json::from_str::<serde_json::Value>(&content) {
-        Ok(auth) => auth,
-        Err(e) => {
-            tracing::warn!("Failed to parse auth.json, leaving file untouched: {}", e);
-            return Ok(());
-        }
-    };
-
-    if let Some(object) = auth.as_object_mut() {
-        let should_remove = object
-            .get("OPENAI_API_KEY")
-            .and_then(|value| value.as_str())
-            .map(|value| value == "ccg-gateway")
-            .unwrap_or(false);
-        if should_remove {
-            object.remove("OPENAI_API_KEY");
-        }
-    }
-
-    let auth_str = serde_json::to_string_pretty(&auth).map_err(|e| {
-        tracing::error!("Failed to serialize auth.json: {}", e);
-        e.to_string()
-    })?;
-    tokio::fs::write(auth_path, auth_str).await.map_err(|e| {
-        tracing::error!("Failed to write auth.json: {}", e);
-        e.to_string()
-    })?;
-    Ok(())
-}
-
-async fn write_codex_gateway_auth(auth_path: &std::path::Path) -> Result<()> {
-    let auth = serde_json::json!({
-        "OPENAI_API_KEY": "ccg-gateway"
-    });
-    let auth_str = serde_json::to_string_pretty(&auth).map_err(|e| {
-        tracing::error!("Failed to serialize auth.json: {}", e);
-        e.to_string()
-    })?;
-    tokio::fs::write(auth_path, auth_str).await.map_err(|e| {
-        tracing::error!("Failed to write auth.json: {}", e);
-        e.to_string()
-    })
-}
-
 async fn remove_gemini_gateway_env_content(
     env_path: &std::path::Path,
     gateway_url: &str,
@@ -1177,6 +1338,10 @@ async fn codex_profile_uses_gateway(
 }
 
 fn codex_default_provider_uses_gateway(doc: &toml_edit::DocumentMut, gateway_url: &str) -> bool {
+    let Some(expected_token) = gateway_token_for_profile(DEFAULT_PROFILE) else {
+        return false;
+    };
+
     if doc
         .get("model_provider")
         .and_then(|v| v.as_str())
@@ -1186,7 +1351,7 @@ fn codex_default_provider_uses_gateway(doc: &toml_edit::DocumentMut, gateway_url
         return false;
     }
 
-    codex_provider_uses_gateway(doc, "ccg-gateway", gateway_url, None)
+    codex_provider_uses_gateway(doc, "ccg-gateway", gateway_url, Some(expected_token))
 }
 
 async fn codex_profile_settings_status(
@@ -1292,6 +1457,433 @@ async fn write_claude_gateway_settings(
     Ok(())
 }
 
+async fn get_cli_default_config(db: &SqlitePool, cli_type: &str) -> Result<String> {
+    Ok(sqlx::query_as::<_, (Option<String>,)>(
+        "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
+    )
+    .bind(cli_type)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| e.to_string())?
+    .and_then(|r| r.0)
+    .unwrap_or_default())
+}
+
+async fn write_claude_provider_direct_config(
+    db: &SqlitePool,
+    provider: &Provider,
+    previous_default_config: Option<&str>,
+) -> Result<()> {
+    let profile = validate_provider_profile(Some(&provider.profile))?;
+    let config_dir = get_cli_config_dir_path(db, "claude_code").await;
+    let config_path = config_dir.join(cli_helpers::claude_settings_filename(profile));
+    let use_merge = get_config_write_mode(db, "claude_code").await == "merge";
+    let default_config = if profile == DEFAULT_PROFILE {
+        get_cli_default_config(db, "claude_code").await?
+    } else {
+        String::new()
+    };
+
+    write_claude_gateway_settings(
+        &config_path,
+        &default_config,
+        previous_default_config,
+        use_merge,
+        provider.base_url.trim_end_matches('/'),
+        provider.api_key.trim(),
+    )
+    .await
+}
+
+async fn write_codex_provider_direct_config(
+    db: &SqlitePool,
+    provider: &Provider,
+    previous_default_config: Option<&str>,
+) -> Result<()> {
+    let profile = validate_provider_profile(Some(&provider.profile))?;
+    let codex_dir = get_cli_config_dir_path(db, "codex").await;
+    let config_path = codex_profile_config_path(&codex_dir, profile);
+    let use_merge = get_config_write_mode(db, "codex").await == "merge";
+
+    tokio::fs::create_dir_all(&codex_dir).await.map_err(|e| {
+        tracing::error!("Failed to create Codex directory: {}", e);
+        e.to_string()
+    })?;
+
+    let existing_content =
+        if use_merge && tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+            tokio::fs::read_to_string(&config_path).await.ok()
+        } else {
+            None
+        };
+
+    let mut final_doc = if let Some(ref content) = existing_content {
+        content
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to parse Codex provider direct config: {}", e);
+                toml_edit::DocumentMut::new()
+            })
+    } else {
+        toml_edit::DocumentMut::new()
+    };
+
+    if profile == DEFAULT_PROFILE {
+        let default_config = get_cli_default_config(db, "codex").await?;
+        if use_merge {
+            remove_previous_codex_preset(
+                &mut final_doc,
+                previous_default_config,
+                &default_config,
+                true,
+            );
+        }
+        if !default_config.is_empty() {
+            match default_config.parse::<toml_edit::DocumentMut>() {
+                Ok(mut custom_doc) => {
+                    custom_doc.remove("model_provider");
+                    custom_doc.remove("model_providers");
+                    for (k, v) in custom_doc.iter() {
+                        final_doc.insert(&k, v.clone());
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse Codex default_config (invalid TOML): {}", e);
+                }
+            }
+        }
+    }
+
+    if let Some(gateway_name) = codex_gateway_provider_name(profile) {
+        remove_codex_provider_entry(&mut final_doc, gateway_name);
+    }
+    remove_codex_provider_direct_entry(&mut final_doc, profile)?;
+    apply_codex_provider_direct_config(&mut final_doc, provider)?;
+
+    tokio::fs::write(&config_path, final_doc.to_string())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to write Codex provider direct config: {}", e);
+            e.to_string()
+        })
+}
+
+fn parse_env_line<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let trimmed = line.trim();
+    let (line_key, value) = trimmed.split_once('=')?;
+    if line_key.trim() == key {
+        Some(value.trim())
+    } else {
+        None
+    }
+}
+
+async fn write_gemini_provider_direct_config(
+    db: &SqlitePool,
+    provider: &Provider,
+    previous_default_config: Option<&str>,
+) -> Result<()> {
+    let gemini_dir = get_cli_config_dir_path(db, "gemini").await;
+    let config_path = gemini_dir.join("settings.json");
+    let env_path = gemini_dir.join(".env");
+    let use_merge = get_config_write_mode(db, "gemini").await == "merge";
+    let default_config = get_cli_default_config(db, "gemini").await?;
+
+    tokio::fs::create_dir_all(&gemini_dir).await.map_err(|e| {
+        tracing::error!("Failed to create Gemini directory: {}", e);
+        e.to_string()
+    })?;
+
+    let env_content = format!(
+        "GEMINI_API_KEY={}\nGOOGLE_GEMINI_BASE_URL={}\n",
+        provider.api_key.trim(),
+        provider.base_url.trim_end_matches('/')
+    );
+    tokio::fs::write(&env_path, env_content)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to write Gemini provider direct .env: {}", e);
+            e.to_string()
+        })?;
+
+    let mut config = if use_merge && tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+        tokio::fs::read_to_string(&config_path)
+            .await
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let gateway_config = serde_json::json!({
+        "security": {
+            "auth": {
+                "selectedType": "gemini-api-key"
+            }
+        }
+    });
+    let protected_gateway_fields = gemini_gateway_json_template();
+    if use_merge {
+        remove_previous_json_preset(
+            &mut config,
+            previous_default_config,
+            &default_config,
+            &protected_gateway_fields,
+            "Gemini",
+        );
+    }
+    deep_merge(&mut config, &gateway_config);
+
+    if !default_config.is_empty() {
+        match serde_json::from_str::<serde_json::Value>(&default_config) {
+            Ok(custom_config) => {
+                let sanitized_config =
+                    sanitize_json_config(custom_config, &protected_gateway_fields);
+                deep_merge(&mut config, &sanitized_config);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse Gemini default_config (invalid JSON): {}",
+                    e
+                );
+            }
+        }
+    }
+
+    let config_str = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    tokio::fs::write(&config_path, config_str)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to write Gemini provider direct settings: {}", e);
+            e.to_string()
+        })
+}
+
+async fn write_provider_direct_config_with_previous(
+    db: &SqlitePool,
+    provider: &Provider,
+    previous_default_config: Option<&str>,
+) -> Result<()> {
+    match provider.cli_type.as_str() {
+        "claude_code" => {
+            write_claude_provider_direct_config(db, provider, previous_default_config).await
+        }
+        "codex" => write_codex_provider_direct_config(db, provider, previous_default_config).await,
+        "gemini" => {
+            write_gemini_provider_direct_config(db, provider, previous_default_config).await
+        }
+        _ => Err("不支持的 CLI 类型".to_string()),
+    }
+}
+
+async fn write_provider_direct_config(db: &SqlitePool, provider: &Provider) -> Result<()> {
+    write_provider_direct_config_with_previous(db, provider, None).await
+}
+
+async fn provider_match_id(
+    db: &SqlitePool,
+    cli_type: &str,
+    profile: &str,
+    base_url: &str,
+    api_key: &str,
+) -> Result<Option<i64>> {
+    let providers: Vec<Provider> = sqlx::query_as(
+        "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id",
+    )
+    .bind(cli_type)
+    .bind(profile)
+    .fetch_all(db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(providers
+        .into_iter()
+        .find(|provider| {
+            gateway_url_matches(&provider.base_url, base_url)
+                && provider.api_key.trim() == api_key.trim()
+        })
+        .map(|provider| provider.id))
+}
+
+async fn claude_provider_direct_active_provider_id(
+    db: &SqlitePool,
+    profile: &str,
+) -> Result<Option<i64>> {
+    let profile = validate_provider_profile(Some(profile))?;
+    let config_dir = get_cli_config_dir_path(db, "claude_code").await;
+    let config_path = config_dir.join(cli_helpers::claude_settings_filename(profile));
+    if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+        return Ok(None);
+    }
+
+    let content = tokio::fs::read_to_string(&config_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let data = serde_json::from_str::<serde_json::Value>(&content).map_err(|e| e.to_string())?;
+    let Some(env) = data.get("env") else {
+        return Ok(None);
+    };
+    let Some(base_url) = env
+        .get("ANTHROPIC_BASE_URL")
+        .and_then(|value| value.as_str())
+    else {
+        return Ok(None);
+    };
+    let Some(api_key) = env
+        .get("ANTHROPIC_AUTH_TOKEN")
+        .and_then(|value| value.as_str())
+    else {
+        return Ok(None);
+    };
+
+    provider_match_id(db, "claude_code", profile, base_url, api_key).await
+}
+
+async fn codex_provider_direct_active_provider_id(
+    db: &SqlitePool,
+    profile: &str,
+) -> Result<Option<i64>> {
+    let profile = validate_provider_profile(Some(profile))?;
+    let codex_dir = get_cli_config_dir_path(db, "codex").await;
+    let config_path = codex_profile_config_path(&codex_dir, profile);
+    if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+        return Ok(None);
+    }
+
+    let content = tokio::fs::read_to_string(&config_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| e.to_string())?;
+    let Some(provider_name) = doc.get("model_provider").and_then(|item| item.as_str()) else {
+        return Ok(None);
+    };
+    let Some(provider_table) = doc
+        .get("model_providers")
+        .and_then(|item| item.get(provider_name))
+        .and_then(|item| item.as_table())
+    else {
+        return Ok(None);
+    };
+    let Some(base_url) = provider_table
+        .get("base_url")
+        .and_then(|item| item.as_str())
+    else {
+        return Ok(None);
+    };
+    let Some(api_key) = provider_table
+        .get("experimental_bearer_token")
+        .and_then(|item| item.as_str())
+    else {
+        return Ok(None);
+    };
+
+    provider_match_id(db, "codex", profile, base_url, api_key).await
+}
+
+async fn gemini_provider_direct_active_provider_id(db: &SqlitePool) -> Result<Option<i64>> {
+    let gemini_dir = get_cli_config_dir_path(db, "gemini").await;
+    let env_path = gemini_dir.join(".env");
+    if !tokio::fs::try_exists(&env_path).await.unwrap_or(false) {
+        return Ok(None);
+    }
+
+    let content = tokio::fs::read_to_string(&env_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut base_url = None;
+    let mut api_key = None;
+    for line in content.lines() {
+        if let Some(value) = parse_env_line(line, "GOOGLE_GEMINI_BASE_URL") {
+            base_url = Some(value.to_string());
+        } else if let Some(value) = parse_env_line(line, "GEMINI_API_KEY") {
+            api_key = Some(value.to_string());
+        }
+    }
+
+    let (Some(base_url), Some(api_key)) = (base_url, api_key) else {
+        return Ok(None);
+    };
+
+    provider_match_id(db, "gemini", DEFAULT_PROFILE, &base_url, &api_key).await
+}
+
+async fn provider_direct_active_provider_id(
+    db: &SqlitePool,
+    cli_type: &str,
+    profile: &str,
+) -> Result<Option<i64>> {
+    match cli_type {
+        "claude_code" => claude_provider_direct_active_provider_id(db, profile).await,
+        "codex" => codex_provider_direct_active_provider_id(db, profile).await,
+        "gemini" => gemini_provider_direct_active_provider_id(db).await,
+        _ => Ok(None),
+    }
+}
+
+async fn remove_codex_provider_direct_config_content(config_path: &std::path::Path) -> Result<()> {
+    if !tokio::fs::try_exists(config_path).await.unwrap_or(false) {
+        return Ok(());
+    }
+
+    let content = tokio::fs::read_to_string(config_path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+        Ok(doc) => doc,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to parse Codex config {}, leaving file untouched: {}",
+                config_path.display(),
+                e
+            );
+            return Ok(());
+        }
+    };
+
+    for profile in PROVIDER_PROFILES {
+        remove_codex_provider_direct_entry(&mut doc, profile)?;
+    }
+
+    tokio::fs::write(config_path, doc.to_string())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn remove_provider_direct_config_async(db: &SqlitePool, cli_type: &str) -> Result<()> {
+    match cli_type {
+        "claude_code" => {
+            let config_dir = get_cli_config_dir_path(db, "claude_code").await;
+            let gateway_config = claude_gateway_json_template();
+            for profile in PROVIDER_PROFILES {
+                let config_path = config_dir.join(cli_helpers::claude_settings_filename(profile));
+                remove_json_config_content(&config_path, &gateway_config, "", &gateway_config)
+                    .await?;
+            }
+            Ok(())
+        }
+        "codex" => {
+            let config_dir = get_cli_config_dir_path(db, "codex").await;
+            for profile in PROVIDER_PROFILES {
+                let config_path = codex_profile_config_path(&config_dir, profile);
+                remove_codex_provider_direct_config_content(&config_path).await?;
+            }
+            Ok(())
+        }
+        "gemini" => {
+            let config_dir = get_cli_config_dir_path(db, "gemini").await;
+            let env_path = config_dir.join(".env");
+            if tokio::fs::try_exists(&env_path).await.unwrap_or(false) {
+                let _ = tokio::fs::remove_file(&env_path).await;
+            }
+            Ok(())
+        }
+        _ => Err("不支持的 CLI 类型".to_string()),
+    }
+}
+
 // Sync Claude Code configuration (settings.json)
 async fn sync_claude_code_config(
     db: &SqlitePool,
@@ -1356,31 +1948,7 @@ async fn sync_claude_code_config(
     Ok(())
 }
 
-async fn sync_claude_code_preset_update(
-    db: &SqlitePool,
-    default_config: &str,
-    previous_default_config: &str,
-    gateway_url: &str,
-) -> Result<()> {
-    let write_mode = get_config_write_mode(db, "claude_code").await;
-
-    if check_cli_enabled(db, "claude_code", gateway_url).await {
-        sync_claude_code_config(
-            db,
-            true,
-            default_config,
-            Some(previous_default_config),
-            &write_mode,
-            gateway_url,
-            ClaudeProfileSyncScope::DefaultOnly,
-        )
-        .await?;
-    }
-
-    Ok(())
-}
-
-// Sync Codex configuration (auth.json + config.toml)
+// Sync Codex configuration (config.toml)
 async fn sync_codex_config(
     db: &SqlitePool,
     enabled: bool,
@@ -1390,7 +1958,6 @@ async fn sync_codex_config(
     gateway_url: &str,
 ) -> Result<()> {
     let codex_dir = get_cli_config_dir_path(db, "codex").await;
-    let auth_path = codex_dir.join("auth.json");
     let config_path = codex_dir.join("config.toml");
 
     let use_merge = write_mode == "merge";
@@ -1401,8 +1968,6 @@ async fn sync_codex_config(
             tracing::error!("Failed to create Codex directory: {}", e);
             e.to_string()
         })?;
-
-        write_codex_gateway_auth(&auth_path).await?;
 
         // merge 模式下保留现有文件中未被 gateway / 预设覆盖的顶层 key。
         let existing_content =
@@ -1460,7 +2025,6 @@ async fn sync_codex_config(
                 e.to_string()
             })?;
     } else {
-        remove_codex_gateway_auth_content(&auth_path).await?;
         remove_codex_gateway_config_content(&config_path, default_config).await?;
         tracing::info!("已从 Codex 配置中移除 gateway 及预设配置");
     }

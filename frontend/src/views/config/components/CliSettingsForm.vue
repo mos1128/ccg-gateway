@@ -67,7 +67,7 @@
               </div>
               <div class="tooltip-item">
                 <strong>全量写入</strong>
-                <span>每次写入时完全覆盖配置文件。中转模式会备份原始文件，关闭时自动恢复。保持配置干净，强迫症适用。</span>
+                <span>每次写入时完全覆盖配置文件。中转路由会备份原始文件，关闭时自动恢复。保持配置干净，强迫症适用。</span>
               </div>
             </div>
           </template>

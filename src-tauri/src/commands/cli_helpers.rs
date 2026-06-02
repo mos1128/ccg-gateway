@@ -40,7 +40,12 @@ pub fn projects_dir(base_dir: &Path, cli_type: &str) -> PathBuf {
 }
 
 /// Returns the full path to a specific session file.
-pub fn session_file_path(base_dir: &Path, cli_type: &str, project: &str, session_id: &str) -> PathBuf {
+pub fn session_file_path(
+    base_dir: &Path,
+    cli_type: &str,
+    project: &str,
+    session_id: &str,
+) -> PathBuf {
     match cli_type {
         "gemini" => base_dir
             .join("tmp")

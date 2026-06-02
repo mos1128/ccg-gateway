@@ -11,12 +11,20 @@
                 {{ cli.label }}
               </div>
             </div>
-            <el-switch :model-value="getCliEnabled(cli.type)" @change="(val: string | number | boolean) => handleCliToggle(cli.type, val as boolean)" :loading="cliLoading[cli.type]" />
+            <div class="cli-switch-slot">
+              <el-switch
+                v-if="getCliMode(cli.type) !== 'official_direct'"
+                :model-value="isRouteMode(cli.type)"
+                @change="(val: string | number | boolean) => handleCliToggle(cli.type, val as boolean)"
+                :loading="cliLoading[cli.type]"
+                title="开：中转路由；关：中转直连"
+              />
+            </div>
           </div>
           
           <div class="b-segmented b-segmented-fill">
-            <div class="b-seg-btn" :class="{ active: getCliMode(cli.type) === 'proxy' }" @click="handleModeSwitch(cli.type, 'proxy')">中转模式</div>
-            <div class="b-seg-btn" :class="{ active: getCliMode(cli.type) === 'direct' }" @click="handleModeSwitch(cli.type, 'direct')">官方模式</div>
+            <div class="b-seg-btn" :class="{ active: getCliMode(cli.type) !== 'official_direct' }" @click="handleModeSwitch(cli.type, 'proxy_route')">中转路由</div>
+            <div class="b-seg-btn" :class="{ active: getCliMode(cli.type) === 'official_direct' }" @click="handleModeSwitch(cli.type, 'official_direct')">官方直连</div>
           </div>
         </div>
       </div>
@@ -68,7 +76,6 @@
 
 <script setup lang="ts">
 import { onMounted, ref, reactive, computed } from 'vue'
-import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 
@@ -86,7 +93,7 @@ import { statsApi } from '@/api/stats'
 import { formatTokens } from '@/utils/json'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { CLI_TABS } from '@/types/models'
-import type { CliType, ProviderStats, AdvancedStatsRow } from '@/types/models'
+import type { CliType, CliMode, ProviderStats, AdvancedStatsRow } from '@/types/models'
 
 const providerStore = useProviderStore()
 const settingsStore = useSettingsStore()
@@ -128,26 +135,33 @@ const kpiData = computed(() => {
 })
 
 function getCliEnabled(cliType: CliType): boolean {
-  const settings = settingsStore.settings?.cli_settings?.[cliType]
-  if (!settings) return false
-  if (settings.cli_mode === 'direct') return false
-  return settings.enabled ?? false
+  return isRouteMode(cliType)
 }
 
-function getCliMode(cliType: CliType): 'proxy' | 'direct' {
-  return settingsStore.settings?.cli_settings?.[cliType]?.cli_mode ?? 'proxy'
+function isRouteMode(cliType: CliType): boolean {
+  return getCliMode(cliType) === 'proxy_route'
 }
 
-async function handleModeSwitch(cliType: CliType, targetMode: 'proxy' | 'direct') {
+function getCliMode(cliType: CliType): CliMode {
+  return settingsStore.settings?.cli_settings?.[cliType]?.cli_mode ?? 'proxy_route'
+}
+
+const cliModeLabels: Record<CliMode, string> = {
+  proxy_route: '中转路由',
+  provider_direct: '中转直连',
+  official_direct: '官方直连'
+}
+
+async function handleModeSwitch(cliType: CliType, targetMode: Extract<CliMode, 'proxy_route' | 'official_direct'>) {
   if (getCliMode(cliType) === targetMode) return
-  if (cliType === 'claude_code' && targetMode === 'direct') {
-    notify('Claude Code 暂不支持官方模式', 'warning')
+  if (cliType === 'claude_code' && targetMode === 'official_direct') {
+    notify('Claude Code 暂不支持官方直连', 'warning')
     return
   }
   cliLoading[cliType] = true
   try {
-    await settingsStore.setCliMode(cliType, targetMode)
-    notify(`${cliType} 已切换至 ${targetMode === 'proxy' ? '中转模式' : '官方模式'}`)
+    await settingsStore.setDashboardCliMode(cliType, targetMode)
+    notify(`${cliType} 已切换至 ${cliModeLabels[targetMode]}`)
   } catch (e: any) {
     notify(`切换失败: ${getErrorMessage(e)}`, 'error')
   } finally {
@@ -156,26 +170,16 @@ async function handleModeSwitch(cliType: CliType, targetMode: 'proxy' | 'direct'
 }
 
 async function handleCliToggle(cliType: CliType, enabled: boolean) {
-  if (enabled && getCliMode(cliType) === 'direct') {
-    try {
-      await confirm('当前是官方模式，是否切换至中转模式并启用代理？', '提示', {
-        confirmText: '切换并启用', cancelText: '取消'
-      })
-      cliLoading[cliType] = true
-      try {
-        await settingsStore.setCliMode(cliType, 'proxy')
-        await settingsStore.updateCli(cliType, { enabled: true })
-        notify(`${cliType} 已切换至中转模式并启用`)
-      } catch (e: any) { notify(`操作失败: ${getErrorMessage(e)}`, 'error') }
-      finally { cliLoading[cliType] = false }
-    } catch { notify('操作已取消', 'info') }
-  } else {
-    cliLoading[cliType] = true
-    try {
-      await settingsStore.updateCli(cliType, { enabled })
-      notify(`${cliType} 已${enabled ? '启用' : '禁用'}`)
-    } catch (e: any) { notify(`操作失败: ${getErrorMessage(e)}`, 'error') }
-    finally { cliLoading[cliType] = false }
+  const targetMode: CliMode = enabled ? 'proxy_route' : 'provider_direct'
+  if (getCliMode(cliType) === targetMode) return
+  cliLoading[cliType] = true
+  try {
+    await settingsStore.setDashboardCliMode(cliType, targetMode)
+    notify(`${cliType} 已切换至 ${cliModeLabels[targetMode]}`)
+  } catch (e: any) {
+    notify(`操作失败: ${getErrorMessage(e)}`, 'error')
+  } finally {
+    cliLoading[cliType] = false
   }
 }
 
@@ -429,6 +433,7 @@ onMounted(() => {
 
 .cli-title { font-size: var(--fs-16); font-weight: var(--fw-700); color: var(--color-text); }
 .cli-disabled { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-weak); margin-left: 4px; }
+.cli-switch-slot { width: 50px; min-height: 32px; display: flex; align-items: center; justify-content: flex-end; flex-shrink: 0; }
 
 
 .kpi-card { flex: 1; padding: 24px 20px !important; margin-bottom: 0 !important; text-align: center; display: flex; flex-direction: column; justify-content: center; }

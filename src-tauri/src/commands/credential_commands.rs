@@ -110,6 +110,102 @@ fn parse_display_info(cli_type: &str, credential_json: &str) -> String {
     }
 }
 
+fn credential_file_target<'a>(
+    config_dir: &'a std::path::Path,
+    cli_type: &str,
+    path: &str,
+) -> Option<std::path::PathBuf> {
+    match cli_type {
+        "claude_code" if path.contains("settings.json") => Some(config_dir.join("settings.json")),
+        "codex" if path.contains("auth.json") => Some(config_dir.join("auth.json")),
+        "gemini" if path.contains("oauth_creds.json") => Some(config_dir.join("oauth_creds.json")),
+        "gemini" if path.contains("google_accounts.json") => {
+            Some(config_dir.join("google_accounts.json"))
+        }
+        _ => None,
+    }
+}
+
+async fn credential_matches_cli_files(
+    db: &SqlitePool,
+    credential: &OfficialCredential,
+) -> Result<bool> {
+    let files: Vec<serde_json::Value> = serde_json::from_str(&credential.credential_json)
+        .map_err(|e| format!("解析凭证文件列表失败: {}", e))?;
+    let config_dir = get_cli_config_dir_path(db, &credential.cli_type).await;
+    let mut matched_any = false;
+
+    for file in files {
+        let path = file.get("path").and_then(|p| p.as_str()).unwrap_or("");
+        let expected = file.get("content").and_then(|c| c.as_str()).unwrap_or("");
+        let Some(target_path) = credential_file_target(&config_dir, &credential.cli_type, path)
+        else {
+            continue;
+        };
+
+        matched_any = true;
+        let actual = if tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
+            tokio::fs::read_to_string(&target_path)
+                .await
+                .map_err(|e| e.to_string())?
+        } else {
+            String::new()
+        };
+
+        if actual != expected {
+            return Ok(false);
+        }
+    }
+
+    Ok(matched_any)
+}
+
+async fn official_direct_written_credential_id(
+    db: &SqlitePool,
+    cli_type: &str,
+) -> Result<Option<i64>> {
+    if get_normalized_cli_mode(db, cli_type).await? != CLI_MODE_OFFICIAL_DIRECT {
+        return Ok(None);
+    }
+
+    let creds: Vec<OfficialCredential> = sqlx::query_as(
+        "SELECT * FROM official_credentials WHERE cli_type = ? ORDER BY sort_order, id",
+    )
+    .bind(cli_type)
+    .fetch_all(db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    for cred in creds {
+        if credential_matches_cli_files(db, &cred)
+            .await
+            .unwrap_or(false)
+        {
+            return Ok(Some(cred.id));
+        }
+    }
+
+    Ok(None)
+}
+
+fn official_credential_response(
+    c: OfficialCredential,
+    is_active: bool,
+    is_written: bool,
+) -> OfficialCredentialResponse {
+    let display_info = parse_display_info(&c.cli_type, &c.credential_json);
+    OfficialCredentialResponse {
+        is_active,
+        is_written,
+        id: c.id,
+        cli_type: c.cli_type,
+        name: c.name,
+        credential_json: c.credential_json,
+        sort_order: c.sort_order,
+        display_info,
+    }
+}
+
 /// 读取 CLI 当前凭证（异步版本，支持自定义配置目录）
 async fn read_cli_credential_impl_async(db: &SqlitePool, cli_type: &str) -> Result<String> {
     let config_dir = get_cli_config_dir_path(db, cli_type).await;
@@ -465,19 +561,10 @@ pub(super) async fn auto_sync_credential_in_direct_mode(
     );
 
     // 检查当前是否为直连模式
-    let current_mode: Option<(String,)> =
-        sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
-            .bind(cli_type)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let mode = current_mode
-        .map(|r| r.0)
-        .unwrap_or_else(|| "proxy".to_string());
+    let mode = get_normalized_cli_mode(db, cli_type).await?;
     tracing::info!("{} 当前模式: {}", cli_type, mode);
 
-    if mode != "direct" {
+    if mode != CLI_MODE_OFFICIAL_DIRECT {
         tracing::debug!("{} 当前不是直连模式，跳过自动同步", cli_type);
         return Ok(());
     }
@@ -562,20 +649,15 @@ pub async fn get_credentials(
     .await
     .map_err(|e| e.to_string())?;
 
+    let written_id = official_direct_written_credential_id(db.inner(), &cli_type)
+        .await
+        .unwrap_or(None);
     let results = creds
         .into_iter()
         .enumerate()
         .map(|(i, c)| {
-            let display_info = parse_display_info(&c.cli_type, &c.credential_json);
-            OfficialCredentialResponse {
-                is_active: i == 0,
-                id: c.id,
-                cli_type: c.cli_type,
-                name: c.name,
-                credential_json: c.credential_json,
-                sort_order: c.sort_order,
-                display_info,
-            }
+            let is_written = written_id == Some(c.id);
+            official_credential_response(c, i == 0, is_written)
         })
         .collect();
 
@@ -643,15 +725,14 @@ pub async fn get_credential(
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "凭证不存在".to_string())?;
 
-    Ok(OfficialCredentialResponse {
-        is_active: cred.sort_order == 0,
-        id: cred.id,
-        display_info: parse_display_info(&cred.cli_type, &cred.credential_json),
-        cli_type: cred.cli_type,
-        name: cred.name,
-        credential_json: cred.credential_json,
-        sort_order: cred.sort_order,
-    })
+    let is_written = get_normalized_cli_mode(db.inner(), &cred.cli_type).await?
+        == CLI_MODE_OFFICIAL_DIRECT
+        && credential_matches_cli_files(db.inner(), &cred)
+            .await
+            .unwrap_or(false);
+
+    let is_active = cred.sort_order == 0;
+    Ok(official_credential_response(cred, is_active, is_written))
 }
 
 #[tauri::command]
@@ -810,15 +891,288 @@ pub async fn read_cli_credential(db: State<'_, SqlitePool>, cli_type: String) ->
 }
 
 #[tauri::command]
-pub async fn get_cli_mode(db: State<'_, SqlitePool>, cli_type: String) -> Result<String> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
-            .bind(&cli_type)
+pub async fn write_credential_config(
+    db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    log_db: State<'_, LogDb>,
+    id: i64,
+) -> Result<OfficialCredentialResponse> {
+    let cred: OfficialCredential =
+        sqlx::query_as("SELECT * FROM official_credentials WHERE id = ?")
+            .bind(id)
             .fetch_optional(db.inner())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "凭证不存在".to_string())?;
 
-    Ok(row.map(|r| r.0).unwrap_or_else(|| "proxy".to_string()))
+    if cred.cli_type == "claude_code" {
+        return Err("Claude Code 暂不支持官方直连写入".to_string());
+    }
+
+    let current_mode = get_normalized_cli_mode(db.inner(), &cred.cli_type).await?;
+    let gateway_url = config.gateway_base_url();
+    let default_config = get_cli_default_config(db.inner(), &cred.cli_type).await?;
+    if current_mode == CLI_MODE_PROVIDER_DIRECT {
+        remove_provider_direct_config_async(db.inner(), &cred.cli_type).await?;
+    } else if current_mode == CLI_MODE_PROXY_ROUTE {
+        let has_gateway_config = check_cli_enabled(db.inner(), &cred.cli_type, &gateway_url).await;
+        if has_gateway_config {
+            sync_cli_config(
+                db.inner(),
+                &cred.cli_type,
+                false,
+                &default_config,
+                None,
+                &gateway_url,
+            )
+            .await?;
+        }
+    }
+
+    sync_credential_to_cli_async(
+        db.inner(),
+        &cred.cli_type,
+        &cred.credential_json,
+        &default_config,
+        None,
+    )
+    .await?;
+
+    set_normalized_cli_mode(
+        db.inner(),
+        &cred.cli_type,
+        CLI_MODE_OFFICIAL_DIRECT,
+        now_timestamp(),
+    )
+    .await?;
+
+    let _ = crate::services::stats::record_system_log(
+        &log_db.0,
+        "credential_written",
+        &format!("凭证 {} 已写入 CLI 配置", cred.name),
+    )
+    .await;
+
+    get_credential(db, id).await
+}
+
+async fn first_default_provider(db: &SqlitePool, cli_type: &str) -> Result<Provider> {
+    let provider: Provider = sqlx::query_as(
+        "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id LIMIT 1",
+    )
+    .bind(cli_type)
+    .bind(DEFAULT_PROFILE)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "default Profile 下没有可用服务商，请先添加服务商".to_string())?;
+
+    if provider.base_url.trim().is_empty() || provider.api_key.trim().is_empty() {
+        return Err(format!(
+            "服务商 {} 的 Base URL 或 API Key 为空",
+            provider.name
+        ));
+    }
+
+    Ok(provider)
+}
+
+async fn first_official_credential(db: &SqlitePool, cli_type: &str) -> Result<OfficialCredential> {
+    sqlx::query_as(
+        "SELECT * FROM official_credentials WHERE cli_type = ? ORDER BY sort_order, id LIMIT 1",
+    )
+    .bind(cli_type)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "没有可用官方凭证，请先添加凭证".to_string())
+}
+
+async fn remove_dashboard_provider_direct_config(db: &SqlitePool, cli_type: &str) -> Result<()> {
+    match cli_type {
+        "claude_code" => {
+            let config_dir = get_cli_config_dir_path(db, "claude_code").await;
+            let config_path =
+                config_dir.join(cli_helpers::claude_settings_filename(DEFAULT_PROFILE));
+            let gateway_config = claude_gateway_json_template();
+            remove_json_config_content(&config_path, &gateway_config, "", &gateway_config).await
+        }
+        "codex" => {
+            let config_dir = get_cli_config_dir_path(db, "codex").await;
+            let config_path = codex_profile_config_path(&config_dir, DEFAULT_PROFILE);
+            if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+                return Ok(());
+            }
+
+            let content = tokio::fs::read_to_string(&config_path)
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut doc = match content.parse::<toml_edit::DocumentMut>() {
+                Ok(doc) => doc,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse Codex config {}, leaving file untouched: {}",
+                        config_path.display(),
+                        e
+                    );
+                    return Ok(());
+                }
+            };
+
+            remove_codex_provider_direct_entry(&mut doc, DEFAULT_PROFILE)?;
+            tokio::fs::write(&config_path, doc.to_string())
+                .await
+                .map_err(|e| e.to_string())
+        }
+        "gemini" => {
+            let config_dir = get_cli_config_dir_path(db, "gemini").await;
+            let env_path = config_dir.join(".env");
+            if tokio::fs::try_exists(&env_path).await.unwrap_or(false) {
+                tokio::fs::remove_file(&env_path)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+        _ => Err("不支持的 CLI 类型".to_string()),
+    }
+}
+
+async fn write_dashboard_proxy_route(
+    db: &SqlitePool,
+    config: &Config,
+    log_db: &LogDb,
+    cli_type: &str,
+    current_mode: &str,
+) -> Result<()> {
+    let gateway_url = config.gateway_base_url();
+    if current_mode == CLI_MODE_OFFICIAL_DIRECT {
+        remove_direct_mode_files_async(db, cli_type).await?;
+    } else if current_mode == CLI_MODE_PROVIDER_DIRECT {
+        remove_dashboard_provider_direct_config(db, cli_type).await?;
+    }
+
+    let default_config = get_cli_default_config(db, cli_type).await?;
+    sync_cli_config(db, cli_type, true, &default_config, None, &gateway_url).await?;
+    set_normalized_cli_mode(db, cli_type, CLI_MODE_PROXY_ROUTE, now_timestamp()).await?;
+
+    let _ = crate::services::stats::record_system_log(
+        &log_db.0,
+        "cli_mode_changed",
+        &format!("{} 已切换到中转路由", cli_type),
+    )
+    .await;
+
+    Ok(())
+}
+
+async fn write_dashboard_provider_direct(
+    db: &SqlitePool,
+    log_db: &LogDb,
+    cli_type: &str,
+    current_mode: &str,
+) -> Result<()> {
+    if current_mode == CLI_MODE_OFFICIAL_DIRECT {
+        remove_direct_mode_files_async(db, cli_type).await?;
+    }
+
+    let provider = first_default_provider(db, cli_type).await?;
+    write_provider_direct_config(db, &provider).await?;
+    set_normalized_cli_mode(db, cli_type, CLI_MODE_PROVIDER_DIRECT, now_timestamp()).await?;
+
+    let _ = crate::services::stats::record_system_log(
+        &log_db.0,
+        "cli_mode_changed",
+        &format!("{} 已切换到中转直连：{}", cli_type, provider.name),
+    )
+    .await;
+
+    Ok(())
+}
+
+async fn write_dashboard_official_direct(
+    db: &SqlitePool,
+    config: &Config,
+    log_db: &LogDb,
+    cli_type: &str,
+    current_mode: &str,
+) -> Result<()> {
+    if cli_type == "claude_code" {
+        return Err("Claude Code 暂不支持官方直连".to_string());
+    }
+
+    let cred = first_official_credential(db, cli_type).await?;
+    let gateway_url = config.gateway_base_url();
+    let default_config = get_cli_default_config(db, cli_type).await?;
+
+    if current_mode == CLI_MODE_PROVIDER_DIRECT {
+        remove_dashboard_provider_direct_config(db, cli_type).await?;
+    } else if current_mode == CLI_MODE_PROXY_ROUTE
+        && check_cli_enabled(db, cli_type, &gateway_url).await
+    {
+        sync_cli_config(db, cli_type, false, &default_config, None, &gateway_url).await?;
+    }
+
+    sync_credential_to_cli_async(db, cli_type, &cred.credential_json, &default_config, None)
+        .await?;
+    set_normalized_cli_mode(db, cli_type, CLI_MODE_OFFICIAL_DIRECT, now_timestamp()).await?;
+
+    let _ = crate::services::stats::record_system_log(
+        &log_db.0,
+        "cli_mode_changed",
+        &format!("{} 已切换到官方直连：{}", cli_type, cred.name),
+    )
+    .await;
+
+    Ok(())
+}
+
+async fn apply_dashboard_cli_mode(
+    db: &SqlitePool,
+    config: &Config,
+    log_db: &LogDb,
+    cli_type: &str,
+    mode: &str,
+) -> Result<()> {
+    let current_mode = get_normalized_cli_mode(db, cli_type).await?;
+    if current_mode == mode {
+        return Ok(());
+    }
+
+    match mode {
+        CLI_MODE_PROXY_ROUTE => {
+            write_dashboard_proxy_route(db, config, log_db, cli_type, current_mode).await
+        }
+        CLI_MODE_PROVIDER_DIRECT => {
+            write_dashboard_provider_direct(db, log_db, cli_type, current_mode).await
+        }
+        CLI_MODE_OFFICIAL_DIRECT => {
+            write_dashboard_official_direct(db, config, log_db, cli_type, current_mode).await
+        }
+        _ => Err("不支持的 CLI 模式".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn set_dashboard_cli_mode(
+    db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    log_db: State<'_, LogDb>,
+    cli_type: String,
+    mode: String,
+) -> Result<()> {
+    let mode = normalize_cli_mode(&mode).ok_or_else(|| {
+        "cli_mode 只能是 proxy_route / provider_direct / official_direct".to_string()
+    })?;
+
+    apply_dashboard_cli_mode(db.inner(), config.inner(), log_db.inner(), &cli_type, mode).await
+}
+
+#[tauri::command]
+pub async fn get_cli_mode(db: State<'_, SqlitePool>, cli_type: String) -> Result<String> {
+    Ok(get_normalized_cli_mode(db.inner(), &cli_type)
+        .await?
+        .to_string())
 }
 
 #[tauri::command]
@@ -829,149 +1183,9 @@ pub async fn set_cli_mode(
     cli_type: String,
     mode: String,
 ) -> Result<()> {
-    let now = now_timestamp();
-    let gateway_url = config.gateway_base_url();
+    let mode = normalize_cli_mode(&mode).ok_or_else(|| {
+        "cli_mode 只能是 proxy_route / provider_direct / official_direct".to_string()
+    })?;
 
-    let current_mode: Option<(String,)> =
-        sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
-            .bind(&cli_type)
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let current_mode = current_mode
-        .map(|r| r.0)
-        .unwrap_or_else(|| "proxy".to_string());
-
-    if current_mode == mode {
-        return Ok(());
-    }
-
-    sqlx::query("UPDATE cli_settings SET cli_mode = ?, updated_at = ? WHERE cli_type = ?")
-        .bind(&mode)
-        .bind(now)
-        .bind(&cli_type)
-        .execute(db.inner())
-        .await
-        .map_err(map_db_error)?;
-
-    if mode == "direct" {
-        // 步骤1: 如果从中转模式切换过来，先关闭 CLI
-        if current_mode == "proxy" {
-            // 检查是否真的有中转配置（通过检查配置文件）
-            let has_gateway_config = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
-
-            if has_gateway_config {
-                let default_config = sqlx::query_as::<_, (Option<String>,)>(
-                    "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
-                )
-                .bind(&cli_type)
-                .fetch_optional(db.inner())
-                .await
-                .map_err(|e| e.to_string())?
-                .and_then(|r| r.0)
-                .unwrap_or_default();
-
-                tracing::info!("{} 从中转模式切换到直连模式，先关闭 CLI", cli_type);
-                // 关闭中转模式（会自动处理备份恢复）
-                sync_cli_config(
-                    db.inner(),
-                    &cli_type,
-                    false,
-                    &default_config,
-                    None,
-                    &gateway_url,
-                )
-                .await?;
-            } else {
-                tracing::info!("{} 当前没有中转配置，跳过关闭 CLI 步骤", cli_type);
-            }
-        }
-
-        // 步骤2: 应用直连模式配置
-        if let Ok(Some(cred)) = sqlx::query_as::<_, OfficialCredential>(
-            "SELECT * FROM official_credentials WHERE cli_type = ? AND sort_order = 0 LIMIT 1",
-        )
-        .bind(&cli_type)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())
-        {
-            let default_config = sqlx::query_as::<_, (Option<String>,)>(
-                "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
-            )
-            .bind(&cli_type)
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?
-            .and_then(|r| r.0)
-            .unwrap_or_default();
-
-            tracing::info!("开始同步 {} 凭证到文件", cli_type);
-            match sync_credential_to_cli_async(
-                db.inner(),
-                &cli_type,
-                &cred.credential_json,
-                &default_config,
-                None,
-            )
-            .await
-            {
-                Ok(_) => {
-                    tracing::info!("{} 凭证同步成功", cli_type);
-                }
-                Err(e) => {
-                    tracing::error!("{} 凭证同步失败: {}", cli_type, e);
-                    return Err(format!("同步凭证失败: {}", e));
-                }
-            }
-        } else {
-            tracing::warn!("{} 没有可用的凭证", cli_type);
-        }
-
-        let _ = crate::services::stats::record_system_log(
-            &log_db.0,
-            "cli_mode_changed",
-            &format!("{} 已切换到直连模式", cli_type),
-        )
-        .await;
-    } else {
-        // 切换到中转模式
-
-        // 步骤1: 如果从直连模式切换过来，先删除直连模式的文件
-        if current_mode == "direct" {
-            tracing::info!("{} 从直连模式切换到中转模式，先删除直连模式文件", cli_type);
-            remove_direct_mode_files_async(db.inner(), &cli_type).await?;
-        }
-
-        // 步骤2: 开启中转模式
-        let default_config = sqlx::query_as::<_, (Option<String>,)>(
-            "SELECT default_json_config FROM cli_settings WHERE cli_type = ?",
-        )
-        .bind(&cli_type)
-        .fetch_optional(db.inner())
-        .await
-        .map_err(|e| e.to_string())?
-        .and_then(|r| r.0)
-        .unwrap_or_default();
-
-        sync_cli_config(
-            db.inner(),
-            &cli_type,
-            true,
-            &default_config,
-            None,
-            &gateway_url,
-        )
-        .await?;
-
-        let _ = crate::services::stats::record_system_log(
-            &log_db.0,
-            "cli_mode_changed",
-            &format!("{} 已切换到中转模式", cli_type),
-        )
-        .await;
-    }
-
-    Ok(())
+    apply_dashboard_cli_mode(db.inner(), config.inner(), log_db.inner(), &cli_type, mode).await
 }

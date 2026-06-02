@@ -113,6 +113,7 @@ pub struct ProviderResponse {
     pub sort_order: i64,
     pub custom_useragent: Option<String>,
     pub is_blacklisted: bool,
+    pub is_direct_active: bool,
     pub model_maps: Vec<ModelMapResponse>,
     pub model_blacklist: Vec<ModelBlacklistResponse>,
 }
@@ -143,6 +144,7 @@ impl From<Provider> for ProviderResponse {
             sort_order: p.sort_order,
             custom_useragent: p.custom_useragent,
             is_blacklisted,
+            is_direct_active: false,
             model_maps: vec![],
             model_blacklist: vec![],
         }
@@ -448,6 +450,7 @@ pub struct OfficialCredentialResponse {
     pub credential_json: String,
     pub sort_order: i64,
     pub is_active: bool,
+    pub is_written: bool,
     pub display_info: String,
 }
 

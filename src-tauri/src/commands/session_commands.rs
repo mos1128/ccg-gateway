@@ -1517,7 +1517,8 @@ pub async fn get_session_messages(
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
-    let session_file = cli_helpers::session_file_path(&base_dir, &cli_type, &project_name, &session_id);
+    let session_file =
+        cli_helpers::session_file_path(&base_dir, &cli_type, &project_name, &session_id);
 
     run_session_blocking(move || get_session_messages_from_file(&cli_type, session_file)).await
 }
@@ -1563,7 +1564,8 @@ pub async fn delete_session(
         .await;
     }
 
-    let session_file = cli_helpers::session_file_path(&base_dir, &cli_type, &project_name, &session_id);
+    let session_file =
+        cli_helpers::session_file_path(&base_dir, &cli_type, &project_name, &session_id);
 
     if tokio::fs::metadata(&session_file).await.is_err() {
         return Err(format!(

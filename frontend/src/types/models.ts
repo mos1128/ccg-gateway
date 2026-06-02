@@ -12,6 +12,7 @@ export const CLI_TABS: { id: CliType; label: string }[] = CLI_TYPES.map((id) => 
 }))
 export const PROFILE_CAPABLE_CLI_TYPES: readonly CliType[] = ['claude_code', 'codex']
 export type ProviderProfile = 'default' | 'profile1' | 'profile2' | 'profile3'
+export type CliMode = 'proxy_route' | 'provider_direct' | 'official_direct'
 
 // Provider types
 export interface ModelMap {
@@ -43,6 +44,7 @@ export interface Provider {
   model_maps: ModelMap[]
   model_blacklist: ModelBlacklist[]
   is_blacklisted: boolean
+  is_direct_active: boolean
 }
 
 export interface ProviderCreate {
@@ -197,7 +199,7 @@ export interface CliSettings {
   cli_type: CliType
   enabled: boolean
   default_json_config: string
-  cli_mode: 'proxy' | 'direct'
+  cli_mode: CliMode
   config_dir: string
   default_config_dir: string
   config_write_mode: 'overwrite' | 'merge'
@@ -248,6 +250,7 @@ export interface OfficialCredential {
   credential_json: string
   sort_order: number
   is_active: boolean
+  is_written: boolean
   display_info: string
 }
 
