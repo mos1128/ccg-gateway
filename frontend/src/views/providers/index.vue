@@ -280,6 +280,7 @@ import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { CLI_TABS, PROFILE_CAPABLE_CLI_TYPES } from '@/types/models'
 import type { Provider, CliType, CliMode, ProviderProfile, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
+import { getReusableModelName, saveReusableModelName } from '@/utils/modelDefaults'
 
 const providerStore = useProviderStore()
 const credentialStore = useCredentialStore()
@@ -501,12 +502,6 @@ function makeUniqueProviderName(name: string): string {
 }
 
 // ==================== Model Detection ====================
-const DEFAULT_DETECT_MODELS: Record<string, string> = {
-  claude_code: 'claude-opus-4-7',
-  codex: 'gpt-5.5',
-  gemini: 'gemini-3.1-pro-preview',
-}
-
 const showDetectDialog = ref(false)
 const detectLoading = ref(false)
 const detectModel = ref('')
@@ -537,8 +532,7 @@ function toggleAllDetectProviders() {
 
 watch(showDetectDialog, (open) => {
   if (open) {
-    const key = `detect_model_${activeCliType.value}`
-    detectModel.value = localStorage.getItem(key) || DEFAULT_DETECT_MODELS[activeCliType.value] || ''
+    detectModel.value = getReusableModelName(activeCliType.value)
     detectSelectedIds.value = detectProviderList.value.map(p => p.id)
     detectResults.value = []
     detectLoading.value = false
@@ -561,7 +555,7 @@ async function handleStartDetect() {
     return
   }
 
-  localStorage.setItem(`detect_model_${activeCliType.value}`, detectModel.value.trim())
+  saveReusableModelName(activeCliType.value, detectModel.value)
 
   detectResults.value = detectSelectedIds.value.map(id => {
     const p = providerStore.providers.find(x => x.id === id)

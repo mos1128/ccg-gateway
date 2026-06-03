@@ -125,7 +125,7 @@
       <div class="form-grid">
         <div class="form-group">
           <label class="c-label">模型名 <span class="required">*</span></label>
-          <input v-model="form.model_name" class="b-input mono" placeholder="claude-opus-4-7">
+          <input v-model="form.model_name" class="b-input mono" :placeholder="DEFAULT_MODEL_NAMES[form.cli_type]">
         </div>
         <div class="form-group">
           <label class="c-label">执行对象</label>
@@ -281,6 +281,7 @@ import { providersApi } from '@/api/providers'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
+import { DEFAULT_MODEL_NAMES, getReusableModelName } from '@/utils/modelDefaults'
 import {
   CLI_TABS,
   PROFILE_CAPABLE_CLI_TYPES,
@@ -302,12 +303,6 @@ const profileTabs: { id: ProviderProfile; label: string }[] = [
   { id: 'profile2', label: 'Profile 2' },
   { id: 'profile3', label: 'Profile 3' }
 ]
-
-const defaultModels: Record<CliType, string> = {
-  claude_code: 'claude-opus-4-7',
-  codex: 'gpt-5.5',
-  gemini: 'gemini-3.1-pro-preview'
-}
 
 const hourOptions: AppSelectOption[] = Array.from({ length: 24 }, (_, hour) => {
   const value = String(hour).padStart(2, '0')
@@ -377,7 +372,7 @@ function defaultForm(): FormState {
     profile: 'default',
     target_mode: 'all',
     provider_ids: [],
-    model_name: defaultModels.claude_code,
+    model_name: getReusableModelName('claude_code'),
     schedule_type: 'interval',
     interval_minutes: 60,
     period_days: 1,
@@ -453,7 +448,7 @@ function handleEdit(task: ScheduledTask) {
     profile: payload?.profile || 'default',
     target_mode: payload?.target_mode || 'all',
     provider_ids: payload?.provider_ids || [],
-    model_name: payload?.model_name || defaultModels.claude_code,
+    model_name: payload?.model_name || getReusableModelName(payload?.cli_type || 'claude_code'),
     schedule_type: normalizeScheduleType(task.schedule_type),
     interval_minutes: parseIntervalMinutes(task),
     period_days: dailySchedule?.days || 1,
@@ -477,12 +472,13 @@ async function handleSave() {
   }
   const scheduleInput = buildScheduleInput()
   if (!scheduleInput) return
+  const modelName = form.value.model_name.trim()
 
   const payload: ProviderKeepalivePayload = {
     target_mode: form.value.target_mode,
     cli_type: form.value.cli_type,
     profile: showProfileSelect.value ? form.value.profile : 'default',
-    model_name: form.value.model_name.trim()
+    model_name: modelName
   }
   if (form.value.target_mode === 'selected') {
     payload.provider_ids = [...form.value.provider_ids]
@@ -750,8 +746,8 @@ watch(() => form.value.cli_type, (cliType, oldCliType) => {
   if (!PROFILE_CAPABLE_CLI_TYPES.includes(cliType)) {
     form.value.profile = 'default'
   }
-  if (!oldCliType || form.value.model_name === defaultModels[oldCliType]) {
-    form.value.model_name = defaultModels[cliType]
+  if (!oldCliType || form.value.model_name === getReusableModelName(oldCliType)) {
+    form.value.model_name = getReusableModelName(cliType)
   }
   if (showDialog.value) void fetchProviders()
 })
