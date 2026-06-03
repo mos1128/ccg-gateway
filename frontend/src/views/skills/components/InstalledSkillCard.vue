@@ -139,7 +139,7 @@ function emitCliToggle(cliType: CliType, value: string | number | boolean) {
   border-radius: 12px;
 }
 .toggle-item { display: flex; justify-content: space-between; align-items: center; }
-.toggle-label { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-secondary); }
+.toggle-label { font-size: var(--fs-14); font-weight: var(--fw-500); color: var(--color-text-secondary); }
 .tag { padding: 2px 8px; border-radius: 4px; font-size: var(--fs-12); font-weight: var(--fw-700); text-transform: uppercase; }
 .tag-red { background: var(--color-error-light); color: var(--color-error); flex-shrink: 0; }
 </style>

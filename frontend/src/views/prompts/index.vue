@@ -233,12 +233,12 @@ onMounted(fetchList)
 .prompt-card {
   background: var(--color-bg);
   border-radius: 16px;
-  border: 1px solid var(--color-border);
+  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
   padding: 24px;
   box-shadow: 0 4px 12px var(--color-shadow);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .card-top {
@@ -286,8 +286,10 @@ onMounted(fetchList)
 .cli-toggles {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 4px;
+  gap: 12px;
+  background: var(--color-bg-page);
+  padding: 16px;
+  border-radius: 12px;
 }
 .toggle-item {
   display: flex;
@@ -296,8 +298,8 @@ onMounted(fetchList)
 }
 .toggle-label {
   font-size: var(--fs-14);
-  font-weight: var(--fw-400);
-  color: var(--color-text-muted);
+  font-weight: var(--fw-500);
+  color: var(--color-text-secondary);
 }
 
 </style>

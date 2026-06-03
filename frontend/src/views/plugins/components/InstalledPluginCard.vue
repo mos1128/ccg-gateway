@@ -120,5 +120,5 @@ function emitToggleEnable(value: string | number | boolean) {
   border-radius: 12px;
 }
 .toggle-item { display: flex; justify-content: space-between; align-items: center; }
-.toggle-label { font-size: var(--fs-14); font-weight: var(--fw-400); color: var(--color-text-secondary); }
+.toggle-label { font-size: var(--fs-14); font-weight: var(--fw-500); color: var(--color-text-secondary); }
 </style>
