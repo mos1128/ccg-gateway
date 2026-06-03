@@ -3,7 +3,7 @@
 [中文](README.md) | English
 
 <div align="center">
-<strong>Intelligent AI Model Gateway | Unified Proxy · Load Balancing · Failover</strong>
+<strong>Intelligent AI Model Gateway | Unified Proxy · Direct CLI Writes · Load Balancing · Failover</strong>
 
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0+-blue.svg)](https://tauri.app/)
@@ -15,7 +15,7 @@
 
 ## 📖 Introduction
 
-CCG Gateway is a desktop management tool built for Claude Code, Codex, and Gemini CLI, integrating an intelligent gateway and configuration management.
+CCG Gateway is a desktop management tool built for Claude Code, Codex, and Gemini CLI, integrating an intelligent gateway, account management, and configuration management.
 
 This project was initiated based on the author's actual needs to solve various pain points encountered during usage. Several open-source projects were referenced during development, see [Acknowledgments](#-acknowledgments) for details.
 
@@ -31,17 +31,21 @@ More handy features: provider availability checks; model name mapping; automatic
 
 **Provider Keep-Alive & Refresh Windows**
 
-Scheduled tasks automatically make a small call to refresh provider windows in advance, improving quota usage efficiency for the next N hours.
+Scheduled tasks automatically make small calls to cover provider windows and improve N-hour quota usage efficiency.
 
 **Multi-Project, Multi-Provider Parallel Workflow**
 
-Same Agent, multiple projects in parallel, and want different providers for different projects? Supports multiple Profiles, each with its own independent provider configuration.
+When developing multiple projects in parallel with the same Agent, Profiles let different projects use different providers.
+
+**Cumbersome Relay / Direct Switching**
+
+Need to switch between gateway relay routing, direct relay provider access, and official account direct access? Write the corresponding CLI config from the UI with one click, with no manual config-file edits.
 
 **Hard to Estimate Costs**
 
 Statistics dashboard covers provider / model dual-dimension token usage (input / output / cache). Plug in provider pricing rules to easily estimate costs.
 
-Using a request-count-based CodingPlan? The statistics dashboard also covers provider / model dual-dimension request counts.
+Providers that charge by request count? The statistics dashboard also covers provider / model dual-dimension request counts.
 
 **Opaque Request Information**
 
@@ -84,6 +88,13 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 
 - Provides statistics across provider/model dimensions, covering token usage/request counts, with token usage further broken down into input/output/cache.
 - Assuming provider pricing: $10/M input, $2/M cache, $30/M output — plug in the statistics to quickly estimate costs for choosing a CodingPlan.
+- Supports clearing historical statistics in Log Management.
+
+### CLI Modes
+
+- Relay Routing: Agent requests are written to the gateway address, and the gateway handles provider routing, load balancing, and failover.
+- Relay Direct: Write a specified provider directly to the CLI config, so the Agent connects to that provider directly.
+- Official Direct: Write official account credentials to the CLI config, so the Agent uses the official request path.
 
 ### Relay Providers
 
@@ -91,24 +102,27 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
   - Wildcards: `*` for any length of characters, `?` for a single character.
   - Example: `*opus* -> gml-5` maps any model with "opus" in its name to the provider's gml-5 model.
 - Model Blacklist: Configure models a provider doesn't support; requests automatically skip that provider and route to one that supports the model.
-- Failure Blacklist: Automatically blacklists a provider after N consecutive failures for M minutes, with periodic automatic recovery.
+- Failure Blacklist: Automatically blacklists a provider after N consecutive failures for M minutes, with periodic automatic recovery. The default failure threshold is 5.
+- Supports writing a provider to the CLI config with one click and displaying the current direct-access status.
 
 ### Official Accounts
 
 - Supports credential configuration for multiple accounts, with one-click reading from the Agent.
 - Supports drag-and-drop to quickly switch the currently active account credentials.
-- Official accounts bypass gateway forwarding and use the Agent's own requests to avoid security risks.
+- Supports writing specified official credentials to the CLI config and displaying the current write status.
+- Official accounts bypass gateway forwarding and use the Agent's own requests to avoid account risk controls.
 
 ### Scheduled Tasks
 
 - Call providers during idle periods to trigger billing window updates and move the next reset time forward.
 - Periodically call providers for keep-alive, preventing accounts from being removed by providers.
 
-### Global Official Account Settings
+### Global CLI Settings
 
 - CLI Runtime Configuration: Supports configuring Agent data directories, making it easy for WSL users to write files correctly.
 - Global Presets: Written into each Agent's configuration file (e.g., `~/.claude/settings.json`). No need to configure BASE_URL or AUTH_TOKEN — the gateway writes them automatically.
 - Incremental / Full Write: Incremental writing preserves configurations made by the Agent itself; full writing does not.
+- After the config directory, default config, or write mode changes, the corresponding config is automatically rewritten according to the current CLI mode.
 
 ### Log Management
 
@@ -117,6 +131,7 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
   - Request Details: agent request headers / body, gateway forwarded request headers / body, provider response headers / body.
 - Log Levels: full logging, log details on failure only, or disable logging. Full logging records request details regardless of success; disabling logging records nothing.
 - Request detail data is stored in files, allowing cleanup of large logs while retaining metadata.
+- Supports clearing statistics for recalculating usage and request counts.
 
 ### MCP / Prompts / Skills / Plugin Management
 
