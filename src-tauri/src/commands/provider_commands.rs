@@ -278,7 +278,7 @@ pub async fn create_provider(
     .bind(&input.base_url)
     .bind(&input.api_key)
     .bind(input.enabled.unwrap_or(true) as i64)
-    .bind(input.failure_threshold.unwrap_or(3))
+    .bind(input.failure_threshold.unwrap_or(5))
     .bind(input.blacklist_minutes.unwrap_or(10))
     .bind(&cli_type)
     .bind(&profile)

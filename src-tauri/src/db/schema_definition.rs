@@ -179,7 +179,7 @@ impl DatabaseSchema {
                         name: "failure_threshold".to_string(),
                         data_type: "INTEGER".to_string(),
                         nullable: false,
-                        default_value: Some("3".to_string()),
+                        default_value: Some("5".to_string()),
                     },
                     ColumnDefinition {
                         name: "blacklist_minutes".to_string(),

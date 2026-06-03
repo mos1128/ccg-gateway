@@ -427,7 +427,7 @@ const form = ref({
   name: '',
   base_url: '',
   api_key: '',
-  failure_threshold: 3,
+  failure_threshold: 5,
   blacklist_minutes: 10,
   custom_useragent: '',
   model_maps: [] as FormModelMap[],
@@ -456,7 +456,7 @@ const pasteButtonTitle = computed(() => {
 
 function resetForm() {
   form.value = {
-    name: '', base_url: '', api_key: '', failure_threshold: 3, blacklist_minutes: 10,
+    name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
     custom_useragent: '', model_maps: [], model_blacklist: []
   }
 }
