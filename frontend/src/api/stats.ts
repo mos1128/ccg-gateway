@@ -2,6 +2,10 @@ import { invoke } from '@tauri-apps/api/core'
 import type { ProviderStats, AdvancedStatsRow } from '@/types/models'
 
 export const statsApi = {
+  clearStatsData: async (): Promise<{ data: null }> => {
+    await invoke('clear_stats_data')
+    return { data: null }
+  },
   getProviders: async (params?: { start_date?: string; end_date?: string }): Promise<{ data: ProviderStats[] }> => {
     const data = await invoke<ProviderStats[]>('get_provider_stats', {
       startDate: params?.start_date,

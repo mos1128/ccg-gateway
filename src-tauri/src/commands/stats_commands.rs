@@ -1,6 +1,13 @@
 use super::*;
 
 #[tauri::command]
+pub async fn clear_stats_data(stats_db: State<'_, StatsDb>) -> Result<()> {
+    crate::services::stats::clear_usage_stats(&stats_db.0)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_provider_stats(
     stats_db: State<'_, StatsDb>,
     start_date: Option<String>,

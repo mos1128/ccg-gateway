@@ -87,11 +87,6 @@ pub fn run() {
                 let addr = config.bind_addr();
 
                 tokio::spawn(async move {
-                    if let Err(e) = ensure_historical_stats_ready(&log_db, &stats_db).await {
-                        tracing::error!("Historical stats backfill failed: {}", e);
-                        return;
-                    }
-
                     let http_client = reqwest::Client::builder()
                         .pool_max_idle_per_host(10)
                         .pool_idle_timeout(std::time::Duration::from_secs(90))
@@ -261,6 +256,7 @@ pub fn run() {
             commands::skill_commands::remove_skill_favorite,
             commands::skill_commands::install_favorite_skill,
             commands::skill_commands::reinstall_favorite_skill,
+            commands::stats_commands::clear_stats_data,
             commands::stats_commands::get_provider_stats,
             commands::stats_commands::get_advanced_stats,
             commands::session_commands::get_session_projects,
@@ -304,20 +300,4 @@ pub fn run() {
             tracing::error!("Failed to run tauri application: {}", e);
             std::process::exit(1);
         });
-}
-
-async fn ensure_historical_stats_ready(
-    log_db: &SqlitePool,
-    stats_db: &SqlitePool,
-) -> Result<(), sqlx::Error> {
-    if services::stats::is_historical_backfill_done(stats_db).await? {
-        return Ok(());
-    }
-
-    let max_log_id = services::stats::request_log_max_id(log_db).await?;
-    tracing::info!(
-        "Starting historical stats backfill before gateway startup up to log id {}",
-        max_log_id
-    );
-    services::stats::backfill_historical_stats(log_db, stats_db, max_log_id).await
 }

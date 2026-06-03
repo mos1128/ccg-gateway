@@ -316,6 +316,7 @@ import { notify } from '@/utils/notification'
 import AppModal from '@/components/AppModal.vue'
 import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
 import { logsApi } from '@/api/logs'
+import { statsApi } from '@/api/stats'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { useUiStore } from '@/stores/ui'
@@ -340,6 +341,7 @@ const logRecordMode = ref<LogRecordMode>('failure_only')
 const cleanMenuItems: AppSelectOption[] = [
   { label: '清理全部日志', value: 'all_logs' },
   { label: '清理全部详情', value: 'all_details' },
+  { label: '清理统计数据', value: 'stats_data' },
   { label: '清理30天前日志', value: 'old_logs' },
   { label: '清理30天前详情', value: 'old_details' }
 ]
@@ -500,12 +502,13 @@ function resetRequestFilters() {
   fetchRequestLogs()
 }
 
-type CleanAction = 'all_logs' | 'all_details' | 'old_logs' | 'old_details'
+type CleanAction = 'all_logs' | 'all_details' | 'stats_data' | 'old_logs' | 'old_details'
 
 async function handleClean(action: string | number) {
   const confirmMap: Record<CleanAction, string> = {
     all_logs: '确定要清空所有请求日志吗？',
     all_details: '确定要清空所有请求详情文件吗？',
+    stats_data: '确定要清空所有统计数据吗？',
     old_logs: '确定要清理30天前的请求日志吗？',
     old_details: '确定要清理30天前的请求详情文件吗？'
   }
@@ -526,6 +529,10 @@ async function handleClean(action: string | number) {
       case 'all_details':
         await logsApi.clearRequestDetailFiles()
         notify('请求详情文件已清空')
+        break
+      case 'stats_data':
+        await statsApi.clearStatsData()
+        notify('统计数据已清空')
         break
       case 'old_logs':
         await logsApi.clearOldRequestLogs(30)

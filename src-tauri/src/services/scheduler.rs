@@ -138,10 +138,6 @@ impl RunOutcome {
 
 pub fn start_scheduler(db: SqlitePool, log_db: SqlitePool, app_handle: AppHandle) {
     tokio::spawn(async move {
-        if let Err(e) = migrate_run_history_to_log_db(&db, &log_db).await {
-            tracing::error!(error = %e, "Failed to migrate scheduled task history");
-        }
-
         // 启动时恢复因崩溃而卡在 running 状态的任务
         if let Err(e) = recover_stuck_tasks(&db, &log_db, None).await {
             tracing::error!(error = %e, "Failed to recover stuck tasks");
@@ -420,18 +416,6 @@ async fn delete_task_locked(db: &SqlitePool, log_db: &SqlitePool, id: i64) -> Re
     sqlx::query("DELETE FROM scheduled_task_runs WHERE task_id = ?")
         .bind(id)
         .execute(log_db)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    sqlx::query("DELETE FROM scheduled_task_run_items WHERE run_id IN (SELECT id FROM scheduled_task_runs WHERE task_id = ?)")
-        .bind(id)
-        .execute(db)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    sqlx::query("DELETE FROM scheduled_task_runs WHERE task_id = ?")
-        .bind(id)
-        .execute(db)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1224,96 +1208,6 @@ async fn cleanup_failed_execution(
     }
 
     emit_task_changed_if_present(app_handle, Some(task_id), None);
-}
-
-async fn migrate_run_history_to_log_db(db: &SqlitePool, log_db: &SqlitePool) -> Result<(), String> {
-    let (log_run_max_id,): (i64,) =
-        sqlx::query_as("SELECT COALESCE(MAX(id), 0) FROM scheduled_task_runs")
-            .fetch_one(log_db)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let runs = match sqlx::query_as::<_, ScheduledTaskRun>(
-        "SELECT * FROM scheduled_task_runs WHERE id > ? ORDER BY id",
-    )
-    .bind(log_run_max_id)
-    .fetch_all(db)
-    .await
-    {
-        Ok(runs) => runs,
-        Err(e) => {
-            tracing::warn!(error = %e, "Skipped scheduled task run history migration");
-            return Ok(());
-        }
-    };
-
-    for run in runs {
-        sqlx::query(
-            r#"
-            INSERT OR IGNORE INTO scheduled_task_runs
-                (id, task_id, task_name, task_type, trigger_type, status, started_at, finished_at,
-                 elapsed_ms, total_count, success_count, failure_count, skipped_count, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(run.id)
-        .bind(run.task_id)
-        .bind(run.task_name)
-        .bind(run.task_type)
-        .bind(run.trigger_type)
-        .bind(run.status)
-        .bind(run.started_at)
-        .bind(run.finished_at)
-        .bind(run.elapsed_ms)
-        .bind(run.total_count)
-        .bind(run.success_count)
-        .bind(run.failure_count)
-        .bind(run.skipped_count)
-        .bind(run.error_message)
-        .execute(log_db)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    let (log_item_max_id,): (i64,) =
-        sqlx::query_as("SELECT COALESCE(MAX(id), 0) FROM scheduled_task_run_items")
-            .fetch_one(log_db)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let items = sqlx::query_as::<_, ScheduledTaskRunItem>(
-        "SELECT * FROM scheduled_task_run_items WHERE id > ? ORDER BY id",
-    )
-    .bind(log_item_max_id)
-    .fetch_all(db)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    for item in items {
-        sqlx::query(
-            r#"
-            INSERT OR IGNORE INTO scheduled_task_run_items
-                (id, run_id, provider_id, provider_name, model_name, status, status_code,
-                 elapsed_ms, error_message, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(item.id)
-        .bind(item.run_id)
-        .bind(item.provider_id)
-        .bind(item.provider_name)
-        .bind(item.model_name)
-        .bind(item.status)
-        .bind(item.status_code)
-        .bind(item.elapsed_ms)
-        .bind(item.error_message)
-        .bind(item.created_at)
-        .execute(log_db)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    Ok(())
 }
 
 async fn load_task(db: &SqlitePool, id: i64) -> Result<ScheduledTask, String> {

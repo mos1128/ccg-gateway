@@ -138,20 +138,12 @@ pub async fn init_stats_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS stats_meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        )
-        "#,
-    )
-    .execute(&pool)
-    .await?;
+    sqlx::query("DROP TABLE IF EXISTS stats_meta")
+        .execute(&pool)
+        .await?;
 
     create_version_table(&pool).await?;
-    update_version(&pool, 2).await?;
+    update_version(&pool, 3).await?;
 
     Ok(pool)
 }
