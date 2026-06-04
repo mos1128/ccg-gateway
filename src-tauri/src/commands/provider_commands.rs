@@ -7,6 +7,47 @@ use crate::LogDb;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use tauri::{Emitter, State};
+
+fn normalize_price_per_m(value: Option<f64>, field: &str) -> Result<f64> {
+    let value = value.unwrap_or(0.0);
+    if !value.is_finite() || value < 0.0 {
+        return Err(format!("{} 必须是大于等于 0 的数字", field));
+    }
+    Ok(value)
+}
+
+fn normalize_provider_prices(input: &ProviderCreate) -> Result<(f64, f64, f64, f64)> {
+    Ok((
+        normalize_price_per_m(input.input_price_per_m, "输入单价")?,
+        normalize_price_per_m(input.output_price_per_m, "输出单价")?,
+        normalize_price_per_m(input.cache_read_price_per_m, "缓存读取单价")?,
+        normalize_price_per_m(input.cache_creation_price_per_m, "缓存创建单价")?,
+    ))
+}
+
+fn normalize_provider_update_prices(
+    input: &ProviderUpdate,
+) -> Result<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)> {
+    Ok((
+        input
+            .input_price_per_m
+            .map(|value| normalize_price_per_m(Some(value), "输入单价"))
+            .transpose()?,
+        input
+            .output_price_per_m
+            .map(|value| normalize_price_per_m(Some(value), "输出单价"))
+            .transpose()?,
+        input
+            .cache_read_price_per_m
+            .map(|value| normalize_price_per_m(Some(value), "缓存读取单价"))
+            .transpose()?,
+        input
+            .cache_creation_price_per_m
+            .map(|value| normalize_price_per_m(Some(value), "缓存创建单价"))
+            .transpose()?,
+    ))
+}
+
 #[tauri::command]
 pub async fn get_providers(
     db: State<'_, SqlitePool>,
@@ -254,6 +295,8 @@ pub async fn create_provider(
     input: ProviderCreate,
 ) -> Result<ProviderResponse> {
     let now = now_timestamp();
+    let (input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m) =
+        normalize_provider_prices(&input)?;
     let cli_type = input.cli_type.unwrap_or_else(|| "claude_code".to_string());
     let profile = validate_provider_profile(input.profile.as_deref())?.to_string();
     let provider_name = input.name.clone();
@@ -268,8 +311,8 @@ pub async fn create_provider(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO providers (cli_type, profile, name, base_url, api_key, enabled, failure_threshold, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?)
+        INSERT INTO providers (cli_type, profile, name, base_url, api_key, enabled, failure_threshold, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(&cli_type)
@@ -285,6 +328,10 @@ pub async fn create_provider(
     .bind(&custom_ua)
     .bind(now)
     .bind(now)
+    .bind(input_price_per_m)
+    .bind(output_price_per_m)
+    .bind(cache_read_price_per_m)
+    .bind(cache_creation_price_per_m)
     .execute(db.inner())
     .await
     .map_err(map_db_error)?;
@@ -340,6 +387,8 @@ pub async fn update_provider(
     input: ProviderUpdate,
 ) -> Result<ProviderResponse> {
     let now = now_timestamp();
+    let (input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m) =
+        normalize_provider_update_prices(&input)?;
 
     // Get provider name for logging
     let provider_name: Option<(String,)> =
@@ -398,6 +447,22 @@ pub async fn update_provider(
         updates.push("custom_useragent = ?".to_string());
         has_updates = true;
     }
+    if input_price_per_m.is_some() {
+        updates.push("input_price_per_m = ?".to_string());
+        has_updates = true;
+    }
+    if output_price_per_m.is_some() {
+        updates.push("output_price_per_m = ?".to_string());
+        has_updates = true;
+    }
+    if cache_read_price_per_m.is_some() {
+        updates.push("cache_read_price_per_m = ?".to_string());
+        has_updates = true;
+    }
+    if cache_creation_price_per_m.is_some() {
+        updates.push("cache_creation_price_per_m = ?".to_string());
+        has_updates = true;
+    }
 
     if has_updates {
         let query = format!("UPDATE providers SET {} WHERE id = ?", updates.join(", "));
@@ -432,6 +497,18 @@ pub async fn update_provider(
             } else {
                 q = q.bind(ua);
             }
+        }
+        if let Some(value) = input_price_per_m {
+            q = q.bind(value);
+        }
+        if let Some(value) = output_price_per_m {
+            q = q.bind(value);
+        }
+        if let Some(value) = cache_read_price_per_m {
+            q = q.bind(value);
+        }
+        if let Some(value) = cache_creation_price_per_m {
+            q = q.bind(value);
         }
 
         q.bind(id).execute(db.inner()).await.map_err(map_db_error)?;

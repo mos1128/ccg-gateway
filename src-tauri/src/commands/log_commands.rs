@@ -3,6 +3,7 @@ use chrono::Local;
 
 #[tauri::command]
 pub async fn get_request_logs(
+    db: State<'_, SqlitePool>,
     log_db: State<'_, crate::LogDb>,
     page: Option<i64>,
     page_size: Option<i64>,
@@ -14,7 +15,7 @@ pub async fn get_request_logs(
     let offset = (page - 1) * page_size;
     let pool = &log_db.0;
 
-    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE 1=1".to_string();
+    let mut sql = "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE 1=1".to_string();
     let mut count_sql = "SELECT COUNT(*) FROM request_logs WHERE 1=1".to_string();
 
     if cli_type.is_some() {
@@ -39,7 +40,23 @@ pub async fn get_request_logs(
 
     q = q.bind(page_size).bind(offset);
 
-    let items = q.fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let mut items = q.fetch_all(pool).await.map_err(|e| e.to_string())?;
+    let pricing_map = crate::services::cost::provider_pricing_map(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+    for item in &mut items {
+        let pricing = pricing_map
+            .get(&(item.cli_type.clone(), item.provider_name.clone()))
+            .copied()
+            .unwrap_or_default();
+        item.total_cost = crate::services::cost::calculate_token_cost(
+            pricing,
+            item.input_tokens,
+            item.cache_read_input_tokens,
+            item.cache_creation_input_tokens,
+            item.output_tokens,
+        );
+    }
 
     let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
     if let Some(ct) = &cli_type {
@@ -108,17 +125,33 @@ pub async fn clear_old_request_detail_files(days: i64) -> Result<()> {
 
 #[tauri::command]
 pub async fn get_request_log_detail(
+    db: State<'_, SqlitePool>,
     log_db: State<'_, crate::LogDb>,
     id: i64,
 ) -> Result<RequestLogDetail> {
     let mut detail = sqlx::query_as::<_, RequestLogDetail>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, NULL as client_headers, NULL as client_body, forward_url, NULL as forward_headers, NULL as forward_body, NULL as provider_headers, NULL as provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, NULL as client_headers, NULL as client_body, forward_url, NULL as forward_headers, NULL as forward_body, NULL as provider_headers, NULL as provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&log_db.0)
     .await
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "Log not found".to_string())?;
+
+    let pricing = crate::services::cost::provider_pricing(
+        db.inner(),
+        &detail.cli_type,
+        &detail.provider_name,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    detail.total_cost = crate::services::cost::calculate_token_cost(
+        pricing,
+        detail.input_tokens,
+        detail.cache_read_input_tokens,
+        detail.cache_creation_input_tokens,
+        detail.output_tokens,
+    );
 
     detail.client_headers = crate::services::stats::read_request_log_detail(
         detail.id,

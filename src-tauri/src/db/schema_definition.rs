@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 26,
+            version: 27,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -222,6 +222,30 @@ impl DatabaseSchema {
                         data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "input_price_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "output_price_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "cache_read_price_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "cache_creation_price_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
                     },
                 ],
                 primary_key: vec!["id".to_string()],

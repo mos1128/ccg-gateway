@@ -1,3 +1,4 @@
+pub mod cost;
 pub mod plugin;
 pub mod provider;
 pub mod proxy;

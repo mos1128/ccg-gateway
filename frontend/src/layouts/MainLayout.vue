@@ -14,7 +14,7 @@
         </div>
         
         <div class="nav-group">
-          <div class="nav-group-title">核心资源</div>
+          <div class="nav-group-title">配置</div>
           <!-- Note: Made the original menu paths consistent with old code, keeping '服务商管理' instead of '服务商' to match perfectly if desired, but spec says '服务商'. I'll stick to simple '服务商' -->
           <div class="nav-item" :class="{ active: route.path === '/providers' }" @click="router.push('/providers')">服务商</div>
           <div class="nav-item" :class="{ active: route.path === '/mcp' }" @click="router.push('/mcp')">MCP</div>

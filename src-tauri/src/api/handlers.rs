@@ -1079,14 +1079,25 @@ async fn record_request_stats(
 
     // Query the inserted log item
     let log_item = sqlx::query_as::<_, RequestLogItem>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(log_id)
     .fetch_one(&state.log_db)
     .await;
 
     // Emit event to frontend
-    if let Ok(item) = log_item {
+    if let Ok(mut item) = log_item {
+        let pricing =
+            crate::services::cost::provider_pricing(&state.db, cli_type.as_str(), provider_name)
+                .await
+                .unwrap_or_default();
+        item.total_cost = crate::services::cost::calculate_token_cost(
+            pricing,
+            usage.input_tokens,
+            usage.cache_read_input_tokens,
+            usage.cache_creation_input_tokens,
+            usage.output_tokens,
+        );
         if let Err(e) = state.app_handle.emit("request-log-new", item) {
             tracing::error!(error = %e, "Failed to emit request log event");
         }

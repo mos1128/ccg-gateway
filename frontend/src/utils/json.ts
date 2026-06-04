@@ -40,3 +40,9 @@ export function formatTokens(tokens: number | undefined): string {
   if (tokens < 1000000) return (tokens / 1000).toFixed(1) + 'K'
   return (tokens / 1000000).toFixed(1) + 'M'
 }
+
+export function formatCost(cost: number | undefined): string {
+  if (!cost) return '0'
+  if (cost >= 1) return cost.toFixed(4)
+  return cost.toFixed(6).replace(/0+$/, '').replace(/\.$/, '')
+}

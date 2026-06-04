@@ -32,24 +32,24 @@
       <!-- 中部关键指标 KPI -->
       <div style="display: flex; gap: 24px; margin-bottom: 20px;">
         <div class="b-card kpi-card">
+          <div class="kpi-title">计费Token</div>
+          <div class="kpi-value mono text-blue">{{ kpiData.billableTokens }}</div>
+        </div>
+        <div class="b-card kpi-card">
+          <div class="kpi-title">缓存Token</div>
+          <div class="kpi-value mono">{{ kpiData.cacheTokens }}</div>
+        </div>
+        <div class="b-card kpi-card">
           <div class="kpi-title">请求总数</div>
-          <div class="kpi-value mono text-blue">{{ kpiData.requests }}</div>
+          <div class="kpi-value mono">{{ kpiData.requests }}</div>
         </div>
         <div class="b-card kpi-card">
           <div class="kpi-title">全局成功率</div>
           <div class="kpi-value mono text-green">{{ kpiData.successRate }}</div>
         </div>
         <div class="b-card kpi-card">
-          <div class="kpi-title">Token消耗</div>
-          <div class="kpi-value mono">{{ kpiData.tokens }}</div>
-        </div>
-        <div class="b-card kpi-card">
-          <div class="kpi-title">缓存读取</div>
-          <div class="kpi-value mono">{{ kpiData.cacheReadTokens }}</div>
-        </div>
-        <div class="b-card kpi-card">
-          <div class="kpi-title">缓存创建</div>
-          <div class="kpi-value mono">{{ kpiData.cacheCreationTokens }}</div>
+          <div class="kpi-title">费用</div>
+          <div class="kpi-value mono">{{ kpiData.cost }}</div>
         </div>
       </div>
 
@@ -61,6 +61,7 @@
             <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
               <div class="b-segmented">
                 <div class="b-seg-btn" :class="{ active: metricMode === 'tokens' }" @click="metricMode = 'tokens'">Token</div>
+                <div class="b-seg-btn" :class="{ active: metricMode === 'cost' }" @click="metricMode = 'cost'">费用</div>
                 <div class="b-seg-btn" :class="{ active: metricMode === 'requests' }" @click="metricMode = 'requests'">请求数</div>
               </div>
               <div class="b-segmented">
@@ -94,7 +95,7 @@ use([LineChart, BarChart, TooltipComponent, GridComponent, DatasetComponent, Tra
 import { useProviderStore } from '@/stores/providers'
 import { useSettingsStore } from '@/stores/settings'
 import { statsApi } from '@/api/stats'
-import { formatTokens } from '@/utils/json'
+import { formatCost, formatTokens } from '@/utils/json'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { CLI_TABS } from '@/types/models'
 import type { CliType, CliMode, ProviderStats, AdvancedStatsRow } from '@/types/models'
@@ -118,7 +119,7 @@ const chartHovering = ref(false)
 const legendSelectedMap = ref<Record<string, Record<string, boolean>>>({})
 
 // UI State
-const metricMode = ref<'requests' | 'tokens'>('tokens')
+const metricMode = ref<'requests' | 'tokens' | 'cost'>('tokens')
 const dimMode = ref<'provider' | 'model'>('provider')
 const legendStateKey = computed(() => dimMode.value)
 
@@ -126,17 +127,19 @@ const kpiData = computed(() => {
   const stats = providerStats.value
   const totalRequests = stats.reduce((sum, s) => sum + s.total_requests, 0)
   const totalSuccess = stats.reduce((sum, s) => sum + s.total_success, 0)
-  const totalTokens = stats.reduce((sum, s) => sum + s.total_tokens, 0)
   const totalCacheReadTokens = stats.reduce((sum, s) => sum + (s.total_cache_read_tokens || 0), 0)
   const totalCacheCreationTokens = stats.reduce((sum, s) => sum + (s.total_cache_creation_tokens || 0), 0)
+  const totalCacheTokens = totalCacheReadTokens + totalCacheCreationTokens
+  const totalBillableTokens = stats.reduce((sum, s) => sum + s.total_tokens, 0) - totalCacheTokens
+  const totalCost = stats.reduce((sum, s) => sum + (s.total_cost || 0), 0)
   const successRate = totalRequests > 0 ? (totalSuccess / totalRequests) * 100 : 0
 
   return {
+    billableTokens: formatTokens(totalBillableTokens),
+    cacheTokens: formatTokens(totalCacheTokens),
     requests: totalRequests.toLocaleString(),
     successRate: totalRequests > 0 ? successRate.toFixed(1) + '%' : '0%',
-    tokens: formatTokens(totalTokens),
-    cacheReadTokens: formatTokens(totalCacheReadTokens),
-    cacheCreationTokens: formatTokens(totalCacheCreationTokens)
+    cost: formatCost(totalCost)
   }
 })
 
@@ -257,6 +260,11 @@ function formatTokenValue(value: number): string {
   return value.toString()
 }
 
+function formatMetricValue(value: number): string {
+  if (metricMode.value === 'cost') return formatCost(value)
+  return formatTokenValue(value)
+}
+
 const chartOption = computed(() => {
   const dates: string[] = []
   for (let i = 6; i >= 0; i--) {
@@ -266,12 +274,14 @@ const chartOption = computed(() => {
   }
 
   const isTokens = metricMode.value === 'tokens'
+  const isCost = metricMode.value === 'cost'
+  const isBar = isTokens || isCost
   const groupKey = dimMode.value === 'provider' ? 'provider_name' : 'model_id'
 
   // Get unique groups and total for sorting
   const groupTotals = new Map<string, number>()
   advancedStats.value.forEach(s => {
-    const val = isTokens ? s.total_tokens : s.total_success
+    const val = isCost ? s.total_cost : isTokens ? s.total_tokens : s.total_success
     groupTotals.set(s[groupKey], (groupTotals.get(s[groupKey]) || 0) + val)
   })
   const groupArray = Array.from(groupTotals.entries())
@@ -281,19 +291,20 @@ const chartOption = computed(() => {
   const seriesData: any[] = groupArray.map((gName, idx) => {
     const color = PALETTE[idx % PALETTE.length]
 
-    if (isTokens) {
+    if (isBar) {
       const data = dates.map(d => {
-        let sum = 0, input = 0, output = 0, cacheRead = 0, cacheCreation = 0
+        let sum = 0, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, cost = 0
         advancedStats.value.forEach(s => {
           if (s.date === d && s[groupKey] === gName) {
-            sum += s.total_tokens
+            sum += isCost ? s.total_cost : s.total_tokens
             input += s.total_input_tokens || 0
             output += s.total_output_tokens || 0
             cacheRead += s.total_cache_read_tokens || 0
             cacheCreation += s.total_cache_creation_tokens || 0
+            cost += s.total_cost || 0
           }
         })
-        return { value: sum, input, output, cacheRead, cacheCreation, name: gName }
+        return { value: sum, input, output, cacheRead, cacheCreation, cost, name: gName }
       })
       return { name: gName, type: 'bar', stack: 'total', barWidth: '60%', itemStyle: { color }, data }
     } else {
@@ -318,7 +329,7 @@ const chartOption = computed(() => {
   })
 
   // Apply border radius for bar chart
-  if (isTokens) {
+  if (isBar) {
     const topSeriesByDate = dates.map((_, dateIdx) => {
       for (let seriesIdx = seriesData.length - 1; seriesIdx >= 0; seriesIdx--) {
         if (seriesData[seriesIdx].data[dateIdx].value > 0) return seriesIdx
@@ -339,30 +350,32 @@ const chartOption = computed(() => {
       appendTo: 'body',
       transitionDuration: 0,
       extraCssText: 'position: fixed;',
-      axisPointer: { type: isTokens ? 'shadow' : 'line' },
+      axisPointer: { type: isBar ? 'shadow' : 'line' },
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
       borderColor: '#e2e8f0',
       textStyle: { color: '#0f172a' },
       formatter: (params: any[]) => {
         if (!params.length) return ''
-        const visibleParams = params.filter(p => Number(isTokens ? p.data?.value : p.value) > 0)
+        const visibleParams = params.filter(p => Number(isBar ? p.data?.value : p.value) > 0)
         if (!visibleParams.length) return ''
         const date = params[0].name
         let html = `<div style="font-weight: 600; margin-bottom: 8px;">${date}</div>`
 
-        if (isTokens) {
+        if (isBar) {
           visibleParams.forEach(p => {
             const d = p.data
+            const costLine = isCost ? `<div>- 费用: ${formatCost(d.cost)}</div>` : ''
             html += `<div style="margin-bottom: 6px;">
               <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
                 <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:${p.color};"></span>
-                ${d.name} (总计: ${formatTokenValue(d.value)})
+                ${d.name} (总计: ${formatMetricValue(d.value)})
               </div>
               <div style="padding-left: 16px; color: #64748b; font-size: 13px;">
                 <div>- 输入: ${formatTokenValue(d.input)}</div>
                 <div>- 输出: ${formatTokenValue(d.output)}</div>
                 <div>- 缓存读取: ${formatTokenValue(d.cacheRead)}</div>
                 <div>- 缓存创建: ${formatTokenValue(d.cacheCreation)}</div>
+                ${costLine}
               </div>
             </div>`
           })
@@ -390,7 +403,7 @@ const chartOption = computed(() => {
     xAxis: { 
       type: 'category', 
       data: dates, 
-      boundaryGap: isTokens, 
+      boundaryGap: isBar, 
       axisLine: { lineStyle: { color: '#e2e8f0' } }, 
       axisLabel: { 
         color: '#64748b',
@@ -404,6 +417,7 @@ const chartOption = computed(() => {
       axisLabel: {
         color: '#64748b',
         formatter: (value: number) => {
+          if (isCost) return formatCost(value)
           if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M'
           if (value >= 1000) return (value / 1000).toFixed(1) + 'K'
           return value

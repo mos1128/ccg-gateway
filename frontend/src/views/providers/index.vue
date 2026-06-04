@@ -414,6 +414,10 @@ interface ProviderDraft {
   failure_threshold: number
   blacklist_minutes: number
   custom_useragent: string
+  input_price_per_m: number
+  output_price_per_m: number
+  cache_read_price_per_m: number
+  cache_creation_price_per_m: number
   model_maps: FormModelMap[]
   model_blacklist: FormModelBlacklist[]
 }
@@ -430,6 +434,10 @@ const form = ref({
   failure_threshold: 5,
   blacklist_minutes: 10,
   custom_useragent: '',
+  input_price_per_m: 0,
+  output_price_per_m: 0,
+  cache_read_price_per_m: 0,
+  cache_creation_price_per_m: 0,
   model_maps: [] as FormModelMap[],
   model_blacklist: [] as FormModelBlacklist[]
 })
@@ -457,7 +465,9 @@ const pasteButtonTitle = computed(() => {
 function resetForm() {
   form.value = {
     name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
-    custom_useragent: '', model_maps: [], model_blacklist: []
+    custom_useragent: '', input_price_per_m: 0, output_price_per_m: 0,
+    cache_read_price_per_m: 0, cache_creation_price_per_m: 0,
+    model_maps: [], model_blacklist: []
   }
 }
 function resetCredentialForm() {
@@ -481,6 +491,10 @@ function createProviderDraft(provider: Provider): ProviderDraft {
     failure_threshold: provider.failure_threshold,
     blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
+    input_price_per_m: provider.input_price_per_m || 0,
+    output_price_per_m: provider.output_price_per_m || 0,
+    cache_read_price_per_m: provider.cache_read_price_per_m || 0,
+    cache_creation_price_per_m: provider.cache_creation_price_per_m || 0,
     model_maps: provider.model_maps.map(({ source_model, target_model, enabled }) => ({ source_model, target_model, enabled })),
     model_blacklist: provider.model_blacklist.map(({ model_pattern }) => ({ model_pattern }))
   }
@@ -661,6 +675,11 @@ function removeModelMap(index: number) { form.value.model_maps.splice(index, 1) 
 function addModelBlacklist() { form.value.model_blacklist.push({ model_pattern: '' }) }
 function removeModelBlacklist(index: number) { form.value.model_blacklist.splice(index, 1) }
 
+function normalizePrice(value: unknown): number {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : 0
+}
+
 async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
   const cliType = activeCliType.value
   if (!profileCapableCliTypes.includes(cliType) || viewMode.value !== 'proxy' || !isProxyRouteMode.value) {
@@ -800,6 +819,10 @@ function handleEdit(provider: Provider) {
     name: provider.name, base_url: provider.base_url, api_key: provider.api_key,
     failure_threshold: provider.failure_threshold, blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
+    input_price_per_m: provider.input_price_per_m || 0,
+    output_price_per_m: provider.output_price_per_m || 0,
+    cache_read_price_per_m: provider.cache_read_price_per_m || 0,
+    cache_creation_price_per_m: provider.cache_creation_price_per_m || 0,
     model_maps: provider.model_maps.map(m => ({ ...m })),
     model_blacklist: provider.model_blacklist.map(b => ({ ...b }))
   }
@@ -814,6 +837,10 @@ async function handleSave() {
     cli_type: activeCliType.value,
     profile: currentProviderProfile.value,
     ...form.value,
+    input_price_per_m: normalizePrice(form.value.input_price_per_m),
+    output_price_per_m: normalizePrice(form.value.output_price_per_m),
+    cache_read_price_per_m: normalizePrice(form.value.cache_read_price_per_m),
+    cache_creation_price_per_m: normalizePrice(form.value.cache_creation_price_per_m),
     model_maps: form.value.model_maps.filter(m => m.source_model && m.target_model),
     model_blacklist: form.value.model_blacklist.filter(b => b.model_pattern)
   }

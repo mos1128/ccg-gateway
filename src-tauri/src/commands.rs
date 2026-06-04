@@ -302,6 +302,10 @@ mod tests {
             blacklisted_until: None,
             sort_order: 0,
             custom_useragent: None,
+            input_price_per_m: 0.0,
+            output_price_per_m: 0.0,
+            cache_read_price_per_m: 0.0,
+            cache_creation_price_per_m: 0.0,
             created_at: 0,
             updated_at: 0,
         }

@@ -41,6 +41,10 @@ export interface Provider {
   blacklisted_until: number | null
   sort_order: number
   custom_useragent: string | null
+  input_price_per_m: number
+  output_price_per_m: number
+  cache_read_price_per_m: number
+  cache_creation_price_per_m: number
   model_maps: ModelMap[]
   model_blacklist: ModelBlacklist[]
   is_blacklisted: boolean
@@ -57,6 +61,10 @@ export interface ProviderCreate {
   failure_threshold?: number
   blacklist_minutes?: number
   custom_useragent?: string
+  input_price_per_m?: number
+  output_price_per_m?: number
+  cache_read_price_per_m?: number
+  cache_creation_price_per_m?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
 }
@@ -70,6 +78,10 @@ export interface ProviderUpdate {
   failure_threshold?: number
   blacklist_minutes?: number
   custom_useragent?: string
+  input_price_per_m?: number
+  output_price_per_m?: number
+  cache_read_price_per_m?: number
+  cache_creation_price_per_m?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
 }
@@ -385,10 +397,12 @@ export interface ProviderStats {
   total_cache_read_tokens: number
   total_cache_creation_tokens: number
   total_elapsed_ms: number
+  total_cost: number
 }
 
 export interface AdvancedStatsRow {
   date: string
+  cli_type: CliType
   provider_name: string
   model_id: string
   total_requests: number
@@ -398,6 +412,7 @@ export interface AdvancedStatsRow {
   total_output_tokens: number
   total_cache_read_tokens: number
   total_cache_creation_tokens: number
+  total_cost: number
 }
 
 // Log types
@@ -413,6 +428,7 @@ export interface RequestLogListItem {
   cache_read_input_tokens: number
   cache_creation_input_tokens: number
   output_tokens: number
+  total_cost: number
   client_method: string
   client_path: string
   source_model: string | null

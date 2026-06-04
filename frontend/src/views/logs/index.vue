@@ -123,6 +123,7 @@
                       </el-tooltip>
                     </div>
                   </th>
+                  <th style="min-width: 90px;">费用</th>
                   <th style="min-width: 100px;">模型映射</th>
                   <th class="col-sticky" style="width: 60px;">操作</th>
                 </tr>
@@ -143,6 +144,7 @@
                   <td class="mono">
                     {{ formatTokenUsage(row) }}
                   </td>
+                  <td class="mono">{{ formatCost(row.total_cost) }}</td>
                   <td class="mono text-left">{{ row.source_model || '-' }} → {{ row.target_model || '-' }}</td>
                   <td class="col-sticky">
                     <a class="table-link" @click="showRequestDetail(row.id)">详情</a>
@@ -321,7 +323,7 @@ import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { useUiStore } from '@/stores/ui'
 import { getErrorMessage } from '@/utils/error'
-import { formatJson as formatJsonUtil, formatTokens } from '@/utils/json'
+import { formatCost, formatJson as formatJsonUtil, formatTokens } from '@/utils/json'
 import type { RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
 
 type LogRecordMode = 'full' | 'failure_only' | 'disabled'

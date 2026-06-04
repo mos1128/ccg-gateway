@@ -16,6 +16,28 @@
       <input type="text" v-model="form.api_key" class="b-input" placeholder="sk-...">
     </div>
 
+    <div style="margin-bottom: 40px; padding: 24px; background: var(--color-bg-page); border-radius: 12px; border: 1px solid var(--color-bg-subtle);">
+      <div class="text-16 fw-normal text-primary" style="margin-bottom: 20px;">费用配置</div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+        <div>
+          <label class="c-label">输入 / M</label>
+          <input type="number" min="0" step="0.000001" v-model.number="form.input_price_per_m" class="b-input">
+        </div>
+        <div>
+          <label class="c-label">输出 / M</label>
+          <input type="number" min="0" step="0.000001" v-model.number="form.output_price_per_m" class="b-input">
+        </div>
+        <div>
+          <label class="c-label">缓存读取 / M</label>
+          <input type="number" min="0" step="0.000001" v-model.number="form.cache_read_price_per_m" class="b-input">
+        </div>
+        <div>
+          <label class="c-label">缓存创建 / M</label>
+          <input type="number" min="0" step="0.000001" v-model.number="form.cache_creation_price_per_m" class="b-input">
+        </div>
+      </div>
+    </div>
+
     <div style="display: flex; gap: 32px; margin-bottom: 40px; padding: 32px 24px; background: var(--color-bg-page); border-radius: 12px; border: 1px solid var(--color-bg-subtle);">
       <div style="flex: 1;">
         <label class="c-label">失败鉴权阈值 (次)</label>
@@ -81,6 +103,10 @@ interface ProviderEditForm {
   failure_threshold: number
   blacklist_minutes: number
   custom_useragent: string
+  input_price_per_m: number
+  output_price_per_m: number
+  cache_read_price_per_m: number
+  cache_creation_price_per_m: number
   model_maps: Array<{ source_model: string; target_model: string; enabled: boolean }>
   model_blacklist: Array<{ model_pattern: string }>
 }
