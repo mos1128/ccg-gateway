@@ -44,8 +44,12 @@
           <div class="kpi-value mono">{{ kpiData.tokens }}</div>
         </div>
         <div class="b-card kpi-card">
-          <div class="kpi-title">缓存Token</div>
-          <div class="kpi-value mono">{{ kpiData.cachedTokens }}</div>
+          <div class="kpi-title">缓存读取</div>
+          <div class="kpi-value mono">{{ kpiData.cacheReadTokens }}</div>
+        </div>
+        <div class="b-card kpi-card">
+          <div class="kpi-title">缓存创建</div>
+          <div class="kpi-value mono">{{ kpiData.cacheCreationTokens }}</div>
         </div>
       </div>
 
@@ -123,14 +127,16 @@ const kpiData = computed(() => {
   const totalRequests = stats.reduce((sum, s) => sum + s.total_requests, 0)
   const totalSuccess = stats.reduce((sum, s) => sum + s.total_success, 0)
   const totalTokens = stats.reduce((sum, s) => sum + s.total_tokens, 0)
-  const totalCachedTokens = stats.reduce((sum, s) => sum + (s.total_cache_read_tokens || 0) + (s.total_cache_creation_tokens || 0), 0)
+  const totalCacheReadTokens = stats.reduce((sum, s) => sum + (s.total_cache_read_tokens || 0), 0)
+  const totalCacheCreationTokens = stats.reduce((sum, s) => sum + (s.total_cache_creation_tokens || 0), 0)
   const successRate = totalRequests > 0 ? (totalSuccess / totalRequests) * 100 : 0
 
   return {
     requests: totalRequests.toLocaleString(),
     successRate: totalRequests > 0 ? successRate.toFixed(1) + '%' : '0%',
     tokens: formatTokens(totalTokens),
-    cachedTokens: formatTokens(totalCachedTokens)
+    cacheReadTokens: formatTokens(totalCacheReadTokens),
+    cacheCreationTokens: formatTokens(totalCacheCreationTokens)
   }
 })
 
@@ -277,16 +283,17 @@ const chartOption = computed(() => {
 
     if (isTokens) {
       const data = dates.map(d => {
-        let sum = 0, input = 0, output = 0, cache = 0
+        let sum = 0, input = 0, output = 0, cacheRead = 0, cacheCreation = 0
         advancedStats.value.forEach(s => {
           if (s.date === d && s[groupKey] === gName) {
             sum += s.total_tokens
             input += s.total_input_tokens || 0
             output += s.total_output_tokens || 0
-            cache += (s.total_cache_read_tokens || 0) + (s.total_cache_creation_tokens || 0)
+            cacheRead += s.total_cache_read_tokens || 0
+            cacheCreation += s.total_cache_creation_tokens || 0
           }
         })
-        return { value: sum, input, output, cache, name: gName }
+        return { value: sum, input, output, cacheRead, cacheCreation, name: gName }
       })
       return { name: gName, type: 'bar', stack: 'total', barWidth: '60%', itemStyle: { color }, data }
     } else {
@@ -354,7 +361,8 @@ const chartOption = computed(() => {
               <div style="padding-left: 16px; color: #64748b; font-size: 13px;">
                 <div>- 输入: ${formatTokenValue(d.input)}</div>
                 <div>- 输出: ${formatTokenValue(d.output)}</div>
-                <div>- 缓存: ${formatTokenValue(d.cache)}</div>
+                <div>- 缓存读取: ${formatTokenValue(d.cacheRead)}</div>
+                <div>- 缓存创建: ${formatTokenValue(d.cacheCreation)}</div>
               </div>
             </div>`
           })
