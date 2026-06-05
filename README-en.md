@@ -68,14 +68,16 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 ## 📸 Interface Preview
 
 <div align="center">
-  <img src="img/PixPin_2026-04-12_17-27-28.png" width="48%" />
-  <img src="img/PixPin_2026-04-12_17-27-53.png" width="48%" />
-  <img src="img/PixPin_2026-04-12_17-29-51.png" width="48%" />
-  <img src="img/PixPin_2026-04-12_17-31-51.png" width="48%" />
-  <img src="img/PixPin_2026-04-12_17-32-07.png" width="48%" />
-  <img src="img/PixPin_2026-04-12_17-32-49.png" width="48%" />
-  <img src="img/PixPin_2026-04-12_17-33-03.png" width="48%" />
-  <img src="img/PixPin_2026-04-12_17-39-14.png" width="48%" />
+  <img src="img/1.png" width="48%" />
+  <img src="img/2.png" width="48%" />
+  <img src="img/3.png" width="48%" />
+  <img src="img/4.png" width="48%" />
+  <img src="img/5.png" width="48%" />
+  <img src="img/6.png" width="48%" />
+  <img src="img/7.png" width="48%" />
+  <img src="img/8.png" width="48%" />
+  <img src="img/9.png" width="48%" />
+  <img src="img/10.png" width="48%" />
 </div>
 
 ---
