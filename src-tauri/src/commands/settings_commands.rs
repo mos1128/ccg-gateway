@@ -3,7 +3,7 @@ use super::*;
 #[tauri::command]
 pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySettings> {
     sqlx::query_as::<_, GatewaySettings>(
-        "SELECT debug_log, log_detail_mode FROM gateway_settings WHERE id = 1",
+        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close FROM gateway_settings WHERE id = 1",
     )
     .fetch_one(db.inner())
     .await
@@ -12,9 +12,13 @@ pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySe
 
 #[tauri::command]
 pub async fn update_gateway_settings(
+    app: tauri::AppHandle,
     db: State<'_, SqlitePool>,
     debug_log: Option<bool>,
     log_detail_mode: Option<String>,
+    launch_on_startup: Option<bool>,
+    silent_startup: Option<bool>,
+    minimize_to_tray_on_close: Option<bool>,
 ) -> Result<()> {
     let now = now_timestamp();
 
@@ -24,6 +28,15 @@ pub async fn update_gateway_settings(
     }
     if log_detail_mode.is_some() {
         updates.push("log_detail_mode = ?");
+    }
+    if launch_on_startup.is_some() {
+        updates.push("launch_on_startup = ?");
+    }
+    if silent_startup.is_some() {
+        updates.push("silent_startup = ?");
+    }
+    if minimize_to_tray_on_close.is_some() {
+        updates.push("minimize_to_tray_on_close = ?");
     }
     updates.push("updated_at = ?");
 
@@ -38,6 +51,21 @@ pub async fn update_gateway_settings(
     }
     if let Some(mode) = log_detail_mode {
         query = query.bind(mode);
+    }
+    if let Some(launch_on_startup) = launch_on_startup {
+        if launch_on_startup {
+            crate::auto_launch::enable_auto_launch()?;
+        } else {
+            crate::auto_launch::disable_auto_launch()?;
+        }
+        query = query.bind(if launch_on_startup { 1i64 } else { 0 });
+    }
+    if let Some(silent_startup) = silent_startup {
+        query = query.bind(if silent_startup { 1i64 } else { 0 });
+    }
+    if let Some(minimize_to_tray_on_close) = minimize_to_tray_on_close {
+        crate::set_minimize_to_tray_on_close(&app, minimize_to_tray_on_close);
+        query = query.bind(if minimize_to_tray_on_close { 1i64 } else { 0 });
     }
 
     query

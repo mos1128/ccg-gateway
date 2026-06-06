@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 27,
+            version: 28,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -466,6 +466,24 @@ impl DatabaseSchema {
                         data_type: "TEXT".to_string(),
                         nullable: false,
                         default_value: Some("'failure_only'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "launch_on_startup".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "silent_startup".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "minimize_to_tray_on_close".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("1".to_string()),
                     },
                     ColumnDefinition {
                         name: "updated_at".to_string(),

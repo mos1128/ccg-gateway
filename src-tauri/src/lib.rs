@@ -1,4 +1,5 @@
 pub mod api;
+pub mod auto_launch;
 pub mod commands;
 pub mod config;
 pub mod db;
@@ -8,13 +9,69 @@ pub mod time;
 use config::Config;
 use db::{init_db, init_stats_db};
 use sqlx::SqlitePool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 // Type wrappers for Tauri state
 pub struct LogDb(pub SqlitePool);
 pub struct StatsDb(pub SqlitePool);
+
+pub struct WindowBehaviorState {
+    minimize_to_tray_on_close: AtomicBool,
+    exit_requested: AtomicBool,
+}
+
+impl Default for WindowBehaviorState {
+    fn default() -> Self {
+        Self {
+            minimize_to_tray_on_close: AtomicBool::new(true),
+            exit_requested: AtomicBool::new(false),
+        }
+    }
+}
+
+impl WindowBehaviorState {
+    pub fn set_minimize_to_tray_on_close(&self, value: bool) {
+        self.minimize_to_tray_on_close
+            .store(value, Ordering::Relaxed);
+    }
+
+    pub fn minimize_to_tray_on_close(&self) -> bool {
+        self.minimize_to_tray_on_close.load(Ordering::Relaxed)
+    }
+
+    pub fn request_exit(&self) -> bool {
+        !self.exit_requested.swap(true, Ordering::SeqCst)
+    }
+}
+
+pub fn set_minimize_to_tray_on_close(app: &tauri::AppHandle, value: bool) {
+    app.state::<WindowBehaviorState>()
+        .set_minimize_to_tray_on_close(value);
+}
+
+fn show_main_window(window: &WebviewWindow) {
+    #[cfg(target_os = "windows")]
+    let _ = window.set_skip_taskbar(false);
+    let _ = window.show();
+    let _ = window.set_focus();
+    let _ = window.unminimize();
+}
+
+fn request_app_exit(app: &AppHandle) {
+    if !app.state::<WindowBehaviorState>().request_exit() {
+        return;
+    }
+
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        app.exit(0);
+    });
+}
 
 impl std::ops::Deref for LogDb {
     type Target = SqlitePool;
@@ -37,6 +94,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(WindowBehaviorState::default())
         .setup(move |app| {
             let config = config.clone();
             app.manage(config.clone());
@@ -46,7 +104,7 @@ pub fn run() {
             let log_db_path = config.database.log_path.clone();
             let stats_db_path = config.database.stats_path.clone();
 
-            tauri::async_runtime::block_on(async {
+            let startup_settings = tauri::async_runtime::block_on(async {
                 // Ensure data directory exists
                 if let Some(parent) = db_path.parent() {
                     std::fs::create_dir_all(parent).ok();
@@ -77,6 +135,20 @@ pub fn run() {
                 app.manage(db.clone());
                 app.manage(LogDb(log_db.clone()));
                 app.manage(StatsDb(stats_db.clone()));
+
+                let startup_settings = sqlx::query_as::<_, db::models::GatewaySettings>(
+                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close FROM gateway_settings WHERE id = 1",
+                )
+                .fetch_one(&db)
+                .await
+                .unwrap_or(db::models::GatewaySettings {
+                    debug_log: 0,
+                    log_detail_mode: "failure_only".to_string(),
+                    launch_on_startup: 0,
+                    silent_startup: 0,
+                    minimize_to_tray_on_close: 1,
+                });
+
                 let app_handle = app.handle().clone();
                 services::scheduler::start_scheduler(
                     db.clone(),
@@ -118,7 +190,12 @@ pub fn run() {
                         tracing::error!("Gateway server error: {}", e);
                     }
                 });
+
+                startup_settings
             });
+
+            app.state::<WindowBehaviorState>()
+                .set_minimize_to_tray_on_close(startup_settings.minimize_to_tray_on_close != 0);
 
             // Setup tray icon with menu
             let show_item = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
@@ -144,13 +221,11 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            let _ = window.unminimize();
+                            show_main_window(&window);
                         }
                     }
                     "quit" => {
-                        app.exit(0);
+                        request_app_exit(app);
                     }
                     _ => {}
                 })
@@ -164,11 +239,11 @@ pub fn run() {
                             match (window.is_visible(), window.is_minimized()) {
                                 (Ok(true), Ok(false)) => {
                                     let _ = window.hide();
+                                    #[cfg(target_os = "windows")]
+                                    let _ = window.set_skip_taskbar(true);
                                 }
                                 _ => {
-                                    let _ = window.show();
-                                    let _ = window.unminimize();
-                                    let _ = window.set_focus();
+                                    show_main_window(&window);
                                 }
                             }
                         }
@@ -177,13 +252,35 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Handle window close event - always minimize to tray
+            // Apply startup visibility after creating the tray so silent startup remains reachable.
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(target_os = "linux")]
+                let _ = window.set_decorations(false);
+
+                if startup_settings.silent_startup != 0 {
+                    let _ = window.hide();
+                    #[cfg(target_os = "windows")]
+                    let _ = window.set_skip_taskbar(true);
+                } else {
+                    show_main_window(&window);
+                }
+            }
+
+            // Handle window close event according to the persisted window behavior setting.
+            if let Some(window) = app.get_webview_window("main") {
+                let app_handle = app.handle().clone();
                 let window_clone = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        let _ = window_clone.hide();
-                        api.prevent_close();
+                        if app_handle
+                            .state::<WindowBehaviorState>()
+                            .minimize_to_tray_on_close()
+                        {
+                            let _ = window_clone.hide();
+                            #[cfg(target_os = "windows")]
+                            let _ = window_clone.set_skip_taskbar(true);
+                            api.prevent_close();
+                        }
                     }
                 });
             }

@@ -32,6 +32,9 @@ export const settingsApi = {
         gateway: {
           debug_log: !!gateway.debug_log,
           log_detail_mode: gateway.log_detail_mode as 'full' | 'failure_only',
+          launch_on_startup: !!gateway.launch_on_startup,
+          silent_startup: !!gateway.silent_startup,
+          minimize_to_tray_on_close: !!gateway.minimize_to_tray_on_close,
         },
         timeouts,
         cli_settings: cliSettings,
@@ -43,6 +46,9 @@ export const settingsApi = {
     await invoke('update_gateway_settings', {
       debugLog: data.debug_log,
       logDetailMode: data.log_detail_mode,
+      launchOnStartup: data.launch_on_startup,
+      silentStartup: data.silent_startup,
+      minimizeToTrayOnClose: data.minimize_to_tray_on_close,
     })
     return { data: null }
   },

@@ -16,6 +16,7 @@
         "title": "CCG Gateway",
         "width": 1400,
         "height": 800,
+        "visible": false,
         "resizable": true,
         "fullscreen": false,
         "center": true,

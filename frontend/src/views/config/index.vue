@@ -63,11 +63,59 @@
         <!-- Right Column: Core & Backup -->
         <div class="config-column">
 
+          <!-- Basic Card -->
+          <div class="frost-card">
+            <div class="card-header-simple">
+              <svg width="20" height="20" class="header-icon"><use href="#icon-settings"/></svg>
+              <span class="card-label">基础配置</span>
+            </div>
+            <div class="card-body">
+              <div class="settings-toggles">
+                <label class="settings-toggle-item">
+                  <span class="settings-toggle-copy">
+                    <span class="settings-toggle-title">开机自启</span>
+                    <span class="settings-toggle-desc">登录系统后自动启动 CCG Gateway。</span>
+                  </span>
+                  <el-switch
+                    size="small"
+                    v-model="gatewayForm.launch_on_startup"
+                    :loading="gatewaySaving"
+                    @change="handleLaunchOnStartupChange"
+                  />
+                </label>
+                <label v-if="gatewayForm.launch_on_startup" class="settings-toggle-item">
+                  <span class="settings-toggle-copy">
+                    <span class="settings-toggle-title">静默启动</span>
+                    <span class="settings-toggle-desc">开机自启时不显示主窗口，仅在托盘运行。</span>
+                  </span>
+                  <el-switch
+                    size="small"
+                    v-model="gatewayForm.silent_startup"
+                    :loading="gatewaySaving"
+                    @change="handleGatewayToggleChange"
+                  />
+                </label>
+                <label class="settings-toggle-item">
+                  <span class="settings-toggle-copy">
+                    <span class="settings-toggle-title">关闭时最小化到托盘</span>
+                    <span class="settings-toggle-desc">点击窗口关闭按钮时隐藏窗口，应用继续在后台运行。</span>
+                  </span>
+                  <el-switch
+                    size="small"
+                    v-model="gatewayForm.minimize_to_tray_on_close"
+                    :loading="gatewaySaving"
+                    @change="handleGatewayToggleChange"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+
           <!-- Timeout Card -->
           <div class="frost-card">
             <div class="card-header-simple">
               <svg width="20" height="20" class="header-icon"><use href="#icon-activity"/></svg>
-              <span class="card-label">基础配置</span>
+              <span class="card-label">请求超时</span>
               <div style="flex: 1;"></div>
               <button class="save-button" @click="saveTimeouts">
                 <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
@@ -232,20 +280,57 @@ const timeoutForm = ref({
   stream_idle_timeout: 60,
   non_stream_timeout: 120
 })
+const gatewayForm = ref({
+  launch_on_startup: false,
+  silent_startup: false,
+  minimize_to_tray_on_close: true
+})
+const gatewaySaving = ref(false)
 
 watch(() => settingsStore.settings, (settings) => {
   if (settings) {
     timeoutForm.value = { ...settings.timeouts }
+    gatewayForm.value = {
+      launch_on_startup: settings.gateway.launch_on_startup,
+      silent_startup: settings.gateway.silent_startup,
+      minimize_to_tray_on_close: settings.gateway.minimize_to_tray_on_close
+    }
   }
 }, { immediate: true })
 
 async function saveTimeouts() {
   try {
     await settingsStore.updateTimeouts(timeoutForm.value)
-    notify('超时配置已保存')
+    notify('请求超时已保存')
   } catch (e: any) {
     notify(getErrorMessage(e, '保存失败'), 'error')
   }
+}
+
+async function saveGateway() {
+  gatewaySaving.value = true
+  try {
+    if (!gatewayForm.value.launch_on_startup) {
+      gatewayForm.value.silent_startup = false
+    }
+    await settingsStore.updateGateway(gatewayForm.value)
+    notify('基础配置已保存')
+  } catch (e: any) {
+    notify(getErrorMessage(e, '保存失败'), 'error')
+  } finally {
+    gatewaySaving.value = false
+  }
+}
+
+async function handleLaunchOnStartupChange(value: string | number | boolean) {
+  const enabled = Boolean(value)
+  gatewayForm.value.launch_on_startup = enabled
+  gatewayForm.value.silent_startup = enabled
+  await saveGateway()
+}
+
+async function handleGatewayToggleChange() {
+  await saveGateway()
 }
 
 async function saveCli(cliType: CliType, data: any) {
@@ -415,7 +500,7 @@ onMounted(() => {
 .page-title { font-size: var(--fs-24); font-weight: var(--fw-700); color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.8px; }
 
 /* Layout */
-.config-layout { display: flex; gap: 32px; align-items: flex-start; }
+.config-layout { display: flex; gap: 32px; align-items: stretch; }
 .config-column { flex: 1; display: flex; flex-direction: column; gap: 32px; min-width: 0; }
 
 /* Frost Card */
@@ -429,6 +514,24 @@ onMounted(() => {
 .header-icon { color: var(--color-text-muted); }
 .card-label { font-size: var(--fs-16); font-weight: var(--fw-600); letter-spacing: -0.3px; }
 
+.config-page :deep(.b-segmented) {
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border);
+  padding: 3px;
+}
+.config-page :deep(.b-seg-btn) {
+  border-radius: 7px;
+}
+.config-page :deep(.b-seg-btn:hover) {
+  color: var(--color-text-secondary);
+  background: var(--color-overlay-8);
+}
+.config-page :deep(.b-seg-btn.active) {
+  background: var(--color-primary-10);
+  color: var(--color-primary);
+  box-shadow: none;
+}
+
 /* Form Items */
 .input-item { margin-bottom: 20px; }
 .input-row { display: flex; gap: 16px; }
@@ -436,14 +539,35 @@ onMounted(() => {
 
 .input-with-unit { display: flex; align-items: center; gap: 12px; }
 .unit { font-size: var(--fs-14); color: var(--color-text-weak); font-weight: var(--fw-400); }
+.settings-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--color-bg-page);
+  border-radius: 12px;
+  padding: 4px 16px;
+}
+.settings-toggle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 62px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.settings-toggle-item:last-child { border-bottom: none; }
+.settings-toggle-copy { min-width: 0; }
+.settings-toggle-title { display: block; font-size: var(--fs-14); font-weight: var(--fw-500); color: var(--color-text-secondary); }
+.settings-toggle-desc { display: block; margin-top: 4px; font-size: var(--fs-12); line-height: 1.4; color: var(--color-text-weak); }
 
 /* Buttons */
 .action-row-end { display: flex; justify-content: flex-end; gap: 12px; align-items: center; }
 .card-footer-right { margin-top: 8px; display: flex; justify-content: flex-end; }
 
 /* CLI Column adjustment */
-.cli-settings-card { flex: 1; }
-.cli-form-container { flex: 1; min-height: 400px; display: flex; flex-direction: column; }
+.cli-settings-card { flex: 1; min-height: 680px; }
+.cli-form-container { flex: 1; min-height: 520px; display: flex; flex-direction: column; }
 
 /* Flat Table (matching logs page style) */
 .table-container { background: var(--color-bg); border-radius: 12px; padding: 0; border: 1px solid var(--color-border); box-shadow: 0 4px 15px var(--color-shadow); overflow: hidden; }
