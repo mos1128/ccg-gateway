@@ -83,10 +83,10 @@
                     @change="handleLaunchOnStartupChange"
                   />
                 </label>
-                <label v-if="gatewayForm.launch_on_startup" class="settings-toggle-item">
+                <label class="settings-toggle-item">
                   <span class="settings-toggle-copy">
                     <span class="settings-toggle-title">静默启动</span>
-                    <span class="settings-toggle-desc">开机自启时不显示主窗口，仅在托盘运行。</span>
+                    <span class="settings-toggle-desc">启动时不显示主窗口，仅在托盘运行。</span>
                   </span>
                   <el-switch
                     size="small"
@@ -310,9 +310,6 @@ async function saveTimeouts() {
 async function saveGateway() {
   gatewaySaving.value = true
   try {
-    if (!gatewayForm.value.launch_on_startup) {
-      gatewayForm.value.silent_startup = false
-    }
     await settingsStore.updateGateway(gatewayForm.value)
     notify('基础配置已保存')
   } catch (e: any) {
@@ -323,9 +320,7 @@ async function saveGateway() {
 }
 
 async function handleLaunchOnStartupChange(value: string | number | boolean) {
-  const enabled = Boolean(value)
-  gatewayForm.value.launch_on_startup = enabled
-  gatewayForm.value.silent_startup = enabled
+  gatewayForm.value.launch_on_startup = Boolean(value)
   await saveGateway()
 }
 
@@ -513,24 +508,6 @@ onMounted(() => {
 .card-header-simple { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; color: var(--color-text); }
 .header-icon { color: var(--color-text-muted); }
 .card-label { font-size: var(--fs-16); font-weight: var(--fw-600); letter-spacing: -0.3px; }
-
-.config-page :deep(.b-segmented) {
-  background: var(--color-bg-page);
-  border: 1px solid var(--color-border);
-  padding: 3px;
-}
-.config-page :deep(.b-seg-btn) {
-  border-radius: 7px;
-}
-.config-page :deep(.b-seg-btn:hover) {
-  color: var(--color-text-secondary);
-  background: var(--color-overlay-8);
-}
-.config-page :deep(.b-seg-btn.active) {
-  background: var(--color-primary-10);
-  color: var(--color-primary);
-  box-shadow: none;
-}
 
 /* Form Items */
 .input-item { margin-bottom: 20px; }
