@@ -1,64 +1,67 @@
 <template>
-  <div class="app-shell">
-    <div class="sidebar">
-      <div class="logo">CCG Gateway</div>
-      
-      <div class="sidebar-scrollable">
-        <div class="nav-group">
-          <div class="nav-group-title">总览</div>
-          <div class="nav-item" :class="{ active: route.path === '/' }" @click="router.push('/')">仪表盘</div>
-          <div class="nav-item" :class="{ active: route.path === '/config' }" @click="router.push('/config')">全局设置</div>
-          <div class="nav-item" :class="{ active: route.path === '/logs' }" @click="router.push('/logs')">日志记录</div>
-          <div class="nav-item" :class="{ active: route.path === '/scheduled-tasks' }" @click="router.push('/scheduled-tasks')">定时任务</div>
-          <div class="nav-item" :class="{ active: route.path === '/sessions' }" @click="router.push('/sessions')">会话记录</div>
-        </div>
-        
-        <div class="nav-group">
-          <div class="nav-group-title">配置</div>
-          <!-- Note: Made the original menu paths consistent with old code, keeping '服务商管理' instead of '服务商' to match perfectly if desired, but spec says '服务商'. I'll stick to simple '服务商' -->
-          <div class="nav-item" :class="{ active: route.path === '/providers' }" @click="router.push('/providers')">服务商</div>
-          <div class="nav-item" :class="{ active: route.path === '/mcp' }" @click="router.push('/mcp')">MCP</div>
-          <div class="nav-item" :class="{ active: route.path === '/prompts' }" @click="router.push('/prompts')">提示词</div>
-          <div class="nav-item" :class="{ active: route.path === '/skills' }" @click="router.push('/skills')">Skill</div>
-          <div class="nav-item" :class="{ active: route.path === '/plugins' }" @click="router.push('/plugins')">Plugin</div>
-        </div>
-      </div>
-      
-      <div class="sidebar-footer">
-        <div class="footer-actions">
-          <button class="footer-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换暗色' : '切换亮色'">
-            <svg v-if="themeStore.theme === 'light'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-            </svg>
-            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-            </svg>
-          </button>
-          <button class="footer-btn" @click="handleCheckUpdate" :disabled="checkingUpdate" title="检查更新">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :class="{ 'spin': checkingUpdate }">
-              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
-            </svg>
-          </button>
-          <button class="footer-btn" @click="toggleDevtools" title="开发者工具">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
-            </svg>
-          </button>
-          <button class="footer-btn" @click="openGithubRepo" title="GitHub 仓库">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
-            </svg>
-          </button>
-        </div>
-        <div class="version-tag mono">
-          <span>v</span>{{ appVersion }}
-        </div>
-      </div>
-    </div>
+  <div class="root-shell">
+    <AppTitleBar />
+    <div class="app-shell">
+      <div class="sidebar">
+        <div class="logo">CCG Gateway</div>
 
-    <div class="view-container">
-      <div class="view-content">
-        <router-view />
+        <div class="sidebar-scrollable">
+          <div class="nav-group">
+            <div class="nav-group-title">总览</div>
+            <div class="nav-item" :class="{ active: route.path === '/' }" @click="router.push('/')">仪表盘</div>
+            <div class="nav-item" :class="{ active: route.path === '/config' }" @click="router.push('/config')">全局设置</div>
+            <div class="nav-item" :class="{ active: route.path === '/logs' }" @click="router.push('/logs')">日志记录</div>
+            <div class="nav-item" :class="{ active: route.path === '/scheduled-tasks' }" @click="router.push('/scheduled-tasks')">定时任务</div>
+            <div class="nav-item" :class="{ active: route.path === '/sessions' }" @click="router.push('/sessions')">会话记录</div>
+          </div>
+
+          <div class="nav-group">
+            <div class="nav-group-title">配置</div>
+            <!-- Note: Made the original menu paths consistent with old code, keeping '服务商管理' instead of '服务商' to match perfectly if desired, but spec says '服务商'. I'll stick to simple '服务商' -->
+            <div class="nav-item" :class="{ active: route.path === '/providers' }" @click="router.push('/providers')">服务商</div>
+            <div class="nav-item" :class="{ active: route.path === '/mcp' }" @click="router.push('/mcp')">MCP</div>
+            <div class="nav-item" :class="{ active: route.path === '/prompts' }" @click="router.push('/prompts')">提示词</div>
+            <div class="nav-item" :class="{ active: route.path === '/skills' }" @click="router.push('/skills')">Skill</div>
+            <div class="nav-item" :class="{ active: route.path === '/plugins' }" @click="router.push('/plugins')">Plugin</div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="footer-actions">
+            <button class="footer-btn" @click="themeStore.toggleTheme()" :title="themeStore.theme === 'light' ? '切换暗色' : '切换亮色'">
+              <svg v-if="themeStore.theme === 'light'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+            </button>
+            <button class="footer-btn" @click="handleCheckUpdate" :disabled="checkingUpdate" title="检查更新">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" :class="{ 'spin': checkingUpdate }">
+                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>
+              </svg>
+            </button>
+            <button class="footer-btn" @click="toggleDevtools" title="开发者工具">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+              </svg>
+            </button>
+            <button class="footer-btn" @click="openGithubRepo" title="GitHub 仓库">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+              </svg>
+            </button>
+          </div>
+          <div class="version-tag mono">
+            <span>v</span>{{ appVersion }}
+          </div>
+        </div>
+      </div>
+
+      <div class="view-container">
+        <div class="view-content">
+          <router-view />
+        </div>
       </div>
     </div>
   </div>
@@ -72,6 +75,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { checkForUpdates } from '@/utils/updater'
 import { open } from '@tauri-apps/plugin-shell'
 import { useThemeStore } from '@/stores/theme'
+import AppTitleBar from '@/components/AppTitleBar.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -108,7 +112,6 @@ onMounted(async () => {
 body {
   background: var(--color-bg-page);
   margin: 0;
-  padding: 20px;
   color: var(--color-text);
 }
 </style>
@@ -116,8 +119,16 @@ body {
 <style scoped>
 * { box-sizing: border-box; }
 
+.root-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-page);
+  overflow: hidden;
+}
+
 .app-shell { 
-  display: flex; gap: 32px; height: calc(100vh - 40px); width: 100%;
+  display: flex; gap: 32px; flex: 1; min-height: 0; width: 100%; padding: 20px; overflow: hidden;
 }
 
 /* Sidebar Navigation */

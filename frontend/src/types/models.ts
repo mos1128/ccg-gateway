@@ -194,11 +194,17 @@ export interface ScheduledTaskRunListResponse {
 export interface GatewaySettings {
   debug_log: boolean
   log_detail_mode: 'full' | 'failure_only'
+  launch_on_startup: boolean
+  silent_startup: boolean
+  minimize_to_tray_on_close: boolean
 }
 
 export interface GatewaySettingsRaw {
   debug_log: number
   log_detail_mode: string
+  launch_on_startup: number
+  silent_startup: number
+  minimize_to_tray_on_close: number
 }
 
 export interface TimeoutSettings {
@@ -239,6 +245,9 @@ export interface AllSettings {
 export interface GatewaySettingsUpdate {
   debug_log?: boolean
   log_detail_mode?: 'full' | 'failure_only'
+  launch_on_startup?: boolean
+  silent_startup?: boolean
+  minimize_to_tray_on_close?: boolean
 }
 
 export interface TimeoutSettingsUpdate {
