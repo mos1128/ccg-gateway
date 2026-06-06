@@ -209,7 +209,7 @@ defineExpose({ handleSave })
 .editor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 
 .f-textarea {
-  flex: 1; min-height: 360px; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px;
+  flex: 1; min-height: 500px; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px;
   font-size: var(--fs-14); background: var(--color-bg-page); color: var(--color-text); resize: none;
   outline: none; transition: all 0.2s; line-height: 1.6;
   word-break: break-all;

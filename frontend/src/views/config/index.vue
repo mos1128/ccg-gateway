@@ -60,8 +60,47 @@
           </div>
         </div>
 
-        <!-- Right Column: Core & Backup -->
+        <!-- Right Column: Backup & Core -->
         <div class="config-column">
+
+          <!-- Backup Card -->
+          <div class="frost-card">
+            <div class="card-header-simple">
+              <svg width="20" height="20" class="header-icon"><use href="#icon-cloud"/></svg>
+              <span class="card-label">备份与同步</span>
+            </div>
+            <div class="card-body">
+              <div class="backup-row">
+                <div class="b-segmented">
+                  <div class="b-seg-btn" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</div>
+                  <div class="b-seg-btn" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</div>
+                </div>
+                <div class="backup-actions">
+                  <template v-if="activeBackupTab === 'local'">
+                    <div class="action-icon" @click="!exportingLocal && handleExportLocal()" title="导出" :class="{ disabled: exportingLocal }">
+                      <svg width="18" height="18"><use href="#icon-upload"/></svg>
+                    </div>
+                    <el-upload :show-file-list="false" :before-upload="handleImportLocal" accept=".db" :disabled="importingLocal">
+                      <div class="action-icon" title="导入" :class="{ disabled: importingLocal }">
+                        <svg width="18" height="18"><use href="#icon-download"/></svg>
+                      </div>
+                    </el-upload>
+                  </template>
+                  <template v-else>
+                    <div class="action-icon" @click="showWebdavSettings" title="WebDAV设置">
+                      <svg width="18" height="18"><use href="#icon-settings"/></svg>
+                    </div>
+                    <div class="action-icon" @click="!exportingWebdav && handleExportWebdav()" title="导出" :class="{ disabled: exportingWebdav }">
+                      <svg width="18" height="18"><use href="#icon-upload"/></svg>
+                    </div>
+                    <div class="action-icon" @click="handleShowWebdavList" title="导入">
+                      <svg width="18" height="18"><use href="#icon-download"/></svg>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- Basic Card -->
           <div class="frost-card">
@@ -147,44 +186,6 @@
             </div>
           </div>
 
-          <!-- Backup Card -->
-          <div class="frost-card">
-            <div class="card-header-simple">
-              <svg width="20" height="20" class="header-icon"><use href="#icon-cloud"/></svg>
-              <span class="card-label">备份与同步</span>
-            </div>
-            <div class="card-body">
-              <div class="backup-row">
-                <div class="b-segmented">
-                  <div class="b-seg-btn" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</div>
-                  <div class="b-seg-btn" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</div>
-                </div>
-                <div class="backup-actions">
-                  <template v-if="activeBackupTab === 'local'">
-                    <div class="action-icon" @click="!exportingLocal && handleExportLocal()" title="导出" :class="{ disabled: exportingLocal }">
-                      <svg width="18" height="18"><use href="#icon-upload"/></svg>
-                    </div>
-                    <el-upload :show-file-list="false" :before-upload="handleImportLocal" accept=".db" :disabled="importingLocal">
-                      <div class="action-icon" title="导入" :class="{ disabled: importingLocal }">
-                        <svg width="18" height="18"><use href="#icon-download"/></svg>
-                      </div>
-                    </el-upload>
-                  </template>
-                  <template v-else>
-                    <div class="action-icon" @click="showWebdavSettings" title="WebDAV设置">
-                      <svg width="18" height="18"><use href="#icon-settings"/></svg>
-                    </div>
-                    <div class="action-icon" @click="!exportingWebdav && handleExportWebdav()" title="导出" :class="{ disabled: exportingWebdav }">
-                      <svg width="18" height="18"><use href="#icon-upload"/></svg>
-                    </div>
-                    <div class="action-icon" @click="handleShowWebdavList" title="导入">
-                      <svg width="18" height="18"><use href="#icon-download"/></svg>
-                    </div>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -495,7 +496,7 @@ onMounted(() => {
 .page-title { font-size: var(--fs-24); font-weight: var(--fw-700); color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.8px; }
 
 /* Layout */
-.config-layout { display: flex; gap: 32px; align-items: stretch; }
+.config-layout { display: flex; gap: 32px; align-items: flex-start; }
 .config-column { flex: 1; display: flex; flex-direction: column; gap: 32px; min-width: 0; }
 
 /* Frost Card */
@@ -520,9 +521,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0;
-  background: var(--color-bg-page);
-  border-radius: 12px;
-  padding: 4px 16px;
 }
 .settings-toggle-item {
   display: flex;
@@ -543,8 +541,8 @@ onMounted(() => {
 .card-footer-right { margin-top: 8px; display: flex; justify-content: flex-end; }
 
 /* CLI Column adjustment */
-.cli-settings-card { flex: 1; min-height: 680px; }
-.cli-form-container { flex: 1; min-height: 520px; display: flex; flex-direction: column; }
+.cli-settings-card { flex: 1; }
+.cli-form-container { flex: 1; min-height: 400px; display: flex; flex-direction: column; }
 
 /* Flat Table (matching logs page style) */
 .table-container { background: var(--color-bg); border-radius: 12px; padding: 0; border: 1px solid var(--color-border); box-shadow: 0 4px 15px var(--color-shadow); overflow: hidden; }
