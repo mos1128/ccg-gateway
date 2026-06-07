@@ -3,11 +3,18 @@ use super::*;
 #[tauri::command]
 pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySettings> {
     sqlx::query_as::<_, GatewaySettings>(
-        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close FROM gateway_settings WHERE id = 1",
+        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, window_width, window_height, config_active_cli_type, providers_active_cli_type, sessions_active_cli_type FROM gateway_settings WHERE id = 1",
     )
     .fetch_one(db.inner())
     .await
     .map_err(|e| e.to_string())
+}
+
+fn validate_cli_tab(cli_type: &str) -> Result<()> {
+    match cli_type {
+        "claude_code" | "codex" | "gemini" => Ok(()),
+        _ => Err(format!("未知 CLI 类型: {}", cli_type)),
+    }
 }
 
 #[tauri::command]
@@ -70,6 +77,57 @@ pub async fn update_gateway_settings(
 
     query
         .bind(now)
+        .execute(db.inner())
+        .await
+        .map_err(map_db_error)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_ui_tab_settings(
+    db: State<'_, SqlitePool>,
+    config_active_cli_type: Option<String>,
+    providers_active_cli_type: Option<String>,
+    sessions_active_cli_type: Option<String>,
+) -> Result<()> {
+    let mut updates = Vec::new();
+    if let Some(ref cli_type) = config_active_cli_type {
+        validate_cli_tab(cli_type)?;
+        updates.push("config_active_cli_type = ?");
+    }
+    if let Some(ref cli_type) = providers_active_cli_type {
+        validate_cli_tab(cli_type)?;
+        updates.push("providers_active_cli_type = ?");
+    }
+    if let Some(ref cli_type) = sessions_active_cli_type {
+        validate_cli_tab(cli_type)?;
+        updates.push("sessions_active_cli_type = ?");
+    }
+
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    updates.push("updated_at = ?");
+    let sql = format!(
+        "UPDATE gateway_settings SET {} WHERE id = 1",
+        updates.join(", ")
+    );
+    let mut query = sqlx::query(&sql);
+
+    if let Some(cli_type) = config_active_cli_type {
+        query = query.bind(cli_type);
+    }
+    if let Some(cli_type) = providers_active_cli_type {
+        query = query.bind(cli_type);
+    }
+    if let Some(cli_type) = sessions_active_cli_type {
+        query = query.bind(cli_type);
+    }
+
+    query
+        .bind(now_timestamp())
         .execute(db.inner())
         .await
         .map_err(map_db_error)?;

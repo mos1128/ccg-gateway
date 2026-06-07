@@ -9,11 +9,12 @@ pub mod time;
 use config::Config;
 use db::{init_db, init_stats_db};
 use sqlx::SqlitePool;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, LogicalSize, Manager, Size, WebviewWindow};
 
 // Type wrappers for Tauri state
 pub struct LogDb(pub SqlitePool);
@@ -23,6 +24,9 @@ pub struct WindowBehaviorState {
     minimize_to_tray_on_close: AtomicBool,
     exit_requested: AtomicBool,
 }
+
+const DEFAULT_WINDOW_WIDTH: i64 = 1400;
+const DEFAULT_WINDOW_HEIGHT: i64 = 850;
 
 impl Default for WindowBehaviorState {
     fn default() -> Self {
@@ -59,6 +63,49 @@ fn show_main_window(window: &WebviewWindow) {
     let _ = window.show();
     let _ = window.set_focus();
     let _ = window.unminimize();
+}
+
+fn restore_window_size(window: &WebviewWindow, width: i64, height: i64) {
+    let width = if width > 0 {
+        width
+    } else {
+        DEFAULT_WINDOW_WIDTH
+    };
+    let height = if height > 0 {
+        height
+    } else {
+        DEFAULT_WINDOW_HEIGHT
+    };
+
+    let _ = window.set_size(Size::Logical(LogicalSize::new(width as f64, height as f64)));
+}
+
+fn save_window_size_later(
+    db: SqlitePool,
+    save_seq: Arc<AtomicU64>,
+    seq: u64,
+    width: i64,
+    height: i64,
+) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if save_seq.load(Ordering::Relaxed) != seq {
+            return;
+        }
+
+        let result = sqlx::query(
+            "UPDATE gateway_settings SET window_width = ?, window_height = ?, updated_at = ? WHERE id = 1",
+        )
+        .bind(width)
+        .bind(height)
+        .bind(crate::time::now_timestamp())
+        .execute(&db)
+        .await;
+
+        if let Err(e) = result {
+            tracing::error!("Failed to save window size: {}", e);
+        }
+    });
 }
 
 fn request_app_exit(app: &AppHandle) {
@@ -137,7 +184,7 @@ pub fn run() {
                 app.manage(StatsDb(stats_db.clone()));
 
                 let startup_settings = sqlx::query_as::<_, db::models::GatewaySettings>(
-                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close FROM gateway_settings WHERE id = 1",
+                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, window_width, window_height, config_active_cli_type, providers_active_cli_type, sessions_active_cli_type FROM gateway_settings WHERE id = 1",
                 )
                 .fetch_one(&db)
                 .await
@@ -147,6 +194,11 @@ pub fn run() {
                     launch_on_startup: 0,
                     silent_startup: 0,
                     minimize_to_tray_on_close: 1,
+                    window_width: DEFAULT_WINDOW_WIDTH,
+                    window_height: DEFAULT_WINDOW_HEIGHT,
+                    config_active_cli_type: "claude_code".to_string(),
+                    providers_active_cli_type: "claude_code".to_string(),
+                    sessions_active_cli_type: "claude_code".to_string(),
                 });
 
                 let app_handle = app.handle().clone();
@@ -217,7 +269,6 @@ pub fn run() {
                 .icon(icon)
                 .tooltip("CCG Gateway")
                 .menu(&menu)
-                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
@@ -257,6 +308,12 @@ pub fn run() {
                 #[cfg(target_os = "linux")]
                 let _ = window.set_decorations(false);
 
+                restore_window_size(
+                    &window,
+                    startup_settings.window_width,
+                    startup_settings.window_height,
+                );
+
                 if startup_settings.silent_startup != 0 {
                     let _ = window.hide();
                     #[cfg(target_os = "windows")]
@@ -269,18 +326,37 @@ pub fn run() {
             // Handle window close event according to the persisted window behavior setting.
             if let Some(window) = app.get_webview_window("main") {
                 let app_handle = app.handle().clone();
+                let db = app.state::<SqlitePool>().inner().clone();
+                let resize_save_seq = Arc::new(AtomicU64::new(0));
                 let window_clone = window.clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        if app_handle
-                            .state::<WindowBehaviorState>()
-                            .minimize_to_tray_on_close()
-                        {
-                            let _ = window_clone.hide();
-                            #[cfg(target_os = "windows")]
-                            let _ = window_clone.set_skip_taskbar(true);
-                            api.prevent_close();
+                    match event {
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            if app_handle
+                                .state::<WindowBehaviorState>()
+                                .minimize_to_tray_on_close()
+                            {
+                                let _ = window_clone.hide();
+                                #[cfg(target_os = "windows")]
+                                let _ = window_clone.set_skip_taskbar(true);
+                                api.prevent_close();
+                            }
                         }
+                        tauri::WindowEvent::Resized(size) => {
+                            let scale_factor = window_clone.scale_factor().unwrap_or(1.0);
+                            let logical_size = size.to_logical::<f64>(scale_factor);
+                            let width = logical_size.width.round() as i64;
+                            let height = logical_size.height.round() as i64;
+                            let seq = resize_save_seq.fetch_add(1, Ordering::Relaxed) + 1;
+                            save_window_size_later(
+                                db.clone(),
+                                resize_save_seq.clone(),
+                                seq,
+                                width,
+                                height,
+                            );
+                        }
+                        _ => {}
                     }
                 });
             }
@@ -307,6 +383,7 @@ pub fn run() {
             commands::scheduled_task_commands::get_scheduled_task_run_items,
             commands::settings_commands::get_gateway_settings,
             commands::settings_commands::update_gateway_settings,
+            commands::settings_commands::update_ui_tab_settings,
             commands::settings_commands::get_timeout_settings,
             commands::settings_commands::update_timeout_settings,
             commands::settings_commands::get_cli_settings,

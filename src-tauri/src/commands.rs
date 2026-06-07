@@ -1678,6 +1678,73 @@ async fn write_provider_direct_config_with_previous(
             write_gemini_provider_direct_config(db, provider, previous_default_config).await
         }
         _ => Err("不支持的 CLI 类型".to_string()),
+    }?;
+
+    remember_provider_direct_write(db, provider).await?;
+    Ok(())
+}
+
+async fn remember_provider_direct_write(db: &SqlitePool, provider: &Provider) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO provider_direct_write_state (cli_type, profile, provider_id, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(cli_type, profile) DO UPDATE SET provider_id = excluded.provider_id, updated_at = excluded.updated_at",
+    )
+    .bind(&provider.cli_type)
+    .bind(&provider.profile)
+    .bind(provider.id)
+    .bind(now_timestamp())
+    .execute(db)
+    .await
+    .map_err(map_db_error)?;
+
+    Ok(())
+}
+
+async fn clear_provider_direct_write_state(db: &SqlitePool, provider_id: i64) -> Result<()> {
+    sqlx::query("DELETE FROM provider_direct_write_state WHERE provider_id = ?")
+        .bind(provider_id)
+        .execute(db)
+        .await
+        .map_err(map_db_error)?;
+
+    Ok(())
+}
+
+async fn remembered_provider_direct_active_provider_id(
+    db: &SqlitePool,
+    cli_type: &str,
+    profile: &str,
+) -> Result<Option<i64>> {
+    let profile = validate_provider_profile(Some(profile))?;
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT s.provider_id
+         FROM provider_direct_write_state s
+         JOIN providers p ON p.id = s.provider_id
+         WHERE s.cli_type = ? AND s.profile = ? AND p.cli_type = ? AND p.profile = ?
+         LIMIT 1",
+    )
+    .bind(cli_type)
+    .bind(profile)
+    .bind(cli_type)
+    .bind(profile)
+    .fetch_optional(db)
+    .await
+    .map_err(map_db_error)?;
+
+    Ok(row.map(|(provider_id,)| provider_id))
+}
+
+async fn detected_provider_direct_active_provider_id(
+    db: &SqlitePool,
+    cli_type: &str,
+    profile: &str,
+) -> Result<Option<i64>> {
+    match cli_type {
+        "claude_code" => claude_provider_direct_active_provider_id(db, profile).await,
+        "codex" => codex_provider_direct_active_provider_id(db, profile).await,
+        "gemini" => gemini_provider_direct_active_provider_id(db).await,
+        _ => Ok(None),
     }
 }
 
@@ -1819,12 +1886,13 @@ async fn provider_direct_active_provider_id(
     cli_type: &str,
     profile: &str,
 ) -> Result<Option<i64>> {
-    match cli_type {
-        "claude_code" => claude_provider_direct_active_provider_id(db, profile).await,
-        "codex" => codex_provider_direct_active_provider_id(db, profile).await,
-        "gemini" => gemini_provider_direct_active_provider_id(db).await,
-        _ => Ok(None),
+    if let Some(provider_id) =
+        remembered_provider_direct_active_provider_id(db, cli_type, profile).await?
+    {
+        return Ok(Some(provider_id));
     }
+
+    detected_provider_direct_active_provider_id(db, cli_type, profile).await
 }
 
 async fn remove_codex_provider_direct_config_content(config_path: &std::path::Path) -> Result<()> {

@@ -605,6 +605,8 @@ pub async fn delete_provider(
         .await
         .map_err(map_db_error)?;
 
+    clear_provider_direct_write_state(db.inner(), id).await?;
+
     // Then delete the provider
     sqlx::query("DELETE FROM providers WHERE id = ?")
         .bind(id)

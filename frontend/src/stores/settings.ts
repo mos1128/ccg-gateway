@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { settingsApi } from '@/api/settings'
+import { useUiStore } from '@/stores/ui'
 import type { AllSettings, CliType, CliMode, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate } from '@/types/models'
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -12,6 +13,11 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const { data } = await settingsApi.getAll()
       settings.value = data
+      useUiStore().applyPersistedTabs({
+        config_active_cli_type: data.gateway.config_active_cli_type,
+        providers_active_cli_type: data.gateway.providers_active_cli_type,
+        sessions_active_cli_type: data.gateway.sessions_active_cli_type
+      })
     } finally {
       loading.value = false
     }

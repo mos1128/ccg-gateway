@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 28,
+            version: 29,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -335,6 +335,42 @@ impl DatabaseSchema {
             },
         );
 
+        // provider_direct_write_state 表
+        tables.insert(
+            "provider_direct_write_state".to_string(),
+            TableDefinition {
+                name: "provider_direct_write_state".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "cli_type".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "profile".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "provider_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "updated_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["cli_type".to_string(), "profile".to_string()],
+                unique_constraints: vec![],
+            },
+        );
+
         // scheduled_tasks 表
         tables.insert(
             "scheduled_tasks".to_string(),
@@ -484,6 +520,36 @@ impl DatabaseSchema {
                         data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: Some("1".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "window_width".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("1400".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "window_height".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("850".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "config_active_cli_type".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'claude_code'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "providers_active_cli_type".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'claude_code'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "sessions_active_cli_type".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'claude_code'".to_string()),
                     },
                     ColumnDefinition {
                         name: "updated_at".to_string(),

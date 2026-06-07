@@ -957,6 +957,29 @@ pub async fn write_credential_config(
 }
 
 async fn first_default_provider(db: &SqlitePool, cli_type: &str) -> Result<Provider> {
+    if let Some(provider_id) =
+        remembered_provider_direct_active_provider_id(db, cli_type, DEFAULT_PROFILE).await?
+    {
+        if let Some(provider) = sqlx::query_as::<_, Provider>(
+            "SELECT * FROM providers WHERE id = ? AND cli_type = ? AND profile = ?",
+        )
+        .bind(provider_id)
+        .bind(cli_type)
+        .bind(DEFAULT_PROFILE)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| e.to_string())?
+        {
+            if provider.base_url.trim().is_empty() || provider.api_key.trim().is_empty() {
+                return Err(format!(
+                    "服务商 {} 的 Base URL 或 API Key 为空",
+                    provider.name
+                ));
+            }
+            return Ok(provider);
+        }
+    }
+
     let provider: Provider = sqlx::query_as(
         "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id LIMIT 1",
     )

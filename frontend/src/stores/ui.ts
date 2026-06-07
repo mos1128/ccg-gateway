@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { settingsApi } from '@/api/settings'
 import type { CliType, ProviderProfile } from '@/types/models'
 
 export const useUiStore = defineStore('ui', () => {
@@ -24,6 +25,9 @@ export const useUiStore = defineStore('ui', () => {
 
   function setProvidersActiveCliType(cliType: CliType) {
     providersActiveCliType.value = cliType
+    void settingsApi.updateUiTabs({ providers_active_cli_type: cliType }).catch((e) => {
+      console.error('Failed to persist providers active CLI tab:', e)
+    })
   }
 
   function getProvidersActiveProfile(cliType: CliType) {
@@ -36,6 +40,9 @@ export const useUiStore = defineStore('ui', () => {
 
   function setSessionsActiveCliType(cliType: CliType) {
     sessionsActiveCliType.value = cliType
+    void settingsApi.updateUiTabs({ sessions_active_cli_type: cliType }).catch((e) => {
+      console.error('Failed to persist sessions active CLI tab:', e)
+    })
   }
 
   function setLogsActiveTab(tab: 'request' | 'system') {
@@ -44,10 +51,29 @@ export const useUiStore = defineStore('ui', () => {
 
   function setConfigActiveCliTab(tab: CliType) {
     configActiveCliTab.value = tab
+    void settingsApi.updateUiTabs({ config_active_cli_type: tab }).catch((e) => {
+      console.error('Failed to persist config active CLI tab:', e)
+    })
   }
 
   function setConfigActiveBackupTab(tab: 'local' | 'webdav') {
     configActiveBackupTab.value = tab
+  }
+
+  function applyPersistedTabs(tabs: {
+    config_active_cli_type?: CliType
+    providers_active_cli_type?: CliType
+    sessions_active_cli_type?: CliType
+  }) {
+    if (tabs.config_active_cli_type) {
+      configActiveCliTab.value = tabs.config_active_cli_type
+    }
+    if (tabs.providers_active_cli_type) {
+      providersActiveCliType.value = tabs.providers_active_cli_type
+    }
+    if (tabs.sessions_active_cli_type) {
+      sessionsActiveCliType.value = tabs.sessions_active_cli_type
+    }
   }
 
   return {
@@ -64,5 +90,6 @@ export const useUiStore = defineStore('ui', () => {
     setLogsActiveTab,
     setConfigActiveCliTab,
     setConfigActiveBackupTab,
+    applyPersistedTabs,
   }
 })

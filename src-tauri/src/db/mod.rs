@@ -213,7 +213,7 @@ async fn init_default_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 
     // gateway_settings
     sqlx::query(
-        "INSERT OR IGNORE INTO gateway_settings (id, debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, updated_at) VALUES (1, 0, 'failure_only', 0, 0, 1, ?)",
+        "INSERT OR IGNORE INTO gateway_settings (id, debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, window_width, window_height, config_active_cli_type, providers_active_cli_type, sessions_active_cli_type, updated_at) VALUES (1, 0, 'failure_only', 0, 0, 1, 1400, 850, 'claude_code', 'claude_code', 'claude_code', ?)",
     )
     .bind(now)
     .execute(pool)

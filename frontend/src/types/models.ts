@@ -197,6 +197,11 @@ export interface GatewaySettings {
   launch_on_startup: boolean
   silent_startup: boolean
   minimize_to_tray_on_close: boolean
+  window_width: number
+  window_height: number
+  config_active_cli_type: CliType
+  providers_active_cli_type: CliType
+  sessions_active_cli_type: CliType
 }
 
 export interface GatewaySettingsRaw {
@@ -205,6 +210,11 @@ export interface GatewaySettingsRaw {
   launch_on_startup: number
   silent_startup: number
   minimize_to_tray_on_close: number
+  window_width: number
+  window_height: number
+  config_active_cli_type: string
+  providers_active_cli_type: string
+  sessions_active_cli_type: string
 }
 
 export interface TimeoutSettings {
@@ -248,6 +258,12 @@ export interface GatewaySettingsUpdate {
   launch_on_startup?: boolean
   silent_startup?: boolean
   minimize_to_tray_on_close?: boolean
+}
+
+export interface UiTabSettingsUpdate {
+  config_active_cli_type?: CliType
+  providers_active_cli_type?: CliType
+  sessions_active_cli_type?: CliType
 }
 
 export interface TimeoutSettingsUpdate {

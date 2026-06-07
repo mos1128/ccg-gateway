@@ -11,8 +11,13 @@ import type {
   SystemStatus,
   ProviderProfile,
   CliProfileSettingsStatus,
-  CliMode
+  CliMode,
+  UiTabSettingsUpdate
 } from '@/types/models'
+
+function normalizeCliType(value: string): CliType {
+  return (CLI_TYPES as readonly string[]).includes(value) ? value as CliType : 'claude_code'
+}
 
 export const settingsApi = {
   getAll: async () => {
@@ -35,6 +40,11 @@ export const settingsApi = {
           launch_on_startup: !!gateway.launch_on_startup,
           silent_startup: !!gateway.silent_startup,
           minimize_to_tray_on_close: !!gateway.minimize_to_tray_on_close,
+          window_width: gateway.window_width,
+          window_height: gateway.window_height,
+          config_active_cli_type: normalizeCliType(gateway.config_active_cli_type),
+          providers_active_cli_type: normalizeCliType(gateway.providers_active_cli_type),
+          sessions_active_cli_type: normalizeCliType(gateway.sessions_active_cli_type),
         },
         timeouts,
         cli_settings: cliSettings,
@@ -49,6 +59,14 @@ export const settingsApi = {
       launchOnStartup: data.launch_on_startup,
       silentStartup: data.silent_startup,
       minimizeToTrayOnClose: data.minimize_to_tray_on_close,
+    })
+    return { data: null }
+  },
+  updateUiTabs: async (data: UiTabSettingsUpdate) => {
+    await invoke('update_ui_tab_settings', {
+      configActiveCliType: data.config_active_cli_type,
+      providersActiveCliType: data.providers_active_cli_type,
+      sessionsActiveCliType: data.sessions_active_cli_type,
     })
     return { data: null }
   },
