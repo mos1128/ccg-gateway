@@ -356,6 +356,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::provider_commands::get_providers,
+            commands::provider_commands::get_provider_profiles,
+            commands::provider_commands::create_provider_profile,
+            commands::provider_commands::rename_provider_profile,
+            commands::provider_commands::delete_provider_profile,
             commands::provider_commands::get_provider,
             commands::provider_commands::create_provider,
             commands::provider_commands::update_provider,

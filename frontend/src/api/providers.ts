@@ -1,8 +1,24 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type { Provider, ProviderCreate, ProviderUpdate, TestProviderResult } from '@/types/models'
+import type { Provider, ProviderCreate, ProviderProfileItem, ProviderUpdate, TestProviderResult } from '@/types/models'
 
 export const providersApi = {
+  listProfiles: async (cliType: string): Promise<{ data: ProviderProfileItem[] }> => {
+    const data = await invoke<ProviderProfileItem[]>('get_provider_profiles', { cliType })
+    return { data }
+  },
+  createProfile: async (cliType: string, name: string): Promise<{ data: ProviderProfileItem }> => {
+    const data = await invoke<ProviderProfileItem>('create_provider_profile', { input: { cli_type: cliType, name } })
+    return { data }
+  },
+  renameProfile: async (cliType: string, profile: string, name: string): Promise<{ data: ProviderProfileItem }> => {
+    const data = await invoke<ProviderProfileItem>('rename_provider_profile', { profile, input: { cli_type: cliType, name } })
+    return { data }
+  },
+  deleteProfile: async (cliType: string, profile: string) => {
+    await invoke('delete_provider_profile', { cliType, profile })
+    return { data: null }
+  },
   list: async (cliType?: string, profile?: string): Promise<{ data: Provider[] }> => {
     const args: Record<string, string> = {}
     if (cliType) args.cliType = cliType

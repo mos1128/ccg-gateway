@@ -88,7 +88,7 @@ pub async fn proxy_handler_catchall(
     let provider_with_maps = match select_provider(
         &state.db,
         cli_type.as_str(),
-        provider_profile,
+        &provider_profile,
         extracted_model.as_deref(),
     )
     .await

@@ -783,7 +783,8 @@ async fn resolve_keepalive_targets(
                 .cli_type
                 .as_deref()
                 .ok_or_else(|| "全选模式缺少 cli_type".to_string())?;
-            let profile = normalize_profile(payload.profile.as_deref()).unwrap_or(DEFAULT_PROFILE);
+            let profile = normalize_profile(payload.profile.as_deref())
+                .unwrap_or_else(|| DEFAULT_PROFILE.to_string());
 
             let providers = sqlx::query_as::<_, Provider>(
                 r#"
@@ -793,7 +794,7 @@ async fn resolve_keepalive_targets(
                 "#,
             )
             .bind(cli_type)
-            .bind(profile)
+            .bind(&profile)
             .fetch_all(db)
             .await
             .map_err(|e| e.to_string())?;
