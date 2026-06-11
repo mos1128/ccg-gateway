@@ -270,13 +270,15 @@ pub async fn write_provider_direct_config_command(
         .ok_or_else(|| "服务商不存在".to_string())?;
 
     write_provider_direct_config(db.inner(), &provider).await?;
+    let now = now_timestamp();
     set_normalized_cli_mode(
         db.inner(),
         &provider.cli_type,
         CLI_MODE_PROVIDER_DIRECT,
-        now_timestamp(),
+        now,
     )
     .await?;
+    remember_default_provider_direct_provider(db.inner(), &provider, now).await?;
 
     let _ = crate::services::stats::record_system_log(
         &log_db.0,

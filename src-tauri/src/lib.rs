@@ -9,11 +9,12 @@ pub mod time;
 use config::Config;
 use db::{init_db, init_stats_db};
 use sqlx::SqlitePool;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, LogicalSize, Manager, Size, WebviewWindow};
 
 // Type wrappers for Tauri state
 pub struct LogDb(pub SqlitePool);
@@ -71,6 +72,38 @@ fn request_app_exit(app: &AppHandle) {
         tokio::time::sleep(Duration::from_millis(150)).await;
         app.exit(0);
     });
+}
+
+fn valid_window_logical_size(width: f64, height: f64) -> Option<(f64, f64)> {
+    if width.is_finite() && height.is_finite() && width >= 320.0 && height >= 240.0 {
+        Some((width, height))
+    } else {
+        None
+    }
+}
+
+fn startup_window_size(settings: &db::models::GatewaySettings) -> Option<Size> {
+    let (width, height) =
+        valid_window_logical_size(settings.window_width?, settings.window_height?)?;
+    Some(Size::Logical(LogicalSize { width, height }))
+}
+
+async fn save_window_logical_size(db: SqlitePool, width: f64, height: f64) {
+    let Some((width, height)) = valid_window_logical_size(width, height) else {
+        return;
+    };
+
+    if let Err(e) = sqlx::query(
+        "UPDATE gateway_settings SET window_width = ?, window_height = ?, updated_at = ? WHERE id = 1",
+    )
+    .bind(width)
+    .bind(height)
+    .bind(crate::time::now_timestamp())
+    .execute(&db)
+    .await
+    {
+        tracing::warn!("Failed to save window size: {}", e);
+    }
 }
 
 impl std::ops::Deref for LogDb {
@@ -137,7 +170,7 @@ pub fn run() {
                 app.manage(StatsDb(stats_db.clone()));
 
                 let startup_settings = sqlx::query_as::<_, db::models::GatewaySettings>(
-                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close FROM gateway_settings WHERE id = 1",
+                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, window_width, window_height FROM gateway_settings WHERE id = 1",
                 )
                 .fetch_one(&db)
                 .await
@@ -147,6 +180,8 @@ pub fn run() {
                     launch_on_startup: 0,
                     silent_startup: 0,
                     minimize_to_tray_on_close: 1,
+                    window_width: None,
+                    window_height: None,
                 });
 
                 let app_handle = app.handle().clone();
@@ -257,6 +292,14 @@ pub fn run() {
                 #[cfg(target_os = "linux")]
                 let _ = window.set_decorations(false);
 
+                if let Some(size) = startup_window_size(&startup_settings) {
+                    if let Err(e) = window.set_size(size) {
+                        tracing::warn!("Failed to restore window size: {}", e);
+                    } else {
+                        let _ = window.center();
+                    }
+                }
+
                 if startup_settings.silent_startup != 0 {
                     let _ = window.hide();
                     #[cfg(target_os = "windows")]
@@ -269,18 +312,42 @@ pub fn run() {
             // Handle window close event according to the persisted window behavior setting.
             if let Some(window) = app.get_webview_window("main") {
                 let app_handle = app.handle().clone();
+                let db = app.state::<SqlitePool>().inner().clone();
+                let resize_seq = Arc::new(AtomicU64::new(0));
                 let window_clone = window.clone();
+                let window_for_events = window.clone();
                 window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        if app_handle
-                            .state::<WindowBehaviorState>()
-                            .minimize_to_tray_on_close()
-                        {
-                            let _ = window_clone.hide();
-                            #[cfg(target_os = "windows")]
-                            let _ = window_clone.set_skip_taskbar(true);
-                            api.prevent_close();
+                    match event {
+                        tauri::WindowEvent::Resized(size) => {
+                            if window_for_events.is_maximized().unwrap_or(false) {
+                                return;
+                            }
+
+                            let scale_factor = window_for_events.scale_factor().unwrap_or(1.0);
+                            let width = size.width as f64 / scale_factor;
+                            let height = size.height as f64 / scale_factor;
+                            let seq = resize_seq.fetch_add(1, Ordering::SeqCst) + 1;
+                            let db = db.clone();
+                            let resize_seq = resize_seq.clone();
+                            tauri::async_runtime::spawn(async move {
+                                tokio::time::sleep(Duration::from_millis(350)).await;
+                                if resize_seq.load(Ordering::SeqCst) == seq {
+                                    save_window_logical_size(db, width, height).await;
+                                }
+                            });
                         }
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            if app_handle
+                                .state::<WindowBehaviorState>()
+                                .minimize_to_tray_on_close()
+                            {
+                                let _ = window_clone.hide();
+                                #[cfg(target_os = "windows")]
+                                let _ = window_clone.set_skip_taskbar(true);
+                                api.prevent_close();
+                            }
+                        }
+                        _ => {}
                     }
                 });
             }

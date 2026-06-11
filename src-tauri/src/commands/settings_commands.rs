@@ -3,7 +3,7 @@ use super::*;
 #[tauri::command]
 pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySettings> {
     sqlx::query_as::<_, GatewaySettings>(
-        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close FROM gateway_settings WHERE id = 1",
+        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, window_width, window_height FROM gateway_settings WHERE id = 1",
     )
     .fetch_one(db.inner())
     .await

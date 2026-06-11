@@ -89,6 +89,37 @@ async fn set_normalized_cli_mode(
     Ok(())
 }
 
+async fn remember_default_provider_direct_provider_id(
+    db: &SqlitePool,
+    cli_type: &str,
+    provider_id: i64,
+    now: i64,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE cli_settings SET last_provider_direct_provider_id = ?, updated_at = ? WHERE cli_type = ?",
+    )
+    .bind(provider_id)
+    .bind(now)
+    .bind(cli_type)
+    .execute(db)
+    .await
+    .map_err(map_db_error)?;
+
+    Ok(())
+}
+
+async fn remember_default_provider_direct_provider(
+    db: &SqlitePool,
+    provider: &Provider,
+    now: i64,
+) -> Result<()> {
+    if provider.profile != DEFAULT_PROFILE {
+        return Ok(());
+    }
+
+    remember_default_provider_direct_provider_id(db, &provider.cli_type, provider.id, now).await
+}
+
 fn serialize_toml_document<T: Serialize>(
     value: &T,
     context: &str,

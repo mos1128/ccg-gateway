@@ -977,6 +977,40 @@ async fn first_default_provider(db: &SqlitePool, cli_type: &str) -> Result<Provi
     Ok(provider)
 }
 
+async fn preferred_default_provider(db: &SqlitePool, cli_type: &str) -> Result<Provider> {
+    let last_provider_id: Option<i64> = sqlx::query_as::<_, (Option<i64>,)>(
+        "SELECT last_provider_direct_provider_id FROM cli_settings WHERE cli_type = ?",
+    )
+    .bind(cli_type)
+    .fetch_optional(db)
+    .await
+    .map_err(|e| e.to_string())?
+    .and_then(|row| row.0);
+
+    if let Some(id) = last_provider_id {
+        if let Some(provider) = sqlx::query_as::<_, Provider>(
+            "SELECT * FROM providers WHERE id = ? AND cli_type = ? AND profile = ?",
+        )
+        .bind(id)
+        .bind(cli_type)
+        .bind(DEFAULT_PROFILE)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| e.to_string())?
+        {
+            if provider.base_url.trim().is_empty() || provider.api_key.trim().is_empty() {
+                return Err(format!(
+                    "服务商 {} 的 Base URL 或 API Key 为空",
+                    provider.name
+                ));
+            }
+            return Ok(provider);
+        }
+    }
+
+    first_default_provider(db, cli_type).await
+}
+
 async fn first_official_credential(db: &SqlitePool, cli_type: &str) -> Result<OfficialCredential> {
     sqlx::query_as(
         "SELECT * FROM official_credentials WHERE cli_type = ? ORDER BY sort_order, id LIMIT 1",
@@ -1038,6 +1072,16 @@ async fn remove_dashboard_provider_direct_config(db: &SqlitePool, cli_type: &str
     }
 }
 
+async fn remember_current_default_provider_direct_provider(
+    db: &SqlitePool,
+    cli_type: &str,
+) -> Result<()> {
+    if let Some(id) = provider_direct_active_provider_id(db, cli_type, DEFAULT_PROFILE).await? {
+        remember_default_provider_direct_provider_id(db, cli_type, id, now_timestamp()).await?;
+    }
+    Ok(())
+}
+
 async fn write_dashboard_proxy_route(
     db: &SqlitePool,
     config: &Config,
@@ -1049,6 +1093,7 @@ async fn write_dashboard_proxy_route(
     if current_mode == CLI_MODE_OFFICIAL_DIRECT {
         remove_direct_mode_files_async(db, cli_type).await?;
     } else if current_mode == CLI_MODE_PROVIDER_DIRECT {
+        remember_current_default_provider_direct_provider(db, cli_type).await?;
         remove_dashboard_provider_direct_config(db, cli_type).await?;
     }
 
@@ -1076,9 +1121,11 @@ async fn write_dashboard_provider_direct(
         remove_direct_mode_files_async(db, cli_type).await?;
     }
 
-    let provider = first_default_provider(db, cli_type).await?;
+    let provider = preferred_default_provider(db, cli_type).await?;
     write_provider_direct_config(db, &provider).await?;
-    set_normalized_cli_mode(db, cli_type, CLI_MODE_PROVIDER_DIRECT, now_timestamp()).await?;
+    let now = now_timestamp();
+    set_normalized_cli_mode(db, cli_type, CLI_MODE_PROVIDER_DIRECT, now).await?;
+    remember_default_provider_direct_provider(db, &provider, now).await?;
 
     let _ = crate::services::stats::record_system_log(
         &log_db.0,
@@ -1106,6 +1153,7 @@ async fn write_dashboard_official_direct(
     let default_config = get_cli_default_config(db, cli_type).await?;
 
     if current_mode == CLI_MODE_PROVIDER_DIRECT {
+        remember_current_default_provider_direct_provider(db, cli_type).await?;
         remove_dashboard_provider_direct_config(db, cli_type).await?;
     } else if current_mode == CLI_MODE_PROXY_ROUTE
         && check_cli_enabled(db, cli_type, &gateway_url).await

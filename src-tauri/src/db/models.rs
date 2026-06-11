@@ -340,6 +340,8 @@ pub struct GatewaySettingsRow {
     pub launch_on_startup: i64,
     pub silent_startup: i64,
     pub minimize_to_tray_on_close: i64,
+    pub window_width: Option<f64>,
+    pub window_height: Option<f64>,
     pub updated_at: i64,
 }
 
@@ -351,6 +353,8 @@ pub struct GatewaySettings {
     pub launch_on_startup: i64,
     pub silent_startup: i64,
     pub minimize_to_tray_on_close: i64,
+    pub window_width: Option<f64>,
+    pub window_height: Option<f64>,
 }
 
 // Timeout Settings (完整版 - 对应数据库表)
@@ -386,6 +390,7 @@ pub struct CliSettingsRow {
     pub cli_mode: String,
     pub config_dir: Option<String>,
     pub config_write_mode: String,
+    pub last_provider_direct_provider_id: Option<i64>,
     pub updated_at: i64,
 }
 
