@@ -1,291 +1,452 @@
 <template>
-  <div class="config-page">
-    <!-- Icon Symbols -->
-    <svg style="display:none">
-      <defs>
-        <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>
-        </symbol>
-        <symbol id="icon-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17.5 19a5.5 5.5 0 0 0 2.5-10.5 8.5 8.5 0 1 0-14 10h11.5Z"/>
-        </symbol>
-        <symbol id="icon-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
-        </symbol>
-        <symbol id="icon-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-        </symbol>
-        <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-        </symbol>
-        <symbol id="icon-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-        </symbol>
-        <symbol id="icon-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-        </symbol>
-      </defs>
-    </svg>
-
-    <div class="scroll-area">
-      <div class="config-layout">
-        <!-- Left Column: CLI Settings -->
-        <div class="config-column">
-          <div class="frost-card cli-settings-card">
-            <div class="card-header-simple">
-              <svg width="20" height="20" class="header-icon"><use href="#icon-terminal"/></svg>
-              <span class="card-label">CLI 运行配置</span>
+  <div v-loading="!settingsStore.settings">
+    <div class="cfg-grid">
+      <!-- 左列 -->
+      <div class="cfg-col">
+        <!-- CLI 运行配置 -->
+        <div class="v2-card v2-card-pad cfg-cli">
+          <div class="cfg-head">Agent 运行配置</div>
+          <div class="v2-tabs cfg-tabs">
+            <div v-for="cli in CLI_TABS" :key="cli.id" class="v2-tab" :class="{ active: activeCliTab === cli.id }" @click="activeCliTab = cli.id">
+              <span class="tab-label-text">{{ cli.label }}</span>
             </div>
-            <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
-              <div class="b-segmented b-segmented-fill" style="margin-bottom: 24px;">
-                <div
-                  v-for="cli in CLI_TABS"
-                  :key="cli.id"
-                  class="b-seg-btn"
-                  :class="{ active: activeCliTab === cli.id }"
-                  @click="activeCliTab = cli.id"
-                >{{ cli.label }}</div>
-              </div>
+          </div>
 
-              <div class="cli-form-container">
-                <CliSettingsForm
-                  ref="cliFormRef"
-                  :key="activeCliTab"
-                  :cli-type="activeCliTab"
-                  :settings="settingsStore.settings?.cli_settings?.[activeCliTab]"
-                  @save="saveCli"
-                />
+          <div class="v2-field">
+            <label class="v2-label">Agent 目录</label>
+            <div class="cfg-dir">
+              <input v-model="cliForm.config_dir" class="v2-input mono" placeholder="Agent 配置目录" @blur="saveCliConfigDir">
+              <el-tooltip content="恢复默认" placement="top" effect="light" :show-after="250">
+                <button class="v2-row-act" @click="handleRestoreDefault"><svg :class="{ 'spin-once': isRestoring }" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+              </el-tooltip>
+            </div>
+          </div>
+
+          <div class="v2-field">
+            <label class="v2-label">全局预设</label>
+            <div class="cfg-preset-card" :class="{ empty: !cliForm.default_json_config }" @click="openPresetDrawer">
+              <div class="cfg-preset-header">
+                <div class="cfg-preset-title">
+                  <svg class="cfg-preset-title-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="16 18 22 12 16 6"/>
+                    <polyline points="8 6 2 12 8 18"/>
+                  </svg>
+                  <span class="cfg-preset-filename">{{ isJsonFormat ? 'settings.json' : 'config.toml' }}</span>
+                  <span v-if="cliForm.default_json_config" class="cfg-preset-tag">{{ isJsonFormat ? 'JSON' : 'TOML' }}</span>
+                </div>
               </div>
+              <div class="cfg-preset-body">
+                <template v-if="cliForm.default_json_config">
+                  <pre class="cfg-preset-code mono"><code>{{ getPresetPreviewText(cliForm.default_json_config) }}</code></pre>
+                  <div class="cfg-preset-overlay">
+                    <span class="overlay-text">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3"/>
+                      </svg>
+                      点击编辑配置
+                    </span>
+                  </div>
+                </template>
+                <div v-else class="cfg-preset-empty-state">
+                  <span class="empty-hint">未配置预设，将使用全局默认设置</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 备份与同步 -->
+        <div class="v2-card v2-card-pad">
+          <div class="cfg-head">备份与同步</div>
+          <div class="cfg-backup">
+            <div class="v2-seg">
+              <div class="v2-seg-slider" :style="{ transform: `translateX(${activeBackupTab === 'local' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
+              <button class="v2-seg-btn" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</button>
+              <button class="v2-seg-btn" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</button>
+            </div>
+            <div class="cfg-backup-acts">
+              <template v-if="activeBackupTab === 'local'">
+                <el-tooltip content="导出" placement="top" effect="light" :show-after="250">
+                  <button class="v2-row-act" :class="{ off: exportingLocal }" @click="!exportingLocal && handleExportLocal()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
+                </el-tooltip>
+                <el-upload :show-file-list="false" :before-upload="handleImportLocal" accept=".db" :disabled="importingLocal">
+                  <el-tooltip content="导入" placement="top" effect="light" :show-after="250">
+                    <button class="v2-row-act" :class="{ off: importingLocal }"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                  </el-tooltip>
+                </el-upload>
+              </template>
+              <template v-else>
+                <el-tooltip content="WebDAV 设置" placement="top" effect="light" :show-after="250">
+                  <button class="v2-row-act" @click="webdavSettingsVisible = true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+                </el-tooltip>
+                <el-tooltip content="导出到 WebDAV" placement="top" effect="light" :show-after="250">
+                  <button class="v2-row-act" :class="{ off: exportingWebdav }" @click="!exportingWebdav && handleExportWebdav()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
+                </el-tooltip>
+                <el-tooltip content="从 WebDAV 导入" placement="top" effect="light" :show-after="250">
+                  <button class="v2-row-act" @click="handleShowWebdavList"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                </el-tooltip>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右列 -->
+      <div class="cfg-col">
+        <!-- 请求超时 -->
+        <div class="v2-card v2-card-pad">
+          <div class="cfg-head">请求超时</div>
+          <div class="cfg-trow">
+            <span class="cfg-trow-l">流式首字节超时</span>
+            <div class="cfg-input-wrapper">
+              <input v-model.number="timeoutForm.stream_first_byte_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
+              <span class="cfg-input-unit">秒</span>
+            </div>
+          </div>
+          <div class="cfg-trow">
+            <span class="cfg-trow-l">流式空闲超时</span>
+            <div class="cfg-input-wrapper">
+              <input v-model.number="timeoutForm.stream_idle_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
+              <span class="cfg-input-unit">秒</span>
+            </div>
+          </div>
+          <div class="cfg-trow">
+            <span class="cfg-trow-l">非流式超时</span>
+            <div class="cfg-input-wrapper">
+              <input v-model.number="timeoutForm.non_stream_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
+              <span class="cfg-input-unit">秒</span>
             </div>
           </div>
         </div>
 
-        <!-- Right Column: Backup & Core -->
-        <div class="config-column">
-
-          <!-- Backup Card -->
-          <div class="frost-card">
-            <div class="card-header-simple">
-              <svg width="20" height="20" class="header-icon"><use href="#icon-cloud"/></svg>
-              <span class="card-label">备份与同步</span>
-            </div>
-            <div class="card-body">
-              <div class="backup-row">
-                <div class="b-segmented">
-                  <div class="b-seg-btn" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</div>
-                  <div class="b-seg-btn" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</div>
-                </div>
-                <div class="backup-actions">
-                  <template v-if="activeBackupTab === 'local'">
-                    <div class="action-icon" @click="!exportingLocal && handleExportLocal()" title="导出" :class="{ disabled: exportingLocal }">
-                      <svg width="18" height="18"><use href="#icon-upload"/></svg>
-                    </div>
-                    <el-upload :show-file-list="false" :before-upload="handleImportLocal" accept=".db" :disabled="importingLocal">
-                      <div class="action-icon" title="导入" :class="{ disabled: importingLocal }">
-                        <svg width="18" height="18"><use href="#icon-download"/></svg>
-                      </div>
-                    </el-upload>
-                  </template>
-                  <template v-else>
-                    <div class="action-icon" @click="showWebdavSettings" title="WebDAV设置">
-                      <svg width="18" height="18"><use href="#icon-settings"/></svg>
-                    </div>
-                    <div class="action-icon" @click="!exportingWebdav && handleExportWebdav()" title="导出" :class="{ disabled: exportingWebdav }">
-                      <svg width="18" height="18"><use href="#icon-upload"/></svg>
-                    </div>
-                    <div class="action-icon" @click="handleShowWebdavList" title="导入">
-                      <svg width="18" height="18"><use href="#icon-download"/></svg>
-                    </div>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Basic Card -->
-          <div class="frost-card">
-            <div class="card-header-simple">
-              <svg width="20" height="20" class="header-icon"><use href="#icon-settings"/></svg>
-              <span class="card-label">基础配置</span>
-            </div>
-            <div class="card-body">
-              <div class="settings-toggles">
-                <label class="settings-toggle-item">
-                  <span class="settings-toggle-copy">
-                    <span class="settings-toggle-title">开机自启</span>
-                    <span class="settings-toggle-desc">登录系统后自动启动 CCG Gateway。</span>
-                  </span>
-                  <el-switch
-                    size="small"
-                    v-model="gatewayForm.launch_on_startup"
-                    :loading="gatewaySaving"
-                    @change="handleLaunchOnStartupChange"
-                  />
-                </label>
-                <label class="settings-toggle-item">
-                  <span class="settings-toggle-copy">
-                    <span class="settings-toggle-title">静默启动</span>
-                    <span class="settings-toggle-desc">启动时不显示主窗口，仅在托盘运行。</span>
-                  </span>
-                  <el-switch
-                    size="small"
-                    v-model="gatewayForm.silent_startup"
-                    :loading="gatewaySaving"
-                    @change="handleGatewayToggleChange"
-                  />
-                </label>
-                <label class="settings-toggle-item">
-                  <span class="settings-toggle-copy">
-                    <span class="settings-toggle-title">关闭时最小化到托盘</span>
-                    <span class="settings-toggle-desc">点击窗口关闭按钮时隐藏窗口，应用继续在后台运行。</span>
-                  </span>
-                  <el-switch
-                    size="small"
-                    v-model="gatewayForm.minimize_to_tray_on_close"
-                    :loading="gatewaySaving"
-                    @change="handleGatewayToggleChange"
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <!-- Timeout Card -->
-          <div class="frost-card">
-            <div class="card-header-simple">
-              <svg width="20" height="20" class="header-icon"><use href="#icon-activity"/></svg>
-              <span class="card-label">请求超时</span>
-              <div style="flex: 1;"></div>
-              <button class="save-button" @click="saveTimeouts">
-                <svg width="16" height="16" style="margin-right: 6px;"><use href="#icon-save"/></svg>
-                保存
-              </button>
-            </div>
-            <div class="card-body">
-              <div class="input-item">
-                <label class="item-label">流式首字节超时</label>
-                <div class="input-with-unit">
-                  <input type="number" v-model.number="timeoutForm.stream_first_byte_timeout" class="b-input">
-                  <span class="unit">秒</span>
-                </div>
-              </div>
-              <div class="input-item">
-                <label class="item-label">流式空闲超时</label>
-                <div class="input-with-unit">
-                  <input type="number" v-model.number="timeoutForm.stream_idle_timeout" class="b-input">
-                  <span class="unit">秒</span>
-                </div>
-              </div>
-              <div class="input-item">
-                <label class="item-label">非流式超时</label>
-                <div class="input-with-unit">
-                  <input type="number" v-model.number="timeoutForm.non_stream_timeout" class="b-input">
-                  <span class="unit">秒</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
+        <!-- 基础配置 -->
+        <div class="v2-card v2-card-pad">
+          <div class="cfg-head">基础配置</div>
+          <label class="cfg-toggle">
+            <span class="cfg-toggle-c"><span class="cfg-toggle-t">开机自启</span><span class="cfg-toggle-d">登录系统后自动启动 CCG Gateway</span></span>
+            <el-switch v-model="gatewayForm.launch_on_startup" :loading="gatewaySaving" @change="saveGateway" />
+          </label>
+          <label class="cfg-toggle">
+            <span class="cfg-toggle-c"><span class="cfg-toggle-t">静默启动</span><span class="cfg-toggle-d">启动时不显示主窗口，仅在托盘运行</span></span>
+            <el-switch v-model="gatewayForm.silent_startup" :loading="gatewaySaving" @change="saveGateway" />
+          </label>
+          <label class="cfg-toggle">
+            <span class="cfg-toggle-c"><span class="cfg-toggle-t">关闭时最小化到托盘</span><span class="cfg-toggle-d">点关闭按钮时隐藏窗口，应用继续后台运行</span></span>
+            <el-switch v-model="gatewayForm.minimize_to_tray_on_close" :loading="gatewaySaving" @change="saveGateway" />
+          </label>
         </div>
       </div>
     </div>
 
-    <!-- WebDAV Backup List Dialog -->
-    <AppModal v-model="webdavListVisible" title="管理 WebDAV 备份" :show-footer="false">
-        <div v-loading="loadingWebdavList" style="max-height: 60vh; display: flex; flex-direction: column; margin: -32px;">
-            <div class="scroll-area">
-              <table class="flat-table">
-                <tbody>
-                  <tr v-for="backup in webdavBackups" :key="backup.filename">
-                    <td class="mono">{{ backup.filename }}</td>
-                    <td class="mono">{{ formatSize(backup.size) }}</td>
-                    <td>
-                      <div>
-                        <a class="table-link" style="margin-right: 8px;" @click="handleImportWebdav(backup.filename)">恢复</a>
-                        <a class="table-link danger" @click="handleDeleteWebdav(backup.filename)">删除</a>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr v-if="webdavBackups.length === 0">
-                    <td colspan="3" class="text-center text-muted">暂无备份</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-    </AppModal>
-
-    <!-- WebDAV Settings Dialog -->
-    <AppModal 
-      v-model="webdavSettingsVisible" 
-      title="WebDAV 设置" 
-      width="480px" 
-      :confirmDisabled="savingWebdav"
-      :cancelDisabled="savingWebdav"
-      :confirmText="savingWebdav ? '保存中...' : '保存'"
-      @confirm="handleSaveWebdav"
-    >
-      <div class="webdav-settings-form">
-        <div class="input-item">
-          <label class="item-label">服务器地址</label>
-          <input type="text" v-model="webdavForm.url" placeholder="https://dav.jianguoyun.com/dav/" class="b-input">
-        </div>
-        <div class="input-row">
-          <div class="input-item" style="flex: 1;">
-            <label class="item-label">用户名</label>
-            <input type="text" v-model="webdavForm.username" class="b-input">
-          </div>
-          <div class="input-item" style="flex: 1;">
-            <label class="item-label">密码</label>
-            <input type="password" v-model="webdavForm.password" class="b-input">
+    <V2Drawer v-model="webdavSettingsVisible" title="WebDAV 设置" @confirm="handleSaveWebdav">
+      <div class="v2-field"><label class="v2-label">服务器地址</label><input v-model="webdavForm.url" class="v2-input" placeholder="https://dav.jianguoyun.com/dav/"></div>
+      <div class="v2-grid-2">
+        <div class="v2-field"><label class="v2-label">用户名</label><input v-model="webdavForm.username" class="v2-input"></div>
+        <div class="v2-field">
+          <label class="v2-label">密码</label>
+          <div class="v2-input-wrapper">
+            <input v-model="webdavForm.password" :type="showWebdavPassword ? 'text' : 'password'" class="v2-input">
+            <el-tooltip :content="showWebdavPassword ? '隐藏密码' : '显示密码'" placement="top" effect="light" :show-after="250">
+              <button type="button" class="v2-input-icon-btn" @click="showWebdavPassword = !showWebdavPassword">
+                <svg v-if="showWebdavPassword" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </el-tooltip>
           </div>
         </div>
       </div>
-      <template #footer-extra>
-        <button class="f-button ghost-plain" @click="handleTestWebdav" :disabled="testingWebdav" style="margin-right: auto;">
-          {{ testingWebdav ? '测试中...' : '测试链接' }}
-        </button>
+      <template #footer>
+        <button class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="testingWebdav" style="margin-right:auto" @click="handleTestWebdav">{{ testingWebdav ? '测试中...' : '测试链接' }}</button>
+        <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="webdavSettingsVisible = false">取消</button>
+        <button class="v2-btn v2-btn-sm v2-btn-primary" :disabled="savingWebdav" @click="handleSaveWebdav">{{ savingWebdav ? '保存中...' : '保存' }}</button>
       </template>
-    </AppModal>
+    </V2Drawer>
+
+    <V2Drawer v-model="webdavListVisible" title="管理 WebDAV 备份" :show-footer="false">
+      <div v-loading="loadingWebdavList">
+        <div class="webdav-table-wrapper">
+          <table class="v2-table webdav-table">
+            <thead>
+              <tr>
+                <th>备份文件</th>
+                <th>大小</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="backup in webdavBackups" :key="backup.filename">
+                <td class="mono">
+                  <div class="webdav-file-cell">
+                    <svg class="db-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                      <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
+                      <path d="M3 12A9 3 0 0 0 21 12"></path>
+                    </svg>
+                    <span class="filename-text">{{ backup.filename }}</span>
+                  </div>
+                </td>
+                <td class="mono">{{ formatSize(backup.size) }}</td>
+                <td>
+                  <div class="webdav-row-actions">
+                    <a class="webdav-link" @click="handleImportWebdav(backup.filename)">恢复</a>
+                    <a class="webdav-link danger" @click="handleDeleteWebdav(backup.filename)">删除</a>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="webdavBackups.length === 0">
+                <td colspan="3" class="v2-hint" style="text-align:center;padding:40px">
+                  <div class="empty-state-content">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--v2-text-3); margin-bottom: 8px;">
+                      <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                      <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
+                      <path d="M3 12A9 3 0 0 0 21 12"></path>
+                    </svg>
+                    <div>暂无备份文件</div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </V2Drawer>
+
+    <!-- 全局预设编辑抽屉 -->
+    <V2Drawer v-model="presetDrawerVisible" :title="`编辑全局预设 - ${activeCliLabel}`" @confirm="handleSavePreset">
+      <div class="v2-field">
+        <div class="v2-file-editor">
+          <div class="v2-file-editor-header">
+            <div class="v2-file-editor-title">
+              <svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span class="v2-file-editor-name">{{ isJsonFormat ? 'settings.json' : 'config.toml' }}</span>
+              <span class="v2-file-editor-badge">{{ isJsonFormat ? 'JSON' : 'TOML' }}</span>
+            </div>
+            <button v-if="isJsonFormat" class="v2-file-editor-action" type="button" @click="formatPresetJson">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>格式化</span>
+            </button>
+          </div>
+          <div class="v2-file-editor-body">
+            <textarea
+              v-model="presetTempConfig"
+              class="v2-file-editor-textarea cfg-preset-textarea"
+              rows="16"
+              :placeholder="placeholder"
+              @blur="validatePresetConfig"
+            ></textarea>
+          </div>
+        </div>
+        <div v-if="presetValidationError" class="json-err" style="color: var(--v2-danger); font-size: var(--v2-fs-xs); margin-top: 6px;">{{ presetValidationError }}</div>
+      </div>
+
+      <div class="cfg-writemode-section">
+        <div class="cfg-writemode-row">
+          <div class="v2-seg" style="max-width: 200px;">
+            <div class="v2-seg-slider" :style="{ transform: `translateX(${presetTempWriteMode === 'merge' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
+            <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'merge' }" type="button" @click="presetTempWriteMode = 'merge'">增量合并</button>
+            <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'overwrite' }" type="button" @click="presetTempWriteMode = 'overwrite'">全量写入</button>
+          </div>
+          <el-tooltip
+            effect="light"
+            placement="top"
+            :offset="10"
+            :show-after="150"
+            :enterable="true"
+            popper-class="v2-profile-pop v2-scope"
+          >
+            <template #content>
+              <div class="write-mode-help-content">
+                <div class="tooltip-title">配置写入模式</div>
+                <div class="tooltip-item">
+                  <strong>增量合并</strong>
+                  <span>只写入需要变更的字段，保留配置文件中已有的其他配置（如 MCP / plugin 开关等配置）。</span>
+                </div>
+                <div class="tooltip-item">
+                  <strong>全量写入</strong>
+                  <span>每次写入时完全覆盖配置文件。中转路由会备份原始文件，关闭时自动恢复。保持配置干净。</span>
+                </div>
+              </div>
+            </template>
+            <span class="help-icon-wrapper" style="display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--v2-text-3);">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
+                <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </span>
+          </el-tooltip>
+        </div>
+      </div>
+    </V2Drawer>
   </div>
 </template>
+
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from 'vue'
+import V2Drawer from '@/components/V2Drawer.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { CLI_TABS } from '@/types/models'
-import AppModal from '@/components/AppModal.vue'
-import CliSettingsForm from './components/CliSettingsForm.vue'
+import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 import * as backupApi from '@/api/backup'
 import type { WebdavSettings, WebdavBackup } from '@/api/backup'
 import type { CliType } from '@/types/models'
 
 const settingsStore = useSettingsStore()
 const uiStore = useUiStore()
-const cliFormRef = ref<InstanceType<typeof CliSettingsForm> | null>(null)
 
 const activeCliTab = computed<CliType>({
   get: () => uiStore.configActiveCliTab,
-  set: (val) => uiStore.setConfigActiveCliTab(val)
+  set: (v) => uiStore.setConfigActiveCliTab(v)
 })
 const activeBackupTab = computed({
   get: () => uiStore.configActiveBackupTab,
-  set: (val) => uiStore.setConfigActiveBackupTab(val as 'local' | 'webdav')
+  set: (v) => uiStore.setConfigActiveBackupTab(v as 'local' | 'webdav')
 })
 
-const timeoutForm = ref({
-  stream_first_byte_timeout: 30,
-  stream_idle_timeout: 60,
-  non_stream_timeout: 120
+// ===== CLI 运行配置 =====
+const cliForm = ref({ config_dir: '', default_json_config: '', config_write_mode: 'merge' as 'overwrite' | 'merge' })
+const defaultConfigDir = ref('')
+const validationError = ref('')
+const isRestoring = ref(false)
+
+const presetDrawerVisible = ref(false)
+const presetTempConfig = ref('')
+const presetTempWriteMode = ref<'overwrite' | 'merge'>('merge')
+const presetValidationError = ref('')
+
+const activeCliLabel = computed(() => {
+  switch (activeCliTab.value) {
+    case 'claude_code': return 'Claude Code'
+    case 'codex': return 'Codex'
+    case 'gemini': return 'Gemini'
+    default: return activeCliTab.value
+  }
 })
-const gatewayForm = ref({
-  launch_on_startup: false,
-  silent_startup: false,
-  minimize_to_tray_on_close: true
+
+function getPresetPreviewText(config: string): string {
+  if (!config) return ''
+  const trimmed = config.trim()
+  if (!trimmed) return ''
+  
+  let formatted = trimmed
+  if (isJsonFormat.value) {
+    try {
+      formatted = JSON.stringify(JSON.parse(trimmed), null, 2)
+    } catch {
+      // fallback
+    }
+  }
+  
+  const lines = formatted.split('\n')
+  if (lines.length > 5) {
+    return lines.slice(0, 4).join('\n') + '\n...'
+  }
+  return lines.join('\n')
+}
+
+function openPresetDrawer() {
+  presetTempConfig.value = cliForm.value.default_json_config
+  presetTempWriteMode.value = cliForm.value.config_write_mode || 'merge'
+  presetValidationError.value = ''
+  presetDrawerVisible.value = true
+}
+
+function validatePresetConfig(): boolean {
+  presetValidationError.value = ''
+  const config = presetTempConfig.value.trim()
+  if (!config) return true
+  if (isJsonFormat.value) {
+    presetValidationError.value = validateJson(config)
+    return !presetValidationError.value
+  }
+  if (activeCliTab.value === 'codex') {
+    if (config.includes('{') || (config.includes('[') && config.includes(']') && config.includes(','))) {
+      presetValidationError.value = 'TOML 格式错误: 请使用 TOML 格式而非 JSON 格式'
+      return false
+    }
+  }
+  return true
+}
+
+function formatPresetJson() {
+  const result = formatJsonUtil(presetTempConfig.value)
+  if (result === presetTempConfig.value) {
+    presetValidationError.value = validateJson(presetTempConfig.value)
+  } else {
+    presetTempConfig.value = result
+    presetValidationError.value = ''
+  }
+}
+
+async function handleSavePreset() {
+  if (!validatePresetConfig()) {
+    notify('配置格式错误，请修正后再保存', 'error')
+    return
+  }
+  try {
+    cliForm.value.default_json_config = presetTempConfig.value
+    cliForm.value.config_write_mode = presetTempWriteMode.value
+    await settingsStore.updateCli(activeCliTab.value, { ...cliForm.value })
+    notify('预设配置已保存')
+    presetDrawerVisible.value = false
+  } catch (e: any) {
+    notify(getErrorMessage(e, '保存失败'), 'error')
+  }
+}
+
+const isJsonFormat = computed(() => activeCliTab.value === 'claude_code' || activeCliTab.value === 'gemini')
+const placeholder = computed(() => {
+  switch (activeCliTab.value) {
+    case 'codex': return 'model_reasoning_effort = "high"\nmodel_reasoning_summary = "detailed"'
+    case 'claude_code': return '{\n  "env": {},\n  "permissions": {}\n}'
+    case 'gemini': return '{\n  "theme": "dark"\n}'
+    default: return '{}'
+  }
 })
+
+function loadCliForm() {
+  const s = settingsStore.settings?.cli_settings?.[activeCliTab.value]
+  if (s) {
+    cliForm.value = { config_dir: s.config_dir, default_json_config: s.default_json_config, config_write_mode: s.config_write_mode || 'merge' }
+    defaultConfigDir.value = s.default_config_dir
+    validationError.value = ''
+  }
+}
+watch([() => settingsStore.settings, activeCliTab], loadCliForm, { immediate: true })
+
+async function saveCliConfigDir() {
+  const s = settingsStore.settings?.cli_settings?.[activeCliTab.value]
+  if (s && s.config_dir === cliForm.value.config_dir) {
+    return
+  }
+  try {
+    await settingsStore.updateCli(activeCliTab.value, { ...cliForm.value })
+    notify('Agent 目录已更新')
+  } catch (e: any) {
+    notify(getErrorMessage(e, '更新失败'), 'error')
+  }
+}
+
+async function handleRestoreDefault() {
+  if (isRestoring.value) return
+  isRestoring.value = true
+  if (cliForm.value.config_dir !== defaultConfigDir.value) {
+    cliForm.value.config_dir = defaultConfigDir.value
+    await saveCliConfigDir()
+  }
+  setTimeout(() => {
+    isRestoring.value = false
+  }, 600)
+}
+
+// ===== 超时 / 基础配置 =====
+const timeoutForm = ref({ stream_first_byte_timeout: 30, stream_idle_timeout: 60, non_stream_timeout: 120 })
+const gatewayForm = ref({ launch_on_startup: false, silent_startup: false, minimize_to_tray_on_close: true })
 const gatewaySaving = ref(false)
 
 watch(() => settingsStore.settings, (settings) => {
@@ -307,7 +468,6 @@ async function saveTimeouts() {
     notify(getErrorMessage(e, '保存失败'), 'error')
   }
 }
-
 async function saveGateway() {
   gatewaySaving.value = true
   try {
@@ -320,49 +480,32 @@ async function saveGateway() {
   }
 }
 
-async function handleLaunchOnStartupChange(value: string | number | boolean) {
-  gatewayForm.value.launch_on_startup = Boolean(value)
-  await saveGateway()
-}
-
-async function handleGatewayToggleChange() {
-  await saveGateway()
-}
-
-async function saveCli(cliType: CliType, data: any) {
-  try {
-    await settingsStore.updateCli(cliType, data)
-    notify('CLI 配置已保存')
-  } catch (e: any) {
-    notify(getErrorMessage(e, '保存失败'), 'error')
-  }
-}
-
-// Backup related
+// ===== 备份 =====
 const webdavForm = ref<WebdavSettings>({ url: '', username: '', password: '' })
+const showWebdavPassword = ref(false)
+
 const exportingLocal = ref(false)
 const importingLocal = ref(false)
 const testingWebdav = ref(false)
 const savingWebdav = ref(false)
 const exportingWebdav = ref(false)
 const loadingWebdavList = ref(false)
-const importingWebdav = ref(false)
-const deletingWebdav = ref(false)
 const webdavListVisible = ref(false)
 const webdavSettingsVisible = ref(false)
 const webdavBackups = ref<WebdavBackup[]>([])
+
+watch(webdavSettingsVisible, (open) => {
+  if (open) {
+    showWebdavPassword.value = false
+  }
+})
 
 async function loadWebdavSettings() {
   try {
     const { data } = await backupApi.getWebdavSettings()
     webdavForm.value = data
-  } catch {}
+  } catch { /* ignore */ }
 }
-
-function showWebdavSettings() {
-  webdavSettingsVisible.value = true
-}
-
 async function handleExportLocal() {
   exportingLocal.value = true
   try {
@@ -374,35 +517,28 @@ async function handleExportLocal() {
     exportingLocal.value = false
   }
 }
-
 async function handleImportLocal(file: File) {
   try {
     await confirm('导入将覆盖当前所有数据，确定继续？', '警告')
     importingLocal.value = true
     await backupApi.importFromLocal(file)
     notify('导入成功，应用将自动退出，请重新打开应用')
-  } catch (e) {} finally {
+  } catch { /* cancel */ } finally {
     importingLocal.value = false
   }
   return false
 }
-
 async function handleTestWebdav() {
   testingWebdav.value = true
   try {
     const { data } = await backupApi.testWebdavConnection(webdavForm.value)
-    if (data.success) {
-      notify('连接成功')
-    } else {
-      notify('连接失败', 'error')
-    }
+    notify(data.success ? '连接成功' : '连接失败', data.success ? 'success' : 'error')
   } catch (error: any) {
     notify(getErrorMessage(error, '连接失败'), 'error')
   } finally {
     testingWebdav.value = false
   }
 }
-
 async function handleSaveWebdav() {
   savingWebdav.value = true
   try {
@@ -415,7 +551,6 @@ async function handleSaveWebdav() {
     savingWebdav.value = false
   }
 }
-
 async function handleExportWebdav() {
   exportingWebdav.value = true
   try {
@@ -427,7 +562,6 @@ async function handleExportWebdav() {
     exportingWebdav.value = false
   }
 }
-
 async function handleShowWebdavList() {
   webdavListVisible.value = true
   loadingWebdavList.value = true
@@ -438,35 +572,26 @@ async function handleShowWebdavList() {
     loadingWebdavList.value = false
   }
 }
-
 async function handleImportWebdav(filename: string) {
   try {
     await confirm('导入将覆盖当前所有数据，确定继续？', '警告')
-    importingWebdav.value = true
     await backupApi.importFromWebdav(filename)
     notify('导入成功，应用将自动退出，请重新打开应用')
     webdavListVisible.value = false
   } catch (error: any) {
     if (error !== 'cancel') notify(getErrorMessage(error, '导入失败'), 'error')
-  } finally {
-    importingWebdav.value = false
   }
 }
-
 async function handleDeleteWebdav(filename: string) {
   try {
     await confirm(`确定要删除远程备份 ${filename} 吗？`, '警告')
-    deletingWebdav.value = true
     await backupApi.deleteWebdavBackup(filename)
     notify('已删除')
     await handleShowWebdavList()
   } catch (error: any) {
     if (error !== 'cancel') notify(getErrorMessage(error, '删除失败'), 'error')
-  } finally {
-    deletingWebdav.value = false
   }
 }
-
 function formatSize(bytes: number) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
@@ -480,80 +605,315 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.config-page {
-  height: 100%;
+.cfg-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; align-items: stretch; }
+@media (max-width: 940px) { .cfg-grid { grid-template-columns: 1fr; } }
+.cfg-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.cfg-cli { display: flex; flex-direction: column; }
+
+
+
+.cfg-head { font-size: var(--v2-fs-base); font-weight: 600; color: var(--v2-text); margin-bottom: 16px; }
+.cfg-tabs { margin-bottom: 18px; }
+
+.cfg-dir { position: relative; display: flex; align-items: center; }
+.cfg-dir .v2-input { flex: 1; padding-right: 36px; }
+.cfg-dir .v2-row-act { position: absolute; right: 4px; border: none; flex-shrink: 0; }
+.cfg-dir .v2-row-act svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.cfg-preset-card {
+  background: var(--v2-surface-2);
+  border: 1px solid var(--v2-surface-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow: hidden;
+  position: relative;
   display: flex;
   flex-direction: column;
 }
-
-.config-page > .scroll-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 40px;
+.cfg-preset-card:hover {
+  border-color: var(--v2-surface-3);
 }
-
-/* Header */
-.page-title { font-size: var(--fs-24); font-weight: var(--fw-700); color: var(--color-text); margin: 0 0 8px 0; letter-spacing: -0.8px; }
-
-/* Layout */
-.config-layout { display: flex; gap: 32px; align-items: flex-start; }
-.config-column { flex: 1; display: flex; flex-direction: column; gap: 32px; min-width: 0; }
-
-/* Frost Card */
-.frost-card {
-  background: var(--color-bg); border-radius: 20px; border: 1px solid var(--color-border);
-  padding: 32px; box-shadow: 0 4px 12px var(--color-shadow); transition: all 0.2s;
-  display: flex; flex-direction: column;
-}
-
-.card-header-simple { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; color: var(--color-text); }
-.header-icon { color: var(--color-text-muted); }
-.card-label { font-size: var(--fs-16); font-weight: var(--fw-600); letter-spacing: -0.3px; }
-
-/* Form Items */
-.input-item { margin-bottom: 20px; }
-.input-row { display: flex; gap: 16px; }
-.item-label { display: block; font-size: var(--fs-14); font-weight: var(--fw-500); color: var(--color-text); margin-bottom: 8px; }
-
-.input-with-unit { display: flex; align-items: center; gap: 12px; }
-.unit { font-size: var(--fs-14); color: var(--color-text-weak); font-weight: var(--fw-400); }
-.settings-toggles {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.settings-toggle-item {
+.cfg-preset-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  min-height: 62px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-border-light);
+  padding: 8px 12px;
+  background: var(--v2-surface-2);
+  border-bottom: 1px solid var(--v2-surface-3);
 }
-.settings-toggle-item:last-child { border-bottom: none; }
-.settings-toggle-copy { min-width: 0; }
-.settings-toggle-title { display: block; font-size: var(--fs-14); font-weight: var(--fw-500); color: var(--color-text-secondary); }
-.settings-toggle-desc { display: block; margin-top: 4px; font-size: var(--fs-12); line-height: 1.4; color: var(--color-text-weak); }
+.cfg-preset-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cfg-preset-title-icon {
+  color: var(--v2-text-3);
+}
+.cfg-preset-filename {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--v2-text-2);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.cfg-preset-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--v2-text-3);
+  background: var(--v2-surface-3);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.cfg-preset-body {
+  position: relative;
+  padding: 12px 14px;
+  min-height: 44px;
+  background: var(--v2-surface);
+  transition: background-color 0.2s;
+}
+.cfg-preset-card:hover .cfg-preset-body {
+  background: var(--v2-surface-2);
+}
+.cfg-preset-code {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: hidden;
+}
 
-/* Buttons */
-.action-row-end { display: flex; justify-content: flex-end; gap: 12px; align-items: center; }
-.card-footer-right { margin-top: 8px; display: flex; justify-content: flex-end; }
+.cfg-preset-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--v2-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+.cfg-preset-card:hover .cfg-preset-overlay {
+  opacity: 0.9;
+}
+.overlay-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-surface-3);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--v2-text);
+}
+.cfg-preset-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+}
+.empty-hint {
+  font-size: 12px;
+  color: var(--v2-text-3);
+  font-style: italic;
+}
+.cfg-preset-textarea {
+  resize: none;
+}
 
-/* CLI Column adjustment */
-.cli-settings-card { flex: 1; }
-.cli-form-container { flex: 1; min-height: 400px; display: flex; flex-direction: column; }
+.cfg-writemode-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--v2-surface-2);
+}
+.cfg-writemode-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.editor-info-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--v2-r);
+  background: var(--v2-selected-bg);
+  border: 1px solid var(--v2-surface-3);
+  color: var(--v2-text-2);
+  font-size: var(--v2-fs-xs);
+  line-height: 1.5;
+}
+.editor-info-tip svg {
+  color: var(--v2-accent);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.tip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tip-title {
+  font-weight: 600;
+  color: var(--v2-text);
+}
+.tip-desc {
+  color: var(--v2-text-3);
+  font-size: 11px;
+}
 
-/* Flat Table (matching logs page style) */
-.table-container { background: var(--color-bg); border-radius: 12px; padding: 0; border: 1px solid var(--color-border); box-shadow: 0 4px 15px var(--color-shadow); overflow: hidden; }
-.table-link.danger { color: var(--color-danger); }
-.table-link.danger:hover { color: var(--color-danger-hover); }
+.cfg-backup { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.cfg-backup-acts { display: flex; gap: 4px; align-items: center; }
+.cfg-backup-acts .v2-row-act { border: 1px solid var(--v2-surface-2); }
+.cfg-backup-acts .v2-row-act svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Backup Row */
-.backup-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.backup-actions { display: flex; gap: 8px; }
+.cfg-toggle { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--v2-surface-2); }
+.cfg-toggle:last-child { border-bottom: none; }
+.cfg-toggle-c { min-width: 0; }
+.cfg-toggle-t { display: block; font-size: var(--v2-fs-sm); font-weight: 500; color: var(--v2-text); }
+.cfg-toggle-d { display: block; margin-top: 3px; font-size: var(--v2-fs-xs); line-height: 1.4; color: var(--v2-text-3); }
 
-/* WebDAV Settings Form */
-.webdav-settings-form { padding: 4px 0; }
-.webdav-settings-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+.cfg-trow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--v2-surface-2); }
+.cfg-trow:last-child { border-bottom: none; }
+.cfg-trow-l { font-size: var(--v2-fs-sm); color: var(--v2-text); }
+
+.cfg-input-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.cfg-input-unit {
+  position: absolute;
+  right: 12px;
+  font-size: var(--v2-fs-xs);
+  color: var(--v2-text-3);
+  pointer-events: none;
+}
+.cfg-tnum {
+  width: 100px;
+  text-align: left;
+  padding-right: 32px;
+}
+
+.cfg-link { color: var(--v2-accent); cursor: pointer; margin-left: 12px; font-size: var(--v2-fs-sm); }
+.cfg-link.danger { color: var(--v2-danger); }
+
+.spin-once {
+  animation: spin-once 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes spin-once {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.webdav-table-wrapper {
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.webdav-table-wrapper thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: center;
+}
+.webdav-table-wrapper tbody td {
+  text-align: center;
+}
+.webdav-file-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+}
+.db-icon {
+  color: var(--v2-text-3);
+  flex-shrink: 0;
+}
+.filename-text {
+  display: block;
+  color: var(--v2-text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.webdav-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.webdav-link {
+  color: var(--v2-accent);
+  cursor: pointer;
+  font-size: var(--v2-fs-sm);
+}
+.webdav-link.danger {
+  color: var(--v2-danger);
+}
+.empty-state-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--v2-text-3);
+}
+
+.write-mode-help-content {
+  width: 280px;
+}
+.write-mode-help-content .tooltip-title {
+  font-size: var(--v2-fs-sm);
+  font-weight: 600;
+  color: var(--v2-text);
+  margin-bottom: 10px;
+}
+.write-mode-help-content .tooltip-item {
+  margin-bottom: 12px;
+}
+.write-mode-help-content .tooltip-item:last-child {
+  margin-bottom: 0;
+}
+.write-mode-help-content .tooltip-item strong {
+  display: block;
+  font-size: var(--v2-fs-xs);
+  font-weight: 600;
+  color: var(--v2-text-2);
+  margin-bottom: 4px;
+}
+.write-mode-help-content .tooltip-item span {
+  display: block;
+  font-size: var(--v2-fs-xs);
+  line-height: 1.5;
+  color: var(--v2-text-3);
+}
+.v2-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.v2-input-wrapper .v2-input {
+  padding-right: 36px;
+}
+.v2-input-icon-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--v2-text-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: color 0.15s;
+}
+.v2-input-icon-btn:hover {
+  color: var(--v2-text);
+}
 </style>

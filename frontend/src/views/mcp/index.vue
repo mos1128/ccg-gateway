@@ -1,129 +1,70 @@
 <template>
-  <div class="mcp-page">
-    <!-- Icon Symbols -->
-    <svg style="display:none">
-      <defs>
-        <symbol id="icon-boxes" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
-          <path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>
-        </symbol>
-        <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5 12h14"/><path d="M12 5v14"/>
-        </symbol>
-        <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-        </symbol>
-        <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
-        </symbol>
-        <symbol id="icon-code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
-        </symbol>
-      </defs>
-    </svg>
-
-    <div class="page-header">
-      <p class="page-subtitle">配置 Model Context Protocol (MCP) 服务器</p>
-      <button class="action-icon primary" @click="handleAdd" title="添加 MCP">
-        <svg width="20" height="20"><use href="#icon-plus"/></svg>
-      </button>
-    </div>
-
-    <div v-loading="loading" class="list-container">
-      <template v-if="mcpList.length === 0">
-        <div class="empty-state">
-          <svg width="64" height="64" color="var(--color-border)"><use href="#icon-boxes"/></svg>
-          <p>暂无 MCP</p>
-        </div>
-      </template>
-      <div v-else class="scroll-area">
-        <div class="mcp-grid">
-          <div v-for="mcp in mcpList" :key="mcp.id" class="mcp-card">
-            <div class="card-top">
-              <div class="mcp-icon">
-                <svg width="24" height="24"><use href="#icon-boxes"/></svg>
-              </div>
-              <div class="mcp-info">
-                <h3 class="mcp-name">{{ mcp.name }}</h3>
-                <div class="mcp-actions">
-                  <button class="action-icon" title="编辑" @click="handleEdit(mcp)">
-                    <svg width="18" height="18"><use href="#icon-edit"/></svg>
-                  </button>
-                  <button class="action-icon delete" title="删除" @click="handleDelete(mcp)">
-                    <svg width="18" height="18"><use href="#icon-trash"/></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div class="cli-toggles">
-              <div class="toggle-item">
-                <span class="toggle-label">Claude Code</span>
-                <el-switch
-                  size="small"
-                  :model-value="mcp.cli_flags?.claude_code"
-                  @change="handleCliToggle(mcp, 'claude_code', $event as boolean)"
-                />
-              </div>
-              <div class="toggle-item">
-                <span class="toggle-label">Codex</span>
-                <el-switch
-                  size="small"
-                  :model-value="mcp.cli_flags?.codex"
-                  @change="handleCliToggle(mcp, 'codex', $event as boolean)"
-                />
-              </div>
-              <div class="toggle-item">
-                <span class="toggle-label">Gemini</span>
-                <el-switch
-                  size="small"
-                  :model-value="mcp.cli_flags?.gemini"
-                  @change="handleCliToggle(mcp, 'gemini', $event as boolean)"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+  <div>
+    <div v-loading="loading" class="v2-cardgrid">
+      <div class="v2-addcard" @click="handleAdd">
+        <svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        <span>添加 MCP</span>
       </div>
+      <ConfigCard
+        v-for="mcp in mcpList"
+        :key="mcp.id"
+        icon="mcp"
+        :title="mcp.name"
+        :subtitle="configSummary(mcp.config_json)"
+        :flags="mcp.cli_flags"
+        @edit="handleEdit(mcp)"
+        @delete="handleDelete(mcp)"
+        @toggle="(c, e) => handleCliToggle(mcp, c, e)"
+      />
     </div>
 
-    <!-- Add/Edit Modal -->
-    <AppModal v-model="showDialog" :title="editingMcp ? '编辑 MCP' : '添加 MCP'" width="640px" @confirm="handleSave">
-        <div class="form-group">
-          <label class="c-label">MCP 名称 <span class="required">*</span></label>
-          <input type="text" v-model="form.name" class="b-input" placeholder="例如: Google Maps Search">
-        </div>
-
-        <div class="form-group">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <label class="c-label" style="margin-bottom: 0;">配置 JSON <span class="required">*</span></label>
-            <button class="f-button ghost-plain sm" @click="formatJson">
-              <svg width="12" height="12" style="margin-right: 4px;"><use href="#icon-code"/></svg>
-              格式化
+    <V2Drawer v-model="showDialog" :title="editingMcp ? '编辑 MCP' : '添加 MCP'" @confirm="handleSave">
+      <div class="v2-field">
+        <label class="v2-label">MCP 名称 <span class="req">*</span></label>
+        <input v-model="form.name" type="text" class="v2-input" placeholder="例如：universal-db">
+      </div>
+      <div class="v2-field">
+        <label class="v2-label">配置 JSON <span class="req">*</span></label>
+        <div class="v2-file-editor">
+          <div class="v2-file-editor-header">
+            <div class="v2-file-editor-title">
+              <svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span class="v2-file-editor-name">mcp.json</span>
+              <span class="v2-file-editor-badge">JSON</span>
+            </div>
+            <button class="v2-file-editor-action" type="button" @click="formatJson">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>格式化</span>
             </button>
           </div>
-          <textarea
-            v-model="form.config_json"
-            class="b-input mono"
-            rows="12"
-            placeholder='{"command": "npx", "args": ["-y", "@example/mcp"]}'
-            @blur="validateConfig"
-          ></textarea>
-          <div v-if="validationError" class="error-tip">{{ validationError }}</div>
+          <div class="v2-file-editor-body">
+            <textarea
+              v-model="form.config_json"
+              class="v2-file-editor-textarea mcp-json-textarea"
+              rows="14"
+              placeholder='{"command": "npx", "args": ["-y", "@example/mcp"]}'
+              @blur="validateConfig"
+            ></textarea>
+          </div>
         </div>
-    </AppModal>
+        <div v-if="validationError" class="json-err">{{ validationError }}</div>
+      </div>
+    </V2Drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import V2Drawer from '@/components/V2Drawer.vue'
+import ConfigCard from '@/components/ConfigCard.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
-import AppModal from '@/components/AppModal.vue'
 import { mcpApi } from '@/api/mcp'
-import type { CliType, Mcp } from '@/types/models'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
+import type { CliType, Mcp } from '@/types/models'
 
 const mcpList = ref<Mcp[]>([])
 const loading = ref(false)
@@ -142,10 +83,17 @@ const showDialog = computed({
   }
 })
 
-const form = ref({
-  name: '',
-  config_json: ''
-})
+const form = ref({ name: '', config_json: '' })
+
+function configSummary(json: string): string {
+  try {
+    const obj = JSON.parse(json)
+    const inner = obj.command ? obj : (obj.mcpServers ? Object.values(obj.mcpServers)[0] as any : obj)
+    if (inner?.command) return [inner.command, ...(inner.args || [])].join(' ')
+    if (inner?.url) return inner.url
+  } catch { /* fallthrough */ }
+  return json.replace(/\s+/g, ' ').trim()
+}
 
 async function fetchList() {
   loading.value = true
@@ -166,10 +114,7 @@ function handleAdd() {
 
 function handleEdit(mcp: Mcp) {
   editingMcp.value = mcp
-  form.value = {
-    name: mcp.name,
-    config_json: mcp.config_json
-  }
+  form.value = { name: mcp.name, config_json: mcp.config_json }
   validationError.value = ''
 }
 
@@ -198,11 +143,7 @@ async function handleSave() {
     return
   }
   try {
-    const data = {
-      name: form.value.name.trim(),
-      config_json: form.value.config_json.trim()
-    }
-
+    const data = { name: form.value.name.trim(), config_json: form.value.config_json.trim() }
     if (editingMcp.value) {
       await mcpApi.update(editingMcp.value.id, data)
       notify('更新成功')
@@ -226,7 +167,7 @@ async function handleCliToggle(mcp: Mcp, cliType: CliType, enabled: boolean) {
     notify('已更新')
   } catch (error: any) {
     notify(getErrorMessage(error, '更新失败'), 'error')
-    await fetchList() // Rollback
+    await fetchList()
   }
 }
 
@@ -237,9 +178,7 @@ async function handleDelete(mcp: Mcp) {
     notify('已删除')
     await fetchList()
   } catch (error: any) {
-    if (error !== 'cancel' && error?.toString() !== 'cancel') {
-      notify(getErrorMessage(error, '删除失败'), 'error')
-    }
+    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, '删除失败'), 'error')
   }
 }
 
@@ -247,98 +186,6 @@ onMounted(fetchList)
 </script>
 
 <style scoped>
-.mcp-page {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Grid & Cards */
-.mcp-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
-  gap: 24px;
-}
-.mcp-card {
-  background: var(--color-bg);
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  padding: 24px;
-  box-shadow: 0 4px 12px var(--color-shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.card-top {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-.mcp-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: var(--color-primary-light);
-  color: var(--color-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.mcp-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-.mcp-name {
-  font-size: var(--fs-16);
-  font-weight: var(--fw-700);
-  color: var(--color-text);
-  margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding-right: 8px;
-}
-  padding-right: 8px;
-}
-.mcp-actions {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-/* CLI Toggles */
-.cli-toggles {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: var(--color-bg-page);
-  padding: 16px;
-  border-radius: 12px;
-}
-.toggle-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.toggle-label {
-  font-size: var(--fs-14);
-  font-weight: var(--fw-500);
-  color: var(--color-text-secondary);
-}
-
-/* Form Elements */
-.error-tip {
-  color: var(--color-error);
-  font-size: var(--fs-12);
-  margin-top: 6px;
-}
-
-/* Buttons */
-
+.mcp-json-textarea { resize: vertical; }
+.json-err { color: var(--v2-danger); font-size: var(--v2-fs-xs); margin-top: 6px; }
 </style>

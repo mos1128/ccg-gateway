@@ -1,16 +1,17 @@
 <template>
-  <AppModal
+  <V2Drawer
     v-model="visible"
     title="检测模型可用性"
-    width="800px"
+    width="60%"
     :show-footer="true"
     confirm-text="开始检测"
+    :confirm-disabled="loading"
     @confirm="$emit('confirm')"
   >
     <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px;">
       <div style="flex: 1;">
         <label class="c-label">检测模型</label>
-        <input type="text" :value="model" class="b-input" placeholder="输入模型名称" @input="handleModelInput">
+        <input type="text" :value="model" class="v2-input" placeholder="输入模型名称" @input="handleModelInput">
       </div>
     </div>
 
@@ -21,73 +22,70 @@
           {{ isAllSelected ? '取消全选' : '全选' }}
         </span>
       </div>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <label
+      <div class="v2-chip-row">
+        <button
           v-for="provider in providers"
           :key="provider.id"
-          class="text-14"
-          style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 12px; border-radius: 8px; transition: all 0.2s; user-select: none;"
-          :style="providerStyle(provider.id)"
+          type="button"
+          class="v2-chip"
+          :class="{ on: selectedIds.includes(provider.id) }"
           @click="$emit('toggle-provider', provider.id)"
         >
-          <div
-            style="width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0;"
-            :style="checkboxStyle(provider.id)"
-          >
-            <span v-if="selectedIds.includes(provider.id)" class="text-12 fw-bold" style="color: var(--color-bg);">✓</span>
-          </div>
-          {{ provider.name }}
-        </label>
+          <span class="v2-chip-dot"></span>{{ provider.name }}
+        </button>
       </div>
       <div v-if="providers.length === 0" class="text-muted text-14" style="padding: 8px 0;">
-        当前 CLI 类型无已启用的服务商
+        当前 Agent 类型无已启用的服务商
       </div>
     </div>
 
-    <div v-if="results.length > 0 || loading" style="border: 1px solid var(--color-border); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px var(--color-shadow);">
-      <table class="flat-table">
-        <colgroup>
-          <col style="width: 20%;"><col style="width: 25%;"><col style="width: 12%;"><col style="width: 13%;"><col style="width: 30%;">
-        </colgroup>
-        <thead>
-          <tr>
-            <th>服务商</th><th>测试模型</th><th>状态码</th><th>耗时</th><th>响应</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="result in results" :key="result.provider_id">
-            <td class="fw-normal">{{ result.provider_name }}</td>
-            <td class="mono">{{ result.actual_model }}</td>
-            <td>
-              <span v-if="result.status_code === null && result.elapsed_ms === 0" class="pill pill-grey">...</span>
-              <span v-else-if="result.status_code !== null" :class="['pill', getPillClass(result.status_code)]">{{ result.status_code }}</span>
-              <span v-else class="pill pill-red">ERR</span>
-            </td>
-            <td class="mono">
-              <span v-if="result.status_code === null && result.elapsed_ms === 0">-</span>
-              <span v-else>{{ result.elapsed_ms }}ms</span>
-            </td>
-            <td :style="{ color: responseColor(result) }">
-              <span v-if="result.status_code === null && result.elapsed_ms === 0" style="font-style: italic;">Testing...</span>
-              <el-tooltip v-else effect="light" placement="top" :enterable="true" :show-after="200">
-                <template #content>
-                  <div class="text-14" style="max-width: 350px; line-height: 1.6; word-break: break-word; user-select: text; color: var(--color-text-dark);">
-                    {{ result.response_text }}
-                  </div>
-                </template>
-                <span style="cursor: pointer;" @click="$emit('copy-response', result.response_text)">{{ result.response_text }}</span>
-              </el-tooltip>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-if="results.length > 0 || loading" class="det-results">
+      <div class="det-subtitle">检测结果</div>
+      <div class="st-table-wrap">
+        <table class="v2-table">
+          <thead>
+            <tr>
+              <th>服务商</th>
+              <th>测试模型</th>
+              <th>状态</th>
+              <th>状态码</th>
+              <th>耗时</th>
+              <th>响应</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="result in results" :key="result.provider_id">
+              <td>{{ result.provider_name }}</td>
+              <td class="mono">{{ result.actual_model }}</td>
+              <td>
+                <span class="v2-pill dot" :class="statusClass(getResultStatus(result))">
+                  {{ statusLabel(getResultStatus(result)) }}
+                </span>
+              </td>
+              <td class="mono">{{ result.status_code || '-' }}</td>
+              <td class="mono">
+                <span v-if="result.status_code === null && result.elapsed_ms === 0">-</span>
+                <span v-else>{{ result.elapsed_ms }}ms</span>
+              </td>
+              <td class="st-err">
+                <span v-if="result.status_code === null && result.elapsed_ms === 0" style="font-style: italic; color: var(--v2-text-3);">Testing...</span>
+                <el-tooltip v-else :content="result.response_text || ''" placement="top" effect="light" :disabled="!result.response_text" :show-after="250">
+                  <span style="cursor: pointer;" @click="$emit('copy-response', result.response_text || '')">
+                    {{ result.response_text || '-' }}
+                  </span>
+                </el-tooltip>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </AppModal>
+  </V2Drawer>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import AppModal from '@/components/AppModal.vue'
+import V2Drawer from '@/components/V2Drawer.vue'
 import type { Provider, TestProviderResult } from '@/types/models'
 
 const props = defineProps<{
@@ -118,38 +116,39 @@ function handleModelInput(event: Event) {
   emit('update:model', (event.target as HTMLInputElement).value)
 }
 
-function providerStyle(id: number) {
-  const selected = props.selectedIds.includes(id)
-  return {
-    color: selected ? 'var(--color-text)' : 'var(--color-text-weak)',
-    border: selected ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
-    background: selected ? 'var(--color-primary-5)' : 'var(--color-bg)'
-  }
+function getResultStatus(result: TestProviderResult): 'pending' | 'success' | 'failed' {
+  if (result.status_code === null && result.elapsed_ms === 0) return 'pending'
+  if (result.status_code !== null && result.status_code >= 200 && result.status_code < 300) return 'success'
+  return 'failed'
 }
 
-function checkboxStyle(id: number) {
-  const selected = props.selectedIds.includes(id)
-  return {
-    border: selected ? '2px solid var(--color-primary)' : '2px solid var(--color-border)',
-    background: selected ? 'var(--color-primary)' : 'transparent'
-  }
+function statusLabel(status: 'pending' | 'success' | 'failed'): string {
+  const labels = { pending: '检测中', success: '成功', failed: '失败' }
+  return labels[status]
 }
 
-function getPillClass(code: number | null): string {
-  if (!code) return 'pill-grey'
-  if (code >= 200 && code < 300) return 'pill-green'
-  if (code >= 400 && code < 500) return 'pill-grey'
-  if (code >= 500) return 'pill-red'
-  return 'pill-grey'
-}
-
-function responseColor(result: TestProviderResult): string {
-  if (result.status_code !== null && result.status_code >= 200 && result.status_code < 300) {
-    return 'var(--color-text-muted)'
-  }
-  if (result.status_code === null && result.elapsed_ms === 0) {
-    return 'var(--color-text-weak)'
-  }
-  return 'var(--color-error)'
+function statusClass(status: 'pending' | 'success' | 'failed'): string {
+  if (status === 'success') return 'v2-pill-success'
+  if (status === 'failed') return 'v2-pill-danger'
+  return 'v2-pill-neutral'
 }
 </script>
+
+<style scoped>
+.c-label { display: block; font-size: var(--v2-fs-sm); font-weight: 500; color: var(--v2-text-2); margin-bottom: 7px; }
+.text-12 { font-size: var(--v2-fs-xs); }
+.text-14 { font-size: var(--v2-fs-base); }
+.fw-normal { font-weight: 400; }
+.text-muted { color: var(--v2-text-3); }
+.text-info { color: var(--v2-accent); }
+
+.det-results { margin-top: 18px; }
+.det-subtitle { font-size: var(--v2-fs-xs); font-weight: 600; color: var(--v2-text-3); margin-bottom: 8px; }
+.st-table-wrap { overflow-x: auto; border: 1px solid var(--v2-surface-3); border-radius: var(--v2-r); }
+.det-results .v2-table th,
+.det-results .v2-table td {
+  padding: 8px 10px;
+  text-align: center;
+}
+.st-err { max-width: 220px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+</style>

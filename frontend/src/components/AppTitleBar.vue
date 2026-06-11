@@ -56,8 +56,8 @@ function startDrag(event: MouseEvent) {
   height: 34px;
   display: flex;
   align-items: center;
-  background: var(--color-bg-page);
-  border-bottom: 1px solid var(--color-border-light);
+  background: var(--v2-surface-2);
+  border-bottom: 1px solid var(--v2-surface-2);
   flex-shrink: 0;
   user-select: none;
 }
@@ -73,9 +73,9 @@ function startDrag(event: MouseEvent) {
 }
 
 .titlebar-title {
-  font-size: var(--fs-12);
-  font-weight: var(--fw-600);
-  color: var(--color-text-weak);
+  font-size: var(--v2-fs-xs);
+  font-weight: 600;
+  color: var(--v2-text-3);
 }
 
 .titlebar-controls {
@@ -90,7 +90,7 @@ function startDrag(event: MouseEvent) {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--v2-text-3);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -108,12 +108,12 @@ function startDrag(event: MouseEvent) {
 }
 
 .titlebar-button:hover {
-  background: var(--color-overlay-8);
-  color: var(--color-text);
+  background: var(--v2-surface-2);
+  color: var(--v2-text);
 }
 
 .titlebar-button.close:hover {
-  background: var(--color-danger);
-  color: #ffffff;
+  background: var(--v2-danger);
+  color: var(--v2-on-danger);
 }
 </style>

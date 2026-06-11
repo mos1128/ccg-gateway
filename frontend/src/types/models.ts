@@ -6,6 +6,11 @@ export const CLI_LABELS: Record<CliType, string> = {
   codex: 'Codex',
   gemini: 'Gemini'
 }
+export const CLI_SHORT_LABELS: Record<CliType, string> = {
+  claude_code: 'Claude',
+  codex: 'Codex',
+  gemini: 'Gemini'
+}
 export const CLI_TABS: { id: CliType; label: string }[] = CLI_TYPES.map((id) => ({
   id,
   label: CLI_LABELS[id]

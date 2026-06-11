@@ -1,179 +1,128 @@
 <template>
-  <div class="providers-page">
+  <div class="prov-page">
     <svg style="display:none">
       <defs>
-        <symbol id="icon-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+        <symbol id="v2i-write" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+        <symbol id="v2i-play" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </symbol>
-        <symbol id="icon-key" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="7.5" cy="15.5" r="5.5"/>
-          <path d="m21 2-9.6 9.6"/>
-          <path d="m15.5 7.5 3 3L22 7l-3-3"/>
+        <symbol id="v2i-check" viewBox="0 0 24 24">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="22 4 12 14.01 9 11.01" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </symbol>
-        <symbol id="icon-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-        </symbol>
-        <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-        </symbol>
-        <symbol id="icon-paste" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-          <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
-          <path d="M9 14h6"/>
-          <path d="M12 11v6"/>
-        </symbol>
-        <symbol id="icon-write" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
-          <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
-          <path d="M12 18v-6"/>
-          <path d="m9 15 3 3 3-3"/>
-        </symbol>
-        <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
-        </symbol>
-        <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
-        </symbol>
+        <symbol id="v2i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+        <symbol id="v2i-edit" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></symbol>
+        <symbol id="v2i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></symbol>
+        <symbol id="v2i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></symbol>
       </defs>
     </svg>
-    
-    <!-- Top Level Tabs -->
-    <div class="top-tabs">
-      <div
-        v-for="cli in cliTabs"
-        :key="cli.id"
-        :class="['tab-item', { active: activeCliType === cli.id }]"
-        @click="activeCliType = cli.id"
-      >
-        {{ cli.label }}
+
+    <div class="v2-tabs prov-clitabs">
+      <div v-for="c in cliTabs" :key="c.id" class="v2-tab" :class="{ active: activeCliType === c.id }" @click="activeCliType = c.id">
+        <span class="tab-label-text">{{ c.label }}</span>
       </div>
     </div>
 
-    <!-- Page Header & Segmented Control -->
-    <div class="page-header">
-      <div class="header-left">
-        <div class="b-segmented">
-          <div class="b-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="handleSwitchProxy">中转路由</div>
-          <div class="b-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方直连</div>
+    <div class="v2-card prov-shell">
+    <div class="prov-toolbar">
+      <div class="toolbar-left">
+        <div class="v2-seg">
+          <div class="v2-seg-slider" :style="{ transform: `translateX(${viewMode === 'proxy' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
+          <button class="v2-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="handleSwitchProxy">中转路由</button>
+          <button class="v2-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方直连</button>
         </div>
 
-        <div v-if="showProfileControls" class="b-segmented">
-          <div
+        <div v-if="showProfileControls" class="v2-seg">
+          <div class="v2-seg-slider" :style="{ transform: `translateX(${profileTabs.findIndex(p => activeProfile === p.id) * 100}%)`, width: `calc((100% - 8px) / ${profileTabs.length})` }"></div>
+          <button
             v-for="profile in profileTabs"
             :key="profile.id"
-            class="b-seg-btn"
+            class="v2-seg-btn"
             :class="{ active: activeProfile === profile.id, disabled: !!profileSwitching }"
             @click="handleProfileSelect(profile.id)"
-          >
-            {{ profile.label }}
-          </div>
+          >{{ profile.label }}</button>
         </div>
+
         <el-tooltip
           v-if="showProfileHelp"
           effect="light"
           placement="top"
-          :fallback-placements="['bottom', 'top', 'right', 'left']"
-          :offset="10"
           :show-after="150"
           :enterable="true"
-          popper-class="profile-help-popper"
+          popper-class="v2-profile-pop v2-scope"
         >
           <template #content>
-            <div class="profile-help-content">
+            <div class="profile-help">
               <div class="tooltip-title">Profile 用法</div>
-              <div class="tooltip-item">
-                <span>{{ profileUsageText }}</span>
-              </div>
-              <div class="profile-command-panel">
-                <div class="profile-command-header">
+              <div class="tooltip-item"><span>{{ profileUsageText }}</span></div>
+              <div class="profile-cmd">
+                <div class="profile-cmd-head">
                   <strong>{{ profileLabels[activeProfile] }} 启动命令</strong>
-                  <button
-                    class="profile-command-copy"
-                    type="button"
-                    :disabled="isCurrentProfileCommandLoading"
-                    @click.stop="copyCurrentProfileLaunchCommand"
-                    title="复制启动命令"
-                  >
-                    <svg width="14" height="14"><use href="#icon-copy"/></svg>
-                  </button>
+                  <el-tooltip content="复制启动命令" placement="top" effect="light" :show-after="250">
+                    <button class="profile-cmd-copy" type="button" :disabled="isCurrentProfileCommandLoading" @click.stop="copyCurrentProfileLaunchCommand">
+                      <svg width="14" height="14"><use href="#v2i-copy"/></svg>
+                    </button>
+                  </el-tooltip>
                 </div>
-                <div class="profile-command-text" @click.stop="copyCurrentProfileLaunchCommand">
-                  {{ currentProfileLaunchCommand || '正在获取启动命令...' }}
-                </div>
+                <div class="profile-cmd-text mono" @click.stop="copyCurrentProfileLaunchCommand">{{ currentProfileLaunchCommand || '正在获取启动命令...' }}</div>
               </div>
             </div>
           </template>
-          <div class="help-icon-wrapper" @click.stop="copyCurrentProfileLaunchCommand" title="复制当前 Profile 启动命令">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
-              <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-          </div>
+          <span class="v2-help" @click.stop="copyCurrentProfileLaunchCommand">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </span>
         </el-tooltip>
       </div>
-      
-      <div v-if="viewMode === 'proxy'" style="display: flex; align-items: center; gap: 8px;">
-        <button
-          class="action-icon primary"
-          @click="showDetectDialog = true"
-          title="检测模型可用性"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-          </svg>
-        </button>
-        <button
-          v-if="copiedProvider"
-          class="action-icon success"
-          :disabled="pasteLoading"
-          @click="handlePasteProvider"
-          :title="pasteButtonTitle"
-        >
-          <svg width="18" height="18"><use href="#icon-paste"/></svg>
-        </button>
-        <button
-          class="action-icon primary"
-          @click="handleAddProvider"
-          title="添加服务商"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 12h14"/><path d="M12 5v14"/>
-          </svg>
-        </button>
-      </div>
-      <div v-else>
-        <button
-          class="action-icon primary"
-          @click="showAddCredentialDialog = true"
-          title="添加凭证"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 12h14"/><path d="M12 5v14"/>
-          </svg>
+
+      <div class="toolbar-right">
+        <template v-if="viewMode === 'proxy'">
+          <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="showDetectDialog = true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            检测
+          </button>
+          <button v-if="copiedProvider" class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="pasteLoading" @click="handlePasteProvider">
+            <svg width="16" height="16"><use href="#v2i-copy"/></svg>
+            粘贴
+          </button>
+          <button class="v2-btn v2-btn-sm v2-btn-primary" @click="handleAddProvider">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            添加
+          </button>
+        </template>
+        <button v-else class="v2-btn v2-btn-sm v2-btn-primary" @click="showAddCredentialDialog = true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          添加
         </button>
       </div>
     </div>
 
-    <!-- PROXY MODE LIST -->
     <template v-if="viewMode === 'proxy'">
-      <div v-if="providerStore.providers.length === 0" v-loading="providerStore.loading" class="list-container">
-        <div class="empty-state">
-          <svg width="64" height="64" color="var(--color-border)"><use href="#icon-cloud"/></svg>
-          <p>暂无服务商</p>
+      <V2Empty v-if="providerStore.providers.length === 0" v-loading="providerStore.loading" title="还没有服务商" description="添加服务商，网关会自动路由、负载均衡与故障转移">
+        <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg></template>
+      </V2Empty>
+      <div v-else class="prov-body" v-loading="providerStore.loading">
+        <div class="pt-head">
+          <div v-if="isProviderDirectMode" class="pt-cols m-direct">
+            <div>启用</div>
+            <div>服务商</div>
+            <div class="pt-col-endpoint">端点</div>
+            <div>状态</div>
+            <div>操作</div>
+          </div>
+          <div v-else class="pt-cols m-route">
+            <div>启用</div>
+            <div>服务商</div>
+            <div class="pt-col-endpoint">端点</div>
+            <div>状态</div>
+            <div title="连续失败次数 / 熔断阈值">容错</div>
+            <div class="pt-col-map">模型映射</div>
+            <div>操作</div>
+          </div>
         </div>
-      </div>
-      <div v-else class="b-card list-container" v-loading="providerStore.loading">
-        <div class="scroll-area">
-        <draggable
-          v-model="providerStore.providers"
-          item-key="id"
-          handle=".drag-handle"
-          @end="handleDragEnd"
-        >
-          <template #item="{ element, index }">
-            <ProviderListItem
+        <draggable v-model="providerStore.providers" item-key="id" handle=".pt-drag" @end="handleDragEnd">
+          <template #item="{ element }">
+            <ProviderRow
               :provider="element"
-              :is-last="index === providerStore.providers.length - 1"
               :mode="isProviderDirectMode ? 'direct' : 'route'"
               :unblacklist-text="getUnblacklistTime(element)"
               :toggle-loading="toggleLoadingId === element.id"
@@ -182,35 +131,32 @@
               @edit="handleEdit"
               @write="handleWriteProviderDirect"
               @reset="handleReset"
-              @delete="provider => handleCommand('delete', provider)"
+              @delete="(provider) => handleCommand('delete', provider)"
               @toggle="handleToggle"
             />
           </template>
         </draggable>
-        </div>
       </div>
     </template>
 
-    <!-- DIRECT MODE -->
     <template v-else>
-      <div v-if="credentialStore.credentials.length === 0" v-loading="credentialStore.loading" class="list-container">
-        <div class="empty-state">
-          <svg width="64" height="64" color="var(--color-border)"><use href="#icon-key"/></svg>
-          <p>暂无凭证</p>
+      <V2Empty v-if="credentialStore.credentials.length === 0" v-loading="credentialStore.loading" title="还没有凭证" description="添加官方账号凭证，可快速写入对应 Agent 配置">
+        <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></template>
+      </V2Empty>
+      <div v-else class="prov-body" v-loading="credentialStore.loading">
+        <div class="pt-head">
+          <div class="pt-cols m-cred">
+            <div>启用</div>
+            <div>凭证</div>
+            <div>信息</div>
+            <div>状态</div>
+            <div>操作</div>
+          </div>
         </div>
-      </div>
-      <div v-else class="b-card list-container" v-loading="credentialStore.loading">
-        <div class="scroll-area">
-        <draggable
-          v-model="credentialStore.credentials"
-          item-key="id"
-          handle=".drag-handle"
-          @end="handleCredentialDragEnd"
-        >
-          <template #item="{ element, index }">
-            <CredentialListItem
+        <draggable v-model="credentialStore.credentials" item-key="id" handle=".pt-drag" @end="handleCredentialDragEnd">
+          <template #item="{ element }">
+            <CredentialRow
               :credential="element"
-              :is-last="index === credentialStore.credentials.length - 1"
               :write-loading="writeCredentialLoadingId === element.id"
               @write="handleWriteCredential"
               @edit="handleEditCredential"
@@ -218,11 +164,11 @@
             />
           </template>
         </draggable>
-        </div>
       </div>
     </template>
+    </div>
 
-    <ProviderEditModal
+    <ProviderDrawer
       v-model="showDialog"
       :title="editingProvider ? '编辑服务商' : '添加服务商'"
       :form="form"
@@ -234,8 +180,7 @@
       @add-model-blacklist="addModelBlacklist"
       @remove-model-blacklist="removeModelBlacklist"
     />
-
-    <CredentialEditModal
+    <CredentialDrawer
       v-model="showCredentialDialog"
       :title="editingCredential ? '编辑凭证' : '添加凭证'"
       :form="credentialForm"
@@ -243,7 +188,6 @@
       @confirm="handleSaveCredential"
       @read-from-cli="handleReadFromCli"
     />
-
     <ModelDetectionModal
       v-model="showDetectDialog"
       v-model:model="detectModel"
@@ -261,16 +205,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import draggable from 'vuedraggable'
+import ProviderRow from './components/ProviderRow.vue'
+import CredentialRow from './components/CredentialRow.vue'
+import ProviderDrawer from './components/ProviderDrawer.vue'
+import CredentialDrawer from './components/CredentialDrawer.vue'
+import ModelDetectionModal from './components/ModelDetectionModal.vue'
+import V2Empty from '@/components/V2Empty.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
-import draggable from 'vuedraggable'
-import ProviderListItem from './components/ProviderListItem.vue'
-import CredentialListItem from './components/CredentialListItem.vue'
-import ProviderEditModal from './components/ProviderEditModal.vue'
-import CredentialEditModal from './components/CredentialEditModal.vue'
-import ModelDetectionModal from './components/ModelDetectionModal.vue'
 import { useProviderStore } from '@/stores/providers'
 import { useCredentialStore } from '@/stores/credentials'
 import { useUiStore } from '@/stores/ui'
@@ -300,19 +244,13 @@ const activeCliType = computed({
   get: () => uiStore.providersActiveCliType,
   set: (val) => uiStore.setProvidersActiveCliType(val)
 })
-
 const activeProfile = computed({
   get: () => uiStore.providersActiveProfile,
   set: (val) => uiStore.setProvidersActiveProfile(val)
 })
 
 type ViewMode = 'proxy' | 'direct'
-
-const viewModes = ref<Record<CliType, ViewMode>>({
-  claude_code: 'proxy',
-  codex: 'proxy',
-  gemini: 'proxy'
-})
+const viewModes = ref<Record<CliType, ViewMode>>({ claude_code: 'proxy', codex: 'proxy', gemini: 'proxy' })
 const viewMode = computed<ViewMode>({
   get: () => activeCliType.value === 'claude_code' ? 'proxy' : viewModes.value[activeCliType.value],
   set: (mode) => {
@@ -324,25 +262,18 @@ const viewMode = computed<ViewMode>({
     viewModes.value[activeCliType.value] = mode
   }
 })
-const currentCliMode = computed<CliMode>(() =>
-  settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'proxy_route'
-)
+const currentCliMode = computed<CliMode>(() => settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'proxy_route')
 const isProviderDirectMode = computed(() => currentCliMode.value === 'provider_direct')
 const isProxyRouteMode = computed(() => currentCliMode.value === 'proxy_route')
 const profileCapableCliTypes = PROFILE_CAPABLE_CLI_TYPES
 const showProfileControls = computed(() => viewMode.value === 'proxy' && profileCapableCliTypes.includes(activeCliType.value))
 const showProfileHelp = computed(() => showProfileControls.value)
-const currentProviderProfile = computed<ProviderProfile>(() =>
-  showProfileControls.value ? activeProfile.value : 'default'
-)
+const currentProviderProfile = computed<ProviderProfile>(() => showProfileControls.value ? activeProfile.value : 'default')
 const profileSwitching = ref<ProviderProfile | null>(null)
 let testResultListener: (() => void) | null = null
 
 const profileLabels: Record<ProviderProfile, string> = {
-  default: '默认',
-  profile1: 'Profile 1',
-  profile2: 'Profile 2',
-  profile3: 'Profile 3'
+  default: '默认', profile1: 'Profile 1', profile2: 'Profile 2', profile3: 'Profile 3'
 }
 
 const profileSettingsStatusMap = ref<Partial<Record<string, CliProfileSettingsStatus>>>({})
@@ -352,14 +283,9 @@ let profileCommandRequestId = 0
 function profileStatusKey(cliType: CliType, profile: ProviderProfile) {
   return `${cliType}:${profile}`
 }
-
-const currentProfileSettingsStatus = computed(() =>
-  profileSettingsStatusMap.value[profileStatusKey(activeCliType.value, activeProfile.value)]
-)
+const currentProfileSettingsStatus = computed(() => profileSettingsStatusMap.value[profileStatusKey(activeCliType.value, activeProfile.value)])
 const currentProfileLaunchCommand = computed(() => currentProfileSettingsStatus.value?.launch_command || '')
-const isCurrentProfileCommandLoading = computed(() =>
-  profileCommandLoading.value === profileStatusKey(activeCliType.value, activeProfile.value)
-)
+const isCurrentProfileCommandLoading = computed(() => profileCommandLoading.value === profileStatusKey(activeCliType.value, activeProfile.value))
 const profileUsageText = computed(() => {
   if (isProviderDirectMode.value) {
     return '中转直连会将服务商写入当前 Profile 对应配置文件，通过对应启动命令启动的 Agent 会直连该服务商'
@@ -371,7 +297,6 @@ function handleSwitchProxy() {
   if (viewMode.value === 'proxy') return
   viewMode.value = 'proxy'
 }
-
 function handleSwitchDirect() {
   if (viewMode.value === 'direct') return
   viewMode.value = 'direct'
@@ -393,7 +318,6 @@ const showDialog = computed({
     }
   }
 })
-
 const showCredentialDialog = computed({
   get: () => showAddCredentialDialog.value || !!editingCredential.value,
   set: (val) => {
@@ -428,83 +352,46 @@ const writeProviderLoadingId = ref<number | null>(null)
 const writeCredentialLoadingId = ref<number | null>(null)
 
 const form = ref({
-  name: '',
-  base_url: '',
-  api_key: '',
-  failure_threshold: 5,
-  blacklist_minutes: 10,
-  custom_useragent: '',
-  input_price_per_m: 0,
-  output_price_per_m: 0,
-  cache_read_price_per_m: 0,
-  cache_creation_price_per_m: 0,
-  model_maps: [] as FormModelMap[],
-  model_blacklist: [] as FormModelBlacklist[]
+  name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
+  custom_useragent: '', input_price_per_m: 0, output_price_per_m: 0,
+  cache_read_price_per_m: 0, cache_creation_price_per_m: 0,
+  model_maps: [] as FormModelMap[], model_blacklist: [] as FormModelBlacklist[]
 })
 const copiedProvider = ref<ProviderDraft | null>(null)
 const pasteLoading = ref(false)
 
-const credentialForm = ref({
-  name: '',
-  claude_settings: '',
-  codex_auth: '',
-  gemini_oauth: '',
-  gemini_accounts: ''
-})
+const credentialForm = ref({ name: '', claude_settings: '', codex_auth: '', gemini_oauth: '', gemini_accounts: '' })
 
-const baseUrlPlaceholder = computed(() => {
-  if (activeCliType.value === 'codex') return 'https://api.example.com/v1'
-  return 'https://api.example.com'
-})
-
-const pasteButtonTitle = computed(() => {
-  if (!copiedProvider.value) return '粘贴服务商'
-  return `粘贴服务商：${copiedProvider.value.name}`
-})
+const baseUrlPlaceholder = computed(() => activeCliType.value === 'codex' ? 'https://api.example.com/v1' : 'https://api.example.com')
 
 function resetForm() {
   form.value = {
     name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
     custom_useragent: '', input_price_per_m: 0, output_price_per_m: 0,
-    cache_read_price_per_m: 0, cache_creation_price_per_m: 0,
-    model_maps: [], model_blacklist: []
+    cache_read_price_per_m: 0, cache_creation_price_per_m: 0, model_maps: [], model_blacklist: []
   }
 }
 function resetCredentialForm() {
   credentialForm.value = { name: '', claude_settings: '', codex_auth: '', gemini_oauth: '', gemini_accounts: '' }
 }
-
 function cloneProviderDraft(draft: ProviderDraft): ProviderDraft {
-  return {
-    ...draft,
-    model_maps: draft.model_maps.map(m => ({ ...m })),
-    model_blacklist: draft.model_blacklist.map(b => ({ ...b }))
-  }
+  return { ...draft, model_maps: draft.model_maps.map((m) => ({ ...m })), model_blacklist: draft.model_blacklist.map((b) => ({ ...b })) }
 }
-
 function createProviderDraft(provider: Provider): ProviderDraft {
   return {
-    name: provider.name,
-    base_url: provider.base_url,
-    api_key: provider.api_key,
-    enabled: provider.enabled,
-    failure_threshold: provider.failure_threshold,
-    blacklist_minutes: provider.blacklist_minutes,
+    name: provider.name, base_url: provider.base_url, api_key: provider.api_key, enabled: provider.enabled,
+    failure_threshold: provider.failure_threshold, blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
-    input_price_per_m: provider.input_price_per_m || 0,
-    output_price_per_m: provider.output_price_per_m || 0,
-    cache_read_price_per_m: provider.cache_read_price_per_m || 0,
-    cache_creation_price_per_m: provider.cache_creation_price_per_m || 0,
+    input_price_per_m: provider.input_price_per_m || 0, output_price_per_m: provider.output_price_per_m || 0,
+    cache_read_price_per_m: provider.cache_read_price_per_m || 0, cache_creation_price_per_m: provider.cache_creation_price_per_m || 0,
     model_maps: provider.model_maps.map(({ source_model, target_model, enabled }) => ({ source_model, target_model, enabled })),
     model_blacklist: provider.model_blacklist.map(({ model_pattern }) => ({ model_pattern }))
   }
 }
-
 function makeUniqueProviderName(name: string): string {
   const trimmedName = name.trim() || '未命名服务商'
-  const existingNames = new Set(providerStore.providers.map(p => p.name.trim().toLowerCase()))
+  const existingNames = new Set(providerStore.providers.map((p) => p.name.trim().toLowerCase()))
   if (!existingNames.has(trimmedName.toLowerCase())) return trimmedName
-
   const baseName = `${trimmedName} 副本`
   let candidate = baseName
   let index = 2
@@ -515,47 +402,34 @@ function makeUniqueProviderName(name: string): string {
   return candidate
 }
 
-// ==================== Model Detection ====================
 const showDetectDialog = ref(false)
 const detectLoading = ref(false)
 const detectModel = ref('')
 const detectSelectedIds = ref<number[]>([])
 const detectResults = ref<TestProviderResult[]>([])
 
-const detectProviderList = computed(() =>
-  isProviderDirectMode.value ? providerStore.providers : providerStore.providers.filter(p => p.enabled)
-)
-
-const isAllDetectSelected = computed(() =>
-  detectProviderList.value.length > 0 && detectSelectedIds.value.length === detectProviderList.value.length
-)
+const detectProviderList = computed(() => isProviderDirectMode.value ? providerStore.providers : providerStore.providers.filter((p) => p.enabled))
+const isAllDetectSelected = computed(() => detectProviderList.value.length > 0 && detectSelectedIds.value.length === detectProviderList.value.length)
 
 function toggleDetectProvider(id: number) {
   const idx = detectSelectedIds.value.indexOf(id)
   if (idx >= 0) detectSelectedIds.value.splice(idx, 1)
   else detectSelectedIds.value.push(id)
 }
-
 function toggleAllDetectProviders() {
-  if (isAllDetectSelected.value) {
-    detectSelectedIds.value = []
-  } else {
-    detectSelectedIds.value = detectProviderList.value.map(p => p.id)
-  }
+  if (isAllDetectSelected.value) detectSelectedIds.value = []
+  else detectSelectedIds.value = detectProviderList.value.map((p) => p.id)
 }
 
 watch(showDetectDialog, (open) => {
   if (open) {
     detectModel.value = getReusableModelName(activeCliType.value)
-    detectSelectedIds.value = detectProviderList.value.map(p => p.id)
+    detectSelectedIds.value = detectProviderList.value.map((p) => p.id)
     detectResults.value = []
     detectLoading.value = false
-  } else {
-    // 关闭对话框时清理监听器
-    if (testResultListener) {
-      testResultListener()
-      testResultListener = null
-    }
+  } else if (testResultListener) {
+    testResultListener()
+    testResultListener = null
   }
 })
 
@@ -568,45 +442,24 @@ async function handleStartDetect() {
     notify('请至少选择一个服务商', 'error')
     return
   }
-
   saveReusableModelName(activeCliType.value, detectModel.value)
-
-  detectResults.value = detectSelectedIds.value.map(id => {
-    const p = providerStore.providers.find(x => x.id === id)
+  detectResults.value = detectSelectedIds.value.map((id) => {
+    const p = providerStore.providers.find((x) => x.id === id)
     return {
-      provider_id: id,
-      provider_name: p?.name || 'Unknown',
-      actual_model: '...',
-      status_code: null,
-      elapsed_ms: 0,
-      response_text: '',
-      request_url: '',
-      request_headers: '',
-      request_body: '',
-      response_headers: '',
-      response_body: '',
+      provider_id: id, provider_name: p?.name || 'Unknown', actual_model: '...', status_code: null,
+      elapsed_ms: 0, response_text: '', request_url: '', request_headers: '', request_body: '', response_headers: '', response_body: ''
     }
   })
   detectLoading.value = true
-
-  // 清理之前的监听器
   if (testResultListener) {
     testResultListener()
     testResultListener = null
   }
-
-  // 监听测试结果事件
   testResultListener = await providersApi.listenTestResults((result) => {
-    const idx = detectResults.value.findIndex(r => r.provider_id === result.provider_id)
-    if (idx >= 0) {
-      detectResults.value[idx] = result
-    }
-    // 检查是否所有结果都已返回（response_text 非空表示有结果）
-    if (detectResults.value.every(r => r.response_text !== '')) {
-      detectLoading.value = false
-    }
+    const idx = detectResults.value.findIndex((r) => r.provider_id === result.provider_id)
+    if (idx >= 0) detectResults.value[idx] = result
+    if (detectResults.value.every((r) => r.response_text !== '')) detectLoading.value = false
   })
-
   try {
     await providersApi.startTestModels(detectModel.value.trim(), detectSelectedIds.value)
   } catch (e: any) {
@@ -614,7 +467,6 @@ async function handleStartDetect() {
     detectLoading.value = false
   }
 }
-
 async function copyResponseText(text: string) {
   if (!text) return
   try {
@@ -626,16 +478,11 @@ async function copyResponseText(text: string) {
 }
 
 function cacheProfileSettingsStatus(cliType: CliType, status: CliProfileSettingsStatus) {
-  profileSettingsStatusMap.value = {
-    ...profileSettingsStatusMap.value,
-    [profileStatusKey(cliType, status.profile)]: status
-  }
+  profileSettingsStatusMap.value = { ...profileSettingsStatusMap.value, [profileStatusKey(cliType, status.profile)]: status }
 }
-
 async function loadProfileSettingsStatus(cliType: CliType, profile: ProviderProfile, silent = false): Promise<CliProfileSettingsStatus | null> {
   const requestId = ++profileCommandRequestId
-  const loadingKey = profileStatusKey(cliType, profile)
-  profileCommandLoading.value = loadingKey
+  profileCommandLoading.value = profileStatusKey(cliType, profile)
   try {
     const { data } = cliType === 'codex'
       ? await settingsApi.getCodexProfileSettingsStatus(profile)
@@ -646,22 +493,17 @@ async function loadProfileSettingsStatus(cliType: CliType, profile: ProviderProf
     if (!silent) notify(getErrorMessage(e, '获取启动命令失败'), 'error')
     return null
   } finally {
-    if (requestId === profileCommandRequestId) {
-      profileCommandLoading.value = null
-    }
+    if (requestId === profileCommandRequestId) profileCommandLoading.value = null
   }
 }
-
 async function copyCurrentProfileLaunchCommand() {
   if (!showProfileControls.value) return
-
   const cliType = activeCliType.value
   const profile = activeProfile.value
   const key = profileStatusKey(cliType, profile)
   const status = profileSettingsStatusMap.value[key] || await loadProfileSettingsStatus(cliType, profile)
   const command = status?.launch_command
   if (!command) return
-
   try {
     await navigator.clipboard.writeText(command)
     notify(`已复制 ${profileLabels[profile]} 启动命令`)
@@ -682,13 +524,8 @@ function normalizePrice(value: unknown): number {
 
 async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
   const cliType = activeCliType.value
-  if (!profileCapableCliTypes.includes(cliType) || viewMode.value !== 'proxy' || !isProxyRouteMode.value) {
-    return true
-  }
-  if (profile === 'default') {
-    return true
-  }
-
+  if (!profileCapableCliTypes.includes(cliType) || viewMode.value !== 'proxy' || !isProxyRouteMode.value) return true
+  if (profile === 'default') return true
   profileSwitching.value = profile
   try {
     const { data: status } = cliType === 'codex'
@@ -696,7 +533,6 @@ async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
       : await settingsApi.getClaudeProfileSettingsStatus(profile)
     cacheProfileSettingsStatus(cliType, status)
     if (status.uses_gateway) return true
-
     const { data: ensured } = cliType === 'codex'
       ? await settingsApi.ensureCodexProfileSettings(profile)
       : await settingsApi.ensureClaudeProfileSettings(profile)
@@ -705,7 +541,6 @@ async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
       notify(`写入后仍未检测到有效配置：${ensured.path}`, 'error')
       return false
     }
-
     notify(`已写入 ${ensured.path}`)
     return true
   } catch (e: any) {
@@ -715,27 +550,20 @@ async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
     profileSwitching.value = null
   }
 }
-
 async function handleProfileSelect(profile: ProviderProfile) {
   if (profile === activeProfile.value || profileSwitching.value) return
-
   const ok = await ensureProfileReady(profile)
   if (!ok) return
-
   activeProfile.value = profile
 }
-
 async function ensureCurrentProfileOrFallback(): Promise<ProviderProfile> {
   if (!showProfileControls.value) return 'default'
-
   const profile = activeProfile.value
   if (await ensureProfileReady(profile)) return profile
-
   activeProfile.value = 'default'
   return 'default'
 }
 
-// Listen for tab changes
 watch(() => activeCliType.value, async (cliType) => {
   const profile = await ensureCurrentProfileOrFallback()
   const key = providerStore.getCacheKey(cliType as CliType, profile)
@@ -744,7 +572,6 @@ watch(() => activeCliType.value, async (cliType) => {
   }
   credentialStore.fetchCredentials(cliType as CliType)
 })
-
 watch(() => activeProfile.value, (profile) => {
   if (!showProfileControls.value) return
   const key = providerStore.getCacheKey(activeCliType.value as CliType, profile)
@@ -752,7 +579,6 @@ watch(() => activeProfile.value, (profile) => {
     providerStore.fetchProviders(activeCliType.value as CliType, profile)
   }
 })
-
 watch(() => viewMode.value, async (mode) => {
   if (mode !== 'proxy') return
   const profile = await ensureCurrentProfileOrFallback()
@@ -761,7 +587,6 @@ watch(() => viewMode.value, async (mode) => {
     providerStore.fetchProviders(activeCliType.value as CliType, profile)
   }
 })
-
 watch(() => currentCliMode.value, async () => {
   if (viewMode.value === 'proxy') {
     const profile = await ensureCurrentProfileOrFallback()
@@ -770,10 +595,9 @@ watch(() => currentCliMode.value, async () => {
     credentialStore.fetchCredentials(activeCliType.value as CliType)
   }
 })
-
 watch([showProfileHelp, activeCliType, activeProfile], ([visible, cliType, profile]) => {
-  if (!visible || profileSettingsStatusMap.value[profileStatusKey(cliType, profile)]) return
-  loadProfileSettingsStatus(cliType, profile, true)
+  if (!visible || profileSettingsStatusMap.value[profileStatusKey(cliType as CliType, profile as ProviderProfile)]) return
+  loadProfileSettingsStatus(cliType as CliType, profile as ProviderProfile, true)
 }, { immediate: true })
 
 function handleAddProvider() {
@@ -781,15 +605,12 @@ function handleAddProvider() {
   resetForm()
   showAddDialog.value = true
 }
-
 function handleCopyProvider(provider: Provider) {
   copiedProvider.value = createProviderDraft(provider)
   notify(`已复制服务商：${provider.name}`)
 }
-
 async function handlePasteProvider() {
   if (!copiedProvider.value || pasteLoading.value) return
-
   const targetCliType = activeCliType.value as CliType
   const targetProfile = currentProviderProfile.value
   pasteLoading.value = true
@@ -797,12 +618,10 @@ async function handlePasteProvider() {
     await providerStore.fetchProviders(targetCliType, targetProfile)
     const draft = cloneProviderDraft(copiedProvider.value)
     const data = {
-      cli_type: targetCliType,
-      profile: targetProfile,
-      ...draft,
+      cli_type: targetCliType, profile: targetProfile, ...draft,
       name: makeUniqueProviderName(draft.name),
-      model_maps: draft.model_maps.filter(m => m.source_model && m.target_model),
-      model_blacklist: draft.model_blacklist.filter(b => b.model_pattern)
+      model_maps: draft.model_maps.filter((m) => m.source_model && m.target_model),
+      model_blacklist: draft.model_blacklist.filter((b) => b.model_pattern)
     }
     await providerStore.createProvider(data)
     notify(`已粘贴服务商：${data.name}`)
@@ -812,39 +631,31 @@ async function handlePasteProvider() {
     pasteLoading.value = false
   }
 }
-
 function handleEdit(provider: Provider) {
   editingProvider.value = provider
   form.value = {
     name: provider.name, base_url: provider.base_url, api_key: provider.api_key,
     failure_threshold: provider.failure_threshold, blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
-    input_price_per_m: provider.input_price_per_m || 0,
-    output_price_per_m: provider.output_price_per_m || 0,
-    cache_read_price_per_m: provider.cache_read_price_per_m || 0,
-    cache_creation_price_per_m: provider.cache_creation_price_per_m || 0,
-    model_maps: provider.model_maps.map(m => ({ ...m })),
-    model_blacklist: provider.model_blacklist.map(b => ({ ...b }))
+    input_price_per_m: provider.input_price_per_m || 0, output_price_per_m: provider.output_price_per_m || 0,
+    cache_read_price_per_m: provider.cache_read_price_per_m || 0, cache_creation_price_per_m: provider.cache_creation_price_per_m || 0,
+    model_maps: provider.model_maps.map((m) => ({ ...m })), model_blacklist: provider.model_blacklist.map((b) => ({ ...b }))
   }
 }
-
 async function handleSave() {
   if (!form.value.name.trim() || !form.value.base_url.trim() || !form.value.api_key.trim()) {
     notify('请填写完整的必填项', 'error')
     return
   }
   const data = {
-    cli_type: activeCliType.value,
-    profile: currentProviderProfile.value,
-    ...form.value,
+    cli_type: activeCliType.value, profile: currentProviderProfile.value, ...form.value,
     input_price_per_m: normalizePrice(form.value.input_price_per_m),
     output_price_per_m: normalizePrice(form.value.output_price_per_m),
     cache_read_price_per_m: normalizePrice(form.value.cache_read_price_per_m),
     cache_creation_price_per_m: normalizePrice(form.value.cache_creation_price_per_m),
-    model_maps: form.value.model_maps.filter(m => m.source_model && m.target_model),
-    model_blacklist: form.value.model_blacklist.filter(b => b.model_pattern)
+    model_maps: form.value.model_maps.filter((m) => m.source_model && m.target_model),
+    model_blacklist: form.value.model_blacklist.filter((b) => b.model_pattern)
   }
-  
   try {
     if (editingProvider.value) {
       await providerStore.updateProvider(editingProvider.value.id, data)
@@ -860,7 +671,6 @@ async function handleSave() {
     notify(getErrorMessage(e, '保存失败'), 'error')
   }
 }
-
 async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
   if (isProviderDirectMode.value) return
   toggleLoadingId.value = provider.id
@@ -874,7 +684,6 @@ async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
     toggleLoadingId.value = null
   }
 }
-
 async function handleWriteProviderDirect(provider: Provider) {
   writeProviderLoadingId.value = provider.id
   try {
@@ -888,29 +697,18 @@ async function handleWriteProviderDirect(provider: Provider) {
     writeProviderLoadingId.value = null
   }
 }
-
 async function handleDragEnd() {
-  const ids = providerStore.providers.map(p => p.id)
+  const ids = providerStore.providers.map((p) => p.id)
   await providerStore.reorderProviders(ids)
   notify('排序已保存')
 }
-
 async function handleReset(provider: Provider) {
   await providerStore.resetFailures(provider.id)
-  if (provider.is_blacklisted) {
-    await providerStore.unblacklist(provider.id)
-  }
+  if (provider.is_blacklisted) await providerStore.unblacklist(provider.id)
   notify('重置成功')
 }
-
 async function handleCommand(command: string, provider: Provider) {
-  if (command === 'reset') {
-    await providerStore.resetFailures(provider.id)
-    notify('已重置')
-  } else if (command === 'unblacklist') {
-    await providerStore.unblacklist(provider.id)
-    notify('已解除拉黑')
-  } else if (command === 'delete') {
+  if (command === 'delete') {
     try {
       await confirm('确定删除该服务商？', '确认')
       await providerStore.deleteProvider(provider.id)
@@ -920,15 +718,15 @@ async function handleCommand(command: string, provider: Provider) {
     }
   }
 }
-
 function handleEditCredential(credential: OfficialCredential) {
   editingCredential.value = credential
   credentialForm.value.name = credential.name
   try {
     const filesData = JSON.parse(credential.credential_json)
     if (Array.isArray(filesData)) {
-      filesData.forEach(file => {
-        const path = file.path || ''; const content = file.content || ''
+      filesData.forEach((file) => {
+        const path = file.path || ''
+        const content = file.content || ''
         if (path.includes('.claude') && path.includes('settings.json')) credentialForm.value.claude_settings = content
         else if (path.includes('auth.json')) credentialForm.value.codex_auth = content
         else if (path.includes('oauth_creds.json')) credentialForm.value.gemini_oauth = content
@@ -937,7 +735,6 @@ function handleEditCredential(credential: OfficialCredential) {
     }
   } catch (e) {}
 }
-
 async function handleDeleteCredential(credential: OfficialCredential) {
   try {
     await confirm('确定删除该凭证？', '确认')
@@ -947,7 +744,6 @@ async function handleDeleteCredential(credential: OfficialCredential) {
     if (e !== 'cancel') notify(getErrorMessage(e, '删除失败'), 'error')
   }
 }
-
 async function handleWriteCredential(credential: OfficialCredential) {
   writeCredentialLoadingId.value = credential.id
   try {
@@ -961,15 +757,15 @@ async function handleWriteCredential(credential: OfficialCredential) {
     writeCredentialLoadingId.value = null
   }
 }
-
 async function handleReadFromCli() {
   try {
     const { data } = await credentialsApi.readCliCredential(activeCliType.value as CliType)
     try {
       const filesData = JSON.parse(data)
       if (Array.isArray(filesData)) {
-        filesData.forEach(file => {
-          const path = file.path || ''; const content = file.content || ''
+        filesData.forEach((file) => {
+          const path = file.path || ''
+          const content = file.content || ''
           if (path.includes('.claude') && path.includes('settings.json')) credentialForm.value.claude_settings = content
           else if (path.includes('auth.json')) credentialForm.value.codex_auth = content
           else if (path.includes('oauth_creds.json')) credentialForm.value.gemini_oauth = content
@@ -982,7 +778,6 @@ async function handleReadFromCli() {
     notify(getErrorMessage(e, '读取失败'), 'error')
   }
 }
-
 async function handleSaveCredential() {
   if (!credentialForm.value.name) {
     notify('请输入凭证名称', 'error')
@@ -1001,13 +796,9 @@ async function handleSaveCredential() {
     notify('请至少填写一个文件内容', 'error')
     return
   }
-
   const data: OfficialCredentialCreate = {
-    cli_type: activeCliType.value as CliType,
-    name: credentialForm.value.name.trim(),
-    credential_json: JSON.stringify(files)
+    cli_type: activeCliType.value as CliType, name: credentialForm.value.name.trim(), credential_json: JSON.stringify(files)
   }
-
   try {
     if (editingCredential.value) {
       await credentialStore.updateCredential(editingCredential.value.id, { name: data.name, credential_json: data.credential_json })
@@ -1023,9 +814,8 @@ async function handleSaveCredential() {
     notify(getErrorMessage(e, '保存失败'), 'error')
   }
 }
-
 async function handleCredentialDragEnd() {
-  const ids = credentialStore.credentials.map(c => c.id)
+  const ids = credentialStore.credentials.map((c) => c.id)
   await credentialStore.reorderCredentials(ids)
   notify('排序已保存')
 }
@@ -1034,13 +824,10 @@ const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | null = null
 
 function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') {
-    now.value = Date.now()
-  }
+  if (document.visibilityState === 'visible') now.value = Date.now()
 }
-
 function getUnblacklistTime(provider: Provider): string {
-  if (!provider.is_blacklisted || !provider.blacklisted_until) return '已拉黑'
+  if (!provider.is_blacklisted || !provider.blacklisted_until) return '已熔断'
   const diffSeconds = provider.blacklisted_until - (now.value / 1000)
   if (diffSeconds <= 0) return '已解除'
   const mins = Math.floor(diffSeconds / 60)
@@ -1052,29 +839,20 @@ onMounted(async () => {
   const profile = await ensureCurrentProfileOrFallback()
   providerStore.fetchProviders(activeCliType.value as CliType, profile)
   credentialStore.fetchCredentials(activeCliType.value as CliType)
-
   document.addEventListener('visibilitychange', handleVisibilityChange)
-
-  // 每秒更新一次时间，触发倒计时重绘（后台标签页跳过）
   timer = setInterval(() => {
     if (document.visibilityState !== 'visible') return
     const oldNow = now.value
     now.value = Date.now()
-
-    // 检查是否有服务商的拉黑时间刚刚到期
-    const hasExpired = providerStore.providers.some(p => {
+    const hasExpired = providerStore.providers.some((p) => {
       if (p.is_blacklisted && p.blacklisted_until) {
         return p.blacklisted_until > (oldNow / 1000) && p.blacklisted_until <= (now.value / 1000)
       }
       return false
     })
-
-    if (hasExpired) {
-      providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
-    }
+    if (hasExpired) providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
   }, 1000)
 })
-
 onUnmounted(() => {
   if (timer) {
     clearInterval(timer)
@@ -1089,81 +867,115 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.providers-page {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
+.prov-page { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: -16px; }
 
-/* Tab Underlines */
-.top-tabs { display: flex; gap: 32px; border-bottom: 1px solid var(--color-border-light); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
+.prov-clitabs { flex-shrink: 0; margin-bottom: 16px; }
 
-.header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-:global(.profile-help-popper.el-popper) {
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 8px 24px var(--color-shadow-lg);
-}
+.prov-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 
-.profile-help-content {
-  width: 320px;
-}
 
-.profile-command-panel {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border-light);
-}
 
-.profile-command-header {
+.prov-toolbar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-size: var(--fs-12);
-  color: var(--color-text-dark);
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--v2-surface-2);
 }
+.toolbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; }
 
-.profile-command-copy {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
+.prov-body { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+.prov-shell > .v2-empty { flex: 1; min-height: 0; }
+
+.prov-empty {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-bg);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all 0.2s;
+  gap: 9px;
+  padding: 60px 24px;
+  text-align: center;
 }
+.prov-empty-icon { color: var(--v2-text-3); opacity: 0.6; margin-bottom: 4px; }
+.prov-empty-title { font-size: var(--v2-fs-md); font-weight: 600; color: var(--v2-text-2); }
+.prov-empty-sub { font-size: var(--v2-fs-sm); color: var(--v2-text-3); max-width: 320px; line-height: 1.5; margin-bottom: 8px; }
 
-.profile-command-copy:hover:not(:disabled) {
-  background: var(--color-bg-page);
-  color: var(--color-primary);
-  border-color: var(--color-primary);
+.profile-help { width: 320px; }
+</style>
+
+<style>
+.v2-profile-pop .profile-cmd { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--v2-surface-2); }
+.v2-profile-pop .profile-cmd-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: var(--v2-fs-xs); color: var(--v2-text-2); }
+.v2-profile-pop .profile-cmd-copy { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--v2-surface-2); border-radius: 6px; background: var(--v2-surface); color: var(--v2-text-3); cursor: pointer; }
+.v2-profile-pop .profile-cmd-copy:hover:not(:disabled) { color: var(--v2-text); border-color: var(--v2-surface-3); }
+.v2-profile-pop .profile-cmd-copy svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.v2-profile-pop .profile-cmd-text { padding: 8px; border: 1px solid var(--v2-surface-2); border-radius: 6px; background: var(--v2-surface-2); color: var(--v2-text-2); font-size: var(--v2-fs-xs); line-height: 1.45; word-break: break-all; cursor: pointer; user-select: text; }
+
+/* 服务商表格 */
+.pt-head { position: sticky; top: 0; z-index: 2; padding: 11px 18px; border-bottom: 1px solid var(--v2-surface-2); background: var(--v2-surface-2); overflow-x: visible; }
+.pt-head .pt-cols > div { font-size: var(--v2-fs-xs); font-weight: 600; color: var(--v2-text-2); }
+.pt-cols { display: grid; align-items: center; gap: 16px; width: 100%; }
+.pt-cols.m-route { grid-template-columns: 72px repeat(5, minmax(80px, 1fr)) 128px; }
+.pt-cols.m-direct { grid-template-columns: 72px repeat(3, minmax(80px, 1fr)) 96px; }
+.pt-cols.m-cred { grid-template-columns: 72px repeat(3, minmax(80px, 1fr)) 72px; }
+.pt-cols > div { text-align: center; min-width: 0; }
+.pt-cols.m-route > div:nth-child(2),
+.pt-cols.m-direct > div:nth-child(2),
+.pt-cols.m-cred > div:nth-child(2) { text-align: left; }
+.pt-cols .pt-col-endpoint { text-align: left; }
+.pt-row { position: relative; padding: 0 18px; border-bottom: 1px solid var(--v2-surface-2); transition: background 0.15s; }
+.pt-row:last-child { border-bottom: none; }
+.pt-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
+  transition: background-color 0.15s;
 }
-
-.profile-command-copy:disabled {
-  cursor: wait;
-  opacity: 0.6;
+.pt-row:hover::before {
+  background: var(--v2-success);
 }
-
-.profile-command-text {
-  padding: 8px;
-  border: 1px solid var(--color-border-light);
-  border-radius: 6px;
-  background: var(--color-bg-page);
-  color: var(--color-text-secondary);
-  font-family: ui-monospace, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: var(--fs-12);
-  line-height: 1.45;
-  word-break: break-all;
-  cursor: pointer;
-  user-select: text;
+.pt-row.bl:hover::before {
+  background: var(--v2-danger);
 }
+.pt-row.off:hover::before {
+  background: var(--v2-text-3);
+}
+.pt-row:hover { background: var(--v2-surface-2); }
+.pt-row.bl { background: var(--v2-danger-bg); }
+.pt-row .pt-cols { height: 54px; }
+.pt-row .pt-cols > div { font-size: var(--v2-fs-sm); font-weight: 400; line-height: 1.35; color: var(--v2-text); }
+.pt-row .mono { font-size: var(--v2-fs-sm); font-weight: 400; }
+.pt-row .v2-pill { font-size: var(--v2-fs-xs); line-height: 16px; font-weight: 500; }
+.pt-drag { position: absolute; left: 1px; top: 0; bottom: 0; display: flex; justify-content: center; align-items: center; width: 16px; cursor: grab; opacity: 0; transition: opacity 0.15s; color: var(--v2-text-3); }
+.pt-row:hover .pt-drag { opacity: 0.55; }
+.pt-name { min-width: 0; font: inherit; font-weight: 500; color: var(--v2-text); }
+.pt-name.off { color: var(--v2-text-3); }
 
 
-.b-card { background: var(--color-bg); border-radius: 16px; box-shadow: 0 4px 12px var(--color-shadow); margin-bottom: 24px; border: none; overflow: hidden; }
+.pt-cell { font: inherit; color: var(--v2-text); min-width: 0; }
+.pt-cell.muted { color: var(--v2-text-3); }
+.pt-endpoint { color: var(--v2-text-2); }
+.pt-fail { font: inherit; color: var(--v2-text); }
+.pt-fail.danger { color: var(--v2-danger); }
+.pt-switch { display: flex; align-items: center; justify-content: center; }
+.pt-status { transition: filter 0.15s; }
+.pt-status.pt-status-clickable { cursor: pointer; }
+.pt-status.pt-status-clickable:hover { filter: brightness(0.96); }
+.pt-acts { display: flex; align-items: center; gap: 2px; justify-content: flex-end; }
+.pt-act { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--v2-text-btn); border-radius: 6px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.pt-act:hover { background: var(--v2-surface-3); color: var(--v2-text); }
+.pt-act.danger:hover { background: var(--v2-danger-bg); color: var(--v2-danger); }
+.pt-act.off { color: var(--v2-text-3); opacity: 0.4; pointer-events: none; }
+.pt-act svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 920px) {
+  .pt-col-map { display: none; }
+}
 </style>

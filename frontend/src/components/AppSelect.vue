@@ -3,7 +3,7 @@
   <div
     v-if="mode === 'menu'"
     class="app-select app-select-menu"
-    :class="{ open }"
+    :class="{ open, 'size-small': size === 'small' }"
     @click.stop="toggle"
   >
     <slot name="trigger" />
@@ -15,7 +15,7 @@
         :class="{ disabled: option.disabled }"
         @click.stop="selectOption(option)"
       >
-        {{ option.label }}
+        <span class="option-label">{{ option.label }}</span>
       </div>
     </div>
   </div>
@@ -24,7 +24,7 @@
   <div
     v-else
     class="app-select"
-    :class="{ open, disabled }"
+    :class="{ open, disabled, 'size-small': size === 'small' }"
     :style="{ width }"
     @click.stop="toggle"
   >
@@ -40,7 +40,10 @@
         :class="{ selected: option.value === modelValue, disabled: option.disabled }"
         @click.stop="selectOption(option)"
       >
-        {{ option.label }}
+        <svg v-if="option.value === modelValue" class="check-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span class="option-label">{{ option.label }}</span>
       </div>
     </div>
   </div>
@@ -67,13 +70,15 @@ const props = withDefaults(defineProps<{
   width?: string
   placeholder?: string
   disabled?: boolean
+  size?: 'default' | 'small'
 }>(), {
   modelValue: '',
   mode: 'select',
   menuAlign: 'right',
   width: '160px',
   placeholder: '请选择',
-  disabled: false
+  disabled: false,
+  size: 'default'
 })
 
 const emit = defineEmits<{
@@ -143,16 +148,15 @@ onUnmounted(() => {
 }
 
 .app-select-trigger {
-  padding: 9px 36px 9px 16px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  font-size: var(--fs-14);
-  font-weight: var(--fw-400);
-  color: var(--color-text);
-  background: color-mix(in srgb, var(--color-bg) 80%, transparent);
-  box-shadow: 0 1px 3px var(--color-shadow);
+  padding: 8px 36px 8px 16px;
+  border: 1px solid var(--v2-surface-3);
+  border-radius: var(--v2-r-sm);
+  font-size: var(--v2-fs-base);
+  font-weight: 400;
+  color: var(--v2-text);
+  background: var(--v2-surface);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -163,15 +167,11 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-.app-select:hover:not(.disabled) .app-select-trigger {
-  border-color: var(--color-border-hover);
-  background: var(--color-bg);
-}
 
 .app-select.open .app-select-trigger {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent);
-  background: var(--color-bg);
+  background: var(--v2-surface);
+  border-color: var(--v2-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-accent) 12%, transparent);
 }
 
 .chevron {
@@ -179,31 +179,30 @@ onUnmounted(() => {
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--color-text-muted);
+  color: var(--v2-text-3);
   pointer-events: none;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.2s ease;
 }
 
 .app-select.open .chevron {
   transform: translateY(-50%) rotate(180deg);
-  color: var(--color-primary);
 }
 
 .app-select-options {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 4px);
   left: 0;
   right: auto;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: 0 10px 40px -10px var(--color-shadow-lg);
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-surface-3);
+  border-radius: var(--v2-r-sm);
+  box-shadow: var(--v2-shadow-pop);
   padding: 4px;
   z-index: 50;
   opacity: 0;
-  transform: translateY(-5px);
+  transform: translateY(-4px);
   pointer-events: none;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.15s ease;
   min-width: 100%;
   max-height: 250px;
   overflow-y: auto;
@@ -225,31 +224,75 @@ onUnmounted(() => {
 }
 
 .app-select-option {
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: var(--fs-14);
-  color: var(--color-text-secondary);
+  position: relative;
+  padding: 8px 14px 8px 32px;
+  border-radius: var(--v2-r-sm);
+  font-size: var(--v2-fs-base);
+  color: var(--v2-text-2);
   cursor: pointer;
   transition: all 0.1s;
-  display: flex;
-  align-items: center;
-  margin-bottom: 2px;
   white-space: nowrap;
 }
 
+.app-select-menu .app-select-option {
+  padding: 8px 14px;
+}
+
 .app-select-option:hover:not(.disabled) {
-  background: var(--color-bg-subtle);
-  color: var(--color-text);
+  background: var(--v2-surface-2);
+  color: var(--v2-text);
 }
 
 .app-select-option.selected {
-  font-weight: var(--fw-600);
-  color: var(--color-primary);
-  background: var(--color-primary-light);
+  font-weight: 600;
+  color: var(--v2-accent);
+  background: transparent;
 }
 
 .app-select-option.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.option-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.check-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--v2-accent);
+}
+
+/* Small size styles */
+.app-select.size-small .app-select-trigger {
+  padding: 6px 32px 6px 12px;
+  font-size: 13px;
+  border-radius: var(--v2-r-sm);
+}
+
+.app-select.size-small .chevron {
+  right: 10px;
+  width: 14px;
+  height: 14px;
+}
+
+.app-select.size-small .app-select-option {
+  padding: 6px 12px 6px 28px;
+  font-size: 13px;
+}
+
+.app-select.size-small .check-icon {
+  left: 10px;
+  width: 11px;
+  height: 11px;
+}
+
+.app-select.size-small.app-select-menu .app-select-option {
+  padding: 6px 12px;
 }
 </style>

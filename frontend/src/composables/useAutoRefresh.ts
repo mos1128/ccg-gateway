@@ -1,7 +1,10 @@
+import type { Ref } from 'vue'
+
 export interface AutoRefreshOptions {
   intervalMs: number
   immediate?: boolean
   onError?: (error: unknown) => void
+  paused?: Ref<boolean>
 }
 
 export function useAutoRefresh(
@@ -12,6 +15,7 @@ export function useAutoRefresh(
   let inflight: Promise<unknown> | null = null
 
   async function refresh(force = false) {
+    if (!force && options.paused?.value) return
     if (!force && document.visibilityState !== 'visible') return
     if (inflight) return inflight
     inflight = refreshFn().catch((e) => {

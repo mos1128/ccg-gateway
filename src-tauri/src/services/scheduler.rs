@@ -238,9 +238,7 @@ async fn recover_stuck_tasks(
 }
 
 pub async fn list_tasks(db: &SqlitePool) -> Result<Vec<ScheduledTaskResponse>, String> {
-    let tasks = sqlx::query_as::<_, ScheduledTask>(
-        "SELECT * FROM scheduled_tasks ORDER BY enabled DESC, next_run_at, id",
-    )
+    let tasks = sqlx::query_as::<_, ScheduledTask>("SELECT * FROM scheduled_tasks ORDER BY id")
     .fetch_all(db)
     .await
     .map_err(|e| e.to_string())?;

@@ -1,322 +1,188 @@
 <template>
   <div class="logs-page">
-    <svg style="display:none">
-      <defs>
-        <symbol id="icon-file-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-          <polyline points="14 2 14 8 20 8"/>
-          <line x1="16" x2="8" y1="13" y2="13"/>
-          <line x1="16" x2="8" y1="17" y2="17"/>
-          <line x1="10" x2="8" y1="9" y2="9"/>
-        </symbol>
-        <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-        </symbol>
-        <symbol id="icon-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
-        </symbol>
-        <symbol id="icon-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
-        </symbol>
-      </defs>
-    </svg>
-
-
-
-    <!-- Top Level Tabs -->
-    <div class="top-tabs">
-      <div :class="['tab-item', { active: activeTab === 'request' }]" @click="activeTab = 'request'">请求日志</div>
-      <div :class="['tab-item', { active: activeTab === 'system' }]" @click="activeTab = 'system'">系统日志</div>
+    <div class="logs-bar">
+      <div class="v2-tabs logs-tabs">
+        <div class="v2-tab" :class="{ active: activeTab === 'request' }" @click="activeTab = 'request'">请求日志</div>
+        <div class="v2-tab" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">系统日志</div>
+      </div>
     </div>
 
-    <!-- REQUEST LOGS TAB -->
-    <div v-if="activeTab === 'request'" class="tab-content">
-      <!-- Filters & Actions -->
-      <div class="filters-row">
-        <div class="filter-group">
-          <span class="filter-label">终端</span>
-          <AppSelect
-            :model-value="requestFilters.cli_type"
-            :options="cliFilterOptions"
-            @change="handleRequestCliChange"
-          />
+    <!-- 请求日志 -->
+    <template v-if="activeTab === 'request'">
+      <div v-loading="requestLoading" class="v2-card logs-tablecard">
+        <div class="logs-filters">
+          <AppSelect size="small" :model-value="requestFilters.cli_type" :options="cliFilterOptions" width="120px" @change="handleRequestCliChange" />
+          <AppSelect size="small" :model-value="requestFilters.provider_name" :options="providerFilterOptions" width="160px" @change="handleRequestProviderChange" />
+          <div style="flex:1"></div>
+          <span class="logs-flabel">日志级别</span>
+          <AppSelect size="small" :model-value="logRecordMode" :options="logModeOptions" width="140px" @change="v => setLogMode(v as LogRecordMode)" />
+          <el-tooltip content="查询" placement="top" effect="light" :show-after="250">
+            <button class="v2-row-act" @click="fetchRequestLogs"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+          </el-tooltip>
+          <el-tooltip content="重置" placement="top" effect="light" :show-after="250">
+            <button class="v2-row-act" @click="resetRequestFilters"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button>
+          </el-tooltip>
+          <AppSelect size="small" mode="menu" :options="cleanMenuItems" @select="handleClean">
+            <template #trigger>
+              <el-tooltip content="清理" placement="top" effect="light" :show-after="250">
+                <button class="v2-row-act danger"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
+              </el-tooltip>
+            </template>
+          </AppSelect>
         </div>
 
-        <div class="filter-group">
-          <span class="filter-label">服务商</span>
-          <AppSelect
-            :model-value="requestFilters.provider_name"
-            :options="providerFilterOptions"
-            @change="handleRequestProviderChange"
-          />
-        </div>
-
-        <div style="flex: 1;"></div>
-        <!-- 日志模式下拉选择器 -->
-        <span class="filter-label">日志级别</span>
-        <AppSelect
-          :model-value="logRecordMode"
-          :options="logModeOptions"
-          width="140px"
-          @change="value => setLogMode(value as LogRecordMode)"
-        />
-        <div style="width: 1px; height: 20px; background: var(--color-border); margin: 0 4px;"></div>
-        <div class="action-icon" @click="fetchRequestLogs" title="查询">
-          <svg width="18" height="18"><use href="#icon-search"/></svg>
-        </div>
-        <div class="action-icon" @click="resetRequestFilters" title="重置">
-          <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-        </div>
-        <AppSelect mode="menu" :options="cleanMenuItems" @select="handleClean">
-          <template #trigger>
-            <div class="action-icon delete" title="清理">
-              <svg width="18" height="18"><use href="#icon-trash"/></svg>
-            </div>
-          </template>
-        </AppSelect>
-      </div>
-
-      <!-- Super Clean Flat Table -->
-      <div v-loading="requestLoading" class="list-container">
-        <div v-if="requestLogs.length === 0" class="empty-state">
-          <svg width="64" height="64" color="var(--color-border)"><use href="#icon-file-text"/></svg>
-          <p>暂无日志记录</p>
-        </div>
-        <template v-else>
-          <div class="table-container">
-            <div class="table-wrapper">
-              <table class="flat-table">
-              <thead>
-                <tr>
-                  <th style="min-width: 60px;">ID</th>
-                  <th style="min-width: 100px;">时间</th>
-                  <th style="min-width: 100px;">CLI</th>
-                  <th style="min-width: 100px;">服务商</th>
-                  <th style="min-width: 60px;">状态</th>
-                  <th style="min-width: 100px;">耗时</th>
-                  <th style="min-width: 150px;">
-                    <div class="token-head">
-                      <span>Tokens</span>
-                      <el-tooltip
-                        effect="light"
-                        placement="top"
-                        :fallback-placements="['bottom', 'top', 'right', 'left']"
-                        :offset="10"
-                        :show-after="150"
-                        :enterable="true"
-                        popper-class="token-help-popper"
-                      >
-                        <template #content>
-                          <div class="token-help-content">
-                            <div class="tooltip-title">Token 显示顺序</div>
-                            <div class="tooltip-item"><strong>输入</strong><span>普通输入 tokens</span></div>
-                            <div class="tooltip-item"><strong>缓存读取</strong><span>命中的缓存输入 tokens</span></div>
-                            <div class="tooltip-item"><strong>缓存创建</strong><span>本次创建的缓存输入 tokens</span></div>
-                            <div class="tooltip-item"><strong>输出</strong><span>输出 tokens，包含 reasoning/thoughts</span></div>
-                          </div>
-                        </template>
-                        <span class="help-icon-wrapper">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
-                            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                          </svg>
-                        </span>
-                      </el-tooltip>
+        <div class="logs-scroll">
+          <table class="v2-table">
+            <thead>
+              <tr>
+                <th>ID</th><th>时间</th><th>Agent</th><th>服务商</th><th>状态</th><th>耗时</th>
+                <th>
+                  <el-tooltip content="输入 / 输出" placement="top" effect="light" :show-after="250">
+                    <span>Token (I/O)</span>
+                  </el-tooltip>
+                </th>
+                <th>
+                  <el-tooltip content="缓存读取 / 缓存创建" placement="top" effect="light" :show-after="250">
+                    <span>Cache (R/C)</span>
+                  </el-tooltip>
+                </th>
+                <th>费用</th><th>模型映射</th><th class="logs-sticky-col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in requestLogs" :key="row.id">
+                <td class="mono">{{ row.id }}</td>
+                <td class="mono">{{ formatTime(row.created_at) }}</td>
+                <td>
+                  <el-tooltip :content="formatCliLabel(row.cli_type)" placement="top" effect="light" :show-after="250">
+                    <div class="logs-cli-cell">
+                      <span class="logs-cli-icon">
+                        <CliBrandIcon :type="row.cli_type" width="14" height="14" />
+                      </span>
                     </div>
-                  </th>
-                  <th style="min-width: 90px;">费用</th>
-                  <th style="min-width: 100px;">模型映射</th>
-                  <th class="col-sticky" style="width: 60px;">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in requestLogs" :key="row.id">
-                  <td class="mono">{{ row.id }}</td>
-                  <td>{{ formatTime(row.created_at) }}</td>
-                  <td>{{ row.cli_type }}</td>
-                  <td>{{ row.provider_name }}</td>
-                  <td>
-                    <span v-if="row.status_code" :class="['pill', getStatusCodePill(row.status_code)]">{{ row.status_code }}</span>
-                    <span v-else>-</span>
-                  </td>
-                  <td class="mono" :class="{'text-danger': row.status_code && row.status_code >= 500}">
-                    {{ (row.elapsed_ms / 1000).toFixed(2) }}s
-                  </td>
-                  <td class="mono">
-                    {{ formatTokenUsage(row) }}
-                  </td>
-                  <td class="mono">{{ formatCost(row.total_cost) }}</td>
-                  <td class="mono text-left">{{ row.source_model || '-' }} → {{ row.target_model || '-' }}</td>
-                  <td class="col-sticky">
-                    <a class="table-link" @click="showRequestDetail(row.id)">详情</a>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="pagination-footer">
-            <span class="text-14 text-secondary">总计 {{ requestTotal }}</span>
-            <el-pagination
-              v-model:current-page="requestPage"
-              v-model:page-size="requestPageSize"
-              :page-sizes="[20, 50, 100]"
-              :total="requestTotal"
-              layout="sizes, prev, pager, next"
-              @size-change="fetchRequestLogs"
-              @current-change="fetchRequestLogs"
-            />
-          </div>
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <!-- SYSTEM LOGS TAB -->
-    <div v-if="activeTab === 'system'" class="tab-content">
-      <!-- Filters & Actions -->
-      <div class="filters-row">
-        <div class="filter-group">
-          <span class="filter-label">事件类型</span>
-          <AppSelect
-            :model-value="systemFilters.event_type"
-            :options="eventTypeOptions"
-            @change="handleSystemEventTypeChange"
-          />
+                  </el-tooltip>
+                </td>
+                <td>{{ row.provider_name }}</td>
+                <td><span v-if="row.status_code" class="v2-pill dot" :class="statusPill(row.status_code)">{{ row.status_code }}</span><span v-else>-</span></td>
+                <td class="mono" :class="elapsedTimeClass(row)">{{ (row.elapsed_ms / 1000).toFixed(2) }}s</td>
+                <td class="mono">
+                  <span class="tok-group">
+                    <span class="tok-val">{{ formatTokens(row.input_tokens) }}</span>
+                    <span class="tok-sep">/</span>
+                    <span class="tok-val">{{ formatTokens(row.output_tokens) }}</span>
+                  </span>
+                </td>
+                <td class="mono">
+                  <span class="tok-group">
+                    <span class="tok-val" :class="{ zero: !row.cache_read_input_tokens }">{{ formatTokens(row.cache_read_input_tokens) }}</span>
+                    <span class="tok-sep">/</span>
+                    <span class="tok-val" :class="{ zero: !row.cache_creation_input_tokens }">{{ formatTokens(row.cache_creation_input_tokens) }}</span>
+                  </span>
+                </td>
+                <td class="mono">${{ formatCost(row.total_cost) }}</td>
+                <td class="mono logs-map">
+                  <template v-if="row.source_model || row.target_model">
+                    <span class="logs-model-badge">{{ row.source_model || '-' }}</span>
+                    <span class="logs-model-arrow">→</span>
+                    <span class="logs-model-badge">{{ row.target_model || '-' }}</span>
+                  </template>
+                  <span v-else class="logs-model-empty">-</span>
+                </td>
+                <td class="logs-sticky-col"><a class="logs-link" @click="showRequestDetail(row.id)">详情</a></td>
+              </tr>
+              <tr v-if="requestLogs.length === 0"><td colspan="11" class="logs-empty">暂无日志记录</td></tr>
+            </tbody>
+          </table>
         </div>
-
-        <div style="flex: 1;"></div>
-        <div class="action-icon" @click="fetchSystemLogs" title="查询">
-          <svg width="18" height="18"><use href="#icon-search"/></svg>
-        </div>
-        <div class="action-icon" @click="resetSystemFilters" title="重置">
-          <svg width="18" height="18"><use href="#icon-refresh"/></svg>
-        </div>
-        <div class="action-icon delete" @click="clearSystemLogs" title="清空">
-          <svg width="18" height="18"><use href="#icon-trash"/></svg>
+        <div class="logs-pager">
+          <span class="v2-hint">总计 {{ requestTotal }}</span>
+          <el-pagination size="small" v-model:current-page="requestPage" v-model:page-size="requestPageSize" :page-sizes="[20, 50, 100]" :total="requestTotal" layout="sizes, prev, pager, next" @size-change="fetchRequestLogs" @current-change="fetchRequestLogs" />
         </div>
       </div>
+    </template>
 
-      <!-- Super Clean Flat Table -->
-      <div v-loading="systemLoading" class="list-container">
-        <div v-if="systemLogs.length === 0" class="empty-state">
-          <svg width="64" height="64" color="var(--color-border)"><use href="#icon-file-text"/></svg>
-          <p>暂无日志记录</p>
+    <!-- 系统日志 -->
+    <template v-else>
+      <div v-loading="systemLoading" class="v2-card logs-tablecard">
+        <div class="logs-filters">
+          <AppSelect size="small" :model-value="systemFilters.event_type" :options="eventTypeOptions" width="140px" @change="handleSystemEventTypeChange" />
+          <div style="flex:1"></div>
+          <el-tooltip content="查询" placement="top" effect="light" :show-after="250">
+            <button class="v2-row-act" @click="fetchSystemLogs"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
+          </el-tooltip>
+          <el-tooltip content="重置" placement="top" effect="light" :show-after="250">
+            <button class="v2-row-act" @click="resetSystemFilters"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button>
+          </el-tooltip>
+          <el-tooltip content="清空" placement="top" effect="light" :show-after="250">
+            <button class="v2-row-act danger" @click="clearSystemLogs"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
+          </el-tooltip>
         </div>
-        <template v-else>
-          <div class="table-container">
-            <div class="table-wrapper">
-              <table class="flat-table">
-              <thead>
-                <tr>
-                  <th style="min-width: 60px;">ID</th>
-                  <th style="min-width: 100px;">时间</th>
-                  <th style="min-width: 200px;">事件类型</th>
-                  <th>事件消息</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in systemLogs" :key="row.id">
-                  <td>{{ row.id }}</td>
-                  <td>{{ formatTime(row.created_at) }}</td>
-                  <td>{{ formatEventType(row.event_type) }}</td>
-                  <td>{{ row.message }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
 
-          <div class="pagination-footer">
-            <span class="text-14 text-secondary">总计 {{ systemTotal }}</span>
-            <el-pagination
-              v-model:current-page="systemPage"
-              v-model:page-size="systemPageSize"
-              :page-sizes="[20, 50, 100]"
-              :total="systemTotal"
-              layout="sizes, prev, pager, next"
-              @size-change="fetchSystemLogs"
-              @current-change="fetchSystemLogs"
-            />
-          </div>
-          </div>
-        </template>
+        <div class="logs-scroll">
+          <table class="v2-table">
+            <thead><tr><th>ID</th><th>时间</th><th>事件类型</th><th>事件消息</th></tr></thead>
+            <tbody>
+              <tr v-for="row in systemLogs" :key="row.id">
+                <td class="mono">{{ row.id }}</td>
+                <td class="mono">{{ formatTime(row.created_at) }}</td>
+                <td>{{ formatEventType(row.event_type) }}</td>
+                <td>{{ row.message }}</td>
+              </tr>
+              <tr v-if="systemLogs.length === 0"><td colspan="4" class="logs-empty">暂无日志记录</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="logs-pager">
+          <span class="v2-hint">总计 {{ systemTotal }}</span>
+          <el-pagination size="small" v-model:current-page="systemPage" v-model:page-size="systemPageSize" :page-sizes="[20, 50, 100]" :total="systemTotal" layout="sizes, prev, pager, next" @size-change="fetchSystemLogs" @current-change="fetchSystemLogs" />
+        </div>
       </div>
-    </div>
+    </template>
 
-
-    <!-- Request Detail Dialog -->
-    <AppModal v-model="requestDetailVisible" title="请求详情" width="900px" :show-footer="false">
-        <div v-if="requestDetail" class="detail-content">
-        <!-- Error Message -->
-        <el-alert v-if="requestDetail.error_message" :title="requestDetail.error_message" type="error" :closable="false" style="margin-bottom: 16px" />
-
-        <!-- Request/Response Explorer -->
-        <div class="cards-container">
-          <el-card class="detail-card" shadow="never">
-            <template #header>
-              <div class="detail-card-header">
-                <span class="card-title">CLI 终端握手</span>
-                <el-tag size="small" type="info">{{ requestDetail.client_method }}</el-tag>
+    <V2Drawer v-model="requestDetailVisible" title="请求详情" :show-footer="false" width="80%">
+      <div v-if="requestDetail" class="logs-detail">
+        <div v-if="requestDetail.error_message" class="logs-detail-err">{{ requestDetail.error_message }}</div>
+        <div class="logs-detail-list">
+          <section v-for="section in detailSections" :key="section.group" class="logs-sec" :class="{ open: expandedDetailGroups[section.group] }">
+            <div class="logs-sec-toggle" role="button" tabindex="0" :aria-expanded="expandedDetailGroups[section.group]" @click="toggleDetailGroup(section.group)" @keydown.enter.prevent="toggleDetailGroup(section.group)" @keydown.space.prevent="toggleDetailGroup(section.group)">
+              <span class="logs-sec-main">
+                <span class="logs-sec-title">{{ section.title }}</span>
+                <span class="logs-sec-sub mono" @click.stop @mousedown.stop>{{ section.subtitle }}</span>
+              </span>
+              <span class="logs-sec-side">
+                <span class="logs-sec-side-top">
+                  <span class="v2-pill" :class="[section.badgeClass, { dot: section.group === 'provider' }]">{{ section.badge }}</span>
+                  <svg class="logs-sec-caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </span>
+                <span class="logs-sec-summary">{{ section.summary }}</span>
+              </span>
+            </div>
+            <div v-if="expandedDetailGroups[section.group]" class="logs-sec-body">
+              <div v-for="block in section.blocks" :key="block.key" class="logs-block">
+                <div class="logs-block-h">
+                  <span>{{ block.label }}</span>
+                  <span class="logs-block-meta">
+                    <span class="mono">{{ block.meta }}</span>
+                  </span>
+                </div>
+                <div class="logs-textbox mono" @click="copyDetailBlock(block)">
+                  <pre class="logs-pre"><code>{{ block.previewText }}</code></pre>
+                </div>
               </div>
-            </template>
-            <div class="url-line">{{ getFullClientUrl() }}</div>
-            <el-collapse>
-              <el-collapse-item title="Request Headers">
-                <pre class="code-block" @click="handleCopy(requestDetail.client_headers)">{{ formatJson(requestDetail.client_headers) }}</pre>
-              </el-collapse-item>
-              <el-collapse-item title="Request Body Payload">
-                <pre class="code-block" @click="handleCopy(requestDetail.client_body)">{{ formatJson(requestDetail.client_body) }}</pre>
-              </el-collapse-item>
-            </el-collapse>
-          </el-card>
-
-          <el-card class="detail-card" shadow="never">
-            <template #header>
-              <div class="detail-card-header">
-                <span class="card-title">网关路由分发</span>
-                <el-tag size="small" type="info">{{ requestDetail.client_method }}</el-tag>
-              </div>
-            </template>
-            <div class="url-line">{{ requestDetail.forward_url }}</div>
-            <el-collapse>
-              <el-collapse-item title="Forward Headers">
-                <pre class="code-block" @click="handleCopy(requestDetail.forward_headers)">{{ formatJson(requestDetail.forward_headers) }}</pre>
-              </el-collapse-item>
-              <el-collapse-item title="Forward Body Payload">
-                <pre class="code-block" @click="handleCopy(requestDetail.forward_body)">{{ formatJson(requestDetail.forward_body) }}</pre>
-              </el-collapse-item>
-            </el-collapse>
-          </el-card>
-
-          <el-card class="detail-card" style="grid-column: span 2;" shadow="never">
-            <template #header>
-              <div class="detail-card-header">
-                <span class="card-title">服务商节点响应回传</span>
-                <el-tag size="small" :type="getStatusCodeType(requestDetail.status_code)">
-                  {{ requestDetail.status_code || '-' }}
-                </el-tag>
-              </div>
-            </template>
-            <el-collapse>
-              <el-collapse-item title="Response Headers">
-                <pre class="code-block" @click="handleCopy(requestDetail.provider_headers)">{{ formatJson(requestDetail.provider_headers) }}</pre>
-              </el-collapse-item>
-              <el-collapse-item title="Response Body Payload">
-                <pre class="code-block" @click="handleCopy(requestDetail.provider_body)">{{ formatJson(requestDetail.provider_body) }}</pre>
-              </el-collapse-item>
-            </el-collapse>
-          </el-card>
+            </div>
+          </section>
         </div>
       </div>
-    </AppModal>
+    </V2Drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import V2Drawer from '@/components/V2Drawer.vue'
+import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
+import CliBrandIcon from '@/components/CliBrandIcon.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
-import AppModal from '@/components/AppModal.vue'
-import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
 import { logsApi } from '@/api/logs'
 import { statsApi } from '@/api/stats'
 import { providersApi } from '@/api/providers'
@@ -327,17 +193,34 @@ import { formatCost, formatJson as formatJsonUtil, formatTokens } from '@/utils/
 import type { RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
 
 type LogRecordMode = 'full' | 'failure_only' | 'disabled'
-
-const logModeMap: Record<LogRecordMode, string> = {
-  full: '全量记录',
-  failure_only: '失败时记录详情',
-  disabled: '停用日志'
+const logModeMap: Record<LogRecordMode, string> = { full: '全量记录', failure_only: '失败时记录详情', disabled: '停用日志' }
+type DetailBlockGroup = 'client' | 'forward' | 'provider'
+type DetailBlockKey = 'client_headers' | 'client_body' | 'forward_headers' | 'forward_body' | 'provider_headers' | 'provider_body'
+interface DetailBlock {
+  key: DetailBlockKey
+  group: DetailBlockGroup
+  label: string
+  fullText: string
+  previewText: string
+  meta: string
 }
+interface DetailSection {
+  group: DetailBlockGroup
+  title: string
+  subtitle: string
+  badge: string | number
+  badgeClass: string
+  summary: string
+  blocks: DetailBlock[]
+}
+
+const DETAIL_FORMAT_CHARS = 128 * 1024
+const DETAIL_PREVIEW_CHARS = 32 * 1024
 
 const uiStore = useUiStore()
 const activeTab = computed({
   get: () => uiStore.logsActiveTab,
-  set: (val) => uiStore.setLogsActiveTab(val as 'request' | 'system')
+  set: (v) => uiStore.setLogsActiveTab(v as 'request' | 'system')
 })
 const logRecordMode = ref<LogRecordMode>('failure_only')
 const cleanMenuItems: AppSelectOption[] = [
@@ -352,96 +235,81 @@ const providerOptions = ref<string[]>([])
 let requestLogListener: (() => void) | null = null
 
 const cliFilterOptions: AppSelectOption[] = [
-  { label: '全部终端', value: '' },
+  { label: 'ALL', value: '' },
   { label: 'ClaudeCode', value: 'claude_code' },
   { label: 'Codex', value: 'codex' },
   { label: 'Gemini', value: 'gemini' }
 ]
+const providerFilterOptions = computed<AppSelectOption[]>(() => [{ label: '全部服务商', value: '' }, ...providerOptions.value.map(p => ({ label: p, value: p }))])
+const logModeOptions = computed<AppSelectOption[]>(() => Object.entries(logModeMap).map(([value, label]) => ({ value, label })))
 
-const providerFilterOptions = computed<AppSelectOption[]>(() => [
-  { label: '全部服务商', value: '' },
-  ...providerOptions.value.map(provider => ({ label: provider, value: provider }))
-])
-
-const logModeOptions = computed<AppSelectOption[]>(() =>
-  Object.entries(logModeMap).map(([value, label]) => ({ value, label }))
-)
-
-onMounted(async () => {
-  fetchLogSettings()
-  fetchGatewayStatus()
-  fetchProviders()
-  if (activeTab.value === 'request') {
-    fetchRequestLogs()
-  } else {
-    fetchSystemLogs()
-  }
-
-  // 监听新请求日志事件
-  requestLogListener = await logsApi.listenRequestLogs((log) => {
-    // 只在请求日志页面且第一页无筛选时实时更新
-    if (activeTab.value === 'request' && requestPage.value === 1 && !requestFilters.value.cli_type && !requestFilters.value.provider_name) {
-      requestLogs.value.unshift(log)
-      requestTotal.value += 1
-      // 限制列表长度与 pageSize 一致
-      if (requestLogs.value.length > requestPageSize.value) {
-        requestLogs.value.pop()
-      }
-    }
-  })
-})
-
-onUnmounted(() => {
-  if (requestLogListener) {
-    requestLogListener()
-    requestLogListener = null
-  }
-})
-
-// Request logs
 const requestLogs = ref<RequestLogListItem[]>([])
 const requestLoading = ref(false)
 const requestPage = ref(1)
 const requestPageSize = ref(20)
 const requestTotal = ref(0)
-const requestFilters = ref({
-  cli_type: '',
-  provider_name: ''
-})
+const requestFilters = ref({ cli_type: '', provider_name: '' })
 const requestDetailVisible = ref(false)
 const requestDetail = ref<RequestLogDetail | null>(null)
+const detailBlocks = ref<DetailBlock[]>([])
+const detailBlockGroups = computed(() => ({
+  client: detailBlocks.value.filter((block) => block.group === 'client'),
+  forward: detailBlocks.value.filter((block) => block.group === 'forward'),
+  provider: detailBlocks.value.filter((block) => block.group === 'provider')
+}))
+const expandedDetailGroups = ref<Record<DetailBlockGroup, boolean>>(createCollapsedDetailGroups())
+const detailSections = computed<DetailSection[]>(() => {
+  if (!requestDetail.value) return []
+  return [
+    {
+      group: 'client',
+      title: 'Agent请求',
+      subtitle: getFullClientUrl(),
+      badge: requestDetail.value.client_method,
+      badgeClass: 'v2-pill-neutral',
+      summary: formatDetailGroupSummary(detailBlockGroups.value.client),
+      blocks: detailBlockGroups.value.client
+    },
+    {
+      group: 'forward',
+      title: '网关路由转发',
+      subtitle: requestDetail.value.forward_url || '-',
+      badge: requestDetail.value.client_method,
+      badgeClass: 'v2-pill-neutral',
+      summary: formatDetailGroupSummary(detailBlockGroups.value.forward),
+      blocks: detailBlockGroups.value.forward
+    },
+    {
+      group: 'provider',
+      title: '服务商响应',
+      subtitle: requestDetail.value.error_message || formatProviderSubtitle(),
+      badge: requestDetail.value.status_code || '-',
+      badgeClass: statusPill(requestDetail.value.status_code),
+      summary: formatDetailGroupSummary(detailBlockGroups.value.provider),
+      blocks: detailBlockGroups.value.provider
+    }
+  ]
+})
 
-// System logs
 const systemLogs = ref<SystemLogItem[]>([])
 const systemLoading = ref(false)
 const systemPage = ref(1)
 const systemPageSize = ref(20)
 const systemTotal = ref(0)
-const systemFilters = ref({
-  event_type: ''
-})
+const systemFilters = ref({ event_type: '' })
 
 async function fetchProviders() {
   try {
     const res = await providersApi.list()
-    const names = new Set<string>()
-    res.data.forEach((p: any) => names.add(p.name))
-    providerOptions.value = Array.from(names)
-  } catch {}
+    providerOptions.value = Array.from(new Set(res.data.map((p) => p.name)))
+  } catch { /* ignore */ }
 }
-
 async function fetchLogSettings() {
   try {
     const res = await logsApi.getSettings()
-    const { debug_log, log_detail_mode } = res.data
-    if (!debug_log) {
-      logRecordMode.value = 'disabled'
-    } else {
-      logRecordMode.value = log_detail_mode
-    }
-  } catch {}
+    logRecordMode.value = res.data.debug_log ? res.data.log_detail_mode : 'disabled'
+  } catch { /* ignore */ }
 }
-
 async function fetchGatewayStatus() {
   try {
     const { data } = await settingsApi.getStatus()
@@ -450,46 +318,34 @@ async function fetchGatewayStatus() {
     gatewayUrl.value = ''
   }
 }
-
 async function setLogMode(mode: LogRecordMode) {
   logRecordMode.value = mode
   try {
-    if (mode === 'disabled') {
-      await logsApi.updateSettings({ debug_log: false })
-    } else {
-      await logsApi.updateSettings({ debug_log: true, log_detail_mode: mode })
-    }
-  } catch {}
+    if (mode === 'disabled') await logsApi.updateSettings({ debug_log: false })
+    else await logsApi.updateSettings({ debug_log: true, log_detail_mode: mode })
+  } catch { /* ignore */ }
 }
-
 function handleRequestCliChange(value: string | number) {
   requestFilters.value.cli_type = String(value)
   requestPage.value = 1
   fetchRequestLogs()
 }
-
 function handleRequestProviderChange(value: string | number) {
   requestFilters.value.provider_name = String(value)
   requestPage.value = 1
   fetchRequestLogs()
 }
-
 function handleSystemEventTypeChange(value: string | number) {
   systemFilters.value.event_type = String(value)
   systemPage.value = 1
   fetchSystemLogs()
 }
-
 async function fetchRequestLogs() {
   requestLoading.value = true
   try {
-    const params: any = {
-      page: requestPage.value,
-      page_size: requestPageSize.value
-    }
+    const params: any = { page: requestPage.value, page_size: requestPageSize.value }
     if (requestFilters.value.cli_type) params.cli_type = requestFilters.value.cli_type
     if (requestFilters.value.provider_name) params.provider_name = requestFilters.value.provider_name
-
     const res = await logsApi.listRequestLogs(params)
     requestLogs.value = res.data.items
     requestTotal.value = res.data.total
@@ -497,53 +353,30 @@ async function fetchRequestLogs() {
     requestLoading.value = false
   }
 }
-
 function resetRequestFilters() {
   requestFilters.value = { cli_type: '', provider_name: '' }
   requestPage.value = 1
   fetchRequestLogs()
 }
-
 type CleanAction = 'all_logs' | 'all_details' | 'stats_data' | 'old_logs' | 'old_details'
-
 async function handleClean(action: string | number) {
   const confirmMap: Record<CleanAction, string> = {
-    all_logs: '确定要清空所有请求日志吗？',
-    all_details: '确定要清空所有请求详情文件吗？',
-    stats_data: '确定要清空所有统计数据吗？',
-    old_logs: '确定要清理30天前的请求日志吗？',
-    old_details: '确定要清理30天前的请求详情文件吗？'
+    all_logs: '确定要清空所有请求日志吗？', all_details: '确定要清空所有请求详情文件吗？', stats_data: '确定要清空所有统计数据吗？',
+    old_logs: '确定要清理30天前的请求日志吗？', old_details: '确定要清理30天前的请求详情文件吗？'
   }
-
   try {
     await confirm(confirmMap[action as CleanAction], '清理确认')
   } catch {
     return
   }
-
   requestLoading.value = true
   try {
     switch (action as CleanAction) {
-      case 'all_logs':
-        await logsApi.clearRequestLogs()
-        notify('请求日志已清空')
-        break
-      case 'all_details':
-        await logsApi.clearRequestDetailFiles()
-        notify('请求详情文件已清空')
-        break
-      case 'stats_data':
-        await statsApi.clearStatsData()
-        notify('统计数据已清空')
-        break
-      case 'old_logs':
-        await logsApi.clearOldRequestLogs(30)
-        notify('30天前的请求日志已清理')
-        break
-      case 'old_details':
-        await logsApi.clearOldRequestDetailFiles(30)
-        notify('30天前的请求详情文件已清理')
-        break
+      case 'all_logs': await logsApi.clearRequestLogs(); notify('请求日志已清空'); break
+      case 'all_details': await logsApi.clearRequestDetailFiles(); notify('请求详情文件已清空'); break
+      case 'stats_data': await statsApi.clearStatsData(); notify('统计数据已清空'); break
+      case 'old_logs': await logsApi.clearOldRequestLogs(30); notify('30天前的请求日志已清理'); break
+      case 'old_details': await logsApi.clearOldRequestDetailFiles(30); notify('30天前的请求详情文件已清理'); break
     }
     await fetchRequestLogs()
   } catch (e: any) {
@@ -551,24 +384,22 @@ async function handleClean(action: string | number) {
     requestLoading.value = false
   }
 }
-
 async function showRequestDetail(id: number) {
   try {
+    requestDetail.value = null
+    detailBlocks.value = []
+    expandedDetailGroups.value = createCollapsedDetailGroups()
     const res = await logsApi.getRequestLog(id)
     requestDetail.value = res.data
+    detailBlocks.value = buildDetailBlocks(res.data)
     requestDetailVisible.value = true
-  } catch {}
+  } catch { /* ignore */ }
 }
-
 async function fetchSystemLogs() {
   systemLoading.value = true
   try {
-    const params: any = {
-      page: systemPage.value,
-      page_size: systemPageSize.value
-    }
+    const params: any = { page: systemPage.value, page_size: systemPageSize.value }
     if (systemFilters.value.event_type) params.event_type = systemFilters.value.event_type
-
     const res = await logsApi.listSystemLogs(params)
     systemLogs.value = res.data.items
     systemTotal.value = res.data.total
@@ -576,106 +407,129 @@ async function fetchSystemLogs() {
     systemLoading.value = false
   }
 }
-
 function resetSystemFilters() {
   systemFilters.value = { event_type: '' }
   systemPage.value = 1
   fetchSystemLogs()
 }
-
 async function clearSystemLogs() {
   try {
     await confirm('确定要清空所有系统日志吗？', '清理确认')
   } catch {
     return
   }
-
   systemLoading.value = true
   try {
     await logsApi.clearSystemLogs()
     notify('系统日志已清空')
     await fetchSystemLogs()
   } catch (e: any) {
-    notify(e?.message || '清空失败', 'error')
+    notify(getErrorMessage(e, '清空失败'), 'error')
     systemLoading.value = false
   }
 }
-
 function formatTime(timestamp: number): string {
-  // Use a cleaner time format matching the prototype `MM/DD HH:mm:ss`
-  const date = new Date(timestamp * 1000)
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  const h = String(date.getHours()).padStart(2, '0')
-  const min = String(date.getMinutes()).padStart(2, '0')
-  const s = String(date.getSeconds()).padStart(2, '0')
-  return `${m}/${d} ${h}:${min}:${s}`
+  const d = new Date(timestamp * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-function formatJson(str: string | null): string {
-  if (!str) return ''
-  return formatJsonUtil(str)
+function formatCliLabel(type: string): string {
+  switch (type) {
+    case 'claude_code': return 'Claude Code'
+    case 'codex': return 'Codex'
+    case 'gemini': return 'Gemini'
+    default: return type
+  }
 }
 
-function formatTokenUsage(row: RequestLogListItem | RequestLogDetail): string {
+function elapsedTimeClass(row: RequestLogListItem) {
+  const isErr = row.status_code && row.status_code >= 500
+  if (isErr) return 'logs-time-danger'
+  if (row.elapsed_ms >= 50000) return 'logs-time-danger-slow'
+  if (row.elapsed_ms >= 20000) return 'logs-time-warning'
+  return ''
+}
+
+function buildDetailBlocks(detail: RequestLogDetail): DetailBlock[] {
   return [
-    row.input_tokens,
-    row.cache_read_input_tokens,
-    row.cache_creation_input_tokens,
-    row.output_tokens
-  ].map(formatTokens).join(' / ')
+    createDetailBlock('client_headers', 'client', '请求头', detail.client_headers),
+    createDetailBlock('client_body', 'client', '请求体', detail.client_body),
+    createDetailBlock('forward_headers', 'forward', '转发头', detail.forward_headers),
+    createDetailBlock('forward_body', 'forward', '转发体', detail.forward_body),
+    createDetailBlock('provider_headers', 'provider', '响应头', detail.provider_headers),
+    createDetailBlock('provider_body', 'provider', '响应体', detail.provider_body)
+  ]
 }
-
+function createDetailBlock(key: DetailBlockKey, group: DetailBlockGroup, label: string, raw: string | null | undefined): DetailBlock {
+  const fullText = formatDetailText(raw)
+  return {
+    key,
+    group,
+    label,
+    fullText,
+    previewText: formatDetailPreview(fullText),
+    meta: formatDetailMeta(fullText)
+  }
+}
+function formatDetailText(raw: string | null | undefined): string {
+  if (!raw) return '—'
+  return raw.length <= DETAIL_FORMAT_CHARS ? formatJsonUtil(raw) : raw
+}
+function formatDetailMeta(text: string): string {
+  if (!text || text === '—') return '无内容'
+  return formatDetailLength(text.length)
+}
+function formatDetailPreview(text: string): string {
+  if (text.length <= DETAIL_PREVIEW_CHARS) return text
+  return `${text.slice(0, DETAIL_PREVIEW_CHARS)}\n...`
+}
+function formatDetailLength(chars: number): string {
+  if (chars < 1000) return `${chars} 字符`
+  if (chars < 1000000) return `${(chars / 1000).toFixed(1)}K 字符`
+  return `${(chars / 1000000).toFixed(1)}M 字符`
+}
+function createCollapsedDetailGroups(): Record<DetailBlockGroup, boolean> {
+  return { client: false, forward: false, provider: false }
+}
+function toggleDetailGroup(group: DetailBlockGroup) {
+  const next = !expandedDetailGroups.value[group]
+  expandedDetailGroups.value = createCollapsedDetailGroups()
+  expandedDetailGroups.value[group] = next
+}
+function formatDetailGroupSummary(blocks: DetailBlock[]): string {
+  return blocks.map((block) => `${block.label} ${block.meta}`).join(' / ')
+}
+function formatProviderSubtitle(): string {
+  if (!requestDetail.value) return ''
+  const model = requestDetail.value.target_model || requestDetail.value.source_model
+  return model ? `模型 ${model}` : '响应头 / 响应体'
+}
 const eventTypeMap: Record<string, string> = {
-  no_provider_available: '无可用服务商',
-  provider_blacklisted: '服务商黑名单',
-  provider_recovered: '服务商恢复',
-  provider_created: '服务商创建',
-  provider_updated: '服务商更新',
-  provider_deleted: '服务商删除',
-  provider_reset: '状态重置',
-  scheduled_task_failed: '定时任务失败',
+  no_provider_available: '无可用服务商', provider_blacklisted: '服务商黑名单', provider_recovered: '服务商恢复',
+  provider_created: '服务商创建', provider_updated: '服务商更新', provider_deleted: '服务商删除',
+  provider_reset: '状态重置', scheduled_task_failed: '定时任务失败'
 }
-
-const eventTypeOptions = computed<AppSelectOption[]>(() => [
-  { label: '全部事件', value: '' },
-  ...Object.entries(eventTypeMap).map(([value, label]) => ({ value, label }))
-])
-
+const eventTypeOptions = computed<AppSelectOption[]>(() => [{ label: '全部事件', value: '' }, ...Object.entries(eventTypeMap).map(([value, label]) => ({ value, label }))])
 function formatEventType(eventType: string): string {
-  if (!eventType) return ''
-  return eventTypeMap[eventType] || eventType
+  return eventType ? (eventTypeMap[eventType] || eventType) : ''
 }
-
-// Flat table styling purely depends on specific css pills
-function getStatusCodePill(code: number | null): string {
-  if (!code) return 'pill-grey'
-  if (code >= 200 && code < 300) return 'pill-green'
-  if (code >= 400 && code < 500) return 'pill-grey'
-  if (code >= 500) return 'pill-red'
-  return 'pill-grey'
+function statusPill(code: number | null): string {
+  if (!code) return 'v2-pill-neutral'
+  if (code >= 200 && code < 300) return 'v2-pill-success'
+  if (code >= 500) return 'v2-pill-danger'
+  return 'v2-pill-neutral'
 }
-
-// Keeping original Element styling function backward compat for the Dialog View
-function getStatusCodeType(code: number | null): 'success' | 'warning' | 'info' | 'danger' {
-  if (!code) return 'info'
-  if (code >= 200 && code < 300) return 'success'
-  if (code >= 400 && code < 500) return 'warning'
-  if (code >= 500) return 'danger'
-  return 'info'
-}
-
 function getFullClientUrl(): string {
   if (!requestDetail.value) return ''
   const path = requestDetail.value.client_path
   const baseUrl = gatewayUrl.value.replace(/\/$/, '')
   return `${baseUrl}/${path.startsWith('/') ? path.slice(1) : path}`
 }
-
-async function handleCopy(content: string | null) {
-  if (!content) return
+async function copyDetailBlock(block: DetailBlock) {
+  if (!block.fullText || block.fullText === '—') return
   try {
-    await navigator.clipboard.writeText(formatJson(content))
+    await navigator.clipboard.writeText(block.fullText)
     notify('已复制到剪贴板')
   } catch {
     notify('复制失败', 'error')
@@ -686,109 +540,109 @@ watch(activeTab, (tab) => {
   if (tab === 'request') fetchRequestLogs()
   else fetchSystemLogs()
 })
+
+watch(requestDetailVisible, (visible) => {
+  if (visible) return
+  requestDetail.value = null
+  detailBlocks.value = []
+  expandedDetailGroups.value = createCollapsedDetailGroups()
+})
+
+onMounted(async () => {
+  fetchLogSettings()
+  fetchGatewayStatus()
+  fetchProviders()
+  if (activeTab.value === 'request') fetchRequestLogs()
+  else fetchSystemLogs()
+  requestLogListener = await logsApi.listenRequestLogs((log) => {
+    if (activeTab.value === 'request' && requestPage.value === 1 && !requestFilters.value.cli_type && !requestFilters.value.provider_name) {
+      requestLogs.value.unshift(log)
+      requestTotal.value += 1
+      if (requestLogs.value.length > requestPageSize.value) requestLogs.value.pop()
+    }
+  })
+})
+onUnmounted(() => {
+  if (requestLogListener) {
+    requestLogListener()
+    requestLogListener = null
+  }
+})
 </script>
 
 <style scoped>
-/* Scoped overrides for flat ethereal UI */
-.logs-page {
-  color: var(--color-text);
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
+.logs-page { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: -16px; }
+.logs-bar { flex-shrink: 0; }
+.logs-tabs { margin-bottom: 16px; }
+.logs-filters { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding: 12px 16px; border-bottom: 1px solid var(--v2-surface-2); }
+.logs-flabel { font-size: var(--v2-fs-xs); color: var(--v2-text-3); }
 
-/* Tab Underlines */
-.top-tabs { display: flex; gap: 32px; border-bottom: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent); margin: 0 40px 24px 40px; padding-top: 8px; flex-shrink: 0; }
+.logs-tablecard { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.logs-scroll { flex: 1; overflow: auto; scrollbar-gutter: stable; }
+.logs-scroll thead th { position: sticky; top: 0; z-index: 1; text-align: center; }
+.logs-scroll tbody td { text-align: center; }
+.logs-map { text-align: center; }
+.logs-danger { color: var(--v2-danger); font-weight: 600; }
+.logs-link { color: var(--v2-accent); cursor: pointer; font-size: var(--v2-fs-sm); }
+.logs-empty { text-align: center; color: var(--v2-text-3); padding: 40px; }
+.logs-pager { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--v2-surface-2); flex-shrink: 0; }
 
-.tab-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
+.logs-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.logs-detail-err { padding: 10px 12px; border-radius: var(--v2-r-sm); background: var(--v2-danger-bg); color: var(--v2-danger); font-size: var(--v2-fs-sm); }
+.logs-detail-list { display: flex; flex-direction: column; gap: 10px; }
+.logs-sec { min-width: 0; border: 1px solid var(--v2-surface-3); border-radius: var(--v2-r-sm); background: var(--v2-surface); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
+.logs-sec.open { border-color: color-mix(in srgb, var(--v2-accent) 28%, var(--v2-surface-3)); box-shadow: 0 8px 22px rgba(25, 36, 64, 0.06); }
+.logs-sec-toggle { width: 100%; min-height: 72px; border: none; background: var(--v2-surface); color: var(--v2-text); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; text-align: left; cursor: pointer; }
+.logs-sec-toggle:hover { background: var(--v2-surface-2); }
+.logs-sec-main { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.logs-sec-title { font-size: var(--v2-fs-sm); font-weight: 600; color: var(--v2-text); }
+.logs-sec-sub { max-width: 100%; color: var(--v2-text-3); font-size: var(--v2-fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; user-select: text; }
+.logs-sec-side { width: min(420px, 42%); flex-shrink: 0; display: flex; flex-direction: column; align-items: stretch; gap: 7px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); }
+.logs-sec-side-top { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.logs-sec-summary { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.logs-sec-caret { flex-shrink: 0; color: var(--v2-text-3); transition: transform 0.15s; }
+.logs-sec.open .logs-sec-caret { transform: rotate(180deg); }
+.logs-sec-body { padding: 0 14px 14px; }
+.logs-block { margin-bottom: 10px; }
+.logs-block:last-child { margin-bottom: 0; }
+.logs-block-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; color: var(--v2-text-2); font-size: var(--v2-fs-xs); }
+.logs-block-meta { display: inline-flex; align-items: center; gap: 8px; color: var(--v2-text-3); white-space: nowrap; }
+.logs-textbox { background: var(--v2-surface); color: var(--v2-text); padding: 8px 11px; border-radius: var(--v2-r-sm); font-size: var(--v2-fs-sm); line-height: 1.55; max-height: min(42vh, 420px); overflow: auto; cursor: pointer; border: 1px solid var(--v2-surface-3); box-shadow: none; content-visibility: auto; }
+.logs-textbox:hover { border-color: var(--v2-surface-3); }
+.logs-pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
 
-/* Filter Container */
-.filters-row { display: flex; gap: 8px; margin: 0 40px 20px 40px; align-items: center; flex-shrink: 0; }
-.filter-group { display: flex; align-items: center; gap: 10px; margin-right: 8px; }
-.filter-label { font-size: var(--fs-12); font-weight: var(--fw-600); color: var(--color-text-weak); text-transform: uppercase; }
+.logs-cli-cell { display: inline-flex; align-items: center; gap: 6px; }
+.logs-cli-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex-shrink: 0; }
+.logs-cli-text { font-size: var(--v2-fs-sm); color: var(--v2-text); }
 
-/* Action Icon Buttons */
+.logs-model-badge { display: inline-block; font-size: var(--v2-fs-xs); padding: 2px 6px; background: var(--v2-surface-2); border: 1px solid var(--v2-surface-2); border-radius: 4px; color: var(--v2-text-2); white-space: nowrap; vertical-align: middle; }
+.logs-model-arrow { margin: 0 4px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); vertical-align: middle; }
+.logs-model-empty { color: var(--v2-text-3); }
 
-/* Flat Glass Table - 1 Line Strict */
-.table-container {
-  background: var(--color-bg);
-  border-radius: 16px;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 4px 15px var(--color-shadow);
-  overflow: hidden;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.table-wrapper {
-  flex: 1;
-  overflow: auto;
-}
-.flat-table tr:hover td.col-sticky { background: var(--color-bg-page); }
-
-.token-head {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-:global(.token-help-popper.el-popper) {
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 8px 24px var(--color-shadow-lg);
-}
-
-.token-help-content {
-  width: 220px;
-}
-
-.col-sticky {
+.logs-scroll th.logs-sticky-col {
   position: sticky;
   right: 0;
-  background: var(--color-bg);
-  width: 100px;
-  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.03);
+  z-index: 3;
+  background: var(--v2-surface-2);
+  border-left: 1px solid var(--v2-surface-2);
 }
-.flat-table th.col-sticky {
-  background: var(--color-bg-page);
-  z-index: 20;
+.logs-scroll td.logs-sticky-col {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--v2-surface);
+  border-left: 1px solid var(--v2-surface-2);
+}
+.logs-scroll tbody tr:hover td.logs-sticky-col {
+  background: var(--v2-surface-2);
 }
 
-.flat-table td.text-left { text-align: left; }
-.text-danger { color: var(--color-error); font-weight: var(--fw-600); }
+.logs-time-danger { color: var(--v2-danger); font-weight: 600; }
+.logs-time-danger-slow { color: var(--v2-danger); font-weight: 500; }
+.logs-time-warning { color: var(--v2-warning); font-weight: 500; }
 
-.pagination-footer { padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed color-mix(in srgb, var(--color-border) 80%, transparent); flex-shrink: 0; }
-.pagination-footer :deep(.el-pagination) { justify-content: flex-end; }
-.pagination-footer :deep(.el-pager li) { background: transparent !important; }
-.pagination-footer :deep(.el-pager li.is-active) { color: var(--color-primary); background: var(--color-primary-light) !important; font-weight: var(--fw-700); border-radius: 6px; }
-.pagination-footer :deep(.btn-prev), .pagination-footer :deep(.btn-next) { background: transparent !important; }
+.tok-group { display: inline-flex; align-items: center; gap: 3px; font-family: inherit; }
+.tok-val { font-size: var(--v2-fs-sm); color: var(--v2-text); }
+.tok-sep { color: var(--v2-text-3); margin: 0 1px; font-size: var(--v2-fs-sm); }
 
-.pagination-footer :deep(.el-select__wrapper) { padding: 4px 12px; border: 1px solid var(--color-border); border-radius: 8px; background: color-mix(in srgb, var(--color-bg) 80%, transparent); box-shadow: 0 1px 3px var(--color-shadow); min-height: auto; transition: all 0.2s; }
-.pagination-footer :deep(.el-select__wrapper:hover) { border-color: var(--color-border-hover); }
-.pagination-footer :deep(.el-select__wrapper.is-focused) { border-color: var(--color-primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 10%, transparent); }
-
-/* Keep el-dialog styles clean to match ethereal frost inside detail view */
-.detail-content { max-height: 60vh; overflow-y: auto; }
-.cards-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
-.detail-card { margin: 0; background: var(--color-bg); }
-.detail-card-header { display: flex; justify-content: space-between; font-weight: var(--fw-600); }
-.url-line { font-size: var(--fs-12); color: var(--color-primary); word-break: break-all; margin-bottom: 12px; padding: 8px 12px; background: var(--color-primary-light); border-radius: 6px; }
-.code-block { background: var(--color-bg-page); padding: 12px; border-radius: 6px; font-size: var(--fs-12); white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; margin: 0; cursor: pointer; border: 1px solid transparent; transition: border-color 0.2s; }
-.code-block:hover { border-color: var(--color-border-hover); }
-
-/* el-collapse 标题背景色覆盖 */
-.detail-content :deep(.el-collapse-item__header) {
-  background: var(--color-bg);
-}
-.detail-content :deep(.el-collapse-item__wrap) {
-  background: var(--color-bg);
-}
 </style>
