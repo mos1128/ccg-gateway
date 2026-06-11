@@ -56,7 +56,10 @@
 | `src-tauri/src/api/handlers.rs` | HTTP 代理处理，不直接承载桌面侧 command |
 | `src-tauri/src/db/models.rs` | 数据模型、响应结构、DTO |
 | `src-tauri/src/db/schema_definition.rs` | Schema 定义与版本号 |
+| `frontend/src/App.vue` | App 根容器与基础 reset，不承载主要设计系统 |
+| `frontend/src/layouts/V2Layout.vue` | 当前主布局、导航、V2 设计变量与全局 V2 基元 |
 | `frontend/src/api/` | 前端 API 封装，禁止页面直接拼命令名和参数 |
+| `frontend/src/components/` | 跨页面复用的全局组件，只放已确认复用的稳定组件 |
 | `frontend/src/stores/` | Pinia 状态管理 |
 | `frontend/src/views/` | 页面级 UI 与交互组织 |
 | `frontend/src/views/*/components/` | 页面级子组件，从大页面中拆出的可复用展示块 |
@@ -95,14 +98,20 @@
 - 页面不得直接写 `invoke('xxx')`，统一经过 `frontend/src/api/*` 封装后再给 Store 或 View 使用。
 - 可复用的状态放 Store，可复用的请求放 `api/`，可复用的展示块放 `components/`，不要把请求、状态、视图细节糊在单个页面文件里。
 - 页面级子组件放在对应 `views/xxx/components/` 目录下；仅当组件确实跨多个页面复用时，才提升到顶层 `src/components/`。
+- 当前前端统一使用 `frontend/src/layouts/V2Layout.vue` 承载主布局、导航和 V2 设计系统；新增页面默认挂在该布局下，禁止新增平行主布局。
+- `frontend/src/components/` 中的全局组件是跨页面复用入口。新增页面优先复用 `AppSelect`、`AppConfirm`、`V2Drawer`、`V2Empty`、`V2CliChips`、`CliBrandIcon`、`PluginIcon`、`SkillIcon`、`ConfigCard`。
+- Element Plus 可用于底层能力，如 `el-switch`、`el-pagination`、`el-tooltip`、`el-upload`；已有项目封装时优先使用项目封装，禁止页面内重复造一套选择器、弹窗、抽屉、空状态、图标组件。
 - 项目已启用 `unplugin-auto-import`，新增 Vue / Pinia / Router 常用 API 时先遵循现有自动导入方式，不要重复引入无意义 import。
 
 ---
 
 ## 五、样式规范
 
-- 全局字体、字号、字重变量定义于 `frontend/src/App.vue`，新增全局文字规范先补变量再使用，禁止到处硬编码。
-- 全局 `.mono`、`code`、`pre` 的等宽字体由 `App.vue` 统一定义：
+- `frontend/src/App.vue` 只保留基础 reset；新版 UI 的设计变量、主布局样式和全局 V2 基元统一维护在 `frontend/src/layouts/V2Layout.vue`。
+- 新增页面样式优先复用 `.v2-*` 基础类与 `--v2-*` 变量；新增颜色、字号、圆角、阴影、间距时，必须优先判断是否已有变量可用。
+- 确需扩展全局设计变量时，集中补到 `V2Layout.vue` 的 V2 设计系统中，禁止在页面 scoped 样式中散写另一套主题变量。
+- 禁止新增旧版 UI 类或旧视觉体系，包括 `b-*`、`frost-card`、`flat-table`、`action-icon`、`top-tabs`、`list-container` 等。
+- 全局 `.mono`、`code`、`pre` 的等宽字体由全局样式统一定义：
   - 禁止在组件 scoped 样式中重新定义 `.mono`
   - 禁止把颜色、尺寸等语义塞进 `.mono`
 - 适合使用等宽字体的场景：

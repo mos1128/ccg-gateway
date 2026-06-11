@@ -43,13 +43,13 @@ Need to switch between gateway relay routing, direct relay provider access, and 
 
 **Hard to Estimate Costs**
 
-Statistics dashboard covers provider / model dual-dimension token usage (input / output / cache). Plug in provider pricing rules to easily estimate costs.
+The statistics dashboard covers provider/model token usage and cost statistics, making costs easy to calculate.
 
 Providers that charge by request count? The statistics dashboard also covers provider / model dual-dimension request counts.
 
 **Opaque Request Information**
 
-Request logs record status, latency, token usage (multi-dimensional), agent requests, provider responses, and more for every call — all at a glance.
+Request logs record status, latency, token usage, cost, agent requests, provider responses, and more for every call — all at a glance.
 
 **Hard to Trace Sessions**
 
@@ -88,8 +88,7 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 
 ### Statistics Overview
 
-- Provides statistics across provider/model dimensions, covering token usage/request counts, with token usage further broken down into input/output/cache.
-- Assuming provider pricing: $10/M input, $2/M cache, $30/M output — plug in the statistics to quickly estimate costs for choosing a CodingPlan.
+- Provides statistics across provider/model dimensions, covering token usage, request counts, and costs.
 - Supports clearing historical statistics in Log Management.
 
 ### CLI Modes
@@ -105,6 +104,7 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
   - Example: `*opus* -> gml-5` maps any model with "opus" in its name to the provider's gml-5 model.
 - Model Blacklist: Configure models a provider doesn't support; requests automatically skip that provider and route to one that supports the model.
 - Failure Blacklist: Automatically blacklists a provider after N consecutive failures for M minutes, with periodic automatic recovery. The default failure threshold is 5.
+- Pricing: Configure per-million-token prices for input, output, cache read, and cache creation. Statistics and logs use them to calculate costs automatically.
 - Supports writing a provider to the CLI config with one click and displaying the current direct-access status.
 
 ### Official Accounts
@@ -129,7 +129,7 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 ### Log Management
 
 - Request Logs: Split into request metadata and request details.
-  - Metadata: request time, agent, provider, status, latency, token breakdown, model mapping, error messages, etc.
+  - Metadata: request time, agent, provider, status, latency, token breakdown, cost, model mapping, error messages, etc.
   - Request Details: agent request headers / body, gateway forwarded request headers / body, provider response headers / body.
 - Log Levels: full logging, log details on failure only, or disable logging. Full logging records request details regardless of success; disabling logging records nothing.
 - Request detail data is stored in files, allowing cleanup of large logs while retaining metadata.
