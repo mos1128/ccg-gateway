@@ -28,8 +28,8 @@
       <div class="toolbar-left">
         <div class="v2-seg">
           <div class="v2-seg-slider" :style="{ transform: `translateX(${viewMode === 'proxy' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
-          <button class="v2-seg-btn" :class="{ active: viewMode === 'proxy' }" @click="handleSwitchProxy">中转路由</button>
-          <button class="v2-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方直连</button>
+          <button class="v2-seg-btn" :class="{ active: viewMode === 'proxy' }" type="button" @click="handleSwitchProxy">{{ providerModeLabel }}</button>
+          <button class="v2-seg-btn" :class="{ active: viewMode === 'direct' }" type="button" @click="handleSwitchDirect">官方直连</button>
         </div>
 
         <div v-if="showProfileControls" class="v2-seg profile-tabs">
@@ -305,6 +305,9 @@ const activeProfile = computed({
 })
 
 type ViewMode = 'proxy' | 'direct'
+const currentCliMode = computed<CliMode>(() => settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'proxy_route')
+const isProviderDirectMode = computed(() => currentCliMode.value === 'provider_direct')
+const isProxyRouteMode = computed(() => currentCliMode.value === 'proxy_route')
 const viewModes = ref<Record<CliType, ViewMode>>({ claude_code: 'proxy', codex: 'proxy', gemini: 'proxy' })
 const viewMode = computed<ViewMode>({
   get: () => activeCliType.value === 'claude_code' ? 'proxy' : viewModes.value[activeCliType.value],
@@ -317,9 +320,7 @@ const viewMode = computed<ViewMode>({
     viewModes.value[activeCliType.value] = mode
   }
 })
-const currentCliMode = computed<CliMode>(() => settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'proxy_route')
-const isProviderDirectMode = computed(() => currentCliMode.value === 'provider_direct')
-const isProxyRouteMode = computed(() => currentCliMode.value === 'proxy_route')
+const providerModeLabel = computed(() => isProviderDirectMode.value ? '中转直连' : '中转路由')
 const profileCapableCliTypes = PROFILE_CAPABLE_CLI_TYPES
 const showProfileControls = computed(() => viewMode.value === 'proxy' && profileCapableCliTypes.includes(activeCliType.value))
 const showProfileHelp = computed(() => showProfileControls.value)
@@ -853,6 +854,9 @@ watch(() => activeCliType.value, async (cliType) => {
   }
   credentialStore.fetchCredentials(cliType as CliType)
 })
+watch([activeCliType, currentCliMode], ([cliType, mode]) => {
+  viewModes.value[cliType as CliType] = mode === 'official_direct' ? 'direct' : 'proxy'
+}, { immediate: true })
 watch(() => activeProfile.value, (profile) => {
   if (!showProfileControls.value) return
   const key = providerStore.getCacheKey(activeCliType.value as CliType, profile)
