@@ -64,7 +64,7 @@
       </div>
       <div class="v2-grid-2">
         <div class="v2-field"><label class="v2-label">Agent 类型</label><AppSelect :model-value="form.cli_type" :options="cliSelectOptions" width="100%" @change="v => form.cli_type = v as CliType" /></div>
-        <div v-if="showProfileSelect" class="v2-field"><label class="v2-label">Profile</label><AppSelect :model-value="form.profile" :options="profileSelectOptions" width="100%" @change="v => form.profile = v as ProviderProfile" /></div>
+        <div class="v2-field"><label class="v2-label">Profile</label><AppSelect :model-value="form.profile" :options="profileSelectOptions" width="100%" @change="v => form.profile = v as ProviderProfile" /></div>
       </div>
       <div class="v2-grid-2">
         <div class="v2-field"><label class="v2-label">模型名 <span class="req">*</span></label><input v-model="form.model_name" class="v2-input mono" :placeholder="DEFAULT_MODEL_NAMES[form.cli_type]"></div>
@@ -252,7 +252,7 @@ const form = ref<FormState>(defaultForm())
 let hasLoadedTasks = false
 let scheduledTaskListener: (() => void) | null = null
 
-const showProfileSelect = computed(() => PROFILE_CAPABLE_CLI_TYPES.includes(form.value.cli_type))
+const supportsProfiles = computed(() => PROFILE_CAPABLE_CLI_TYPES.includes(form.value.cli_type))
 const selectableProviders = computed(() => providerOptions.value.filter(p => p.enabled))
 const isAllProvidersSelected = computed(() => selectableProviders.value.length > 0 && form.value.provider_ids.length === selectableProviders.value.length)
 
@@ -281,7 +281,7 @@ async function refreshScheduledTasks() {
 async function fetchProviders() {
   providersLoading.value = true
   try {
-    const profile = showProfileSelect.value ? form.value.profile : 'default'
+    const profile = supportsProfiles.value ? form.value.profile : 'default'
     const { data } = await providersApi.list(form.value.cli_type, profile)
     providerOptions.value = data
     form.value.provider_ids = form.value.provider_ids.filter(id => data.some(p => p.id === id && p.enabled))
@@ -291,7 +291,7 @@ async function fetchProviders() {
 }
 
 async function fetchProfiles() {
-  if (!showProfileSelect.value) {
+  if (!supportsProfiles.value) {
     profileTabs.value = [{ cli_type: form.value.cli_type, name: 'default', label: '默认', is_default: true, sort_order: 0 }]
     form.value.profile = 'default'
     return
@@ -316,7 +316,7 @@ function handleAdd() {
   form.value = defaultForm()
   providerOptions.value = []
   showDialog.value = true
-  if (showProfileSelect.value) void fetchProfiles()
+  void fetchProfiles()
   void fetchProviders()
 }
 function handleEdit(task: ScheduledTask) {
@@ -339,7 +339,7 @@ function handleEdit(task: ScheduledTask) {
     retry_interval_minutes: task.retry_interval_minutes
   }
   showDialog.value = true
-  if (showProfileSelect.value) void fetchProfiles()
+  void fetchProfiles()
   void fetchProviders()
 }
 async function handleSave() {
@@ -357,7 +357,7 @@ async function handleSave() {
   const payload: ProviderKeepalivePayload = {
     target_mode: form.value.target_mode,
     cli_type: form.value.cli_type,
-    profile: showProfileSelect.value ? form.value.profile : 'default',
+    profile: supportsProfiles.value ? form.value.profile : 'default',
     model_name: modelName
   }
   if (form.value.target_mode === 'selected') payload.provider_ids = [...form.value.provider_ids]
@@ -538,7 +538,7 @@ function handleScheduledTaskChange() {
 
 onMounted(async () => {
   try {
-    if (showProfileSelect.value) await fetchProfiles()
+    if (supportsProfiles.value) await fetchProfiles()
     await fetchTasks()
     hasLoadedTasks = true
   } catch (e: any) {
