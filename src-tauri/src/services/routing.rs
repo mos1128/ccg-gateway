@@ -6,55 +6,71 @@ use crate::services::proxy::wildcard_match;
 use crate::time::now_timestamp;
 
 pub const DEFAULT_PROFILE: &str = "default";
-pub const PROFILE1: &str = "profile1";
-pub const PROFILE2: &str = "profile2";
-pub const PROFILE3: &str = "profile3";
-
-pub const PROVIDER_PROFILES: [&str; 4] = [DEFAULT_PROFILE, PROFILE1, PROFILE2, PROFILE3];
 pub const GATEWAY_PROFILE_PATH_ROOT: &str = "/__ccg";
 
-pub fn normalize_profile(profile: Option<&str>) -> Option<&'static str> {
+pub fn normalize_profile(profile: Option<&str>) -> Option<String> {
     let profile = profile.unwrap_or(DEFAULT_PROFILE).trim();
-    match profile {
-        "" | DEFAULT_PROFILE => Some(DEFAULT_PROFILE),
-        PROFILE1 => Some(PROFILE1),
-        PROFILE2 => Some(PROFILE2),
-        PROFILE3 => Some(PROFILE3),
-        _ => None,
+    if profile.is_empty() || profile.eq_ignore_ascii_case(DEFAULT_PROFILE) {
+        return Some(DEFAULT_PROFILE.to_string());
+    }
+
+    normalize_profile_name(profile)
+}
+
+pub fn normalize_profile_name(profile: &str) -> Option<String> {
+    let profile = profile.trim();
+    if profile.is_empty() {
+        return None;
+    }
+
+    let profile = profile
+        .split_whitespace()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("_");
+    is_valid_profile_name(&profile).then_some(profile)
+}
+
+pub fn is_valid_profile_name(profile: &str) -> bool {
+    let profile = profile.trim();
+    !profile.is_empty()
+        && profile.len() <= 64
+        && profile != "."
+        && profile != ".."
+        && profile
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+pub fn gateway_token_for_profile(profile: &str) -> Option<String> {
+    let profile = normalize_profile(Some(profile))?;
+    if profile == DEFAULT_PROFILE {
+        Some("ccg-gateway".to_string())
+    } else {
+        Some(format!("ccg-gateway-{}", profile))
     }
 }
 
-pub fn gateway_token_for_profile(profile: &str) -> Option<&'static str> {
-    match normalize_profile(Some(profile))? {
-        DEFAULT_PROFILE => Some("ccg-gateway"),
-        PROFILE1 => Some("ccg-gateway-1"),
-        PROFILE2 => Some("ccg-gateway-2"),
-        PROFILE3 => Some("ccg-gateway-3"),
-        _ => None,
+pub fn profile_from_gateway_token(token: &str) -> Option<String> {
+    let token = token.trim();
+    if token == "ccg-gateway" {
+        return Some(DEFAULT_PROFILE.to_string());
+    }
+
+    let profile = token.strip_prefix("ccg-gateway-")?;
+    normalize_profile(Some(profile))
+}
+
+pub fn gateway_path_prefix_for_profile(profile: &str) -> Option<String> {
+    let profile = normalize_profile(Some(profile))?;
+    if profile == DEFAULT_PROFILE {
+        Some(String::new())
+    } else {
+        Some(format!("{}/{}", GATEWAY_PROFILE_PATH_ROOT, profile))
     }
 }
 
-pub fn profile_from_gateway_token(token: &str) -> Option<&'static str> {
-    match token.trim() {
-        "ccg-gateway" => Some(DEFAULT_PROFILE),
-        "ccg-gateway-1" => Some(PROFILE1),
-        "ccg-gateway-2" => Some(PROFILE2),
-        "ccg-gateway-3" => Some(PROFILE3),
-        _ => None,
-    }
-}
-
-pub fn gateway_path_prefix_for_profile(profile: &str) -> Option<&'static str> {
-    match normalize_profile(Some(profile))? {
-        DEFAULT_PROFILE => Some(""),
-        PROFILE1 => Some("/__ccg/profile1"),
-        PROFILE2 => Some("/__ccg/profile2"),
-        PROFILE3 => Some("/__ccg/profile3"),
-        _ => None,
-    }
-}
-
-pub fn split_gateway_profile_path(full_path: &str) -> Option<(&'static str, String)> {
+pub fn split_gateway_profile_path(full_path: &str) -> Option<(String, String)> {
     let rest = full_path.strip_prefix("/__ccg/")?;
     let (profile_segment, suffix) = match rest.find(|c| c == '/' || c == '?') {
         Some(index) => (&rest[..index], &rest[index..]),
@@ -152,7 +168,7 @@ pub async fn select_provider(
     model: Option<&str>,
 ) -> Result<Option<ProviderWithMaps>, sqlx::Error> {
     let now = now_timestamp();
-    let profile = normalize_profile(Some(profile)).unwrap_or(DEFAULT_PROFILE);
+    let profile = normalize_profile(Some(profile)).unwrap_or_else(|| DEFAULT_PROFILE.to_string());
 
     // Query enabled providers ordered by sort_order, excluding blacklisted ones
     let providers = sqlx::query_as::<_, Provider>(
@@ -166,7 +182,7 @@ pub async fn select_provider(
         "#,
     )
     .bind(cli_type)
-    .bind(profile)
+    .bind(&profile)
     .bind(now)
     .fetch_all(db)
     .await?;
@@ -207,7 +223,7 @@ pub async fn get_available_providers(
     model: Option<&str>,
 ) -> Result<Vec<ProviderWithMaps>, sqlx::Error> {
     let now = now_timestamp();
-    let profile = normalize_profile(Some(profile)).unwrap_or(DEFAULT_PROFILE);
+    let profile = normalize_profile(Some(profile)).unwrap_or_else(|| DEFAULT_PROFILE.to_string());
 
     let providers = sqlx::query_as::<_, Provider>(
         r#"
@@ -220,7 +236,7 @@ pub async fn get_available_providers(
         "#,
     )
     .bind(cli_type)
-    .bind(profile)
+    .bind(&profile)
     .bind(now)
     .fetch_all(db)
     .await?;

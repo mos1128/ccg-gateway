@@ -192,7 +192,8 @@ pub async fn ensure_claude_profile_settings(
 
     let config_dir = get_cli_config_dir_path(db.inner(), "claude_code").await;
     let config_path = config_dir.join(cli_helpers::claude_settings_filename(&profile));
-    let gateway_token = gateway_token_for_profile(&profile).unwrap_or("ccg-gateway");
+    let gateway_token =
+        gateway_token_for_profile(&profile).unwrap_or_else(|| "ccg-gateway".to_string());
     let use_merge = get_config_write_mode(db.inner(), "claude_code").await == "merge";
 
     write_claude_gateway_settings(
@@ -201,7 +202,7 @@ pub async fn ensure_claude_profile_settings(
         None,
         use_merge,
         &gateway_url,
-        gateway_token,
+        &gateway_token,
     )
     .await?;
 
@@ -302,12 +303,12 @@ pub async fn ensure_codex_profile_settings(
 
 async fn collect_provider_direct_rewrite_ids(db: &SqlitePool, cli_type: &str) -> Result<Vec<i64>> {
     let mut ids = Vec::new();
-    for profile in PROVIDER_PROFILES {
+    for profile in list_provider_profile_names(db).await? {
         if cli_type == "gemini" && profile != DEFAULT_PROFILE {
             continue;
         }
 
-        if let Some(id) = provider_direct_active_provider_id(db, cli_type, profile).await? {
+        if let Some(id) = provider_direct_active_provider_id(db, cli_type, &profile).await? {
             if !ids.contains(&id) {
                 ids.push(id);
             }

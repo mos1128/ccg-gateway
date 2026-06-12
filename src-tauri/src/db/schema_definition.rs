@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 29,
+            version: 30,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -254,6 +254,48 @@ impl DatabaseSchema {
                     "profile".to_string(),
                     "name".to_string(),
                 ]],
+            },
+        );
+
+        // provider_profiles 表
+        tables.insert(
+            "provider_profiles".to_string(),
+            TableDefinition {
+                name: "provider_profiles".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "cli_type".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'claude_code'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "sort_order".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "created_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "updated_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["cli_type".to_string(), "name".to_string()],
+                unique_constraints: vec![],
             },
         );
 

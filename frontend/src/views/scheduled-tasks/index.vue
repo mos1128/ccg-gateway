@@ -177,6 +177,7 @@ import {
   type Provider,
   type ProviderKeepalivePayload,
   type ProviderProfile,
+  type ProviderProfileItem,
   type ScheduledTask,
   type ScheduledTaskRun,
   type ScheduledTaskRunItem,
@@ -185,16 +186,26 @@ import {
   type ScheduledTaskType
 } from '@/types/models'
 
-const profileTabs: { id: ProviderProfile; label: string }[] = [
-  { id: 'default', label: '默认' },
-  { id: 'profile1', label: 'Profile 1' },
-  { id: 'profile2', label: 'Profile 2' },
-  { id: 'profile3', label: 'Profile 3' }
+const profileTabs = ref<ProviderProfileItem[]>([
+  { cli_type: 'claude_code', name: 'default', label: '默认', is_default: true, sort_order: 0 }
+])
+
+const hourOptions: AppSelectOption[] = Array.from({ length: 24 }, (_, hour) => {
+  const value = String(hour).padStart(2, '0')
+  return { label: value, value }
+})
+const minuteOptions: AppSelectOption[] = Array.from({ length: 60 }, (_, minute) => {
+  const value = String(minute).padStart(2, '0')
+  return { label: value, value }
+})
+const targetModeOptions: AppSelectOption[] = [
+  { label: '全部服务商', value: 'all' },
+  { label: '指定服务商', value: 'selected' }
 ]
-const hourOptions: AppSelectOption[] = Array.from({ length: 24 }, (_, h) => ({ label: String(h).padStart(2, '0'), value: String(h).padStart(2, '0') }))
-const minuteOptions: AppSelectOption[] = Array.from({ length: 60 }, (_, m) => ({ label: String(m).padStart(2, '0'), value: String(m).padStart(2, '0') }))
-const targetModeOptions: AppSelectOption[] = [{ label: '全部服务商', value: 'all' }, { label: '指定服务商', value: 'selected' }]
-const scheduleTypeOptions: AppSelectOption[] = [{ label: '执行间隔', value: 'interval' }, { label: '定期执行', value: 'daily' }]
+const scheduleTypeOptions: AppSelectOption[] = [
+  { label: '执行间隔', value: 'interval' },
+  { label: '定期执行', value: 'daily' }
+]
 
 interface FormState {
   name: string
@@ -213,7 +224,14 @@ interface FormState {
 }
 
 const cliSelectOptions: AppSelectOption[] = CLI_TABS.map(cli => ({ label: cli.label, value: cli.id }))
-const profileSelectOptions: AppSelectOption[] = profileTabs.map(p => ({ label: p.label, value: p.id }))
+function profileDisplayLabel(profile: ProviderProfileItem) {
+  if (profile.is_default) return profile.label
+  return profile.label.replace(/_/g, ' ')
+}
+
+const profileSelectOptions = computed<AppSelectOption[]>(() =>
+  profileTabs.value.map(profile => ({ label: profileDisplayLabel(profile), value: profile.name }))
+)
 const tasks = ref<ScheduledTask[]>([])
 const loading = ref(false)
 const showDialog = ref(false)
@@ -271,6 +289,15 @@ async function fetchProviders() {
     providersLoading.value = false
   }
 }
+
+async function fetchProfiles() {
+  const { data } = await providersApi.listProfiles(form.value.cli_type)
+  profileTabs.value = data
+  if (!profileTabs.value.some(profile => profile.name === form.value.profile)) {
+    form.value.profile = 'default'
+  }
+}
+
 function toggleProvider(id: number) {
   const i = form.value.provider_ids.indexOf(id)
   if (i >= 0) form.value.provider_ids.splice(i, 1)
@@ -284,6 +311,7 @@ function handleAdd() {
   form.value = defaultForm()
   providerOptions.value = []
   showDialog.value = true
+  void fetchProfiles()
   void fetchProviders()
 }
 function handleEdit(task: ScheduledTask) {
@@ -306,6 +334,7 @@ function handleEdit(task: ScheduledTask) {
     retry_interval_minutes: task.retry_interval_minutes
   }
   showDialog.value = true
+  void fetchProfiles()
   void fetchProviders()
 }
 async function handleSave() {
@@ -504,6 +533,7 @@ function handleScheduledTaskChange() {
 
 onMounted(async () => {
   try {
+    await fetchProfiles()
     await fetchTasks()
     hasLoadedTasks = true
   } catch (e: any) {
@@ -521,10 +551,18 @@ onUnmounted(() => {
     scheduledTaskListener = null
   }
 })
-watch(() => form.value.cli_type, (cliType, oldCliType) => {
-  if (!PROFILE_CAPABLE_CLI_TYPES.includes(cliType)) form.value.profile = 'default'
-  if (!oldCliType || form.value.model_name === getReusableModelName(oldCliType)) form.value.model_name = getReusableModelName(cliType)
-  if (showDialog.value) void fetchProviders()
+
+watch(() => form.value.cli_type, async (cliType, oldCliType) => {
+  if (!PROFILE_CAPABLE_CLI_TYPES.includes(cliType)) {
+    form.value.profile = 'default'
+  }
+  if (!oldCliType || form.value.model_name === getReusableModelName(oldCliType)) {
+    form.value.model_name = getReusableModelName(cliType)
+  }
+  if (showDialog.value) {
+    await fetchProfiles()
+    void fetchProviders()
+  }
 })
 watch(() => form.value.profile, () => {
   if (showDialog.value) void fetchProviders()

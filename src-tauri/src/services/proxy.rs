@@ -236,7 +236,7 @@ fn bearer_token(value: &str) -> &str {
 }
 
 /// Detect provider profile from the gateway token sent by the CLI.
-pub fn detect_gateway_profile(headers: &HeaderMap) -> &'static str {
+pub fn detect_gateway_profile(headers: &HeaderMap) -> String {
     let header_names = ["authorization", "x-api-key", "x-goog-api-key"];
 
     for name in header_names {
@@ -247,7 +247,7 @@ pub fn detect_gateway_profile(headers: &HeaderMap) -> &'static str {
         }
     }
 
-    DEFAULT_PROFILE
+    DEFAULT_PROFILE.to_string()
 }
 
 /// Check if request is streaming based on body content

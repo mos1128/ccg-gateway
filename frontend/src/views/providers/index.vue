@@ -32,15 +32,53 @@
           <button class="v2-seg-btn" :class="{ active: viewMode === 'direct' }" @click="handleSwitchDirect">官方直连</button>
         </div>
 
-        <div v-if="showProfileControls" class="v2-seg">
-          <div class="v2-seg-slider" :style="{ transform: `translateX(${profileTabs.findIndex(p => activeProfile === p.id) * 100}%)`, width: `calc((100% - 8px) / ${profileTabs.length})` }"></div>
+        <div v-if="showProfileControls" class="v2-seg profile-tabs">
+          <div class="v2-seg-slider" :style="{ transform: `translateX(${Math.max(profileTabs.findIndex(p => activeProfile === p.name), 0) * 84}px)`, width: '84px' }"></div>
           <button
             v-for="profile in profileTabs"
-            :key="profile.id"
-            class="v2-seg-btn"
-            :class="{ active: activeProfile === profile.id, disabled: !!profileSwitching }"
-            @click="handleProfileSelect(profile.id)"
-          >{{ profile.label }}</button>
+            :key="profile.name"
+            class="v2-seg-btn profile-tab-btn"
+            :class="{ active: activeProfile === profile.name, disabled: !!profileSwitching }"
+            @click="handleProfileSelect(profile.name)"
+            @dblclick.stop="startProfileRename(profile)"
+          >
+            <input
+              v-if="editingProfileName === profile.name"
+              ref="profileRenameInput"
+              v-model="profileRenameDraft"
+              class="profile-rename-input"
+              :class="{ invalid: profileRenameError }"
+              @click.stop
+              @keydown.enter.prevent="commitProfileRename(profile)"
+              @keydown.esc.prevent="cancelProfileRename"
+              @blur="commitProfileRename(profile)"
+            >
+            <span
+              v-if="editingProfileName === profile.name && profileRenameError"
+              class="profile-rename-error"
+            >
+              {{ profileRenameError }}
+            </span>
+            <span v-if="editingProfileName !== profile.name">{{ profileDisplayLabel(profile) }}</span>
+            <button
+              v-if="!profile.is_default && editingProfileName !== profile.name"
+              class="profile-tab-delete"
+              type="button"
+              title="删除 Profile"
+              @click.stop="handleDeleteProfile(profile)"
+            >
+              ×
+            </button>
+          </button>
+          <button
+            class="v2-seg-btn profile-add"
+            type="button"
+            title="添加 Profile"
+            :disabled="profileLoading"
+            @click="handleAddProfile"
+          >
+            +
+          </button>
         </div>
 
         <el-tooltip
@@ -57,7 +95,7 @@
               <div class="tooltip-item"><span>{{ profileUsageText }}</span></div>
               <div class="profile-cmd">
                 <div class="profile-cmd-head">
-                  <strong>{{ profileLabels[activeProfile] }} 启动命令</strong>
+                  <strong>{{ currentProfileLabel }} 启动命令</strong>
                   <el-tooltip content="复制启动命令" placement="top" effect="light" :show-after="250">
                     <button class="profile-cmd-copy" type="button" :disabled="isCurrentProfileCommandLoading" @click.stop="copyCurrentProfileLaunchCommand">
                       <svg width="14" height="14"><use href="#v2i-copy"/></svg>
@@ -205,6 +243,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import draggable from 'vuedraggable'
 import ProviderRow from './components/ProviderRow.vue'
 import CredentialRow from './components/CredentialRow.vue'
@@ -223,7 +262,7 @@ import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { CLI_TABS, PROFILE_CAPABLE_CLI_TYPES } from '@/types/models'
-import type { Provider, CliType, CliMode, ProviderProfile, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
+import type { Provider, CliType, CliMode, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
 import { getReusableModelName, saveReusableModelName } from '@/utils/modelDefaults'
 
 const providerStore = useProviderStore()
@@ -233,12 +272,14 @@ const settingsStore = useSettingsStore()
 
 const cliTabs = CLI_TABS
 
-const profileTabs: { id: ProviderProfile; label: string }[] = [
-  { id: 'default', label: '默认' },
-  { id: 'profile1', label: 'Profile 1' },
-  { id: 'profile2', label: 'Profile 2' },
-  { id: 'profile3', label: 'Profile 3' }
-]
+const profileTabs = ref<ProviderProfileItem[]>([
+  { cli_type: 'claude_code', name: 'default', label: '默认', is_default: true, sort_order: 0 }
+])
+const profileLoading = ref(false)
+const editingProfileName = ref<ProviderProfile | null>(null)
+const profileRenameDraft = ref('')
+const profileRenameError = ref('')
+const profileRenameInput = ref<HTMLInputElement | null>(null)
 
 const activeCliType = computed({
   get: () => uiStore.providersActiveCliType,
@@ -272,9 +313,9 @@ const currentProviderProfile = computed<ProviderProfile>(() => showProfileContro
 const profileSwitching = ref<ProviderProfile | null>(null)
 let testResultListener: (() => void) | null = null
 
-const profileLabels: Record<ProviderProfile, string> = {
-  default: '默认', profile1: 'Profile 1', profile2: 'Profile 2', profile3: 'Profile 3'
-}
+const currentProfileLabel = computed(() =>
+  profileDisplayLabel(profileTabs.value.find(profile => profile.name === activeProfile.value)) || activeProfile.value
+)
 
 const profileSettingsStatusMap = ref<Partial<Record<string, CliProfileSettingsStatus>>>({})
 const profileCommandLoading = ref<string | null>(null)
@@ -292,6 +333,171 @@ const profileUsageText = computed(() => {
   }
   return '切换到 Profile 时会自动生成对应配置文件，通过对应启动命令启动的 Agent 会路由到对应 Profile 配置的服务商'
 })
+
+function isValidProfileName(name: string) {
+  return /^[A-Za-z0-9_-]{1,64}$/.test(name)
+}
+
+function profileDisplayLabel(profile?: ProviderProfileItem) {
+  if (!profile) return ''
+  if (profile.is_default) return profile.label
+  return profile.label.replace(/_/g, ' ')
+}
+
+function profileNameError(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed) return '不能为空'
+  if (!/^[A-Za-z0-9 _-]+$/.test(trimmed)) return '仅支持英文、数字、空格、下划线和短横线'
+  if (profileNameFromInput(trimmed).length > 64) return '最多 64 个字符'
+  return ''
+}
+
+function profileNameExists(name: string, currentName: string) {
+  return profileTabs.value.some(profile =>
+    profile.name.toLowerCase() === name.toLowerCase() && profile.name !== currentName
+  )
+}
+
+function nextProfileName() {
+  const existing = new Set(profileTabs.value.map(profile => profile.name))
+  let index = profileTabs.value.filter(profile => !profile.is_default).length + 1
+  let name = `profile${index}`
+  while (existing.has(name)) {
+    index += 1
+    name = `profile${index}`
+  }
+  return name
+}
+
+function profileNameFromInput(input: string) {
+  return input.trim().replace(/\s+/g, '_')
+}
+
+async function focusProfileRenameInput() {
+  await nextTick()
+  const input = Array.isArray(profileRenameInput.value)
+    ? profileRenameInput.value[0]
+    : profileRenameInput.value
+  input?.focus()
+  input?.select()
+}
+
+async function loadProfiles() {
+  profileLoading.value = true
+  try {
+    const { data } = await providersApi.listProfiles(activeCliType.value)
+    profileTabs.value = data
+    if (!profileTabs.value.some(profile => profile.name === activeProfile.value)) {
+      activeProfile.value = 'default'
+    }
+  } catch (e: any) {
+    notify(getErrorMessage(e, '加载 Profile 失败'), 'error')
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function handleAddProfile() {
+  const internalName = nextProfileName()
+  const displayName = `Profile ${profileTabs.value.filter(profile => !profile.is_default).length + 1}`
+  profileLoading.value = true
+  try {
+    const { data } = await providersApi.createProfile(activeCliType.value, internalName)
+    await loadProfiles()
+    const ok = await ensureProfileReady(data.name)
+    if (ok) activeProfile.value = data.name
+    editingProfileName.value = data.name
+    profileRenameDraft.value = displayName
+    await focusProfileRenameInput()
+  } catch (e: any) {
+    notify(getErrorMessage(e, '创建 Profile 失败'), 'error')
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function startProfileRename(profile: ProviderProfileItem) {
+  if (profile.is_default) return
+  editingProfileName.value = profile.name
+  profileRenameDraft.value = profileDisplayLabel(profile)
+  profileRenameError.value = ''
+  await focusProfileRenameInput()
+}
+
+function cancelProfileRename() {
+  editingProfileName.value = null
+  profileRenameDraft.value = ''
+  profileRenameError.value = ''
+}
+
+async function commitProfileRename(profile: ProviderProfileItem) {
+  if (editingProfileName.value !== profile.name) return
+  const error = profileNameError(profileRenameDraft.value)
+  if (error) {
+    profileRenameError.value = error
+    await focusProfileRenameInput()
+    return
+  }
+
+  const name = profileNameFromInput(profileRenameDraft.value)
+  if (name === profile.name) {
+    cancelProfileRename()
+    return
+  }
+  if (profileNameExists(name, profile.name)) {
+    profileRenameError.value = '名称已存在'
+    await focusProfileRenameInput()
+    return
+  }
+  if (!isValidProfileName(name)) {
+    profileRenameError.value = '仅支持英文、数字、空格、下划线和短横线'
+    await focusProfileRenameInput()
+    return
+  }
+
+  profileLoading.value = true
+  try {
+    const oldProfile = profile.name
+    const { data } = await providersApi.renameProfile(activeCliType.value, oldProfile, name)
+    const oldPrefix = `${activeCliType.value}_${oldProfile}`
+    const newPrefix = `${activeCliType.value}_${data.name}`
+    if (providerStore.providersMap[oldPrefix]) {
+      providerStore.providersMap[newPrefix] = providerStore.providersMap[oldPrefix]
+      delete providerStore.providersMap[oldPrefix]
+    }
+    profileSettingsStatusMap.value = {}
+    if (activeProfile.value === oldProfile) activeProfile.value = data.name
+    await loadProfiles()
+    await ensureProfileReady(data.name)
+    await providerStore.fetchProviders(activeCliType.value as CliType, data.name)
+    cancelProfileRename()
+  } catch (e: any) {
+    notify(getErrorMessage(e, '重命名 Profile 失败'), 'error')
+    await focusProfileRenameInput()
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function handleDeleteProfile(profile: ProviderProfileItem) {
+  if (profile.is_default) return
+  try {
+    await confirm(`确定删除 Profile「${profileDisplayLabel(profile)}」？该 Profile 下的服务商和定时任务会一并删除。`, '确认')
+    profileLoading.value = true
+    const deletedIndex = profileTabs.value.findIndex(item => item.name === profile.name)
+    const previousProfile = profileTabs.value[deletedIndex - 1].name
+    await providersApi.deleteProfile(activeCliType.value, profile.name)
+    delete providerStore.providersMap[`${activeCliType.value}_${profile.name}`]
+    profileSettingsStatusMap.value = {}
+    if (activeProfile.value === profile.name) activeProfile.value = previousProfile
+    await loadProfiles()
+    await providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
+  } catch (e: any) {
+    if (e !== 'cancel') notify(getErrorMessage(e, '删除 Profile 失败'), 'error')
+  } finally {
+    profileLoading.value = false
+  }
+}
 
 function handleSwitchProxy() {
   if (viewMode.value === 'proxy') return
@@ -506,7 +712,8 @@ async function copyCurrentProfileLaunchCommand() {
   if (!command) return
   try {
     await navigator.clipboard.writeText(command)
-    notify(`已复制 ${profileLabels[profile]} 启动命令`)
+    const label = profileDisplayLabel(profileTabs.value.find(item => item.name === profile)) || profile
+    notify(`已复制 ${label} 启动命令`)
   } catch {
     notify('复制失败', 'error')
   }
@@ -541,7 +748,7 @@ async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
       notify(`写入后仍未检测到有效配置：${ensured.path}`, 'error')
       return false
     }
-    notify(`已写入 ${ensured.path}`)
+
     return true
   } catch (e: any) {
     notify(getErrorMessage(e, '写入 Profile 配置失败'), 'error')
@@ -565,6 +772,7 @@ async function ensureCurrentProfileOrFallback(): Promise<ProviderProfile> {
 }
 
 watch(() => activeCliType.value, async (cliType) => {
+  await loadProfiles()
   const profile = await ensureCurrentProfileOrFallback()
   const key = providerStore.getCacheKey(cliType as CliType, profile)
   if (!providerStore.providersMap[key] || providerStore.providersMap[key].length === 0) {
@@ -579,6 +787,11 @@ watch(() => activeProfile.value, (profile) => {
     providerStore.fetchProviders(activeCliType.value as CliType, profile)
   }
 })
+watch(profileRenameDraft, (value) => {
+  if (!editingProfileName.value) return
+  profileRenameError.value = profileNameError(value)
+})
+
 watch(() => viewMode.value, async (mode) => {
   if (mode !== 'proxy') return
   const profile = await ensureCurrentProfileOrFallback()
@@ -836,6 +1049,7 @@ function getUnblacklistTime(provider: Provider): string {
 
 onMounted(async () => {
   await settingsStore.fetchSettings()
+  await loadProfiles()
   const profile = await ensureCurrentProfileOrFallback()
   providerStore.fetchProviders(activeCliType.value as CliType, profile)
   credentialStore.fetchCredentials(activeCliType.value as CliType)
@@ -870,6 +1084,17 @@ onUnmounted(() => {
 .prov-page { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: -16px; }
 
 .prov-clitabs { flex-shrink: 0; margin-bottom: 16px; }
+.profile-tabs .v2-seg-btn.active { pointer-events: auto; }
+.profile-tabs .v2-seg-btn { position: relative; }
+.profile-tabs:has(.v2-seg-slider) { grid-auto-columns: auto; }
+.profile-tabs:has(.v2-seg-slider) .v2-seg-btn { min-width: 0; }
+.profile-tab-btn { width: 84px; min-width: 84px; padding-left: 8px; padding-right: 8px; }
+.profile-tab-delete { margin-left: 8px; border: 0; background: transparent; color: var(--v2-text-3); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; pointer-events: auto; }
+.profile-tab-delete:hover { color: var(--v2-danger); }
+.profile-rename-input { width: 72px; max-width: 72px; min-width: 72px; height: 18px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; line-height: 18px; text-align: center; padding: 0; }
+.profile-rename-input.invalid { border: 1px solid var(--v2-danger); border-radius: 4px; color: var(--v2-danger); }
+.profile-rename-error { position: absolute; top: calc(100% + 4px); left: 50%; z-index: 10; box-sizing: border-box; min-width: max-content; transform: translateX(-50%); border: 1px solid var(--v2-danger); border-radius: 4px; background: var(--v2-surface); color: var(--v2-danger); font-size: 12px; line-height: 18px; padding: 2px 6px; white-space: nowrap; box-shadow: 0 4px 12px var(--v2-shadow); }
+.profile-add { width: 30px; min-width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 
 .prov-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 

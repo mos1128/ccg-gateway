@@ -16,8 +16,16 @@ export const CLI_TABS: { id: CliType; label: string }[] = CLI_TYPES.map((id) => 
   label: CLI_LABELS[id]
 }))
 export const PROFILE_CAPABLE_CLI_TYPES: readonly CliType[] = ['claude_code', 'codex']
-export type ProviderProfile = 'default' | 'profile1' | 'profile2' | 'profile3'
+export type ProviderProfile = string
 export type CliMode = 'proxy_route' | 'provider_direct' | 'official_direct'
+
+export interface ProviderProfileItem {
+  cli_type: CliType
+  name: ProviderProfile
+  label: string
+  is_default: boolean
+  sort_order: number
+}
 
 // Provider types
 export interface ModelMap {

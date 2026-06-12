@@ -6,6 +6,36 @@ use crate::time::now_timestamp;
 // ==================== Provider 相关实体 ====================
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ProviderProfile {
+    pub cli_type: String,
+    pub name: String,
+    pub sort_order: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderProfileResponse {
+    pub cli_type: String,
+    pub name: String,
+    pub label: String,
+    pub is_default: bool,
+    pub sort_order: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderProfileCreate {
+    pub cli_type: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderProfileRename {
+    pub cli_type: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Provider {
     pub id: i64,
     pub cli_type: String,
