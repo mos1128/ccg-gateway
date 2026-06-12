@@ -32,10 +32,9 @@ fn extract_safe_headers(headers: &HeaderMap) -> Vec<(String, String)> {
         "keep-alive",
     ];
     for (k, v) in headers.iter() {
-        let key_str = k.as_str().to_lowercase();
-        if !skip_keys.contains(&key_str.as_str()) {
+        if !skip_keys.iter().any(|h| k.as_str().eq_ignore_ascii_case(h)) {
             if let Ok(val_str) = v.to_str() {
-                safe.push((key_str, val_str.to_string()));
+                safe.push((k.as_str().to_owned(), val_str.to_string()));
             }
         }
     }
@@ -547,8 +546,7 @@ pub fn filter_headers(headers: &HeaderMap) -> reqwest::header::HeaderMap {
     let mut filtered = reqwest::header::HeaderMap::new();
 
     for (name, value) in headers.iter() {
-        let name_str = name.as_str().to_lowercase();
-        if !FILTERED_HEADERS.contains(&name_str.as_str()) {
+        if !FILTERED_HEADERS.iter().any(|h| name.as_str().eq_ignore_ascii_case(h)) {
             if let Ok(header_name) =
                 reqwest::header::HeaderName::from_bytes(name.as_str().as_bytes())
             {

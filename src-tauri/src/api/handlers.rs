@@ -23,6 +23,18 @@ use crate::services::proxy::{
 use crate::services::routing::{select_provider, split_gateway_profile_path};
 use crate::services::{provider as provider_service, stats as stats_service};
 
+const RESPONSE_FILTERED_HEADERS: &[&str] = &[
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "content-length",
+];
+
 // Catch-all proxy handler - forwards any non-API request to the appropriate provider
 pub async fn proxy_handler_catchall(
     State(state): State<Arc<AppState>>,
@@ -303,6 +315,25 @@ fn serialize_reqwest_headers(headers: &reqwest::header::HeaderMap) -> String {
     serde_json::to_string(&map).unwrap_or_default()
 }
 
+fn copy_response_headers(
+    mut builder: axum::http::response::Builder,
+    headers: &reqwest::header::HeaderMap,
+) -> axum::http::response::Builder {
+    for (name, value) in headers.iter() {
+        if RESPONSE_FILTERED_HEADERS.iter().any(|h| name.as_str().eq_ignore_ascii_case(h)) {
+            continue;
+        }
+
+        if let Ok(header_name) = axum::http::HeaderName::from_bytes(name.as_str().as_bytes()) {
+            if let Ok(header_value) = axum::http::HeaderValue::from_bytes(value.as_bytes()) {
+                builder = builder.header(header_name, header_value);
+            }
+        }
+    }
+
+    builder
+}
+
 /// Maximum body size to store in logs (2MB)
 const MAX_LOG_BODY_SIZE: usize = 2 * 1024 * 1024;
 
@@ -526,13 +557,7 @@ async fn handle_streaming_request(
     let mut builder =
         Response::builder().status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK));
 
-    for (name, value) in resp_headers.iter() {
-        if let Ok(header_name) = axum::http::HeaderName::from_bytes(name.as_str().as_bytes()) {
-            if let Ok(header_value) = axum::http::HeaderValue::from_bytes(value.as_bytes()) {
-                builder = builder.header(header_name, header_value);
-            }
-        }
-    }
+    builder = copy_response_headers(builder, &resp_headers);
 
     // Create streaming body
     let is_success = status.is_success();
@@ -971,13 +996,7 @@ async fn handle_non_streaming_request(
     let mut builder =
         Response::builder().status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK));
 
-    for (name, value) in resp_headers.iter() {
-        if let Ok(header_name) = axum::http::HeaderName::from_bytes(name.as_str().as_bytes()) {
-            if let Ok(header_value) = axum::http::HeaderValue::from_bytes(value.as_bytes()) {
-                builder = builder.header(header_name, header_value);
-            }
-        }
-    }
+    builder = copy_response_headers(builder, &resp_headers);
 
     Ok(builder.body(Body::from(body_bytes)).unwrap())
 }
