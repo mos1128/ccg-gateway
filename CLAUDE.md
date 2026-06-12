@@ -101,6 +101,7 @@
 - 当前前端统一使用 `frontend/src/layouts/V2Layout.vue` 承载主布局、导航和 V2 设计系统；新增页面默认挂在该布局下，禁止新增平行主布局。
 - `frontend/src/components/` 中的全局组件是跨页面复用入口。新增页面优先复用 `AppSelect`、`AppConfirm`、`V2Drawer`、`V2Empty`、`V2CliChips`、`CliBrandIcon`、`PluginIcon`、`SkillIcon`、`ConfigCard`。
 - Element Plus 可用于底层能力，如 `el-switch`、`el-pagination`、`el-tooltip`、`el-upload`；已有项目封装时优先使用项目封装，禁止页面内重复造一套选择器、弹窗、抽屉、空状态、图标组件。
+- 悬浮提示统一使用 `el-tooltip` 或项目封装组件，禁止用原生 `title` 作为可见提示。
 - 项目已启用 `unplugin-auto-import`，新增 Vue / Pinia / Router 常用 API 时先遵循现有自动导入方式，不要重复引入无意义 import。
 
 ---
