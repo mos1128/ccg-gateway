@@ -27,7 +27,8 @@ pub fn normalize_profile_name(profile: &str) -> Option<String> {
         .split_whitespace()
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
-        .join("_");
+        .join("_")
+        .to_ascii_lowercase();
     is_valid_profile_name(&profile).then_some(profile)
 }
 

@@ -1,14 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::services::routing::{normalize_profile, DEFAULT_PROFILE};
-
 pub fn claude_settings_filename(profile: &str) -> String {
-    let profile = normalize_profile(Some(profile)).unwrap_or_else(|| DEFAULT_PROFILE.to_string());
-    if profile == DEFAULT_PROFILE {
-        "settings.json".to_string()
-    } else {
-        format!("settings-ccg-{}.json", profile)
-    }
+    crate::services::cli_config::claude_settings_filename(profile)
 }
 
 pub fn mcp_config_path(config_dir: &Path, cli_type: &str) -> Option<PathBuf> {

@@ -303,7 +303,7 @@ pub async fn ensure_codex_profile_settings(
 
 async fn collect_provider_direct_rewrite_ids(db: &SqlitePool, cli_type: &str) -> Result<Vec<i64>> {
     let mut ids = Vec::new();
-    for profile in list_provider_profile_names(db).await? {
+    for profile in list_provider_profile_names(db, cli_type).await? {
         if cli_type == "gemini" && profile != DEFAULT_PROFILE {
             continue;
         }

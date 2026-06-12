@@ -1,5 +1,5 @@
-import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { invoke } from './tauri-bridge'
 import type { Provider, ProviderCreate, ProviderProfileItem, ProviderUpdate, TestProviderResult } from '@/types/models'
 
 export const providersApi = {

@@ -3,6 +3,7 @@ use crate::db::models::{
     ScheduledTaskRun, ScheduledTaskRunItem, ScheduledTaskRunListResponse, ScheduledTaskUpdate,
 };
 use crate::services::provider as provider_service;
+use crate::services::provider_profile::{provider_profile_exists_if_supported, validate_cli_type};
 use crate::services::routing::{normalize_profile, DEFAULT_PROFILE};
 use crate::time::now_timestamp;
 use chrono::{Duration, Local, NaiveTime, TimeZone};
@@ -239,9 +240,9 @@ async fn recover_stuck_tasks(
 
 pub async fn list_tasks(db: &SqlitePool) -> Result<Vec<ScheduledTaskResponse>, String> {
     let tasks = sqlx::query_as::<_, ScheduledTask>("SELECT * FROM scheduled_tasks ORDER BY id")
-    .fetch_all(db)
-    .await
-    .map_err(|e| e.to_string())?;
+        .fetch_all(db)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(tasks.into_iter().map(Into::into).collect())
 }
@@ -674,7 +675,22 @@ async fn execute_keepalive_task(
     let mut outcome = RunOutcome::empty();
 
     if targets.is_empty() {
-        outcome.errors.push("没有可执行的服务商".to_string());
+        let reason = "没有可执行的服务商";
+        outcome.total_count = 1;
+        outcome.skipped_count = 1;
+        outcome.errors.push(reason.to_string());
+        insert_run_item(
+            log_db,
+            run_id,
+            None,
+            "任务",
+            &model_name,
+            STATUS_SKIPPED,
+            None,
+            0,
+            Some(reason),
+        )
+        .await?;
         return Ok(outcome);
     }
 
@@ -785,6 +801,14 @@ async fn resolve_keepalive_targets(
                 .ok_or_else(|| "全选模式缺少 cli_type".to_string())?;
             let profile = normalize_profile(payload.profile.as_deref())
                 .unwrap_or_else(|| DEFAULT_PROFILE.to_string());
+            if !provider_profile_exists_if_supported(db, cli_type, &profile).await? {
+                return Ok(vec![KeepaliveTarget {
+                    provider_id: None,
+                    provider_name: format!("{}:{}", cli_type, profile),
+                    provider: None,
+                    skip_reason: Some("Profile 不存在".to_string()),
+                }]);
+            }
 
             let providers = sqlx::query_as::<_, Provider>(
                 r#"
@@ -798,6 +822,15 @@ async fn resolve_keepalive_targets(
             .fetch_all(db)
             .await
             .map_err(|e| e.to_string())?;
+
+            if providers.is_empty() {
+                return Ok(vec![KeepaliveTarget {
+                    provider_id: None,
+                    provider_name: format!("{}:{}", cli_type, profile),
+                    provider: None,
+                    skip_reason: Some("没有可用服务商".to_string()),
+                }]);
+            }
 
             Ok(providers
                 .into_iter()
@@ -1281,9 +1314,7 @@ fn validate_payload(task_type: &str, payload_json: &str) -> Result<(), String> {
     match payload.target_mode.as_str() {
         "all" => {
             let cli_type = payload.cli_type.as_deref().unwrap_or_default();
-            if cli_type.is_empty() {
-                return Err("全选模式必须指定终端类型".to_string());
-            }
+            validate_cli_type(cli_type)?;
             if normalize_profile(payload.profile.as_deref()).is_none() {
                 return Err("profile 参数无效".to_string());
             }

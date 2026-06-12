@@ -33,52 +33,59 @@
         </div>
 
         <div v-if="showProfileControls" class="v2-seg profile-tabs">
-          <div class="v2-seg-slider" :style="{ transform: `translateX(${Math.max(profileTabs.findIndex(p => activeProfile === p.name), 0) * 84}px)`, width: '84px' }"></div>
-          <button
+          <div class="v2-seg-slider" :style="profileSliderStyle"></div>
+          <el-tooltip
             v-for="profile in profileTabs"
             :key="profile.name"
-            class="v2-seg-btn profile-tab-btn"
-            :class="{ active: activeProfile === profile.name, disabled: !!profileSwitching }"
-            @click="handleProfileSelect(profile.name)"
-            @dblclick.stop="startProfileRename(profile)"
+            :ref="(el) => setProfileErrorTooltipRef(profile.name, el)"
+            :visible="editingProfileName === profile.name && !!profileRenameError"
+            :disabled="editingProfileName !== profile.name || !profileRenameError"
+            effect="light"
+            placement="bottom"
+            popper-class="v2-profile-error-pop v2-scope"
           >
-            <input
-              v-if="editingProfileName === profile.name"
-              ref="profileRenameInput"
-              v-model="profileRenameDraft"
-              class="profile-rename-input"
-              :class="{ invalid: profileRenameError }"
-              @click.stop
-              @keydown.enter.prevent="commitProfileRename(profile)"
-              @keydown.esc.prevent="cancelProfileRename"
-              @blur="commitProfileRename(profile)"
-            >
-            <span
-              v-if="editingProfileName === profile.name && profileRenameError"
-              class="profile-rename-error"
-            >
-              {{ profileRenameError }}
-            </span>
-            <span v-if="editingProfileName !== profile.name">{{ profileDisplayLabel(profile) }}</span>
+            <template #content>{{ profileRenameError }}</template>
             <button
-              v-if="!profile.is_default && editingProfileName !== profile.name"
-              class="profile-tab-delete"
+              class="v2-seg-btn profile-tab-btn"
+              :class="{ active: activeProfile === profile.name, disabled: !!profileSwitching }"
               type="button"
-              title="删除 Profile"
-              @click.stop="handleDeleteProfile(profile)"
+              @click="handleProfileSelect(profile.name)"
+              @dblclick.stop="startProfileRename(profile)"
             >
-              ×
+              <input
+                v-if="editingProfileName === profile.name"
+                ref="profileRenameInput"
+                v-model="profileRenameDraft"
+                class="profile-rename-input"
+                @click.stop
+                @keydown.enter.prevent="commitProfileRename(profile)"
+                @keydown.esc.prevent="cancelProfileRename"
+                @blur="commitProfileRename(profile)"
+              >
+              <span v-if="editingProfileName !== profile.name" class="profile-tab-label">{{ profileDisplayLabel(profile) }}</span>
+              <button
+                v-if="activeProfile === profile.name && !profile.is_default && editingProfileName !== profile.name"
+                class="profile-tab-delete"
+                type="button"
+                aria-label="删除 Profile"
+                :disabled="profileLoading"
+                @click.stop="handleDeleteProfile(profile)"
+              >
+                ×
+              </button>
             </button>
-          </button>
-          <button
-            class="v2-seg-btn profile-add"
-            type="button"
-            title="添加 Profile"
-            :disabled="profileLoading"
-            @click="handleAddProfile"
-          >
-            +
-          </button>
+          </el-tooltip>
+          <span v-if="showProfileAddTab" class="profile-add-cell">
+            <button
+              class="v2-seg-btn profile-add-tab"
+              type="button"
+              aria-label="添加 Profile"
+              :disabled="profileLoading || !canCreateProfile"
+              @click.stop="handleAddProfile"
+            >
+              +
+            </button>
+          </span>
         </div>
 
         <el-tooltip
@@ -152,7 +159,9 @@
             <div>服务商</div>
             <div class="pt-col-endpoint">端点</div>
             <div>状态</div>
-            <div title="连续失败次数 / 熔断阈值">容错</div>
+            <el-tooltip content="连续失败次数 / 熔断阈值" placement="top" effect="light" :show-after="250">
+              <div>容错</div>
+            </el-tooltip>
             <div class="pt-col-map">模型映射</div>
             <div>操作</div>
           </div>
@@ -279,7 +288,12 @@ const profileLoading = ref(false)
 const editingProfileName = ref<ProviderProfile | null>(null)
 const profileRenameDraft = ref('')
 const profileRenameError = ref('')
-const profileRenameInput = ref<HTMLInputElement | null>(null)
+const profileRenameInput = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const profileErrorTooltipRefs = new Map<ProviderProfile, { updatePopper?: () => void }>()
+const draftProfileName: ProviderProfile = '__draft_profile__:new'
+const profileMaxCustomCount = 4
+const profileNameMaxLength = 10
+const profileNameRuleText = `仅支持英文、数字、空格、下划线和短横线，最多 ${profileNameMaxLength} 个字符`
 
 const activeCliType = computed({
   get: () => uiStore.providersActiveCliType,
@@ -316,6 +330,20 @@ let testResultListener: (() => void) | null = null
 const currentProfileLabel = computed(() =>
   profileDisplayLabel(profileTabs.value.find(profile => profile.name === activeProfile.value)) || activeProfile.value
 )
+const profileTabWidth = 100
+const profileSliderStyle = computed(() => {
+  const index = Math.max(profileTabs.value.findIndex(profile => activeProfile.value === profile.name), 0)
+  return {
+    transform: `translateX(${index * profileTabWidth}px)`,
+    width: `${profileTabWidth}px`
+  }
+})
+const customProfileCount = computed(() =>
+  profileTabs.value.filter(profile => !profile.is_default && !isDraftProfile(profile)).length
+)
+const canCreateProfile = computed(() => customProfileCount.value < profileMaxCustomCount)
+const hasDraftProfile = computed(() => profileTabs.value.some(profile => isDraftProfile(profile)))
+const showProfileAddTab = computed(() => canCreateProfile.value && !hasDraftProfile.value)
 
 const profileSettingsStatusMap = ref<Partial<Record<string, CliProfileSettingsStatus>>>({})
 const profileCommandLoading = ref<string | null>(null)
@@ -334,43 +362,67 @@ const profileUsageText = computed(() => {
   return '切换到 Profile 时会自动生成对应配置文件，通过对应启动命令启动的 Agent 会路由到对应 Profile 配置的服务商'
 })
 
-function isValidProfileName(name: string) {
-  return /^[A-Za-z0-9_-]{1,64}$/.test(name)
-}
-
 function profileDisplayLabel(profile?: ProviderProfileItem) {
   if (!profile) return ''
+  if (isDraftProfile(profile)) return profile.label
   if (profile.is_default) return profile.label
   return profile.label.replace(/_/g, ' ')
+}
+
+function isDraftProfile(profile: ProviderProfileItem) {
+  return profile.name === draftProfileName
+}
+
+function removeDraftProfile() {
+  profileTabs.value = profileTabs.value.filter(profile => !isDraftProfile(profile))
 }
 
 function profileNameError(input: string) {
   const trimmed = input.trim()
   if (!trimmed) return '不能为空'
-  if (!/^[A-Za-z0-9 _-]+$/.test(trimmed)) return '仅支持英文、数字、空格、下划线和短横线'
-  if (profileNameFromInput(trimmed).length > 64) return '最多 64 个字符'
+  if (!/^[A-Za-z0-9 _-]+$/.test(trimmed)) return profileNameRuleText
+  if (profileNameFromInput(trimmed).length > profileNameMaxLength) return profileNameRuleText
   return ''
 }
 
 function profileNameExists(name: string, currentName: string) {
   return profileTabs.value.some(profile =>
-    profile.name.toLowerCase() === name.toLowerCase() && profile.name !== currentName
+    !isDraftProfile(profile) && profile.name.toLowerCase() === name.toLowerCase() && profile.name !== currentName
   )
 }
 
-function nextProfileName() {
-  const existing = new Set(profileTabs.value.map(profile => profile.name))
-  let index = profileTabs.value.filter(profile => !profile.is_default).length + 1
-  let name = `profile${index}`
+function nextDefaultProfileName() {
+  const existing = new Set(
+    profileTabs.value
+      .filter(profile => !isDraftProfile(profile))
+      .map(profile => profile.name.toLowerCase())
+  )
+  let index = 1
+  let name = `pf${index}`
   while (existing.has(name)) {
     index += 1
-    name = `profile${index}`
+    name = `pf${index}`
   }
   return name
 }
 
 function profileNameFromInput(input: string) {
-  return input.trim().replace(/\s+/g, '_')
+  return input.trim().replace(/\s+/g, '_').toLowerCase()
+}
+
+function setProfileErrorTooltipRef(name: ProviderProfile, el: unknown) {
+  if (!el) {
+    profileErrorTooltipRefs.delete(name)
+    return
+  }
+  const tooltip = el as { updatePopper?: () => void }
+  if (typeof tooltip.updatePopper === 'function') profileErrorTooltipRefs.set(name, tooltip)
+}
+
+function updateProfileErrorTooltip() {
+  const name = editingProfileName.value
+  if (!name || !profileRenameError.value) return
+  nextTick(() => requestAnimationFrame(() => profileErrorTooltipRefs.get(name)?.updatePopper?.()))
 }
 
 async function focusProfileRenameInput() {
@@ -383,6 +435,12 @@ async function focusProfileRenameInput() {
 }
 
 async function loadProfiles() {
+  if (!profileCapableCliTypes.includes(activeCliType.value)) {
+    profileTabs.value = [{ cli_type: activeCliType.value, name: 'default', label: '默认', is_default: true, sort_order: 0 }]
+    activeProfile.value = 'default'
+    return
+  }
+
   profileLoading.value = true
   try {
     const { data } = await providersApi.listProfiles(activeCliType.value)
@@ -398,22 +456,20 @@ async function loadProfiles() {
 }
 
 async function handleAddProfile() {
-  const internalName = nextProfileName()
-  const displayName = `Profile ${profileTabs.value.filter(profile => !profile.is_default).length + 1}`
-  profileLoading.value = true
-  try {
-    const { data } = await providersApi.createProfile(activeCliType.value, internalName)
-    await loadProfiles()
-    const ok = await ensureProfileReady(data.name)
-    if (ok) activeProfile.value = data.name
-    editingProfileName.value = data.name
-    profileRenameDraft.value = displayName
-    await focusProfileRenameInput()
-  } catch (e: any) {
-    notify(getErrorMessage(e, '创建 Profile 失败'), 'error')
-  } finally {
-    profileLoading.value = false
+  if (!canCreateProfile.value) {
+    notify(`最多创建 ${profileMaxCustomCount} 个 Profile`, 'warning')
+    return
   }
+  removeDraftProfile()
+  const displayName = nextDefaultProfileName()
+  profileTabs.value = [
+    ...profileTabs.value,
+    { cli_type: activeCliType.value, name: draftProfileName, label: displayName, is_default: false, sort_order: profileTabs.value.length }
+  ]
+  editingProfileName.value = draftProfileName
+  profileRenameDraft.value = displayName
+  profileRenameError.value = ''
+  await focusProfileRenameInput()
 }
 
 async function startProfileRename(profile: ProviderProfileItem) {
@@ -425,6 +481,7 @@ async function startProfileRename(profile: ProviderProfileItem) {
 }
 
 function cancelProfileRename() {
+  if (editingProfileName.value === draftProfileName) removeDraftProfile()
   editingProfileName.value = null
   profileRenameDraft.value = ''
   profileRenameError.value = ''
@@ -432,6 +489,16 @@ function cancelProfileRename() {
 
 async function commitProfileRename(profile: ProviderProfileItem) {
   if (editingProfileName.value !== profile.name) return
+  if (!profileRenameDraft.value.trim() && isDraftProfile(profile)) {
+    cancelProfileRename()
+    return
+  }
+  const name = profileNameFromInput(profileRenameDraft.value)
+  const creatingProfile = isDraftProfile(profile)
+  if (!creatingProfile && name === profile.name) {
+    cancelProfileRename()
+    return
+  }
   const error = profileNameError(profileRenameDraft.value)
   if (error) {
     profileRenameError.value = error
@@ -439,24 +506,25 @@ async function commitProfileRename(profile: ProviderProfileItem) {
     return
   }
 
-  const name = profileNameFromInput(profileRenameDraft.value)
-  if (name === profile.name) {
-    cancelProfileRename()
-    return
-  }
   if (profileNameExists(name, profile.name)) {
     profileRenameError.value = '名称已存在'
-    await focusProfileRenameInput()
-    return
-  }
-  if (!isValidProfileName(name)) {
-    profileRenameError.value = '仅支持英文、数字、空格、下划线和短横线'
     await focusProfileRenameInput()
     return
   }
 
   profileLoading.value = true
   try {
+    if (creatingProfile) {
+      const { data } = await providersApi.createProfile(activeCliType.value, name)
+      await loadProfiles()
+      const ok = await ensureProfileReady(data.name)
+      if (ok) activeProfile.value = data.name
+      await providerStore.fetchProviders(activeCliType.value as CliType, data.name)
+      cancelProfileRename()
+      notify('Profile 已创建')
+      return
+    }
+
     const oldProfile = profile.name
     const { data } = await providersApi.renameProfile(activeCliType.value, oldProfile, name)
     const oldPrefix = `${activeCliType.value}_${oldProfile}`
@@ -471,8 +539,9 @@ async function commitProfileRename(profile: ProviderProfileItem) {
     await ensureProfileReady(data.name)
     await providerStore.fetchProviders(activeCliType.value as CliType, data.name)
     cancelProfileRename()
+    notify('Profile 已重命名')
   } catch (e: any) {
-    notify(getErrorMessage(e, '重命名 Profile 失败'), 'error')
+    notify(getErrorMessage(e, creatingProfile ? '创建 Profile 失败' : '重命名 Profile 失败'), 'error')
     await focusProfileRenameInput()
   } finally {
     profileLoading.value = false
@@ -758,6 +827,10 @@ async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
   }
 }
 async function handleProfileSelect(profile: ProviderProfile) {
+  if (profile === draftProfileName) {
+    await focusProfileRenameInput()
+    return
+  }
   if (profile === activeProfile.value || profileSwitching.value) return
   const ok = await ensureProfileReady(profile)
   if (!ok) return
@@ -791,7 +864,7 @@ watch(profileRenameDraft, (value) => {
   if (!editingProfileName.value) return
   profileRenameError.value = profileNameError(value)
 })
-
+watch([profileRenameError, editingProfileName], updateProfileErrorTooltip)
 watch(() => viewMode.value, async (mode) => {
   if (mode !== 'proxy') return
   const profile = await ensureCurrentProfileOrFallback()
@@ -1085,16 +1158,19 @@ onUnmounted(() => {
 
 .prov-clitabs { flex-shrink: 0; margin-bottom: 16px; }
 .profile-tabs .v2-seg-btn.active { pointer-events: auto; }
-.profile-tabs .v2-seg-btn { position: relative; }
-.profile-tabs:has(.v2-seg-slider) { grid-auto-columns: auto; }
-.profile-tabs:has(.v2-seg-slider) .v2-seg-btn { min-width: 0; }
-.profile-tab-btn { width: 84px; min-width: 84px; padding-left: 8px; padding-right: 8px; }
-.profile-tab-delete { margin-left: 8px; border: 0; background: transparent; color: var(--v2-text-3); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; pointer-events: auto; }
-.profile-tab-delete:hover { color: var(--v2-danger); }
-.profile-rename-input { width: 72px; max-width: 72px; min-width: 72px; height: 18px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; line-height: 18px; text-align: center; padding: 0; }
-.profile-rename-input.invalid { border: 1px solid var(--v2-danger); border-radius: 4px; color: var(--v2-danger); }
-.profile-rename-error { position: absolute; top: calc(100% + 4px); left: 50%; z-index: 10; box-sizing: border-box; min-width: max-content; transform: translateX(-50%); border: 1px solid var(--v2-danger); border-radius: 4px; background: var(--v2-surface); color: var(--v2-danger); font-size: 12px; line-height: 18px; padding: 2px 6px; white-space: nowrap; box-shadow: 0 4px 12px var(--v2-shadow); }
-.profile-add { width: 30px; min-width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.profile-tabs { --profile-tab-width: 100px; max-width: min(680px, 58vw); overflow-x: auto; scrollbar-width: none; }
+.profile-tabs::-webkit-scrollbar { display: none; }
+.profile-tabs:has(.v2-seg-slider) { display: inline-flex; grid-auto-columns: unset; }
+.profile-tabs:has(.v2-seg-slider) .profile-tab-btn { width: var(--profile-tab-width); min-width: var(--profile-tab-width); max-width: var(--profile-tab-width); display: inline-flex; align-items: center; justify-content: center; overflow: visible; padding-left: 8px; padding-right: 8px; }
+.profile-tab-label { box-sizing: border-box; display: block; width: 100%; min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; }
+.profile-tab-btn.active .profile-tab-label { padding: 0 18px; }
+.profile-tab-delete { position: absolute; top: 50%; right: 8px; width: 16px; height: 16px; transform: translateY(-50%); border: 0; background: transparent; color: var(--v2-text-3); cursor: pointer; font-size: 14px; line-height: 16px; padding: 0; pointer-events: auto; }
+.profile-tab-delete:hover:not(:disabled) { color: var(--v2-danger); }
+.profile-tab-delete:disabled { cursor: default; opacity: 0.45; }
+.profile-rename-input { width: 100%; min-width: 0; height: 18px; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; line-height: 18px; text-align: center; padding: 0; }
+.profile-add-cell { position: relative; z-index: 1; display: inline-flex; width: var(--profile-tab-width); min-width: var(--profile-tab-width); }
+.profile-tabs:has(.v2-seg-slider) .profile-add-tab { width: 100%; min-width: 0; padding: 5px 0; font-size: 18px; line-height: 20px; }
+.profile-add-tab:disabled { cursor: default; opacity: 0.45; }
 
 .prov-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 
@@ -1133,6 +1209,9 @@ onUnmounted(() => {
 </style>
 
 <style>
+.v2-profile-error-pop.el-popper {
+  color: var(--v2-danger);
+}
 .v2-profile-pop .profile-cmd { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--v2-surface-2); }
 .v2-profile-pop .profile-cmd-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: var(--v2-fs-xs); color: var(--v2-text-2); }
 .v2-profile-pop .profile-cmd-copy { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--v2-surface-2); border-radius: 6px; background: var(--v2-surface); color: var(--v2-text-3); cursor: pointer; }

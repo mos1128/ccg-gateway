@@ -14,11 +14,11 @@ use crate::db::models::{
     SystemLogItem, SystemLogListResponse, SystemStatus, TimeoutSettings, TimeoutSettingsUpdate,
     WebdavBackup, WebdavSettings, WebdavSettingsUpdate,
 };
-use crate::services::proxy::CliType;
-use crate::services::routing::{
-    gateway_token_for_profile, is_valid_profile_name, normalize_profile, normalize_profile_name,
-    DEFAULT_PROFILE,
+use crate::services::provider_profile::{
+    invalid_profile_message, list_provider_profile_names, validate_provider_profile,
 };
+use crate::services::proxy::CliType;
+use crate::services::routing::{gateway_token_for_profile, normalize_profile, DEFAULT_PROFILE};
 use crate::services::skill::{self, is_local_repo_source, InstalledSkillManifestEntry};
 use crate::time::{local_compact_datetime, now_timestamp};
 use crate::{LogDb, StatsDb};
@@ -142,15 +142,11 @@ fn codex_gateway_provider_name(profile: &str) -> Option<String> {
 }
 
 fn codex_profile_config_filename(profile: &str) -> String {
-    if profile == DEFAULT_PROFILE {
-        "config.toml".to_string()
-    } else {
-        format!("{}.config.toml", profile)
-    }
+    crate::services::cli_config::codex_profile_config_filename(profile)
 }
 
 fn codex_profile_config_path(config_dir: &std::path::Path, profile: &str) -> std::path::PathBuf {
-    config_dir.join(codex_profile_config_filename(profile))
+    crate::services::cli_config::codex_profile_config_path(config_dir, profile)
 }
 
 fn ensure_toml_table<'a>(
@@ -175,12 +171,11 @@ fn apply_codex_gateway_provider_config(
     gateway_url: &str,
     profile: &str,
 ) -> Result<String> {
-    let profile = normalize_profile(Some(profile))
-        .ok_or_else(|| invalid_profile_message())?;
-    let provider_name = codex_gateway_provider_name(&profile)
-        .ok_or_else(|| invalid_profile_message())?;
-    let gateway_token = gateway_token_for_profile(&profile)
-        .ok_or_else(|| invalid_profile_message())?;
+    let profile = normalize_profile(Some(profile)).ok_or_else(|| invalid_profile_message())?;
+    let provider_name =
+        codex_gateway_provider_name(&profile).ok_or_else(|| invalid_profile_message())?;
+    let gateway_token =
+        gateway_token_for_profile(&profile).ok_or_else(|| invalid_profile_message())?;
 
     let mut provider_table = toml_edit::Table::new();
     provider_table["name"] = toml_edit::value(provider_name.as_str());
@@ -210,8 +205,7 @@ fn apply_codex_gateway_named_profile_config(
     gateway_url: &str,
     profile: &str,
 ) -> Result<()> {
-    let profile = normalize_profile(Some(profile))
-        .ok_or_else(|| invalid_profile_message())?;
+    let profile = normalize_profile(Some(profile)).ok_or_else(|| invalid_profile_message())?;
     if profile == DEFAULT_PROFILE {
         return Ok(());
     }
@@ -223,14 +217,12 @@ fn apply_codex_gateway_named_profile_config(
 }
 
 fn codex_provider_direct_provider_name(profile: &str) -> Result<String> {
-    let profile = normalize_profile(Some(profile))
-        .ok_or_else(|| invalid_profile_message())?;
+    let profile = normalize_profile(Some(profile)).ok_or_else(|| invalid_profile_message())?;
     codex_gateway_provider_name(&profile).ok_or_else(|| invalid_profile_message())
 }
 
 fn codex_legacy_provider_direct_provider_name(profile: &str) -> Result<Option<String>> {
-    let profile = normalize_profile(Some(profile))
-        .ok_or_else(|| invalid_profile_message())?;
+    let profile = normalize_profile(Some(profile)).ok_or_else(|| invalid_profile_message())?;
     Ok((profile != DEFAULT_PROFILE).then(|| format!("ccg-provider-direct-{}", profile)))
 }
 
@@ -601,70 +593,6 @@ fn map_db_error(e: sqlx::Error) -> String {
     err_str
 }
 
-fn invalid_profile_message() -> String {
-    "Profile 名称仅支持英文、数字、空格、下划线和短横线".to_string()
-}
-
-fn validate_provider_profile(profile: Option<&str>) -> Result<String> {
-    normalize_profile(profile).ok_or_else(invalid_profile_message)
-}
-
-async fn list_provider_profile_names(db: &SqlitePool) -> Result<Vec<String>> {
-    ensure_legacy_provider_profiles(db).await?;
-    let rows: Vec<(String,)> =
-        sqlx::query_as("SELECT DISTINCT name FROM provider_profiles ORDER BY name")
-            .fetch_all(db)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let mut profiles = Vec::with_capacity(rows.len() + 1);
-    profiles.push(DEFAULT_PROFILE.to_string());
-    profiles.extend(rows.into_iter().map(|(name,)| name));
-    Ok(profiles)
-}
-
-async fn ensure_legacy_provider_profiles(db: &SqlitePool) -> Result<()> {
-    let now = now_timestamp();
-    let legacy_profiles: Vec<(String, String)> = sqlx::query_as(
-        r#"
-        SELECT DISTINCT cli_type, profile FROM providers
-        WHERE profile <> ?
-          AND NOT EXISTS (
-              SELECT 1 FROM provider_profiles
-              WHERE provider_profiles.cli_type = providers.cli_type
-                AND provider_profiles.name = providers.profile
-          )
-        ORDER BY cli_type, profile
-        "#,
-    )
-    .bind(DEFAULT_PROFILE)
-    .fetch_all(db)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    for (index, (cli_type, profile)) in legacy_profiles.into_iter().enumerate() {
-        if !is_valid_profile_name(&profile) {
-            continue;
-        }
-        sqlx::query(
-            r#"
-            INSERT OR IGNORE INTO provider_profiles (cli_type, name, sort_order, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(&cli_type)
-        .bind(&profile)
-        .bind((index as i64 + 1) * 10)
-        .bind(now)
-        .bind(now)
-        .execute(db)
-        .await
-        .map_err(map_db_error)?;
-    }
-
-    Ok(())
-}
-
 #[derive(Debug, Serialize)]
 pub struct ClaudeProfileSettingsStatus {
     pub profile: String,
@@ -768,20 +696,7 @@ async fn prompt_enabled_in_file_async(
 /// 获取 CLI 配置目录
 /// 优先级：数据库配置 > 默认路径
 pub async fn get_cli_config_dir_path(db: &SqlitePool, cli_type: &str) -> std::path::PathBuf {
-    // 1. 查询数据库
-    let result: Option<(Option<String>,)> =
-        sqlx::query_as("SELECT config_dir FROM cli_settings WHERE cli_type = ?")
-            .bind(cli_type)
-            .fetch_optional(db)
-            .await
-            .ok()
-            .flatten();
-
-    // 2. 有配置则展开路径，否则使用默认
-    match result.and_then(|r| r.0) {
-        Some(path) => std::path::PathBuf::from(expand_home_path(&path)),
-        None => get_default_cli_config_dir(cli_type),
-    }
+    crate::services::cli_config::get_cli_config_dir_path(db, cli_type).await
 }
 
 // ============================================================================
@@ -1443,7 +1358,12 @@ fn codex_default_provider_uses_gateway(doc: &toml_edit::DocumentMut, gateway_url
         return false;
     }
 
-    codex_provider_uses_gateway(doc, "ccg-gateway", gateway_url, Some(expected_token.as_str()))
+    codex_provider_uses_gateway(
+        doc,
+        "ccg-gateway",
+        gateway_url,
+        Some(expected_token.as_str()),
+    )
 }
 
 async fn codex_profile_settings_status(
@@ -1947,7 +1867,7 @@ async fn remove_codex_provider_direct_config_content(
 }
 
 async fn remove_provider_direct_config_async(db: &SqlitePool, cli_type: &str) -> Result<()> {
-    let profiles = list_provider_profile_names(db).await?;
+    let profiles = list_provider_profile_names(db, cli_type).await?;
     match cli_type {
         "claude_code" => {
             let config_dir = get_cli_config_dir_path(db, "claude_code").await;
@@ -1993,12 +1913,13 @@ async fn sync_claude_code_config(
     let use_merge = write_mode == "merge";
 
     if enabled {
-        for profile in list_provider_profile_names(db).await? {
+        for profile in list_provider_profile_names(db, "claude_code").await? {
             if !claude_profile_in_scope(scope, &profile) {
                 continue;
             }
 
-            let gateway_token = gateway_token_for_profile(&profile).unwrap_or_else(|| "ccg-gateway".to_string());
+            let gateway_token =
+                gateway_token_for_profile(&profile).unwrap_or_else(|| "ccg-gateway".to_string());
             let config_path = config_dir.join(cli_helpers::claude_settings_filename(&profile));
             // 非 default profile 只写网关必要字段，不合并用户预设配置
             let profile_default_config = if profile == DEFAULT_PROFILE {
@@ -2023,7 +1944,7 @@ async fn sync_claude_code_config(
         }
     } else {
         let gateway_config = claude_gateway_json_template();
-        for profile in list_provider_profile_names(db).await? {
+        for profile in list_provider_profile_names(db, "claude_code").await? {
             if !claude_profile_in_scope(scope, &profile) {
                 continue;
             }

@@ -1,6 +1,8 @@
+pub mod cli_config;
 pub mod cost;
 pub mod plugin;
 pub mod provider;
+pub mod provider_profile;
 pub mod proxy;
 pub mod routing;
 pub mod scheduler;
