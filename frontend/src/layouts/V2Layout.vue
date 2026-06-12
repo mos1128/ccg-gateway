@@ -969,6 +969,12 @@ textarea.v2-input { resize: vertical; line-height: 1.55; }
   color: var(--v2-accent);
   font-weight: 600;
 }
+.el-popper.is-light {
+  --el-popper-bg-color-light: var(--v2-surface);
+  --el-border-color-light: var(--v2-surface-2);
+  color: var(--v2-text);
+  box-shadow: var(--v2-shadow-pop);
+}
 
 /* 通用帮助提示 */
 .v2-help {
