@@ -220,9 +220,14 @@ Supports module-level log configuration. Format: `global_level,module1=level,mod
 - `ccg_gateway`: The main desktop application.
 - `ccg_gateway_lib`: The core gateway library.
 
-Default: `info,ccg_gateway=debug,ccg_gateway_lib=debug` (Global info, core modules debug)
+Default:
+
+- Development builds: `info,ccg_gateway=debug,ccg_gateway_lib=debug` (Global info, core modules debug)
+- Release builds: `info`
 
 Example: `CCG_LOG_LEVEL=warn,ccg_gateway_lib=trace` means global warn, but ccg_gateway_lib outputs trace level logs.
+
+`CCG_LOG_FILE=true` writes an additional file log. It does not disable console or systemd journal output. Set `CCG_LOG_LEVEL=warn` or a higher threshold to reduce journal output.
 
 #### How to Set Environment Variables
 
