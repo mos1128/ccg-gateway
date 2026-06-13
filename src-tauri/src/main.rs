@@ -2,6 +2,12 @@
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+#[cfg(debug_assertions)]
+const DEFAULT_LOG_LEVEL: &str = "info,ccg_gateway=debug,ccg_gateway_lib=debug";
+
+#[cfg(not(debug_assertions))]
+const DEFAULT_LOG_LEVEL: &str = "info";
+
 fn main() {
     // Register panic hook early to capture crash info before anything else.
     // This is critical because:
@@ -32,9 +38,9 @@ fn main() {
         }));
     }
 
-    // Default to info level, can be overridden by CCG_LOG_LEVEL env var
+    // Can be overridden by CCG_LOG_LEVEL env var.
     let filter = EnvFilter::try_from_env("CCG_LOG_LEVEL")
-        .unwrap_or_else(|_| EnvFilter::new("info,ccg_gateway=debug,ccg_gateway_lib=debug"));
+        .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_LEVEL));
 
     let fmt_layer = tracing_subscriber::fmt::layer();
 
