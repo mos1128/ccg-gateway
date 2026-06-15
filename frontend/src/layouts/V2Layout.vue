@@ -201,8 +201,8 @@ onMounted(async () => {
   --v2-surface-2: #f6f8fb;
   --v2-surface-3: #dfe7f0;
   --v2-text: #111827;
-  --v2-text-2: #3f4654;
-  --v2-text-3: #5f6875;
+  --v2-text-2: #111827;
+  --v2-text-3: #4b5563;
   --v2-text-btn: var(--v2-text-2);
   --v2-accent: #2b70c9;
   --v2-accent-press: #245ea8;
@@ -256,8 +256,8 @@ html.dark {
   --v2-surface-2: #192231;
   --v2-surface-3: #2a3545;
   --v2-text: #f2f5f8;
-  --v2-text-2: #b4bdc9;
-  --v2-text-3: #7f8794;
+  --v2-text-2: #f2f5f8;
+  --v2-text-3: #9ca3af;
   --v2-text-btn: var(--v2-text-2);
   --v2-accent: #5aa2ff;
   --v2-accent-press: #8cc2ff;

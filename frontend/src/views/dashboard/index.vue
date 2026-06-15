@@ -23,7 +23,7 @@
         <aside class="dash-rail">
           <div class="v2-card v2-card-pad rail-card">
             <div class="rail-head">
-              <span class="v2-card-title">Agent 路由模式</span>
+              <span class="v2-card-title">路由模式</span>
               <el-tooltip effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
                 <template #content>
                   <div class="profile-help">
@@ -284,11 +284,11 @@ const ct = computed(() => {
   const axis = isDark.value ? cssVar('--v2-surface-2') : cssVar('--v2-surface-3')
   return {
     axis,
-    label: cssVar('--v2-text-2'),
+    label: cssVar('--v2-text-3'),
     split: axis,
     tipBg: cssVar('--v2-surface'),
     tipBorder: cssVar('--v2-surface-3'),
-    tipText: cssVar('--v2-text-2'),
+    tipText: cssVar('--v2-text-3'),
     tipTitle: cssVar('--v2-text')
   }
 })
@@ -601,22 +601,18 @@ onMounted(() => {
   width: 20px;
   height: 20px;
   border-radius: 4px;
-  background: var(--v2-surface-2);
   flex-shrink: 0;
 }
 .cli-brand-icon.claude_code {
-  --v2-brand-current: var(--v2-brand-claude);
-  background: var(--v2-brand-bg);
+  background: color-mix(in srgb, var(--v2-brand-claude) 12%, transparent);
   color: var(--v2-brand-claude);
 }
 .cli-brand-icon.codex {
-  --v2-brand-current: var(--v2-brand-openai);
-  background: var(--v2-brand-bg);
+  background: color-mix(in srgb, var(--v2-brand-openai) 12%, transparent);
   color: var(--v2-brand-openai);
 }
 .cli-brand-icon.gemini {
-  --v2-brand-current: var(--v2-brand-gemini);
-  background: var(--v2-brand-bg);
+  background: color-mix(in srgb, var(--v2-brand-gemini) 12%, transparent);
   color: var(--v2-brand-gemini);
 }
 .cli-icon {
