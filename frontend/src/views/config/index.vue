@@ -612,7 +612,7 @@ onMounted(() => {
 
 
 
-.cfg-head { font-size: var(--v2-fs-base); font-weight: 600; color: var(--v2-text); margin-bottom: 16px; }
+.cfg-head { font-size: var(--v2-fs-base); font-weight: var(--v2-fw-semibold); color: var(--v2-text); margin-bottom: 16px; }
 .cfg-tabs { margin-bottom: 18px; }
 
 .cfg-dir { position: relative; display: flex; align-items: center; }
@@ -652,13 +652,13 @@ onMounted(() => {
 }
 .cfg-preset-filename {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--v2-fw-medium);
   color: var(--v2-text-2);
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 .cfg-preset-tag {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: var(--v2-fw-semibold);
   color: var(--v2-text-3);
   background: var(--v2-surface-3);
   padding: 1px 5px;
@@ -708,7 +708,7 @@ onMounted(() => {
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--v2-fw-medium);
   color: var(--v2-text);
 }
 .cfg-preset-empty-state {
@@ -760,7 +760,7 @@ onMounted(() => {
   gap: 3px;
 }
 .tip-title {
-  font-weight: 600;
+  font-weight: var(--v2-fw-semibold);
   color: var(--v2-text);
 }
 .tip-desc {
@@ -776,7 +776,7 @@ onMounted(() => {
 .cfg-toggle { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--v2-surface-2); }
 .cfg-toggle:last-child { border-bottom: none; }
 .cfg-toggle-c { min-width: 0; }
-.cfg-toggle-t { display: block; font-size: var(--v2-fs-sm); font-weight: 500; color: var(--v2-text); }
+.cfg-toggle-t { display: block; font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text); }
 .cfg-toggle-d { display: block; margin-top: 3px; font-size: var(--v2-fs-xs); line-height: 1.4; color: var(--v2-text-3); }
 
 .cfg-trow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--v2-surface-2); }
@@ -869,7 +869,7 @@ onMounted(() => {
 }
 .write-mode-help-content .tooltip-title {
   font-size: var(--v2-fs-sm);
-  font-weight: 600;
+  font-weight: var(--v2-fw-semibold);
   color: var(--v2-text);
   margin-bottom: 10px;
 }
@@ -882,7 +882,7 @@ onMounted(() => {
 .write-mode-help-content .tooltip-item strong {
   display: block;
   font-size: var(--v2-fs-xs);
-  font-weight: 600;
+  font-weight: var(--v2-fw-semibold);
   color: var(--v2-text-2);
   margin-bottom: 4px;
 }

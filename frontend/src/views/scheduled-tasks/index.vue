@@ -582,12 +582,12 @@ watch(() => form.value.profile, () => {
 .st-tablewrap { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
 .st-tablewrap thead th { position: sticky; top: 0; z-index: 1; text-align: center; }
 .st-tablewrap tbody td { text-align: center; }
-.st-name { font-weight: 500; }
+.st-name { font-weight: var(--v2-fw-medium); }
 .st-acts { display: flex; align-items: center; justify-content: center; gap: 2px; }
 .st-acts .v2-row-act svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .st-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 60px 24px; text-align: center; color: var(--v2-text-3); }
-.st-empty-t { font-size: var(--v2-fs-md); font-weight: 600; color: var(--v2-text-2); }
+.st-empty-t { font-size: var(--v2-fs-md); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); }
 .st-empty-s { font-size: var(--v2-fs-sm); color: var(--v2-text-3); max-width: 320px; line-height: 1.5; margin-bottom: 8px; }
 
 .st-periodic { display: grid; grid-template-columns: auto minmax(56px, 1fr) auto 1fr auto 1fr; align-items: center; gap: 8px; }
@@ -600,7 +600,7 @@ watch(() => form.value.profile, () => {
 
 .st-runs { margin-bottom: 18px; }
 .st-runs:last-child { margin-bottom: 0; }
-.st-subtitle { font-size: var(--v2-fs-xs); font-weight: 600; color: var(--v2-text-3); margin-bottom: 8px; }
+.st-subtitle { font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-semibold); color: var(--v2-text-3); margin-bottom: 8px; }
 .st-table-wrap { overflow-x: auto; border: 1px solid var(--v2-surface-3); border-radius: var(--v2-r); }
 .st-runs .v2-table th,
 .st-runs .v2-table td {

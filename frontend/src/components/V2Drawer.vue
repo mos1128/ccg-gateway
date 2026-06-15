@@ -115,7 +115,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   background: var(--v2-surface);
   border-bottom: 1px solid var(--v2-surface-3);
 }
-.v2dr-title { font-size: var(--v2-fs-md); font-weight: 600; }
+.v2dr-title { font-size: var(--v2-fs-md); font-weight: var(--v2-fw-medium); }
 .v2dr-close {
   width: 32px;
   height: 32px;

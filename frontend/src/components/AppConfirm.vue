@@ -145,7 +145,7 @@ defineExpose({ open })
 }
 .confirm-title {
   font-size: var(--v2-fs-md);
-  font-weight: 600;
+  font-weight: var(--v2-fw-medium);
   color: var(--v2-text);
 }
 .confirm-close {

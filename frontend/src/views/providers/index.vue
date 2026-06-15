@@ -1207,7 +1207,7 @@ onUnmounted(() => {
   text-align: center;
 }
 .prov-empty-icon { color: var(--v2-text-3); opacity: 0.6; margin-bottom: 4px; }
-.prov-empty-title { font-size: var(--v2-fs-md); font-weight: 600; color: var(--v2-text-2); }
+.prov-empty-title { font-size: var(--v2-fs-md); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); }
 .prov-empty-sub { font-size: var(--v2-fs-sm); color: var(--v2-text-3); max-width: 320px; line-height: 1.5; margin-bottom: 8px; }
 
 .profile-help { width: 320px; }
@@ -1226,7 +1226,7 @@ onUnmounted(() => {
 
 /* 服务商表格 */
 .pt-head { position: sticky; top: 0; z-index: 2; padding: 11px 18px; border-bottom: 1px solid var(--v2-surface-2); background: var(--v2-surface-2); overflow-x: visible; }
-.pt-head .pt-cols > div { font-size: var(--v2-fs-xs); font-weight: 600; color: var(--v2-text-2); }
+.pt-head .pt-cols > div { font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); }
 .pt-cols { display: grid; align-items: center; gap: 16px; width: 100%; }
 .pt-cols.m-route { grid-template-columns: 72px repeat(5, minmax(80px, 1fr)) 128px; }
 .pt-cols.m-direct { grid-template-columns: 72px repeat(3, minmax(80px, 1fr)) 96px; }
@@ -1260,12 +1260,12 @@ onUnmounted(() => {
 .pt-row:hover { background: var(--v2-surface-2); }
 .pt-row.bl { background: var(--v2-danger-bg); }
 .pt-row .pt-cols { height: 54px; }
-.pt-row .pt-cols > div { font-size: var(--v2-fs-sm); font-weight: 400; line-height: 1.35; color: var(--v2-text); }
-.pt-row .mono { font-size: var(--v2-fs-sm); font-weight: 400; }
-.pt-row .v2-pill { font-size: var(--v2-fs-xs); line-height: 16px; font-weight: 500; }
+.pt-row .pt-cols > div { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-regular); line-height: 1.35; color: var(--v2-text); }
+.pt-row .mono { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-regular); }
+.pt-row .v2-pill { font-size: var(--v2-fs-xs); line-height: 16px; font-weight: var(--v2-fw-medium); }
 .pt-drag { position: absolute; left: 1px; top: 0; bottom: 0; display: flex; justify-content: center; align-items: center; width: 16px; cursor: grab; opacity: 0; transition: opacity 0.15s; color: var(--v2-text-3); }
 .pt-row:hover .pt-drag { opacity: 0.55; }
-.pt-name { min-width: 0; font: inherit; font-weight: 500; color: var(--v2-text); }
+.pt-name { min-width: 0; font: inherit; font-weight: var(--v2-fw-medium); color: var(--v2-text); }
 .pt-name.off { color: var(--v2-text-3); }
 
 

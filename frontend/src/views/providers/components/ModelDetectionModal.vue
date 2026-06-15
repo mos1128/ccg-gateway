@@ -135,15 +135,15 @@ function statusClass(status: 'pending' | 'success' | 'failed'): string {
 </script>
 
 <style scoped>
-.c-label { display: block; font-size: var(--v2-fs-sm); font-weight: 500; color: var(--v2-text-2); margin-bottom: 7px; }
+.c-label { display: block; font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); margin-bottom: 7px; }
 .text-12 { font-size: var(--v2-fs-xs); }
 .text-14 { font-size: var(--v2-fs-base); }
-.fw-normal { font-weight: 400; }
+.fw-normal { font-weight: var(--v2-fw-regular); }
 .text-muted { color: var(--v2-text-3); }
 .text-info { color: var(--v2-accent); }
 
 .det-results { margin-top: 18px; }
-.det-subtitle { font-size: var(--v2-fs-xs); font-weight: 600; color: var(--v2-text-3); margin-bottom: 8px; }
+.det-subtitle { font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-semibold); color: var(--v2-text-3); margin-bottom: 8px; }
 .st-table-wrap { overflow-x: auto; border: 1px solid var(--v2-surface-3); border-radius: var(--v2-r); }
 .det-results .v2-table th,
 .det-results .v2-table td {

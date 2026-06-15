@@ -188,7 +188,7 @@ watch(() => props.modelValue, (open) => {
 </script>
 
 <style scoped>
-.dr-sec-title { font-size: var(--v2-fs-sm); font-weight: 600; color: var(--v2-text); }
+.dr-sec-title { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-semibold); color: var(--v2-text); }
 .dr-map { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 9px; align-items: center; }
 .dr-map-single { grid-template-columns: 1fr auto; }
 .dr-arrow { color: var(--v2-text-3); font-size: var(--v2-fs-sm); }
@@ -216,7 +216,7 @@ watch(() => props.modelValue, (open) => {
 }
 .dr-group-title {
   font-size: var(--v2-fs-sm);
-  font-weight: 600;
+  font-weight: var(--v2-fw-semibold);
   color: var(--v2-text);
 }
 .dr-help-icon {

@@ -152,7 +152,7 @@ onUnmounted(() => {
   border: 1px solid var(--v2-surface-3);
   border-radius: var(--v2-r-sm);
   font-size: var(--v2-fs-base);
-  font-weight: 400;
+  font-weight: var(--v2-fw-regular);
   color: var(--v2-text);
   background: var(--v2-surface);
   cursor: pointer;
@@ -244,7 +244,7 @@ onUnmounted(() => {
 }
 
 .app-select-option.selected {
-  font-weight: 600;
+  font-weight: var(--v2-fw-semibold);
   color: var(--v2-accent);
   background: transparent;
 }

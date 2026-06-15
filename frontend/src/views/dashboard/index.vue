@@ -505,7 +505,7 @@ const chartOption = computed(() => {
         })
         if (!vis.length) return ''
 
-        let html = `<div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid ${c.split};padding-bottom:6px;color:${c.tipTitle};font-weight:600;">
+        let html = `<div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid ${c.split};padding-bottom:6px;color:${c.tipTitle};font-weight:var(--v2-fw-semibold);">
           <span>${params[0].axisValue}</span>
           <span style="font-size:12px;">总计: ${fmtMetric(grandTotal)}</span>
         </div>`
@@ -514,7 +514,7 @@ const chartOption = computed(() => {
           vis.forEach((p, i) => {
             const d = p.data
             html += `<div style="margin-bottom:6px;${i > 0 ? `border-top:1px solid ${c.split};padding-top:6px;` : ''}">
-              <div style="display:flex;align-items:center;gap:6px;font-size:14px;color:${c.tipTitle};font-weight:600;">
+              <div style="display:flex;align-items:center;gap:6px;font-size:14px;color:${c.tipTitle};font-weight:var(--v2-fw-semibold);">
                 ${d.name}</div>
               <div style="font-size:12px;margin-top:1px;">
                 输入 ${fmtToken(d.input)} / 输出 ${fmtToken(d.output)} &nbsp;•&nbsp; 缓存读 ${fmtToken(d.cacheRead)} / 缓存创 ${fmtToken(d.cacheCreation)}
@@ -522,7 +522,7 @@ const chartOption = computed(() => {
           })
         } else {
           vis.forEach((p, i) => {
-            html += `<div style="margin-bottom:4px;display:flex;align-items:center;gap:6px;font-size:14px;color:${c.tipTitle};font-weight:600;${i > 0 ? `border-top:1px solid ${c.split};padding-top:6px;` : ''}">
+            html += `<div style="margin-bottom:4px;display:flex;align-items:center;gap:6px;font-size:14px;color:${c.tipTitle};font-weight:var(--v2-fw-semibold);${i > 0 ? `border-top:1px solid ${c.split};padding-top:6px;` : ''}">
               <span>${p.seriesName}:</span><span>${p.value}</span></div>`
           })
         }
@@ -619,7 +619,7 @@ onMounted(() => {
   width: 13px;
   height: 13px;
 }
-.cli-name { font-size: var(--v2-fs-sm); font-weight: 500; color: var(--v2-text); }
+.cli-name { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text); }
 .cli-modes {
   display: grid !important;
   grid-auto-flow: column;
@@ -696,7 +696,7 @@ onMounted(() => {
 .v2-kpi-label {
   font-size: var(--v2-fs-xs);
   color: var(--v2-text-3);
-  font-weight: 500;
+  font-weight: var(--v2-fw-medium);
   margin: 0 !important;
   text-transform: uppercase;
   letter-spacing: 0;
@@ -714,7 +714,7 @@ onMounted(() => {
 
 .v2-kpi-value {
   font-size: var(--v2-fs-xl);
-  font-weight: 700;
+  font-weight: var(--v2-fw-bold);
   letter-spacing: 0;
   line-height: 1.1;
   color: var(--v2-text);
@@ -789,7 +789,7 @@ onMounted(() => {
 }
 .indicator-text {
   font-size: 11px;
-  font-weight: 500;
+  font-weight: var(--v2-fw-medium);
   line-height: 1;
 }
 </style>

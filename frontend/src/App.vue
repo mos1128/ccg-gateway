@@ -28,7 +28,10 @@ html, body, #app {
   height: 100%;
   font-family: var(--font-ui);
   font-size: 14px;
-  font-weight: 400;
+  font-weight: var(--v2-fw-regular);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 input, textarea, button, select {

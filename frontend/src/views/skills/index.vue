@@ -409,7 +409,7 @@ onMounted(() => {
 .sk-toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; flex-shrink: 0; }
 .sk-body { flex: 1; overflow-y: auto; min-height: 0; }
 .sk-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 60px; color: var(--v2-text-3); }
-.sk-empty-t { font-size: var(--v2-fs-base); font-weight: 500; color: var(--v2-text-2); }
+.sk-empty-t { font-size: var(--v2-fs-base); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); }
 .sk-inline { margin-left: 8px; }
 .sk-star-on { color: var(--v2-warning); }
 
@@ -418,7 +418,7 @@ onMounted(() => {
 
 .sk-repohead { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; flex-shrink: 0; }
 .sk-repohead-l { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.sk-repohead-t { font-size: var(--v2-fs-md); font-weight: 600; color: var(--v2-text); }
+.sk-repohead-t { font-size: var(--v2-fs-md); font-weight: var(--v2-fw-medium); color: var(--v2-text); }
 .sk-repohead-r { display: flex; align-items: center; gap: 8px; }
 .sk-search { width: 220px; }
 
@@ -427,7 +427,7 @@ onMounted(() => {
 .sk-drow:last-child { border-bottom: none; }
 .sk-drow-icon { width: 32px; height: 32px; border-radius: 6px; background: var(--v2-surface-2); color: var(--v2-text-2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .sk-dinfo { flex: 1; min-width: 0; }
-.sk-dname { font-size: var(--v2-fs-sm); font-weight: 600; color: var(--v2-text); }
+.sk-dname { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text); }
 .sk-ddesc { font-size: var(--v2-fs-sm); color: var(--v2-text-3); margin-top: 3px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sk-install { flex-shrink: 0; }
 .sk-fdesc { font-size: var(--v2-fs-sm); color: var(--v2-text-3); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

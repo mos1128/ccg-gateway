@@ -582,7 +582,7 @@ onUnmounted(() => {
 .logs-scroll thead th { position: sticky; top: 0; z-index: 1; text-align: center; }
 .logs-scroll tbody td { text-align: center; }
 .logs-map { text-align: center; }
-.logs-danger { color: var(--v2-danger); font-weight: 600; }
+.logs-danger { color: var(--v2-danger); }
 .logs-link { color: var(--v2-accent); cursor: pointer; font-size: var(--v2-fs-sm); }
 .logs-empty { text-align: center; color: var(--v2-text-3); padding: 40px; }
 .logs-pager { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--v2-surface-2); flex-shrink: 0; }
@@ -595,7 +595,7 @@ onUnmounted(() => {
 .logs-sec-toggle { width: 100%; min-height: 72px; border: none; background: var(--v2-surface); color: var(--v2-text); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; text-align: left; cursor: pointer; }
 .logs-sec-toggle:hover { background: var(--v2-surface-2); }
 .logs-sec-main { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.logs-sec-title { font-size: var(--v2-fs-sm); font-weight: 600; color: var(--v2-text); }
+.logs-sec-title { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-semibold); color: var(--v2-text); }
 .logs-sec-sub { max-width: 100%; color: var(--v2-text-3); font-size: var(--v2-fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; user-select: text; }
 .logs-sec-side { width: min(420px, 42%); flex-shrink: 0; display: flex; flex-direction: column; align-items: stretch; gap: 7px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); }
 .logs-sec-side-top { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
@@ -637,9 +637,9 @@ onUnmounted(() => {
   background: var(--v2-surface-2);
 }
 
-.logs-time-danger { color: var(--v2-danger); font-weight: 600; }
-.logs-time-danger-slow { color: var(--v2-danger); font-weight: 500; }
-.logs-time-warning { color: var(--v2-warning); font-weight: 500; }
+.logs-time-danger { color: var(--v2-danger); }
+.logs-time-danger-slow { color: var(--v2-danger); font-weight: var(--v2-fw-regular); }
+.logs-time-warning { color: var(--v2-warning); font-weight: var(--v2-fw-regular); }
 
 .tok-group { display: inline-flex; align-items: center; gap: 3px; font-family: inherit; }
 .tok-val { font-size: var(--v2-fs-sm); color: var(--v2-text); }
