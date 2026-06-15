@@ -867,9 +867,9 @@ textarea.v2-input { resize: vertical; line-height: 1.55; }
 }
 .v2-chip.on {
   background: color-mix(in srgb, var(--v2-accent) 9%, var(--v2-surface));
-  border-color: color-mix(in srgb, var(--v2-accent) 28%, var(--v2-surface-3));
+  border-color: transparent;
   color: var(--v2-accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--v2-accent) 10%, transparent);
+  box-shadow: none;
 }
 .v2-chip.on .v2-chip-dot { background: var(--v2-accent); }
 
