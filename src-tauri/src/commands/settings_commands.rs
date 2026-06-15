@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::models::CliSettingsRow;
 
 #[tauri::command]
 pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySettings> {
@@ -115,8 +116,8 @@ pub async fn get_cli_settings(
     cli_type: String,
 ) -> Result<CliSettingsResponse> {
     let gateway_url = config.gateway_base_url();
-    let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
-        "SELECT cli_type, default_json_config, cli_mode, config_write_mode, updated_at FROM cli_settings WHERE cli_type = ?",
+    let row = sqlx::query_as::<_, CliSettingsRow>(
+        "SELECT * FROM cli_settings WHERE cli_type = ?",
     )
     .bind(&cli_type)
     .fetch_optional(db.inner())
@@ -133,40 +134,32 @@ pub async fn get_cli_settings(
 
     if let Some(row) = row {
         let enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
+        let detected_mode = detect_cli_mode_from_url(db.inner(), &gateway_url, &cli_type).await;
 
         Ok(CliSettingsResponse {
             cli_type: row.cli_type,
             enabled,
             default_json_config: row.default_json_config.unwrap_or_default(),
-            cli_mode: normalize_cli_mode(&row.cli_mode)
-                .unwrap_or(CLI_MODE_PROXY_ROUTE)
-                .to_string(),
+            cli_mode: detected_mode.to_string(),
             config_dir,
             default_config_dir,
             config_write_mode: row.config_write_mode,
+            last_official_credential_id: row.last_official_credential_id,
         })
     } else {
         Ok(CliSettingsResponse {
             cli_type: cli_type.clone(),
             enabled: false,
             default_json_config: String::new(),
-            cli_mode: CLI_MODE_PROXY_ROUTE.to_string(),
+            cli_mode: CLI_MODE_DISABLED.to_string(),
             config_dir,
             default_config_dir,
             config_write_mode: "merge".to_string(),
+            last_official_credential_id: None,
         })
     }
 }
 
-#[derive(Debug, sqlx::FromRow)]
-#[allow(dead_code)]
-struct CliSettingsRowWithoutConfigDir {
-    pub cli_type: String,
-    pub default_json_config: Option<String>,
-    pub cli_mode: String,
-    pub config_write_mode: String,
-    pub updated_at: i64,
-}
 
 #[tauri::command]
 pub async fn get_claude_profile_settings_status(
@@ -400,6 +393,7 @@ async fn rewrite_cli_config_for_current_mode(
         CLI_MODE_OFFICIAL_DIRECT => {
             credential_commands::auto_sync_credential_in_direct_mode(
                 db,
+                gateway_url,
                 cli_type,
                 previous_default_config,
             )
@@ -437,8 +431,8 @@ pub async fn update_cli_settings(
     }
 
     let current_settings =
-        sqlx::query_as::<_, (Option<String>, Option<String>, String, String)>(
-            "SELECT default_json_config, config_dir, config_write_mode, cli_mode FROM cli_settings WHERE cli_type = ?",
+        sqlx::query_as::<_, (Option<String>, Option<String>, String)>(
+            "SELECT default_json_config, config_dir, config_write_mode FROM cli_settings WHERE cli_type = ?",
         )
         .bind(&cli_type)
         .fetch_optional(db.inner())
@@ -462,10 +456,7 @@ pub async fn update_cli_settings(
                 .to_string_lossy()
                 .to_string()
         });
-    let mode_before = current_settings
-        .as_ref()
-        .and_then(|row| normalize_cli_mode(&row.3))
-        .unwrap_or(CLI_MODE_PROXY_ROUTE);
+    let mode_before = detect_cli_mode_from_url(db.inner(), &gateway_url, &cli_type).await;
 
     let default_config_changed = config_trimmed
         .as_ref()
@@ -531,7 +522,7 @@ pub async fn update_cli_settings(
     }
 
     if default_config_changed || write_mode_changed || config_dir_changed {
-        let mode = get_normalized_cli_mode(db.inner(), &cli_type).await?;
+        let mode = detect_cli_mode_from_url(db.inner(), &gateway_url, &cli_type).await;
         let current_default_config = config_trimmed
             .clone()
             .unwrap_or_else(|| previous_default_config.clone());
@@ -555,7 +546,7 @@ pub async fn update_cli_settings(
     }
 
     if let Some(enabled) = input.enabled {
-        let mode = get_normalized_cli_mode(db.inner(), &cli_type).await?;
+        let mode = detect_cli_mode_from_url(db.inner(), &gateway_url, &cli_type).await;
 
         if mode == CLI_MODE_PROXY_ROUTE {
             let current_enabled = check_cli_enabled(db.inner(), &cli_type, &gateway_url).await;
@@ -567,8 +558,8 @@ pub async fn update_cli_settings(
                     enabled
                 );
             } else {
-                let row = sqlx::query_as::<_, CliSettingsRowWithoutConfigDir>(
-                    "SELECT cli_type, default_json_config, cli_mode, config_write_mode, updated_at FROM cli_settings WHERE cli_type = ?",
+                let row = sqlx::query_as::<_, CliSettingsRow>(
+                    "SELECT * FROM cli_settings WHERE cli_type = ?",
                 )
                 .bind(&cli_type)
                 .fetch_optional(db.inner())

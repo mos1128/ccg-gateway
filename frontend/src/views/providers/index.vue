@@ -305,9 +305,10 @@ const activeProfile = computed({
 })
 
 type ViewMode = 'proxy' | 'direct'
-const currentCliMode = computed<CliMode>(() => settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'proxy_route')
+const currentCliMode = computed<CliMode>(() => settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'disabled')
 const isProviderDirectMode = computed(() => currentCliMode.value === 'provider_direct')
 const isProxyRouteMode = computed(() => currentCliMode.value === 'proxy_route')
+const isDisabledMode = computed(() => currentCliMode.value === 'disabled')
 const viewModes = ref<Record<CliType, ViewMode>>({ claude_code: 'proxy', codex: 'proxy', gemini: 'proxy' })
 const viewMode = computed<ViewMode>({
   get: () => activeCliType.value === 'claude_code' ? 'proxy' : viewModes.value[activeCliType.value],
@@ -320,7 +321,7 @@ const viewMode = computed<ViewMode>({
     viewModes.value[activeCliType.value] = mode
   }
 })
-const providerModeLabel = computed(() => isProviderDirectMode.value ? '中转直连' : '中转路由')
+const providerModeLabel = computed(() => isDisabledMode.value ? '停用' : isProviderDirectMode.value ? '中转直连' : '中转路由')
 const profileCapableCliTypes = PROFILE_CAPABLE_CLI_TYPES
 const showProfileControls = computed(() => viewMode.value === 'proxy' && profileCapableCliTypes.includes(activeCliType.value))
 const showProfileHelp = computed(() => showProfileControls.value)
@@ -962,7 +963,7 @@ async function handleSave() {
   }
 }
 async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
-  if (isProviderDirectMode.value) return
+  if (isProviderDirectMode.value || isDisabledMode.value) return
   toggleLoadingId.value = provider.id
   try {
     await providerStore.updateProvider(provider.id, { enabled })

@@ -417,10 +417,10 @@ pub struct TimeoutSettingsUpdate {
 pub struct CliSettingsRow {
     pub cli_type: String,
     pub default_json_config: Option<String>,
-    pub cli_mode: String,
     pub config_dir: Option<String>,
     pub config_write_mode: String,
     pub last_provider_direct_provider_id: Option<i64>,
+    pub last_official_credential_id: Option<i64>,
     pub updated_at: i64,
 }
 
@@ -433,6 +433,7 @@ pub struct CliSettingsResponse {
     pub config_dir: String,
     pub default_config_dir: String,
     pub config_write_mode: String,
+    pub last_official_credential_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

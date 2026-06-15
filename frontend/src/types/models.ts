@@ -17,7 +17,7 @@ export const CLI_TABS: { id: CliType; label: string }[] = CLI_TYPES.map((id) => 
 }))
 export const PROFILE_CAPABLE_CLI_TYPES: readonly CliType[] = ['claude_code', 'codex']
 export type ProviderProfile = string
-export type CliMode = 'proxy_route' | 'provider_direct' | 'official_direct'
+export type CliMode = 'proxy_route' | 'provider_direct' | 'official_direct' | 'disabled'
 
 export interface ProviderProfileItem {
   cli_type: CliType
@@ -234,6 +234,7 @@ export interface CliSettings {
   config_dir: string
   default_config_dir: string
   config_write_mode: 'overwrite' | 'merge'
+  last_official_credential_id: number | null
 }
 
 export interface CliProfileSettingsStatus {

@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 30,
+            version: 31,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -612,12 +612,6 @@ impl DatabaseSchema {
                         default_value: None,
                     },
                     ColumnDefinition {
-                        name: "cli_mode".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: Some("'proxy'".to_string()),
-                    },
-                    ColumnDefinition {
                         name: "config_dir".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: true,
@@ -631,6 +625,12 @@ impl DatabaseSchema {
                     },
                     ColumnDefinition {
                         name: "last_provider_direct_provider_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "last_official_credential_id".to_string(),
                         data_type: "INTEGER".to_string(),
                         nullable: true,
                         default_value: None,

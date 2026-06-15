@@ -48,45 +48,16 @@ type Result<T> = std::result::Result<T, String>;
 const CLI_MODE_PROXY_ROUTE: &str = "proxy_route";
 const CLI_MODE_PROVIDER_DIRECT: &str = "provider_direct";
 const CLI_MODE_OFFICIAL_DIRECT: &str = "official_direct";
+const CLI_MODE_DISABLED: &str = "disabled";
 
 fn normalize_cli_mode(mode: &str) -> Option<&'static str> {
     match mode.trim() {
         "proxy" | CLI_MODE_PROXY_ROUTE => Some(CLI_MODE_PROXY_ROUTE),
         "direct" | CLI_MODE_OFFICIAL_DIRECT => Some(CLI_MODE_OFFICIAL_DIRECT),
         CLI_MODE_PROVIDER_DIRECT => Some(CLI_MODE_PROVIDER_DIRECT),
+        CLI_MODE_DISABLED => Some(CLI_MODE_DISABLED),
         _ => None,
     }
-}
-
-async fn get_normalized_cli_mode(db: &SqlitePool, cli_type: &str) -> Result<&'static str> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT cli_mode FROM cli_settings WHERE cli_type = ?")
-            .bind(cli_type)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    Ok(row
-        .as_ref()
-        .and_then(|r| normalize_cli_mode(&r.0))
-        .unwrap_or(CLI_MODE_PROXY_ROUTE))
-}
-
-async fn set_normalized_cli_mode(
-    db: &SqlitePool,
-    cli_type: &str,
-    mode: &str,
-    now: i64,
-) -> Result<()> {
-    sqlx::query("UPDATE cli_settings SET cli_mode = ?, updated_at = ? WHERE cli_type = ?")
-        .bind(mode)
-        .bind(now)
-        .bind(cli_type)
-        .execute(db)
-        .await
-        .map_err(map_db_error)?;
-
-    Ok(())
 }
 
 async fn remember_default_provider_direct_provider_id(
@@ -118,6 +89,156 @@ async fn remember_default_provider_direct_provider(
     }
 
     remember_default_provider_direct_provider_id(db, &provider.cli_type, provider.id, now).await
+}
+
+async fn remember_last_official_credential_id(
+    db: &SqlitePool,
+    cli_type: &str,
+    credential_id: i64,
+    now: i64,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE cli_settings SET last_official_credential_id = ?, updated_at = ? WHERE cli_type = ?",
+    )
+    .bind(credential_id)
+    .bind(now)
+    .bind(cli_type)
+    .execute(db)
+    .await
+    .map_err(map_db_error)?;
+    Ok(())
+}
+
+/// 从 Claude Code 配置文件中提取 ANTHROPIC_BASE_URL
+async fn read_claude_config_url(db: &SqlitePool, cli_type: &str) -> Option<String> {
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
+    let config_path = config_dir.join("settings.json");
+
+    if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+        return None;
+    }
+
+    let content = tokio::fs::read_to_string(&config_path).await.ok()?;
+    let content_trimmed = content.trim();
+    if content_trimmed.is_empty() || content_trimmed == "{}" {
+        return None;
+    }
+
+    let data: serde_json::Value = serde_json::from_str(content_trimmed).ok()?;
+    data.get("env")
+        .and_then(|env| env.get("ANTHROPIC_BASE_URL"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// 从 Codex 配置文件中提取当前活跃 provider 的 base_url
+async fn read_codex_config_url(db: &SqlitePool, cli_type: &str) -> Option<String> {
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
+    let config_path = config_dir.join("config.toml");
+
+    if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+        return None;
+    }
+
+    let content = tokio::fs::read_to_string(&config_path).await.ok()?;
+    if content.trim().is_empty() {
+        return None;
+    }
+
+    let doc: toml_edit::DocumentMut = content.parse().ok()?;
+    let provider_name = doc.get("model_provider")?.as_str()?;
+
+    doc.get("model_providers")
+        .and_then(|p| p.get(provider_name))
+        .and_then(|p| p.get("base_url"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+/// 从 Gemini .env 配置文件中提取 GOOGLE_GEMINI_BASE_URL
+async fn read_gemini_config_url(db: &SqlitePool, cli_type: &str) -> Option<String> {
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
+    let env_path = config_dir.join(".env");
+
+    if !tokio::fs::try_exists(&env_path).await.unwrap_or(false) {
+        return None;
+    }
+
+    let content = tokio::fs::read_to_string(&env_path).await.ok()?;
+
+    for line in content.lines() {
+        if let Some(url) = line.trim().strip_prefix("GOOGLE_GEMINI_BASE_URL=") {
+            let url = url.trim();
+            if !url.is_empty() {
+                return Some(url.to_string());
+            }
+        }
+    }
+    None
+}
+
+async fn matched_official_credential_id(db: &SqlitePool, cli_type: &str) -> Result<Option<i64>> {
+    let creds: Vec<OfficialCredential> = sqlx::query_as(
+        "SELECT * FROM official_credentials WHERE cli_type = ? ORDER BY sort_order, id",
+    )
+    .bind(cli_type)
+    .fetch_all(db)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    for cred in &creds {
+        if credential_commands::credential_matches_cli_files(db, cred)
+            .await
+            .unwrap_or(false)
+        {
+            return Ok(Some(cred.id));
+        }
+    }
+
+    Ok(None)
+}
+
+/// 通过读取配置文件动态检测 CLI 当前的路由模式
+pub async fn detect_cli_mode_from_url(
+    db: &SqlitePool,
+    gateway_url: &str,
+    cli_type: &str,
+) -> &'static str {
+    // 1. 从配置文件读取 URL
+    let config_url = match cli_type {
+        "claude_code" => read_claude_config_url(db, cli_type).await,
+        "codex" => read_codex_config_url(db, cli_type).await,
+        "gemini" => read_gemini_config_url(db, cli_type).await,
+        _ => return CLI_MODE_DISABLED,
+    };
+
+    if let Some(url) = config_url.as_deref().map(str::trim).filter(|url| !url.is_empty()) {
+        // 2. 匹配网关地址
+        if gateway_url_matches(url, gateway_url) {
+            return CLI_MODE_PROXY_ROUTE;
+        }
+
+        // 3. 匹配服务商直连配置（URL + API key），不受路由启用开关影响
+        if provider_direct_active_provider_id(db, cli_type, DEFAULT_PROFILE)
+            .await
+            .unwrap_or(None)
+            .is_some()
+        {
+            return CLI_MODE_PROVIDER_DIRECT;
+        }
+    }
+
+    // 4. 匹配官方凭证
+    if matched_official_credential_id(db, cli_type)
+        .await
+        .unwrap_or(None)
+        .is_some()
+    {
+        return CLI_MODE_OFFICIAL_DIRECT;
+    }
+
+    // 5. 无匹配
+    CLI_MODE_DISABLED
 }
 
 fn serialize_toml_document<T: Serialize>(
@@ -490,7 +611,10 @@ async fn remove_codex_direct_mode_files(
     config_dir: &std::path::Path,
     use_merge: bool,
 ) -> Result<()> {
+    let auth_path = config_dir.join("auth.json");
     let config_path = config_dir.join("config.toml");
+
+    remove_file_if_exists(&auth_path, "auth.json").await?;
 
     if use_merge {
         tracing::info!("Codex 增量模式切换到中转时保留 config.toml，供后续合并");

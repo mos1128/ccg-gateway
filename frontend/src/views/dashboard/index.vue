@@ -31,6 +31,7 @@
                     <div class="tooltip-item"><strong>路由：</strong><span>写入网关地址，Agent 请求会经过 CCG Gateway，并按服务商规则路由。</span></div>
                     <div class="tooltip-item"><strong>直连：</strong><span>写入默认服务商配置，Agent 直接请求该服务商，不经过网关路由。</span></div>
                     <div class="tooltip-item"><strong>官方：</strong><span>写入官方凭证，Agent 直接连接官方服务。</span></div>
+                    <div class="tooltip-item"><strong>停用：</strong><span>清除已写入的路由配置，Agent 不受 CCG Gateway 管理。</span></div>
                   </div>
                 </template>
                 <span class="v2-help">
@@ -47,7 +48,7 @@
                   <span class="cli-name">{{ cli.label }}</span>
                 </div>
                 <div class="v2-seg cli-modes">
-                  <div class="v2-seg-slider" :style="{ transform: `translateX(${modeOptions.findIndex(m => getCliMode(cli.type) === m.id) * 100}%)`, width: 'calc((100% - 8px) / 3)' }"></div>
+                  <div class="v2-seg-slider" :style="{ transform: `translateX(${modeOptions.findIndex(m => getCliMode(cli.type) === m.id) * 100}%)`, width: 'calc((100% - 8px) / 4)' }"></div>
                   <button
                     v-for="m in modeOptions"
                     :key="m.id"
@@ -159,12 +160,13 @@ const cliLoading = reactive(Object.fromEntries(CLI_TYPES.map((t) => [t, false] a
 const modeOptions: { id: CliMode; label: string }[] = [
   { id: 'proxy_route', label: '路由' },
   { id: 'provider_direct', label: '直连' },
-  { id: 'official_direct', label: '官方' }
+  { id: 'official_direct', label: '官方' },
+  { id: 'disabled', label: '停用' }
 ]
-const modeLabels: Record<CliMode, string> = { proxy_route: '中转路由', provider_direct: '中转直连', official_direct: '官方直连' }
+const modeLabels: Record<CliMode, string> = { proxy_route: '中转路由', provider_direct: '中转直连', official_direct: '官方直连', disabled: '停用' }
 
 function getCliMode(cli: CliType): CliMode {
-  return settingsStore.settings?.cli_settings?.[cli]?.cli_mode ?? 'proxy_route'
+  return settingsStore.settings?.cli_settings?.[cli]?.cli_mode ?? 'disabled'
 }
 // function isRouteMode(cli: CliType) {
 //   return getCliMode(cli) === 'proxy_route'
