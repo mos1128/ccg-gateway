@@ -1003,6 +1003,7 @@ textarea.v2-input {
 .el-popper.is-light {
   --el-popper-bg-color-light: var(--v2-surface);
   --el-border-color-light: var(--v2-surface-2);
+  --el-bg-color-overlay: var(--v2-surface);
   color: var(--v2-text);
   box-shadow: var(--v2-shadow-pop);
 }
@@ -1049,5 +1050,6 @@ textarea.v2-input {
 .v2-profile-pop .profile-help .tooltip-item span {
   color: var(--v2-text-2);
 }
+
 
 </style>
