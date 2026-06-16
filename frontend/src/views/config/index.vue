@@ -214,7 +214,6 @@
                   <polyline points="14 2 14 8 20 8"/>
                 </svg>
                 <span class="v2-file-editor-name">{{ isJsonFormat ? 'settings.json' : 'config.toml' }}</span>
-                <span class="v2-file-editor-badge">{{ isJsonFormat ? 'JSON' : 'TOML' }}</span>
               </div>
               <button v-if="isJsonFormat" class="v2-file-editor-action" type="button" @click="formatPresetJson">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
@@ -222,12 +221,12 @@
               </button>
             </div>
             <div class="v2-file-editor-body preset-editor-body">
-              <textarea
+              <V2CodeEditor
                 v-model="presetTempConfig"
-                class="v2-file-editor-textarea cfg-preset-textarea"
+                class="cfg-preset-editor"
                 :placeholder="placeholder"
                 @blur="validatePresetConfig"
-              ></textarea>
+              />
             </div>
           </div>
           <div v-if="presetValidationError" class="json-err" style="color: var(--v2-danger); font-size: var(--v2-fs-xs); margin-top: 6px;">{{ presetValidationError }}</div>
@@ -276,6 +275,7 @@
 
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
+import V2CodeEditor from '@/components/V2CodeEditor.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
@@ -683,14 +683,13 @@ onMounted(() => {
   color: var(--v2-text-3);
   font-style: italic;
 }
-.cfg-preset-textarea {
-  resize: none;
+.cfg-preset-editor {
+  min-height: 320px;
 }
 
 .cfg-writemode-section {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid var(--v2-surface-2);
 }
 .cfg-writemode-row {
   display: flex;
@@ -903,9 +902,8 @@ onMounted(() => {
   flex-direction: column;
   min-height: 0;
 }
-.cfg-preset-textarea {
+.cfg-preset-editor {
   flex: 1;
-  resize: none;
   height: 100%;
 }
 .cfg-writemode-section {

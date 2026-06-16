@@ -33,16 +33,15 @@
                 <polyline points="14 2 14 8 20 8"/>
               </svg>
               <span class="v2-file-editor-name">prompt.md</span>
-              <span class="v2-file-editor-badge">TEXT</span>
             </div>
           </div>
           <div class="v2-file-editor-body">
-            <textarea
+            <V2CodeEditor
               v-model="form.content"
-              class="v2-file-editor-textarea prompt-content-textarea"
+              class="prompt-content-editor"
               rows="16"
               placeholder="请输入提示词内容..."
-            ></textarea>
+            />
           </div>
         </div>
       </div>
@@ -52,6 +51,7 @@
 
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
+import V2CodeEditor from '@/components/V2CodeEditor.vue'
 import ConfigCard from '@/components/ConfigCard.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
@@ -155,5 +155,5 @@ onMounted(fetchList)
 </script>
 
 <style scoped>
-.prompt-content-textarea { resize: vertical; }
+.prompt-content-editor { resize: vertical; overflow: hidden; }
 </style>

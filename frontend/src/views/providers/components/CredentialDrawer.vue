@@ -26,12 +26,12 @@
           </button>
         </div>
         <div class="v2-file-editor-body">
-          <textarea
+          <V2CodeEditor
             v-model="form[file.key]"
-            class="v2-file-editor-textarea cred-editor-textarea"
+            class="cred-editor"
             :class="{ compact: file.compact }"
             :placeholder="file.placeholder"
-          ></textarea>
+          />
         </div>
       </div>
     </div>
@@ -40,6 +40,7 @@
 
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
+import V2CodeEditor from '@/components/V2CodeEditor.vue'
 import type { CliType } from '@/types/models'
 
 interface CredentialEditForm {
@@ -86,11 +87,12 @@ const credentialFiles = computed<Array<{ key: CredentialFileKey; name: string; p
 
 <style scoped>
 .dr-config-label { margin-bottom: 8px; }
-.cred-editor-textarea {
+.cred-editor {
   height: min(300px, 40vh);
   resize: vertical;
+  overflow: hidden;
 }
-.cred-editor-textarea.compact {
+.cred-editor.compact {
   height: min(145px, 20vh);
 }
 </style>

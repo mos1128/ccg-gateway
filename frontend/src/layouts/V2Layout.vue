@@ -742,16 +742,17 @@ textarea.v2-input {
 .v2-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--v2-space-4); }
 
 .v2-file-editor {
-  border: 1px solid var(--v2-surface-3);
-  border-radius: var(--v2-r);
-  background: var(--v2-surface-2);
+  border-right: 1px solid var(--v2-surface-3);
+  border-bottom: 1px solid var(--v2-surface-3);
+  border-radius: var(--v2-r-lg, 8px);
+  background: var(--v2-bg-base);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 .v2-file-editor-header {
-  height: 38px;
-  padding: 0 12px;
+  height: 42px;
+  padding: 0 14px;
   background: var(--v2-bg-base);
   border-bottom: 1px solid var(--v2-surface-3);
   display: flex;
@@ -763,7 +764,7 @@ textarea.v2-input {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   color: var(--v2-text);
   font-size: var(--v2-fs-xs);
   font-weight: var(--v2-fw-medium);
@@ -771,6 +772,7 @@ textarea.v2-input {
 .v2-file-editor-title .file-icon {
   flex-shrink: 0;
   color: var(--v2-text-3);
+  opacity: 0.8;
   margin-top: 1px;
 }
 .v2-file-editor-name {
@@ -780,47 +782,31 @@ textarea.v2-input {
   white-space: nowrap;
   font-family: var(--font-mono);
   font-weight: var(--v2-fw-semibold);
+  font-size: 13px;
 }
-.v2-file-editor-badge {
-  flex-shrink: 0;
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--v2-surface-3);
-  border: 1px solid var(--v2-surface-3);
-  color: var(--v2-text-2);
-  font-weight: var(--v2-fw-semibold);
-}
+
 .v2-file-editor-action {
   flex-shrink: 0;
   appearance: none;
   background: var(--v2-surface);
-  border: 1px solid var(--v2-surface-3);
-  border-radius: var(--v2-r-sm);
-  padding: 4px 10px;
+  border: none;
+  border-radius: var(--v2-r-lg, 8px);
+  padding: 5px 14px;
   font-size: 11px;
-  font-weight: var(--v2-fw-semibold);
+  font-weight: var(--v2-fw-medium);
   color: var(--v2-text-2);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
-.v2-file-editor-action:hover {
-  background: var(--v2-surface-2);
-  color: var(--v2-accent);
-  border-color: var(--v2-surface-3);
+  gap: 6px;
+  box-shadow: none;
 }
 .v2-file-editor-action svg {
   color: var(--v2-text-3);
 }
-.v2-file-editor-action:hover svg {
-  color: var(--v2-accent);
-}
 .v2-file-editor-body {
   position: relative;
-  background: var(--v2-surface);
+  background: transparent;
 }
 .v2-file-editor-textarea {
   width: 100%;

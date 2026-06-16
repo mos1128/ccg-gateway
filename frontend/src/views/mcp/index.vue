@@ -33,7 +33,6 @@
                 <polyline points="14 2 14 8 20 8"/>
               </svg>
               <span class="v2-file-editor-name">mcp.json</span>
-              <span class="v2-file-editor-badge">JSON</span>
             </div>
             <button class="v2-file-editor-action" type="button" @click="formatJson">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
@@ -41,13 +40,13 @@
             </button>
           </div>
           <div class="v2-file-editor-body">
-            <textarea
+            <V2CodeEditor
               v-model="form.config_json"
-              class="v2-file-editor-textarea mcp-json-textarea"
+              class="mcp-json-editor"
               rows="14"
               placeholder='{"command": "npx", "args": ["-y", "@example/mcp"]}'
               @blur="validateConfig"
-            ></textarea>
+            />
           </div>
         </div>
         <div v-if="validationError" class="json-err">{{ validationError }}</div>
@@ -58,6 +57,7 @@
 
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
+import V2CodeEditor from '@/components/V2CodeEditor.vue'
 import ConfigCard from '@/components/ConfigCard.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
@@ -186,6 +186,6 @@ onMounted(fetchList)
 </script>
 
 <style scoped>
-.mcp-json-textarea { resize: vertical; }
+.mcp-json-editor { resize: vertical; overflow: hidden; }
 .json-err { color: var(--v2-danger); font-size: var(--v2-fs-xs); margin-top: 6px; }
 </style>
