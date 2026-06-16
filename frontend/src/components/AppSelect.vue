@@ -148,15 +148,17 @@ onUnmounted(() => {
 }
 
 .app-select-trigger {
-  padding: 8px 36px 8px 16px;
-  border: 1px solid var(--v2-surface-3);
-  border-radius: var(--v2-r-sm);
-  font-size: var(--v2-fs-base);
-  font-weight: var(--v2-fw-regular);
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 36px 0 16px;
+  line-height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--v2-r);
+  font-size: 13px;
+  font-weight: var(--v2-fw-medium);
   color: var(--v2-text);
-  background: var(--v2-surface);
+  background: var(--v2-bg-base);
   cursor: pointer;
-  transition: all 0.15s ease;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -167,11 +169,9 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-
 .app-select.open .app-select-trigger {
-  background: var(--v2-surface);
-  border-color: var(--v2-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-accent) 12%, transparent);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .chevron {
@@ -270,8 +270,10 @@ onUnmounted(() => {
 
 /* Small size styles */
 .app-select.size-small .app-select-trigger {
-  padding: 6px 32px 6px 12px;
-  font-size: 13px;
+  height: 28px;
+  line-height: 26px;
+  padding: 0 32px 0 12px;
+  font-size: 12px;
   border-radius: var(--v2-r-sm);
 }
 

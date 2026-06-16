@@ -696,9 +696,37 @@ html.dark .v2-seg-slider {
 .v2-field { margin-bottom: 16px; }
 .v2-label { display: block; font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text); margin-bottom: 7px; }
 .v2-label .req { color: var(--v2-danger); margin-left: 4px; }
-.v2-input { width: 100%; padding: 8px 11px; background: var(--v2-surface); color: var(--v2-text); border: 1px solid var(--v2-surface-3); border-radius: var(--v2-r-sm); font-size: var(--v2-fs-sm); font-family: inherit; outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
-.v2-input:focus { border-color: var(--v2-surface-3); box-shadow: none; }
-.v2-input::placeholder { color: var(--v2-text-3); }
+.v2-input {
+  width: 100%;
+  background: var(--v2-bg-base);
+  color: var(--v2-text);
+  border: 1px solid transparent;
+  border-radius: var(--v2-r);
+  font-size: 13px;
+  font-weight: var(--v2-fw-medium);
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+input.v2-input {
+  height: 32px;
+  padding: 0 16px;
+}
+textarea.v2-input {
+  padding: 8px 16px;
+  resize: vertical;
+  line-height: 1.55;
+}
+.v2-input:focus {
+  outline: none;
+}
+.v2-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.v2-input::placeholder {
+  color: var(--v2-text-3);
+}
 .v2-input::-webkit-outer-spin-button,
 .v2-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -707,7 +735,6 @@ html.dark .v2-seg-slider {
 .v2-input[type="number"] {
   -moz-appearance: textfield;
 }
-textarea.v2-input { resize: vertical; line-height: 1.55; }
 .v2-hint { font-size: var(--v2-fs-xs); color: var(--v2-text-3); margin-top: 6px; }
 .v2-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--v2-space-4); }
 
