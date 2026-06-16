@@ -1,6 +1,69 @@
 <template>
   <div>
     <div class="dash-body">
+      <!-- 顶部全局工具栏 -->
+      <div class="dash-toolbar">
+        <div class="toolbar-left">
+          <span class="v2-card-title toolbar-title">数据概览</span>
+          <span class="refresh-indicator" :class="{ refreshing: statsLoading, paused: isPaused }" @click="togglePause">
+            <div class="indicator-ring-wrap">
+              <svg class="indicator-ring" width="14" height="14" viewBox="0 0 16 16">
+                <circle class="ring-track" cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+                <circle
+                  v-if="!isPaused && !statsLoading"
+                  :key="refreshKey"
+                  class="ring-progress"
+                  cx="8"
+                  cy="8"
+                  r="6.5"
+                  fill="none"
+                  stroke="var(--v2-success)"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-dasharray="41"
+                  stroke-dashoffset="41"
+                />
+                <circle
+                  v-else-if="statsLoading"
+                  class="ring-loading"
+                  cx="8"
+                  cy="8"
+                  r="6.5"
+                  fill="none"
+                  stroke="var(--v2-success)"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-dasharray="12 28"
+                />
+                <circle
+                  v-else
+                  class="ring-paused"
+                  cx="8"
+                  cy="8"
+                  r="2"
+                  fill="var(--v2-text-3)"
+                />
+              </svg>
+            </div>
+            <span class="indicator-text">{{ statsLoading ? '正在刷新' : (isPaused ? '已停止刷新' : '自动更新') }}</span>
+          </span>
+        </div>
+        <div class="date-picker-wrap">
+          <el-date-picker
+            v-model="dateRange"
+            type="daterange"
+            range-separator="~"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            size="default"
+            value-format="YYYY-MM-DD"
+            :shortcuts="shortcuts"
+            @change="handleRangeChange"
+            class="v2-date-picker"
+          />
+        </div>
+      </div>
+
       <!-- 顶部：KPI 全宽 -->
       <div class="v2-kpi-grid">
         <div v-for="k in kpis" :key="k.label" class="v2-kpi" :style="{ '--kpi-accent': k.borderColor || 'var(--v2-surface-3)' }">
@@ -22,23 +85,6 @@
       <div class="dash-row">
         <aside class="dash-rail">
           <div class="v2-card v2-card-pad rail-card">
-            <div class="rail-head">
-              <span class="v2-card-title">路由模式</span>
-              <el-tooltip effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
-                <template #content>
-                  <div class="profile-help">
-                    <div class="tooltip-title">模式说明</div>
-                    <div class="tooltip-item"><strong>路由：</strong><span>写入网关地址，Agent 请求会经过 CCG Gateway，并按服务商规则路由。</span></div>
-                    <div class="tooltip-item"><strong>直连：</strong><span>写入默认服务商配置，Agent 直接请求该服务商，不经过网关路由。</span></div>
-                    <div class="tooltip-item"><strong>官方：</strong><span>写入官方凭证，Agent 直接连接官方服务。</span></div>
-                    <div class="tooltip-item"><strong>停用：</strong><span>清除已写入的路由配置，Agent 不受 CCG Gateway 管理。</span></div>
-                  </div>
-                </template>
-                <span class="v2-help">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                </span>
-              </el-tooltip>
-            </div>
             <div class="cli-list">
               <div v-for="cli in cliList" :key="cli.type" class="cli-row" :class="{ loading: cliLoading[cli.type] }">
                 <div class="cli-id">
@@ -46,6 +92,20 @@
                     <CliBrandIcon :type="cli.type" width="14" height="14" />
                   </span>
                   <span class="cli-name">{{ cli.label }}</span>
+                  <el-tooltip v-if="cli.type === 'claude_code'" effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
+                    <template #content>
+                      <div class="profile-help">
+                        <div class="tooltip-title">模式说明</div>
+                        <div class="tooltip-item"><strong>路由：</strong><span>写入网关地址，Agent 请求会经过 CCG Gateway，并按服务商规则路由。</span></div>
+                        <div class="tooltip-item"><strong>直连：</strong><span>写入默认服务商配置，Agent 直接请求该服务商，不经过网关路由。</span></div>
+                        <div class="tooltip-item"><strong>官方：</strong><span>写入官方凭证，Agent 直接连接官方服务。</span></div>
+                        <div class="tooltip-item"><strong>停用：</strong><span>清除已写入的路由配置，Agent 不受 CCG Gateway 管理。</span></div>
+                      </div>
+                    </template>
+                    <span class="v2-help cli-help">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    </span>
+                  </el-tooltip>
                 </div>
                 <div class="v2-seg cli-modes">
                   <div class="v2-seg-slider" :style="{ transform: `translateX(${modeOptions.findIndex(m => getCliMode(cli.type) === m.id) * 100}%)`, width: 'calc((100% - 8px) / 4)' }"></div>
@@ -64,60 +124,13 @@
 
         <div class="v2-card v2-card-pad chart-card">
           <div class="chart-head">
-            <div class="chart-title-wrap">
-              <span class="v2-card-title">统计总览</span>
-              <span class="refresh-indicator" :class="{ refreshing: statsLoading, paused: isPaused }" @click="togglePause">
-                <div class="indicator-ring-wrap">
-                  <svg class="indicator-ring" width="14" height="14" viewBox="0 0 16 16">
-                    <circle class="ring-track" cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" />
-                    <circle
-                      v-if="!isPaused && !statsLoading"
-                      :key="refreshKey"
-                      class="ring-progress"
-                      cx="8"
-                      cy="8"
-                      r="6.5"
-                      fill="none"
-                      stroke="var(--v2-success)"
-                      stroke-width="1.8"
-                      stroke-linecap="round"
-                      stroke-dasharray="41"
-                      stroke-dashoffset="41"
-                    />
-                    <circle
-                      v-else-if="statsLoading"
-                      class="ring-loading"
-                      cx="8"
-                      cy="8"
-                      r="6.5"
-                      fill="none"
-                      stroke="var(--v2-success)"
-                      stroke-width="1.8"
-                      stroke-linecap="round"
-                      stroke-dasharray="12 28"
-                    />
-                    <circle
-                      v-else
-                      class="ring-paused"
-                      cx="8"
-                      cy="8"
-                      r="2"
-                      fill="var(--v2-text-3)"
-                    />
-                  </svg>
-                </div>
-                <span class="indicator-text">{{ statsLoading ? '正在刷新' : (isPaused ? '已停止刷新' : '自动更新') }}</span>
-              </span>
+            <div class="v2-seg">
+              <div class="v2-seg-slider" :style="{ transform: `translateX(${dimTabs.findIndex(t => dimMode === t.id) * 100}%)`, width: 'calc((100% - 8px) / 2)' }"></div>
+              <button v-for="t in dimTabs" :key="t.id" class="v2-seg-btn" :class="{ active: dimMode === t.id }" @click="dimMode = t.id">{{ t.label }}</button>
             </div>
-            <div class="chart-toggles">
-              <div class="v2-seg">
-                <div class="v2-seg-slider" :style="{ transform: `translateX(${metricTabs.findIndex(t => metricMode === t.id) * 100}%)`, width: 'calc((100% - 8px) / 3)' }"></div>
-                <button v-for="t in metricTabs" :key="t.id" class="v2-seg-btn" :class="{ active: metricMode === t.id }" @click="metricMode = t.id">{{ t.label }}</button>
-              </div>
-              <div class="v2-seg">
-                <div class="v2-seg-slider" :style="{ transform: `translateX(${dimTabs.findIndex(t => dimMode === t.id) * 100}%)`, width: 'calc((100% - 8px) / 2)' }"></div>
-                <button v-for="t in dimTabs" :key="t.id" class="v2-seg-btn" :class="{ active: dimMode === t.id }" @click="dimMode = t.id">{{ t.label }}</button>
-              </div>
+            <div class="v2-seg">
+              <div class="v2-seg-slider" :style="{ transform: `translateX(${metricTabs.findIndex(t => metricMode === t.id) * 100}%)`, width: 'calc((100% - 8px) / 3)' }"></div>
+              <button v-for="t in metricTabs" :key="t.id" class="v2-seg-btn" :class="{ active: metricMode === t.id }" @click="metricMode = t.id">{{ t.label }}</button>
             </div>
           </div>
           <div class="chart-wrap" @mouseenter="onChartEnter" @mouseleave="onChartLeave">
@@ -189,6 +202,55 @@ async function setMode(cli: CliType, mode: CliMode) {
   } finally {
     cliLoading[cli] = false
   }
+}
+
+// ===== 时间段筛选 =====
+const dateRange = ref<[string, string] | null>(null)
+
+const shortcuts = [
+  {
+    text: '近七天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setDate(start.getDate() - 6)
+      return [start, end]
+    }
+  },
+  {
+    text: '近14天',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setDate(start.getDate() - 13)
+      return [start, end]
+    }
+  },
+  {
+    text: '本月',
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setDate(1)
+      return [start, end]
+    }
+  },
+  {
+    text: '上月',
+    value: () => {
+      const start = new Date()
+      const end = new Date()
+      end.setDate(1)
+      end.setDate(end.getDate() - 1)
+      start.setDate(1)
+      start.setMonth(start.getMonth() - 1)
+      return [start, end]
+    }
+  }
+]
+
+function handleRangeChange() {
+  fetchStats()
 }
 
 // ===== KPI =====
@@ -308,12 +370,21 @@ function fmtMetric(v: number) {
 async function fetchStats() {
   statsLoading.value = true
   try {
-    const today = new Date()
-    const start = new Date(today)
-    start.setDate(today.getDate() - 9)
-    const { data: prov } = await statsApi.getProviders({})
+    const params: { start_date?: string; end_date?: string } = {}
+    if (dateRange.value && dateRange.value.length === 2) {
+      params.start_date = dateRange.value[0]
+      params.end_date = dateRange.value[1]
+    } else {
+      // 默认使用最近 10 天作为替代
+      const today = new Date()
+      const start = new Date(today)
+      start.setDate(today.getDate() - 9)
+      params.start_date = fmt(start)
+      params.end_date = fmt(today)
+    }
+    const { data: prov } = await statsApi.getProviders(params)
     providerStats.value = prov
-    const { data: adv } = await statsApi.getAdvanced({ start_date: fmt(start), end_date: fmt(today) })
+    const { data: adv } = await statsApi.getAdvanced(params)
     if (chartHovering.value) pendingAdvanced.value = adv
     else advancedStats.value = adv
   } finally {
@@ -337,10 +408,26 @@ function onLegendChange(e: { selected?: Record<string, boolean> }) {
 
 const chartOption = computed(() => {
   const dates: string[] = []
-  for (let i = 9; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    dates.push(fmt(d))
+  if (dateRange.value && dateRange.value.length === 2) {
+    const startStr = dateRange.value[0]
+    const endStr = dateRange.value[1]
+    const start = new Date(startStr)
+    const end = new Date(endStr)
+    let current = new Date(start)
+    const maxDays = 365
+    let dayCount = 0
+    while (current <= end && dayCount < maxDays) {
+      dates.push(fmt(current))
+      current.setDate(current.getDate() + 1)
+      dayCount++
+    }
+  } else {
+    // 默认展示最近 10 天
+    for (let i = 9; i >= 0; i--) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      dates.push(fmt(d))
+    }
   }
   const isCost = metricMode.value === 'cost'
   const isTokens = metricMode.value === 'tokens'
@@ -620,6 +707,9 @@ onMounted(() => {
   height: 13px;
 }
 .cli-name { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text); }
+.cli-help {
+  margin-left: auto;
+}
 .cli-modes {
   display: grid !important;
   grid-auto-flow: column;
@@ -653,7 +743,6 @@ onMounted(() => {
   flex-wrap: wrap;
   margin-bottom: 10px;
 }
-.chart-toggles { display: flex; gap: 10px; flex-wrap: wrap; }
 .chart-wrap { height: 300px; width: 100%; }
 .chart { height: 100%; width: 100%; }
 @media (max-width: 640px) {
@@ -720,11 +809,6 @@ onMounted(() => {
   color: var(--v2-text);
 }
 
-.chart-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .kpi-icon-wrap {
   display: inline-flex;
   align-items: center;
@@ -791,5 +875,92 @@ onMounted(() => {
   font-size: 11px;
   font-weight: var(--v2-fw-medium);
   line-height: 1;
+}
+
+.dash-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.date-picker-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.toolbar-title {
+  font-size: var(--v2-fs-md) !important;
+  font-weight: var(--v2-fw-semibold) !important;
+  color: var(--v2-text) !important;
+  margin: 0 !important;
+}
+
+/* 自定义 Element Plus 日期选择器样式，使其融入 V2 极简设计 */
+:deep(.v2-date-picker.el-range-editor) {
+  border: 1px solid transparent !important;
+  background-color: var(--v2-surface) !important;
+  border-radius: var(--v2-r) !important;
+  box-shadow: none !important;
+  height: 32px !important; /* 使其高度更精致 */
+  width: 280px !important;
+  padding: 0 16px !important; /* 加宽内边距 */
+  align-items: center !important;
+  transition: none !important;
+}
+:deep(.v2-date-picker.el-range-editor:hover) {
+  background-color: var(--v2-surface) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+:deep(.v2-date-picker.is-active) {
+  border-color: transparent !important;
+  background-color: var(--v2-surface) !important;
+  box-shadow: none !important;
+}
+:deep(.v2-date-picker .el-range-input) {
+  background-color: transparent !important;
+  color: var(--v2-text) !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  height: 100% !important;
+  line-height: 30px !important; /* 强制文字高度垂直居中 */
+  vertical-align: middle !important;
+}
+:deep(.v2-date-picker .el-range-separator) {
+  color: var(--v2-text-3) !important;
+  font-size: 13px !important;
+  height: 100% !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 30px !important;
+}
+:deep(.v2-date-picker .el-icon) {
+  color: var(--v2-text-3) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 100% !important;
+}
+
+@media (max-width: 640px) {
+  .dash-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .dash-toolbar .date-picker-wrap {
+    width: 100%;
+  }
+  :deep(.v2-date-picker.el-range-editor) {
+    width: 100% !important;
+  }
 }
 </style>
