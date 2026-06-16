@@ -44,7 +44,7 @@
             </div>
           </div>
         </div>
-        <input v-model="sessionSearchQuery" class="v2-input ses-search" placeholder="搜索会话…">
+        <input v-model="sessionSearchQuery" class="v2-input v2-input-surface ses-search" placeholder="搜索会话…">
       </div>
 
       <div v-loading="sessionStore.loading" class="ses-body">

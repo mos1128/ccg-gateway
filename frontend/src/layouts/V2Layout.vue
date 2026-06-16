@@ -720,6 +720,9 @@ textarea.v2-input {
 .v2-input:focus {
   outline: none;
 }
+.v2-input-surface {
+  background: var(--v2-surface);
+}
 .v2-input:disabled {
   opacity: 0.6;
   cursor: not-allowed;

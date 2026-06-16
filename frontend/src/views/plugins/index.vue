@@ -73,7 +73,7 @@
             <div><div class="pg-mhead-t">{{ currentMarket.name }}</div><div class="v2-hint mono">{{ currentMarket.marketplace_source || '内建市场' }}</div></div>
           </div>
           <div class="pg-mhead-r">
-            <input v-model="pluginSearchQuery" class="v2-input pg-search" placeholder="搜索…">
+            <input v-model="pluginSearchQuery" class="v2-input v2-input-surface pg-search" placeholder="搜索…">
             <el-tooltip content="刷新" placement="top" effect="light" :show-after="250">
               <button class="v2-row-act" :disabled="loadingMarketPlugins" @click="handleUpdateMarketplace(currentMarket)"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
             </el-tooltip>
