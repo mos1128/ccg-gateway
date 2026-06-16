@@ -25,16 +25,6 @@
           <div class="v2-field">
             <label class="v2-label">全局预设</label>
             <div class="cfg-preset-card" :class="{ empty: !cliForm.default_json_config }" @click="openPresetDrawer">
-              <div class="cfg-preset-header">
-                <div class="cfg-preset-title">
-                  <svg class="cfg-preset-title-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="16 18 22 12 16 6"/>
-                    <polyline points="8 6 2 12 8 18"/>
-                  </svg>
-                  <span class="cfg-preset-filename">{{ isJsonFormat ? 'settings.json' : 'config.toml' }}</span>
-                  <span v-if="cliForm.default_json_config" class="cfg-preset-tag">{{ isJsonFormat ? 'JSON' : 'TOML' }}</span>
-                </div>
-              </div>
               <div class="cfg-preset-body">
                 <template v-if="cliForm.default_json_config">
                   <pre class="cfg-preset-code mono"><code>{{ getPresetPreviewText(cliForm.default_json_config) }}</code></pre>
@@ -214,69 +204,70 @@
 
     <!-- 全局预设编辑抽屉 -->
     <V2Drawer v-model="presetDrawerVisible" :title="`编辑全局预设 - ${activeCliLabel}`" @confirm="handleSavePreset">
-      <div class="v2-field">
-        <div class="v2-file-editor">
-          <div class="v2-file-editor-header">
-            <div class="v2-file-editor-title">
-              <svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-              </svg>
-              <span class="v2-file-editor-name">{{ isJsonFormat ? 'settings.json' : 'config.toml' }}</span>
-              <span class="v2-file-editor-badge">{{ isJsonFormat ? 'JSON' : 'TOML' }}</span>
-            </div>
-            <button v-if="isJsonFormat" class="v2-file-editor-action" type="button" @click="formatPresetJson">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              <span>格式化</span>
-            </button>
-          </div>
-          <div class="v2-file-editor-body">
-            <textarea
-              v-model="presetTempConfig"
-              class="v2-file-editor-textarea cfg-preset-textarea"
-              rows="16"
-              :placeholder="placeholder"
-              @blur="validatePresetConfig"
-            ></textarea>
-          </div>
-        </div>
-        <div v-if="presetValidationError" class="json-err" style="color: var(--v2-danger); font-size: var(--v2-fs-xs); margin-top: 6px;">{{ presetValidationError }}</div>
-      </div>
-
-      <div class="cfg-writemode-section">
-        <div class="cfg-writemode-row">
-          <div class="v2-seg" style="max-width: 200px;">
-            <div class="v2-seg-slider" :style="{ transform: `translateX(${presetTempWriteMode === 'merge' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
-            <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'merge' }" type="button" @click="presetTempWriteMode = 'merge'">增量合并</button>
-            <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'overwrite' }" type="button" @click="presetTempWriteMode = 'overwrite'">全量写入</button>
-          </div>
-          <el-tooltip
-            effect="light"
-            placement="top"
-            :offset="10"
-            :show-after="150"
-            :enterable="true"
-            popper-class="v2-profile-pop v2-scope"
-          >
-            <template #content>
-              <div class="write-mode-help-content">
-                <div class="tooltip-title">配置写入模式</div>
-                <div class="tooltip-item">
-                  <strong>增量合并</strong>
-                  <span>只写入需要变更的字段，保留配置文件中已有的其他配置（如 MCP / plugin 开关等配置）。</span>
-                </div>
-                <div class="tooltip-item">
-                  <strong>全量写入</strong>
-                  <span>每次写入时完全覆盖配置文件。中转路由会备份原始文件，关闭时自动恢复。保持配置干净。</span>
-                </div>
+      <div class="preset-drawer-body">
+        <div class="v2-field preset-editor-field">
+          <div class="v2-file-editor preset-file-editor">
+            <div class="v2-file-editor-header">
+              <div class="v2-file-editor-title">
+                <svg class="file-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <span class="v2-file-editor-name">{{ isJsonFormat ? 'settings.json' : 'config.toml' }}</span>
+                <span class="v2-file-editor-badge">{{ isJsonFormat ? 'JSON' : 'TOML' }}</span>
               </div>
-            </template>
-            <span class="help-icon-wrapper" style="display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--v2-text-3);">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
-                <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-              </svg>
-            </span>
-          </el-tooltip>
+              <button v-if="isJsonFormat" class="v2-file-editor-action" type="button" @click="formatPresetJson">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                <span>格式化</span>
+              </button>
+            </div>
+            <div class="v2-file-editor-body preset-editor-body">
+              <textarea
+                v-model="presetTempConfig"
+                class="v2-file-editor-textarea cfg-preset-textarea"
+                :placeholder="placeholder"
+                @blur="validatePresetConfig"
+              ></textarea>
+            </div>
+          </div>
+          <div v-if="presetValidationError" class="json-err" style="color: var(--v2-danger); font-size: var(--v2-fs-xs); margin-top: 6px;">{{ presetValidationError }}</div>
+        </div>
+
+        <div class="cfg-writemode-section">
+          <div class="cfg-writemode-row">
+            <div class="v2-seg" style="max-width: 200px;">
+              <div class="v2-seg-slider" :style="{ transform: `translateX(${presetTempWriteMode === 'merge' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
+              <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'merge' }" type="button" @click="presetTempWriteMode = 'merge'">增量合并</button>
+              <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'overwrite' }" type="button" @click="presetTempWriteMode = 'overwrite'">全量写入</button>
+            </div>
+            <el-tooltip
+              effect="light"
+              placement="top"
+              :offset="10"
+              :show-after="150"
+              :enterable="true"
+              popper-class="v2-profile-pop v2-scope"
+            >
+              <template #content>
+                <div class="write-mode-help-content">
+                  <div class="tooltip-title">配置写入模式</div>
+                  <div class="tooltip-item">
+                    <strong>增量合并</strong>
+                    <span>只写入需要变更的字段，保留配置文件中已有的其他配置（如 MCP / plugin 开关等配置）。</span>
+                  </div>
+                  <div class="tooltip-item">
+                    <strong>全量写入</strong>
+                    <span>每次写入时完全覆盖配置文件。中转路由会备份原始文件，关闭时自动恢复。保持配置干净。</span>
+                  </div>
+                </div>
+              </template>
+              <span class="help-icon-wrapper" style="display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: var(--v2-text-3);">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="help-icon">
+                  <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </span>
+            </el-tooltip>
+          </div>
         </div>
       </div>
     </V2Drawer>
@@ -621,8 +612,8 @@ onMounted(() => {
 .cfg-dir .v2-row-act svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .cfg-preset-card {
-  background: var(--v2-surface-2);
-  border: 1px solid var(--v2-surface-3);
+  background: var(--v2-bg-base);
+  border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -632,47 +623,17 @@ onMounted(() => {
   flex-direction: column;
 }
 .cfg-preset-card:hover {
-  border-color: var(--v2-surface-3);
-}
-.cfg-preset-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--v2-surface-2);
-  border-bottom: 1px solid var(--v2-surface-3);
-}
-.cfg-preset-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.cfg-preset-title-icon {
-  color: var(--v2-text-3);
-}
-.cfg-preset-filename {
-  font-size: 12px;
-  font-weight: var(--v2-fw-medium);
-  color: var(--v2-text-2);
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-}
-.cfg-preset-tag {
-  font-size: 10px;
-  font-weight: var(--v2-fw-semibold);
-  color: var(--v2-text-3);
-  background: var(--v2-surface-3);
-  padding: 1px 5px;
-  border-radius: 3px;
+  border-color: transparent;
 }
 .cfg-preset-body {
   position: relative;
   padding: 12px 14px;
   min-height: 44px;
-  background: var(--v2-surface);
+  background: var(--v2-bg-base);
   transition: background-color 0.2s;
 }
 .cfg-preset-card:hover .cfg-preset-body {
-  background: var(--v2-surface-2);
+  background: var(--v2-bg-base);
 }
 .cfg-preset-code {
   margin: 0;
@@ -688,7 +649,7 @@ onMounted(() => {
   left: 0;
   width: 100%;
   height: 100%;
-  background: var(--v2-surface-2);
+  background: var(--v2-bg-base);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -697,7 +658,7 @@ onMounted(() => {
   pointer-events: none;
 }
 .cfg-preset-card:hover .cfg-preset-overlay {
-  opacity: 0.9;
+  opacity: 0.95;
 }
 .overlay-text {
   display: inline-flex;
@@ -915,5 +876,40 @@ onMounted(() => {
 }
 .v2-input-icon-btn:hover {
   color: var(--v2-text);
+}
+
+.preset-drawer-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.preset-editor-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 16px;
+}
+.preset-file-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.preset-editor-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.cfg-preset-textarea {
+  flex: 1;
+  resize: none;
+  height: 100%;
+}
+.cfg-writemode-section {
+  flex-shrink: 0;
+  margin-top: auto;
 }
 </style>

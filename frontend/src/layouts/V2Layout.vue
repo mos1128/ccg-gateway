@@ -752,7 +752,7 @@ textarea.v2-input {
 .v2-file-editor-header {
   height: 38px;
   padding: 0 12px;
-  background: var(--v2-surface-2);
+  background: var(--v2-bg-base);
   border-bottom: 1px solid var(--v2-surface-3);
   display: flex;
   align-items: center;
