@@ -42,7 +42,6 @@ export function formatTokens(tokens: number | undefined): string {
 }
 
 export function formatCost(cost: number | undefined): string {
-  if (!cost) return '0'
-  if (cost >= 1) return cost.toFixed(4)
-  return cost.toFixed(6).replace(/0+$/, '').replace(/\.$/, '')
+  if (cost === undefined || cost === null || isNaN(cost)) return '0.0000'
+  return cost.toFixed(4)
 }

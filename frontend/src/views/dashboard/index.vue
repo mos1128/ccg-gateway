@@ -129,7 +129,7 @@
               <button v-for="t in dimTabs" :key="t.id" class="v2-seg-btn" :class="{ active: dimMode === t.id }" @click="dimMode = t.id">{{ t.label }}</button>
             </div>
             <div class="v2-seg">
-              <div class="v2-seg-slider" :style="{ transform: `translateX(${metricTabs.findIndex(t => metricMode === t.id) * 100}%)`, width: 'calc((100% - 8px) / 3)' }"></div>
+              <div class="v2-seg-slider" :style="{ transform: `translateX(${metricTabs.findIndex(t => metricMode === t.id) * 100}%)`, width: `calc((100% - 8px) / ${metricTabs.length})` }"></div>
               <button v-for="t in metricTabs" :key="t.id" class="v2-seg-btn" :class="{ active: metricMode === t.id }" @click="metricMode = t.id">{{ t.label }}</button>
             </div>
           </div>
@@ -326,9 +326,9 @@ const advancedStats = ref<AdvancedStatsRow[]>([])
 const pendingAdvanced = ref<AdvancedStatsRow[] | null>(null)
 const chartHovering = ref(false)
 const legendSelectedMap = ref<Record<string, Record<string, boolean>>>({})
-const metricMode = ref<'tokens' | 'cost' | 'requests'>('tokens')
+const metricMode = ref<'tokens' | 'requests'>('tokens')
 const dimMode = ref<'provider' | 'model'>('provider')
-const metricTabs = [{ id: 'tokens', label: 'Token' }, { id: 'cost', label: '费用' }, { id: 'requests', label: '请求数' }] as const
+const metricTabs = [{ id: 'tokens', label: 'Token' }, { id: 'requests', label: '请求数' }] as const
 const dimTabs = [{ id: 'provider', label: '服务商' }, { id: 'model', label: '模型' }] as const
 
 const PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', 'var(--v2-chart-purple)', 'var(--v2-chart-cyan)', '#f97316', '#ec4899', '#14b8a6', '#6366f1']
@@ -362,9 +362,6 @@ function fmtToken(v: number) {
   if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M'
   if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K'
   return String(v)
-}
-function fmtMetric(v: number) {
-  return metricMode.value === 'cost' ? formatCost(v) : fmtToken(v)
 }
 
 async function fetchStats() {
@@ -429,15 +426,14 @@ const chartOption = computed(() => {
       dates.push(fmt(d))
     }
   }
-  const isCost = metricMode.value === 'cost'
   const isTokens = metricMode.value === 'tokens'
-  const isBar = isTokens || isCost
+  const isBar = isTokens
   const groupKey = dimMode.value === 'provider' ? 'provider_name' : 'model_id'
   const palette = PALETTE.map(chartColor)
 
   const totals = new Map<string, number>()
   advancedStats.value.forEach((s) => {
-    const v = isCost ? s.total_cost : isTokens ? s.total_tokens : s.total_success
+    const v = isTokens ? s.total_tokens : s.total_success
     totals.set(s[groupKey], (totals.get(s[groupKey]) || 0) + v)
   })
   const groups = Array.from(totals.entries())
@@ -449,7 +445,7 @@ const chartOption = computed(() => {
     let sum = 0
     advancedStats.value.forEach((s) => {
       if (s.date === d) {
-        sum += isCost ? s.total_cost : s.total_tokens
+        sum += s.total_tokens
       }
     })
     return sum
@@ -462,7 +458,7 @@ const chartOption = computed(() => {
         let sum = 0, input = 0, output = 0, cacheRead = 0, cacheCreation = 0, cost = 0
         advancedStats.value.forEach((s) => {
           if (s.date === d && s[groupKey] === g) {
-            sum += isCost ? s.total_cost : s.total_tokens
+            sum += s.total_tokens
             input += s.total_input_tokens || 0
             output += s.total_output_tokens || 0
             cacheRead += s.total_cache_read_tokens || 0
@@ -568,18 +564,25 @@ const chartOption = computed(() => {
       },
       formatter: (params: any[]) => {
         if (!params.length) return ''
-        const isCost = metricMode.value === 'cost'
         const isTokens = metricMode.value === 'tokens'
-        const isBar = isTokens || isCost
+        const isBar = isTokens
 
-        // 计算当前所有激活系列的总计值
-        let grandTotal = 0
-        params.forEach((p) => {
-          const val = Number(isBar ? (p.data?.actualValue !== undefined ? p.data.actualValue : p.value) : p.value)
-          if (!isNaN(val) && val > 0) {
-            const selectedMap = legendSelectedMap.value[dimMode.value] || {}
-            if (selectedMap[p.seriesName] !== false) {
-              grandTotal += val
+        const dateStr = params[0].axisValue
+        const selectedMap = legendSelectedMap.value[dimMode.value] || {}
+        let dayCost = 0
+        let dayInput = 0
+        let dayOutput = 0
+        let dayCacheRead = 0
+        let dayCacheCreation = 0
+
+        advancedStats.value.forEach((s) => {
+          if (s.date === dateStr && selectedMap[s[groupKey]] !== false) {
+            dayCost += s.total_cost || 0
+            if (isBar) {
+              dayInput += s.total_input_tokens || 0
+              dayOutput += s.total_output_tokens || 0
+              dayCacheRead += s.total_cache_read_tokens || 0
+              dayCacheCreation += s.total_cache_creation_tokens || 0
             }
           }
         })
@@ -592,19 +595,30 @@ const chartOption = computed(() => {
         })
         if (!vis.length) return ''
 
-        let html = `<div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid ${c.split};padding-bottom:6px;color:${c.tipTitle};font-weight:var(--v2-fw-semibold);">
-          <span>${params[0].axisValue}</span>
-          <span style="font-size:12px;">总计: ${fmtMetric(grandTotal)}</span>
+        let html = `<div style="display:flex;justify-content:space-between;align-items:center;gap:16px;color:${c.tipTitle};font-weight:var(--v2-fw-semibold);${
+          isBar
+            ? 'margin-bottom:4px;'
+            : `border-bottom:1px solid ${c.split};padding-bottom:6px;margin-bottom:8px;`
+        }">
+          <span>${params[0].axisValue} 汇总</span>
+          <span style="font-size:12px;font-weight:normal;color:${c.tipText};">$${formatCost(dayCost)}</span>
         </div>`
 
         if (isBar) {
+          // Add daily token usage details summary
+          html += `<div style="margin-bottom:8px;border-bottom:1px solid ${c.split};padding-bottom:8px;font-size:12px;color:${c.tipText};">
+            输入 ${fmtToken(dayInput)} &nbsp;•&nbsp; 输出 ${fmtToken(dayOutput)} &nbsp;•&nbsp; 缓存读取 ${fmtToken(dayCacheRead)} &nbsp;•&nbsp; 缓存创建 ${fmtToken(dayCacheCreation)}
+          </div>`
+
           vis.forEach((p, i) => {
             const d = p.data
             html += `<div style="margin-bottom:6px;${i > 0 ? `border-top:1px solid ${c.split};padding-top:6px;` : ''}">
-              <div style="display:flex;align-items:center;gap:6px;font-size:14px;color:${c.tipTitle};font-weight:var(--v2-fw-semibold);">
-                ${d.name}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:14px;color:${c.tipTitle};font-weight:var(--v2-fw-semibold);">
+                <span>${d.name}</span>
+                <span style="font-size:12px;font-weight:normal;color:${c.tipText};">$${formatCost(d.cost)}</span>
+              </div>
               <div style="font-size:12px;margin-top:1px;">
-                输入 ${fmtToken(d.input)} / 输出 ${fmtToken(d.output)} &nbsp;•&nbsp; 缓存读 ${fmtToken(d.cacheRead)} / 缓存创 ${fmtToken(d.cacheCreation)}
+                输入 ${fmtToken(d.input)} &nbsp;•&nbsp; 输出 ${fmtToken(d.output)} &nbsp;•&nbsp; 缓存读取 ${fmtToken(d.cacheRead)} &nbsp;•&nbsp; 缓存创建 ${fmtToken(d.cacheCreation)}
               </div></div>`
           })
         } else {
@@ -620,7 +634,7 @@ const chartOption = computed(() => {
     legend: { data: groups, bottom: 0, left: 'center', type: 'scroll', icon: 'circle', selected: legendSelectedMap.value[dimMode.value], textStyle: { color: c.label, fontFamily: CHART_FONT, fontSize: 14, fontWeight: 500 } },
     grid: { top: 16, right: '1.5%', bottom: 36, left: '1.5%', containLabel: true },
     xAxis: { type: 'category', data: dates, boundaryGap: isBar, axisLine: { lineStyle: { color: c.axis } }, axisTick: { show: false }, axisLabel: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, formatter: (v: string) => v.substring(5) } },
-    yAxis: { type: 'value', splitNumber: 4, splitLine: { lineStyle: { type: 'dashed', color: c.split } }, axisLabel: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, formatter: (v: number) => isCost ? formatCost(v) : fmtToken(v) } },
+    yAxis: { type: 'value', splitNumber: 4, splitLine: { lineStyle: { type: 'dashed', color: c.split } }, axisLabel: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, formatter: (v: number) => fmtToken(v) } },
     series
   }
 })
