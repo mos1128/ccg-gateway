@@ -332,7 +332,7 @@ let testResultListener: (() => void) | null = null
 const currentProfileLabel = computed(() =>
   profileDisplayLabel(profileTabs.value.find(profile => profile.name === activeProfile.value)) || activeProfile.value
 )
-const profileTabWidth = 100
+const profileTabWidth = 120
 const profileSliderStyle = computed(() => {
   const index = Math.max(profileTabs.value.findIndex(profile => activeProfile.value === profile.name), 0)
   return {
@@ -400,10 +400,10 @@ function nextDefaultProfileName() {
       .map(profile => profile.name.toLowerCase())
   )
   let index = 1
-  let name = `pf${index}`
+  let name = `profile${index}`
   while (existing.has(name)) {
     index += 1
-    name = `pf${index}`
+    name = `profile${index}`
   }
   return name
 }
@@ -1163,7 +1163,7 @@ onUnmounted(() => {
 
 .prov-clitabs { flex-shrink: 0; margin-bottom: 16px; }
 .profile-tabs .v2-seg-btn.active { pointer-events: auto; }
-.profile-tabs { --profile-tab-width: 100px; max-width: min(680px, 58vw); overflow-x: auto; scrollbar-width: none; }
+.profile-tabs { --profile-tab-width: 120px; max-width: min(680px, 58vw); overflow-x: auto; scrollbar-width: none; }
 .profile-tabs::-webkit-scrollbar { display: none; }
 .profile-tabs:has(.v2-seg-slider) { display: inline-flex; grid-auto-columns: unset; }
 .profile-tabs:has(.v2-seg-slider) .profile-tab-btn { width: var(--profile-tab-width); min-width: var(--profile-tab-width); max-width: var(--profile-tab-width); display: inline-flex; align-items: center; justify-content: center; overflow: visible; padding-left: 8px; padding-right: 8px; }
