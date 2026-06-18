@@ -126,6 +126,7 @@ export interface ProviderKeepalivePayload {
   profile?: ProviderProfile
   provider_ids?: number[]
   model_name: string
+  test_text?: string
 }
 
 export interface ScheduledTask {

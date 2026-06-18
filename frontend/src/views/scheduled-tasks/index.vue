@@ -169,7 +169,7 @@ import { providersApi } from '@/api/providers'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
-import { DEFAULT_MODEL_NAMES, getReusableModelName } from '@/utils/modelDefaults'
+import { DEFAULT_MODEL_NAMES, getReusableModelName, getReusableTestText } from '@/utils/modelDefaults'
 import {
   CLI_TABS,
   PROFILE_CAPABLE_CLI_TYPES,
@@ -358,7 +358,8 @@ async function handleSave() {
     target_mode: form.value.target_mode,
     cli_type: form.value.cli_type,
     profile: supportsProfiles.value ? form.value.profile : 'default',
-    model_name: modelName
+    model_name: modelName,
+    test_text: getReusableTestText(form.value.cli_type)
   }
   if (form.value.target_mode === 'selected') payload.provider_ids = [...form.value.provider_ids]
   const input = {

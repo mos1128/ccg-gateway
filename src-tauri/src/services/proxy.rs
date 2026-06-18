@@ -657,12 +657,18 @@ pub struct ProbeRequest {
 }
 
 /// Build a probe request emulating the given CLI type.
-pub fn build_probe_request(cli_type: CliType, model: &str) -> ProbeRequest {
+///
+/// `test_text` overrides the default user prompt (`今天天气不错`) when `Some`.
+pub fn build_probe_request(cli_type: CliType, model: &str, test_text: Option<&str>) -> ProbeRequest {
+    let text = test_text
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .unwrap_or("今天天气不错");
     match cli_type {
         CliType::ClaudeCode => {
             let body = serde_json::json!({
                 "model": model,
-                "messages": [{"role": "user", "content": [{"type": "text", "text": "今天天气不错"}]}],
+                "messages": [{"role": "user", "content": [{"type": "text", "text": text}]}],
                 "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}],
                 "max_tokens": 1024,
                 "thinking": {"type": "adaptive"},
@@ -684,7 +690,7 @@ pub fn build_probe_request(cli_type: CliType, model: &str) -> ProbeRequest {
             let body = serde_json::json!({
                 "model": model,
                 "instructions": "You are Codex, a coding agent based on GPT-5.",
-                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "今天天气不错"}]}],
+                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
                 "reasoning": {"effort": "high"},
                 "stream": true
             });
@@ -701,7 +707,7 @@ pub fn build_probe_request(cli_type: CliType, model: &str) -> ProbeRequest {
         }
         CliType::Gemini => {
             let body = serde_json::json!({
-                "contents": [{"role": "user", "parts": [{"text": "今天天气不错"}]}],
+                "contents": [{"role": "user", "parts": [{"text": text}]}],
                 "systemInstruction": {"parts": [{"text": "You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks."}]},
                 "generationConfig": {"temperature": 1.0, "topP": 0.95, "topK": 64, "thinkingConfig": {"includeThoughts": true}}
             });

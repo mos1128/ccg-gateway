@@ -207,6 +207,7 @@ impl From<Provider> for ProviderResponse {
 pub struct TestProviderModelsInput {
     pub model_name: String,
     pub provider_ids: Vec<i64>,
+    pub test_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -357,6 +358,7 @@ pub struct ProviderKeepalivePayload {
     pub profile: Option<String>,
     pub provider_ids: Option<Vec<i64>>,
     pub model_name: String,
+    pub test_text: Option<String>,
 }
 
 // ==================== Settings 相关实体 ====================

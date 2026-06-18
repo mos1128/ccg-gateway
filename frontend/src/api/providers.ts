@@ -58,9 +58,9 @@ export const providersApi = {
     await invoke('reset_provider_failures', { id })
     return { data: null }
   },
-  startTestModels: async (modelName: string, providerIds: number[]) => {
+  startTestModels: async (modelName: string, providerIds: number[], testText: string) => {
     await invoke('test_provider_models', {
-      input: { model_name: modelName, provider_ids: providerIds }
+      input: { model_name: modelName, provider_ids: providerIds, test_text: testText }
     })
     return { data: null }
   },

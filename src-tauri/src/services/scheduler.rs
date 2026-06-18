@@ -671,6 +671,7 @@ async fn execute_keepalive_task(
     let payload: ProviderKeepalivePayload = serde_json::from_str(&task.payload_json)
         .map_err(|e| format!("服务商调用参数解析失败: {}", e))?;
     let model_name = payload.model_name.trim().to_string();
+    let test_text = payload.test_text.clone();
     let targets = resolve_keepalive_targets(db, &payload, retry_provider_ids).await?;
     let mut outcome = RunOutcome::empty();
 
@@ -697,7 +698,7 @@ async fn execute_keepalive_task(
     let results = join_all(
         targets
             .into_iter()
-            .map(|target| execute_keepalive_target(db, log_db, run_id, target, &model_name)),
+            .map(|target| execute_keepalive_target(db, log_db, run_id, target, &model_name, test_text.as_deref())),
     )
     .await;
 
@@ -714,6 +715,7 @@ async fn execute_keepalive_target(
     run_id: i64,
     target: KeepaliveTarget,
     model_name: &str,
+    test_text: Option<&str>,
 ) -> Result<RunOutcome, String> {
     let mut outcome = RunOutcome::empty();
     outcome.total_count = 1;
@@ -744,7 +746,7 @@ async fn execute_keepalive_target(
 
     let timeout_secs = provider_service::get_stream_first_byte_timeout(db).await;
     let result =
-        provider_service::test_provider_model(db, provider.id, model_name, timeout_secs).await;
+        provider_service::test_provider_model(db, provider.id, model_name, test_text, timeout_secs).await;
     let ok = result
         .status_code
         .map(|code| (200..300).contains(&code))

@@ -147,6 +147,7 @@ pub async fn test_provider_model(
     db: &SqlitePool,
     provider_id: i64,
     model_name: &str,
+    test_text: Option<&str>,
     timeout_secs: u64,
 ) -> TestProviderResult {
     // 1. Load provider
@@ -229,7 +230,7 @@ pub async fn test_provider_model(
     // Probe template (path + body + Agent-specific headers). Unknown cli_type
     // resolves to ClaudeCode via cli_type_from_str, so it gets an Anthropic
     // probe — consistent with the auth scheme used in build_upstream_request.
-    let probe = crate::services::proxy::build_probe_request(cli_type_enum, &actual_model);
+    let probe = crate::services::proxy::build_probe_request(cli_type_enum, &actual_model, test_text);
 
     // Assemble the synthetic client header map: start from the template's
     // Agent-specific headers, then let captured headers (if any) refine the UA

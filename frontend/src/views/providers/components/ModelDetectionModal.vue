@@ -13,6 +13,10 @@
         <label class="c-label">检测模型</label>
         <input type="text" :value="model" class="v2-input" placeholder="输入模型名称" @input="handleModelInput">
       </div>
+      <div style="flex: 1;">
+        <label class="c-label">测试文本</label>
+        <input type="text" :value="testText" class="v2-input" placeholder="输入测试文本" @input="handleTestTextInput">
+      </div>
     </div>
 
     <div style="margin-bottom: 24px;">
@@ -91,6 +95,7 @@ import type { Provider, TestProviderResult } from '@/types/models'
 const props = defineProps<{
   modelValue: boolean
   model: string
+  testText: string
   providers: Provider[]
   selectedIds: number[]
   isAllSelected: boolean
@@ -101,6 +106,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'update:model': [value: string]
+  'update:testText': [value: string]
   confirm: []
   'toggle-all': []
   'toggle-provider': [id: number]
@@ -114,6 +120,10 @@ const visible = computed({
 
 function handleModelInput(event: Event) {
   emit('update:model', (event.target as HTMLInputElement).value)
+}
+
+function handleTestTextInput(event: Event) {
+  emit('update:testText', (event.target as HTMLInputElement).value)
 }
 
 function getResultStatus(result: TestProviderResult): 'pending' | 'success' | 'failed' {

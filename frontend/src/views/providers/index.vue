@@ -238,6 +238,7 @@
     <ModelDetectionModal
       v-model="showDetectDialog"
       v-model:model="detectModel"
+      v-model:test-text="detectTestText"
       :providers="detectProviderList"
       :selected-ids="detectSelectedIds"
       :is-all-selected="isAllDetectSelected"
@@ -272,7 +273,7 @@ import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { CLI_TABS, PROFILE_CAPABLE_CLI_TYPES } from '@/types/models'
 import type { Provider, CliType, CliMode, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
-import { getReusableModelName, saveReusableModelName } from '@/utils/modelDefaults'
+import { getReusableModelName, saveReusableModelName, getReusableTestText, saveReusableTestText } from '@/utils/modelDefaults'
 
 const providerStore = useProviderStore()
 const credentialStore = useCredentialStore()
@@ -682,6 +683,7 @@ function makeUniqueProviderName(name: string): string {
 const showDetectDialog = ref(false)
 const detectLoading = ref(false)
 const detectModel = ref('')
+const detectTestText = ref('')
 const detectSelectedIds = ref<number[]>([])
 const detectResults = ref<TestProviderResult[]>([])
 
@@ -701,6 +703,7 @@ function toggleAllDetectProviders() {
 watch(showDetectDialog, (open) => {
   if (open) {
     detectModel.value = getReusableModelName(activeCliType.value)
+    detectTestText.value = getReusableTestText(activeCliType.value)
     detectSelectedIds.value = detectProviderList.value.map((p) => p.id)
     detectResults.value = []
     detectLoading.value = false
@@ -720,6 +723,7 @@ async function handleStartDetect() {
     return
   }
   saveReusableModelName(activeCliType.value, detectModel.value)
+  saveReusableTestText(activeCliType.value, detectTestText.value)
   detectResults.value = detectSelectedIds.value.map((id) => {
     const p = providerStore.providers.find((x) => x.id === id)
     return {
@@ -738,7 +742,7 @@ async function handleStartDetect() {
     if (detectResults.value.every((r) => r.response_text !== '')) detectLoading.value = false
   })
   try {
-    await providersApi.startTestModels(detectModel.value.trim(), detectSelectedIds.value)
+    await providersApi.startTestModels(detectModel.value.trim(), detectSelectedIds.value, detectTestText.value.trim())
   } catch (e: any) {
     notify(getErrorMessage(e, '检测失败'), 'error')
     detectLoading.value = false
