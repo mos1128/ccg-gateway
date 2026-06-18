@@ -193,17 +193,10 @@ pub async fn proxy_handler_catchall(
     set_auth_header(&mut req_headers, &provider.api_key, cli_type);
 
     // Apply User-Agent override (per-provider)
-    let _original_ua =
-        apply_useragent_override(&mut req_headers, provider.custom_useragent.as_deref());
+    apply_useragent_override(&mut req_headers, provider.custom_useragent.as_deref());
 
-    // Explicitly set Content-Length to ensure correct body transmission
-    // This is critical because we filtered out the original content-length header
-    if !final_body.is_empty() {
-        req_headers.insert(
-            reqwest::header::CONTENT_LENGTH,
-            final_body.len().to_string().parse().unwrap(),
-        );
-    }
+    // Content-Length is intentionally not set here: filter_headers already stripped the
+    // original value, and reqwest recomputes it from the body length when building.
 
     // Build the request to inspect actual headers and body that will be sent
     let request_builder = match method.as_str() {

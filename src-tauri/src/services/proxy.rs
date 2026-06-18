@@ -236,7 +236,7 @@ fn bearer_token(value: &str) -> &str {
 
 /// Detect provider profile from the gateway token sent by the CLI.
 pub fn detect_gateway_profile(headers: &HeaderMap) -> String {
-    let header_names = ["authorization", "x-api-key", "x-goog-api-key"];
+    let header_names = ["authorization", "x-goog-api-key"];
 
     for name in header_names {
         if let Some(value) = headers.get(name).and_then(|v| v.to_str().ok()) {
@@ -591,26 +591,14 @@ pub fn set_auth_header(headers: &mut reqwest::header::HeaderMap, api_key: &str, 
 
 /// Apply User-Agent override to headers
 /// If custom_ua is provided, replaces the User-Agent header with it.
-/// Returns the original User-Agent if replaced, for logging purposes.
-pub fn apply_useragent_override(
-    headers: &mut reqwest::header::HeaderMap,
-    custom_ua: Option<&str>,
-) -> Option<String> {
+pub fn apply_useragent_override(headers: &mut reqwest::header::HeaderMap, custom_ua: Option<&str>) {
     let Some(target_ua) = custom_ua.filter(|s| !s.is_empty()) else {
-        return None;
+        return;
     };
-
-    let original_ua = headers
-        .get(reqwest::header::USER_AGENT)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
 
     if let Ok(new_value) = reqwest::header::HeaderValue::from_str(target_ua) {
         headers.insert(reqwest::header::USER_AGENT, new_value);
-        return original_ua;
     }
-
-    None
 }
 
 /// Build upstream URL from provider base URL and request path
