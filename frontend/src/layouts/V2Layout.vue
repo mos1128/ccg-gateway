@@ -671,6 +671,29 @@ html.dark .v2-seg-slider {
   --el-color-primary: var(--v2-accent) !important;
   --el-pagination-hover-color: var(--v2-accent-press);
 }
+.v2-shell .el-pagination .el-select__wrapper,
+.v2-shell .el-pagination .el-input__wrapper,
+.v2-shell .el-pagination .el-select__wrapper:hover,
+.v2-shell .el-pagination .el-input__wrapper:hover,
+.v2-shell .el-pagination .el-select__wrapper.is-focused,
+.v2-shell .el-pagination .el-input__wrapper.is-focused {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  background-color: var(--v2-bg-base) !important;
+}
+.v2-shell .el-pagination .el-select__placeholder,
+.v2-shell .el-pagination .el-select__selected-item {
+  color: var(--v2-text) !important;
+}
+.v2-shell .el-pagination button,
+.v2-shell .el-pagination .el-pager li,
+.v2-shell .el-pagination button:hover,
+.v2-shell .el-pagination .el-pager li:hover,
+.v2-shell .el-pagination button:disabled {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
 .v2-shell .el-pagination .el-pager li {
   color: var(--v2-text-3) !important;
   font-weight: var(--v2-fw-medium);
@@ -1040,5 +1063,41 @@ textarea.v2-input {
   color: var(--v2-text-2);
 }
 
+/* Unify global dropdown popups (Select & Dropdown menu) */
+.el-select-dropdown__item,
+.el-dropdown-menu__item {
+  font-family: var(--font-ui) !important;
+  font-size: 13px !important;
+  font-weight: var(--v2-fw-medium) !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  color: var(--v2-text-2) !important;
+}
+
+.el-select-dropdown__item {
+  padding: 0 32px 0 16px !important;
+}
+
+.el-dropdown-menu__item {
+  padding: 0 16px !important;
+}
+
+/* Selected item styling */
+.el-select-dropdown__item.is-selected,
+.el-dropdown-menu__item.selected,
+.el-dropdown-menu__item.active {
+  color: var(--v2-accent) !important;
+  font-weight: var(--v2-fw-semibold) !important;
+  background-color: transparent !important;
+}
+
+/* Hover and focus item styling */
+.el-select-dropdown__item:hover:not(.is-disabled),
+.el-dropdown-menu__item:hover:not(.is-disabled),
+.el-select-dropdown__item.is-hovering,
+.el-dropdown-menu__item:focus:not(.is-disabled) {
+  background-color: var(--v2-surface-2) !important;
+  color: var(--v2-text) !important;
+}
 
 </style>
