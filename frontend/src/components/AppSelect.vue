@@ -61,10 +61,14 @@ function onSelectChange(value: string | number) {
   border: 1px solid transparent !important;
   background-color: var(--v2-bg-base) !important;
   border-radius: var(--v2-r) !important;
+  height: 30px !important;
+  min-height: 30px !important;
 }
 
 .app-select-el.el-select--small :deep(.el-select__wrapper) {
   border-radius: var(--v2-r-sm) !important;
+  height: 24px !important;
+  min-height: 24px !important;
 }
 
 /* Ensure no border when hovered or focused */

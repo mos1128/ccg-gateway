@@ -223,7 +223,7 @@ onMounted(() => {
 <style scoped>
 .ses-page { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: -16px; }
 .ses-tabs { margin-bottom: 16px; flex-shrink: 0; }
-.ses-body { flex: 1; overflow-y: auto; min-height: 0; scrollbar-gutter: stable; }
+.ses-body { flex: 1; overflow-y: auto; min-height: 0; }
 .ses-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 60px; color: var(--v2-text-3); }
 .ses-empty-t { font-size: var(--v2-fs-base); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); }
 

@@ -580,7 +580,7 @@ watch(() => form.value.profile, () => {
 .st-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .st-top { flex-shrink: 0; display: flex; justify-content: flex-end; padding: 13px 18px; border-bottom: 1px solid var(--v2-surface-2); }
 .st-empty-card { flex: 1; min-height: 0; }
-.st-tablewrap { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+.st-tablewrap { flex: 1; min-height: 0; overflow: auto; }
 .st-tablewrap thead th { position: sticky; top: 0; z-index: 1; text-align: center; }
 .st-tablewrap tbody td { text-align: center; }
 .st-name { font-weight: var(--v2-fw-medium); }

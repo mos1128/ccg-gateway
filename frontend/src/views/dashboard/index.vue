@@ -766,16 +766,19 @@ onMounted(() => {
 /* KPI 与刷新指示器新增样式 */
 .v2-kpi {
   background: var(--v2-surface);
-  border: 1px solid var(--v2-surface-3);
+  border: 1px solid rgba(0, 0, 0, 0.045);
   border-radius: var(--v2-r);
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  box-shadow: var(--v2-shadow-card);
+  box-shadow: none;
   position: relative;
   overflow: hidden;
   min-height: 94px;
+}
+html.dark .v2-kpi {
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 .v2-kpi::before {

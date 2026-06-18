@@ -49,7 +49,7 @@
                     </div>
                   </div>
                 </template>
-                <span class="dr-help-icon">
+                <span class="v2-help">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 </span>
               </el-tooltip>
@@ -194,12 +194,15 @@ watch(() => props.modelValue, (open) => {
 .dr-arrow { color: var(--v2-text-3); font-size: var(--v2-fs-sm); }
 
 .dr-group-card {
-  border: 1px solid var(--v2-surface-3);
+  border: 1px solid rgba(0, 0, 0, 0.045);
   border-radius: var(--v2-r-lg);
   background: var(--v2-surface);
-  box-shadow: var(--v2-shadow-card);
+  box-shadow: none;
   overflow: hidden;
   margin-bottom: 20px;
+}
+html.dark .dr-group-card {
+  border-color: rgba(255, 255, 255, 0.04);
 }
 .dr-group-header {
   display: flex;
@@ -219,16 +222,7 @@ watch(() => props.modelValue, (open) => {
   font-weight: var(--v2-fw-semibold);
   color: var(--v2-text);
 }
-.dr-help-icon {
-  display: inline-flex;
-  align-items: center;
-  cursor: help;
-  color: var(--v2-text-3);
-  transition: color 0.15s;
-}
-.dr-help-icon:hover {
-  color: var(--v2-text-2);
-}
+
 .dr-group-hint {
   font-size: var(--v2-fs-xs);
   color: var(--v2-text-3);

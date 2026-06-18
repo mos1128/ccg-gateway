@@ -126,7 +126,7 @@
             检测
           </button>
           <button v-if="copiedProvider" class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="pasteLoading" @click="handlePasteProvider">
-            <svg width="16" height="16"><use href="#v2i-copy"/></svg>
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#v2i-copy"/></svg>
             粘贴
           </button>
           <button class="v2-btn v2-btn-sm v2-btn-primary" @click="handleAddProvider">
@@ -1198,7 +1198,7 @@ onUnmounted(() => {
 .toolbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .toolbar-right { display: flex; align-items: center; gap: 8px; }
 
-.prov-body { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; }
+.prov-body { flex: 1; min-height: 0; overflow: auto; }
 .prov-shell > .v2-empty { flex: 1; min-height: 0; }
 
 .prov-empty {

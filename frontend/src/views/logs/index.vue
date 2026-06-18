@@ -11,11 +11,11 @@
     <template v-if="activeTab === 'request'">
       <div v-loading="requestLoading" class="v2-card logs-tablecard">
         <div class="logs-filters">
-          <AppSelect size="small" :model-value="requestFilters.cli_type" :options="cliFilterOptions" width="120px" @change="handleRequestCliChange" />
-          <AppSelect size="small" :model-value="requestFilters.provider_name" :options="providerFilterOptions" width="160px" @change="handleRequestProviderChange" />
+          <AppSelect :model-value="requestFilters.cli_type" :options="cliFilterOptions" width="120px" @change="handleRequestCliChange" />
+          <AppSelect :model-value="requestFilters.provider_name" :options="providerFilterOptions" width="160px" @change="handleRequestProviderChange" />
           <div style="flex:1"></div>
           <span class="logs-flabel">日志级别</span>
-          <AppSelect size="small" :model-value="logRecordMode" :options="logModeOptions" width="140px" @change="v => setLogMode(v as LogRecordMode)" />
+          <AppSelect :model-value="logRecordMode" :options="logModeOptions" width="140px" @change="v => setLogMode(v as LogRecordMode)" />
           <el-tooltip content="查询" placement="top" effect="light" :show-after="250">
             <button class="v2-row-act" @click="fetchRequestLogs"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
           </el-tooltip>
@@ -108,7 +108,7 @@
     <template v-else>
       <div v-loading="systemLoading" class="v2-card logs-tablecard">
         <div class="logs-filters">
-          <AppSelect size="small" :model-value="systemFilters.event_type" :options="eventTypeOptions" width="140px" @change="handleSystemEventTypeChange" />
+          <AppSelect :model-value="systemFilters.event_type" :options="eventTypeOptions" width="140px" @change="handleSystemEventTypeChange" />
           <div style="flex:1"></div>
           <el-tooltip content="查询" placement="top" effect="light" :show-after="250">
             <button class="v2-row-act" @click="fetchSystemLogs"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
@@ -581,7 +581,7 @@ onUnmounted(() => {
 .logs-flabel { font-size: var(--v2-fs-xs); color: var(--v2-text-3); }
 
 .logs-tablecard { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
-.logs-scroll { flex: 1; overflow: auto; scrollbar-gutter: stable; }
+.logs-scroll { flex: 1; overflow: auto; }
 .logs-scroll thead th { position: sticky; top: 0; z-index: 1; text-align: center; }
 .logs-scroll tbody td { text-align: center; }
 .logs-map { text-align: center; }
@@ -627,14 +627,14 @@ onUnmounted(() => {
   right: 0;
   z-index: 3;
   background: var(--v2-surface-2);
-  border-left: 1px solid var(--v2-surface-2);
+  border-left: 1px solid var(--v2-surface-3);
 }
 .logs-scroll td.logs-sticky-col {
   position: sticky;
   right: 0;
   z-index: 2;
   background: var(--v2-surface);
-  border-left: 1px solid var(--v2-surface-2);
+  border-left: 1px solid var(--v2-surface-3);
 }
 .logs-scroll tbody tr:hover td.logs-sticky-col {
   background: var(--v2-surface-2);
