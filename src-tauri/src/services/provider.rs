@@ -193,8 +193,6 @@ pub async fn test_provider_model(
     let provider_name = provider.name.clone();
     let cli_type = provider.cli_type.clone();
     let base_url = provider.base_url.trim_end_matches('/').to_string();
-    let api_key = provider.api_key.clone();
-    let custom_ua = provider.custom_useragent.clone();
 
     // 2. Resolve model mapping
     let model_maps = sqlx::query_as::<_, crate::db::models::ProviderModelMap>(
@@ -213,7 +211,12 @@ pub async fn test_provider_model(
         }
     }
 
-    // 3. Build request per CLI type (all use stream mode)
+    // 3. Build a synthetic Agent request from the probe template, then route it
+    //    through the same upstream-request constructor used by real forwarding.
+    //    This keeps auth injection, hop-by-hop filtering, and UA override in one
+    //    place; the only difference from a real request is that the body and
+    //    Agent-specific headers come from the template (refined by captured
+    //    headers) instead of a live CLI.
     let client = {
         static TEST_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
         TEST_CLIENT
@@ -221,153 +224,61 @@ pub async fn test_provider_model(
             .clone()
     };
 
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert("content-type", "application/json".parse().unwrap());
-    headers.insert("accept", "text/event-stream".parse().unwrap());
-    headers.insert("accept-encoding", "identity".parse().unwrap());
+    let cli_type_enum = crate::services::proxy::cli_type_from_str(&cli_type);
 
-    let (url, body_json) = match cli_type.as_str() {
-        "claude_code" => {
-            // Anthropic native: POST /v1/messages with stream
-            let url = format!("{}/v1/messages", base_url);
-            let body = serde_json::json!({
-                "model": actual_model,
-                "messages": [{"role": "user", "content": [{"type": "text", "text": "今天天气不错"}]}],
-                "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}],
-                "max_tokens": 1024,
-                "thinking": {"type": "adaptive"},
-                "stream": true
-            });
+    // Probe template (path + body + Agent-specific headers). Unknown cli_type
+    // resolves to ClaudeCode via cli_type_from_str, so it gets an Anthropic
+    // probe — consistent with the auth scheme used in build_upstream_request.
+    let probe = crate::services::proxy::build_probe_request(cli_type_enum, &actual_model);
 
-            headers.insert("accept", "application/json".parse().unwrap());
-            headers.insert(
-                "accept-encoding",
-                "gzip, deflate, br, zstd".parse().unwrap(),
-            );
-            headers.insert("x-app", "cli".parse().unwrap());
-
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
-                headers.insert(reqwest::header::AUTHORIZATION, v);
-            }
-
-            headers.insert(
-                reqwest::header::USER_AGENT,
-                "claude-cli/2.1.121 (external, cli)".parse().unwrap(),
-            );
-
-            // Dynamically learn anthropic-beta from captured headers if available, otherwise default
-            let mut beta_value = "claude-code-20250219,context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24".to_string();
-            let captured_headers = crate::services::proxy::get_captured_claude_headers();
-            for (k, v) in &captured_headers.headers {
-                if k.to_lowercase() == "anthropic-beta" {
-                    beta_value = v.clone();
-                    break;
-                }
-            }
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&beta_value) {
-                headers.insert("anthropic-beta", v);
-            }
-
-            (url, body)
+    // Assemble the synthetic client header map: start from the template's
+    // Agent-specific headers, then let captured headers (if any) refine the UA
+    // / anthropic-beta so the probe stays close to the currently installed CLI.
+    let mut client_headers = axum::http::HeaderMap::new();
+    if let Ok(v) = reqwest::header::HeaderValue::from_str("application/json") {
+        client_headers.insert(reqwest::header::CONTENT_TYPE, v);
+    }
+    for (name, value) in &probe.extra_headers {
+        if let (Ok(n), Ok(v)) = (
+            reqwest::header::HeaderName::from_bytes(name.as_bytes()),
+            reqwest::header::HeaderValue::from_str(value),
+        ) {
+            client_headers.insert(n, v);
         }
-        "codex" => {
-            // Codex format: base_url already includes /v1
-            let url = format!("{}/responses", base_url);
-            let body = serde_json::json!({
-                "model": actual_model,
-                "instructions": "You are Codex, a coding agent based on GPT-5.",
-                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "今天天气不错"}]}],
-                "reasoning": {"effort": "high"},
-                "stream": true
-            });
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
-                headers.insert(reqwest::header::AUTHORIZATION, v);
-            }
+    }
+    apply_captured_header_override(&mut client_headers, cli_type_enum);
 
-            headers.insert("accept", "text/event-stream".parse().unwrap());
-            headers.insert("originator", "codex-tui".parse().unwrap());
+    let url = format!("{}{}", base_url, probe.path);
 
-            let mut user_agent =
-                "codex-tui/0.125.0 (Windows 10.0.22631; x86_64) unknown (codex-tui; 0.125.0)"
-                    .to_string();
-            let captured_headers = crate::services::proxy::get_captured_codex_headers();
-            for (k, v) in &captured_headers.headers {
-                if k.to_lowercase() == "user-agent" {
-                    user_agent = v.clone();
-                    break;
-                }
-            }
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&user_agent) {
-                headers.insert(reqwest::header::USER_AGENT, v);
-            }
-
-            (url, body)
-        }
-        "gemini" => {
-            // Gemini streaming: streamGenerateContent with alt=sse
-            let url = format!(
-                "{}/v1beta/models/{}:streamGenerateContent?alt=sse",
-                base_url, actual_model
-            );
-            let body = serde_json::json!({
-                "contents": [{"role": "user", "parts": [{"text": "今天天气不错"}]}],
-                "systemInstruction": {"parts": [{"text": "You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks."}]},
-                "generationConfig": {"temperature": 1.0, "topP": 0.95, "topK": 64, "thinkingConfig": {"includeThoughts": true}}
-            });
-
-            headers.insert("accept", "*/*".parse().unwrap());
-            headers.insert("content-type", "application/json".parse().unwrap());
-            headers.insert("accept-encoding", "gzip, deflate".parse().unwrap());
-
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&api_key) {
-                headers.insert("x-goog-api-key", v);
-            }
-
-            // Apply captured headers or defaults
-            let mut user_agent =
-                "GeminiCLI/0.39.1/gemini-3.1-pro-preview (win32; x64; terminal)".to_string();
-
-            let captured_headers = crate::services::proxy::get_captured_gemini_headers();
-            for (k, v) in &captured_headers.headers {
-                if k.to_lowercase() == "user-agent" {
-                    user_agent = v.clone();
-                    break;
-                }
-            }
-
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&user_agent) {
-                headers.insert(reqwest::header::USER_AGENT, v);
-            }
-
-            (url, body)
-        }
-        _ => {
-            // Fallback: OpenAI compatible
-            let url = format!("{}/v1/chat/completions", base_url);
-            let body = serde_json::json!({
-                "model": actual_model,
-                "messages": [{"role": "user", "content": "今天天气不错"}],
-                "stream": true,
-                "max_tokens": 1024
-            });
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key)) {
-                headers.insert(reqwest::header::AUTHORIZATION, v);
-            }
-            (url, body)
+    let request = match crate::services::proxy::build_upstream_request(
+        &client,
+        &provider,
+        cli_type_enum,
+        &url,
+        &client_headers,
+        probe.body.clone(),
+        reqwest::Method::POST,
+    ) {
+        Ok(req) => req,
+        Err(e) => {
+            return TestProviderResult {
+                provider_id,
+                provider_name,
+                actual_model,
+                status_code: None,
+                elapsed_ms: 0,
+                response_text: format!("Failed to build request: {}", e),
+                request_url: url,
+                request_headers: headers_to_json(&client_headers),
+                request_body: String::from_utf8_lossy(&probe.body).into_owned(),
+                response_headers: String::new(),
+                response_body: String::new(),
+            };
         }
     };
 
-    // Apply custom UA if configured
-    if let Some(ref ua) = custom_ua {
-        if !ua.is_empty() {
-            if let Ok(v) = reqwest::header::HeaderValue::from_str(ua) {
-                headers.insert(reqwest::header::USER_AGENT, v);
-            }
-        }
-    }
-
-    let request_body = serde_json::to_string_pretty(&body_json).unwrap_or_default();
-    let request_headers = headers_to_json(&headers);
+    let request_body = String::from_utf8_lossy(&probe.body).into_owned();
+    let request_headers = headers_to_json(request.headers());
 
     // Log request details
     tracing::info!(
@@ -380,13 +291,29 @@ pub async fn test_provider_model(
 
     // 4. Send request, measure time to first chunk
     let start = std::time::Instant::now();
-    let response = client
-        .post(&url)
-        .headers(headers)
-        .json(&body_json)
-        .timeout(std::time::Duration::from_secs(timeout_secs))
-        .send()
-        .await;
+    let response = match tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        client.execute(request),
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(_) => {
+            return TestProviderResult {
+                provider_id,
+                provider_name,
+                actual_model,
+                status_code: None,
+                elapsed_ms: start.elapsed().as_millis() as u64,
+                response_text: "Request timeout".to_string(),
+                request_url: url,
+                request_headers,
+                request_body,
+                response_headers: String::new(),
+                response_body: String::new(),
+            };
+        }
+    };
     let elapsed_ms = start.elapsed().as_millis() as u64;
 
     match response {
@@ -471,3 +398,40 @@ fn headers_to_json(headers: &reqwest::header::HeaderMap) -> String {
     }
     serde_json::to_string_pretty(&map).unwrap_or_default()
 }
+
+/// Refine the synthetic probe headers with values learned from real CLI
+/// traffic, when available. Claude reuses the captured `anthropic-beta`;
+/// Codex/Gemini reuse the captured `user-agent`. Falls back silently to the
+/// template defaults when no capture exists (cold start).
+fn apply_captured_header_override(
+    headers: &mut axum::http::HeaderMap,
+    cli_type: crate::services::proxy::CliType,
+) {
+    let captured = match cli_type {
+        crate::services::proxy::CliType::ClaudeCode => {
+            crate::services::proxy::get_captured_claude_headers()
+        }
+        crate::services::proxy::CliType::Codex => crate::services::proxy::get_captured_codex_headers(),
+        crate::services::proxy::CliType::Gemini => {
+            crate::services::proxy::get_captured_gemini_headers()
+        }
+    };
+
+    let target_key: &str = match cli_type {
+        crate::services::proxy::CliType::ClaudeCode => "anthropic-beta",
+        _ => "user-agent",
+    };
+
+    for (k, v) in captured.headers.iter() {
+        if k.eq_ignore_ascii_case(target_key) {
+            if let (Ok(name), Ok(value)) = (
+                axum::http::HeaderName::from_bytes(k.as_bytes()),
+                axum::http::HeaderValue::from_str(v),
+            ) {
+                headers.insert(name, value);
+            }
+            break;
+        }
+    }
+}
+

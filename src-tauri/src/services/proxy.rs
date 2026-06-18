@@ -3,7 +3,7 @@ use regex::Regex;
 use serde_json::Value;
 use std::time::Duration;
 
-use crate::db::models::ProviderModelMap;
+use crate::db::models::{Provider, ProviderModelMap};
 use crate::services::routing::{profile_from_gateway_token, ProviderWithMaps, DEFAULT_PROFILE};
 
 pub struct CapturedHeaders {
@@ -191,6 +191,21 @@ impl CliType {
 impl std::fmt::Display for CliType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+/// Parse a stored `cli_type` string into a [`CliType`].
+///
+/// Unknown values fall back to [`CliType::ClaudeCode`]. Most third-party /
+/// OpenAI-compatible coding agents also speak the Anthropic Messages protocol,
+/// and Anthropic-only ones (e.g. ZCode) require it — so defaulting to the
+/// Anthropic family covers the broadest set of providers.
+pub fn cli_type_from_str(s: &str) -> CliType {
+    match s {
+        "claude_code" => CliType::ClaudeCode,
+        "codex" => CliType::Codex,
+        "gemini" => CliType::Gemini,
+        _ => CliType::ClaudeCode,
     }
 }
 
@@ -601,24 +616,136 @@ pub fn apply_useragent_override(headers: &mut reqwest::header::HeaderMap, custom
     }
 }
 
-/// Build upstream URL from provider base URL and request path
-pub fn build_upstream_url(base_url: &str, path: &str, cli_type: CliType) -> String {
-    let base = base_url.trim_end_matches('/');
+// ---------------------------------------------------------------------------
+// Agent probe templates
+//
+// Used by the "test provider" flow to emulate a real CLI request when no real
+// Agent traffic is available (cold start). These are best-effort defaults: the
+// captured-header mechanism (update_captured_*_headers) can override the UA /
+// anthropic-beta at runtime to stay closer to the currently installed CLI, but
+// these defaults must remain self-sufficient so testing works before any real
+// request has passed through the gateway.
+//
+// Centralized here so version bumps are a single, visible change.
+// ---------------------------------------------------------------------------
 
+/// Default User-Agent strings per CLI type.
+pub fn default_user_agent(cli_type: CliType) -> &'static str {
+    match cli_type {
+        CliType::ClaudeCode => "claude-cli/2.1.121 (external, cli)",
+        CliType::Codex => "codex-tui/0.125.0 (Windows 10.0.22631; x86_64) unknown (codex-tui; 0.125.0)",
+        CliType::Gemini => "GeminiCLI/0.39.1/gemini-3.1-pro-preview (win32; x64; terminal)",
+    }
+}
+
+/// Default `anthropic-beta` value for Claude Code probes.
+pub const DEFAULT_ANTHROPIC_BETA: &str = "claude-code-20250219,context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24";
+
+/// Probe request parts emitted by the template for a given CLI type + model.
+///
+/// `path` is the suffix appended to the provider base_url.
+/// `body` is the JSON body bytes.
+/// `extra_headers` are Agent-specific headers (UA, anthropic-beta, x-app, ...)
+/// the caller should merge into its client header map before invoking
+/// [`build_upstream_request`]. UA set here is the default and may be overridden
+/// by captured headers; `custom_useragent` is applied later by
+/// `build_upstream_request` and always wins.
+pub struct ProbeRequest {
+    pub path: String,
+    pub body: Vec<u8>,
+    pub extra_headers: Vec<(&'static str, String)>,
+}
+
+/// Build a probe request emulating the given CLI type.
+pub fn build_probe_request(cli_type: CliType, model: &str) -> ProbeRequest {
     match cli_type {
         CliType::ClaudeCode => {
-            // Claude: base_url + path (path already includes /v1)
-            format!("{}{}", base, path)
+            let body = serde_json::json!({
+                "model": model,
+                "messages": [{"role": "user", "content": [{"type": "text", "text": "今天天气不错"}]}],
+                "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}],
+                "max_tokens": 1024,
+                "thinking": {"type": "adaptive"},
+                "stream": true
+            });
+            ProbeRequest {
+                path: "/v1/messages".to_string(),
+                body: serde_json::to_vec(&body).unwrap_or_default(),
+                extra_headers: vec![
+                    ("user-agent", default_user_agent(cli_type).to_string()),
+                    ("anthropic-beta", DEFAULT_ANTHROPIC_BETA.to_string()),
+                    ("x-app", "cli".to_string()),
+                    ("accept", "application/json".to_string()),
+                    ("accept-encoding", "gzip, deflate, br, zstd".to_string()),
+                ],
+            }
         }
         CliType::Codex => {
-            // Codex: base_url + path
-            format!("{}{}", base, path)
+            let body = serde_json::json!({
+                "model": model,
+                "instructions": "You are Codex, a coding agent based on GPT-5.",
+                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "今天天气不错"}]}],
+                "reasoning": {"effort": "high"},
+                "stream": true
+            });
+            ProbeRequest {
+                path: "/responses".to_string(),
+                body: serde_json::to_vec(&body).unwrap_or_default(),
+                extra_headers: vec![
+                    ("user-agent", default_user_agent(cli_type).to_string()),
+                    ("originator", "codex-tui".to_string()),
+                    ("accept", "text/event-stream".to_string()),
+                    ("accept-encoding", "identity".to_string()),
+                ],
+            }
         }
         CliType::Gemini => {
-            // Gemini: base_url + path
-            format!("{}{}", base, path)
+            let body = serde_json::json!({
+                "contents": [{"role": "user", "parts": [{"text": "今天天气不错"}]}],
+                "systemInstruction": {"parts": [{"text": "You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks."}]},
+                "generationConfig": {"temperature": 1.0, "topP": 0.95, "topK": 64, "thinkingConfig": {"includeThoughts": true}}
+            });
+            ProbeRequest {
+                path: format!("/v1beta/models/{}:streamGenerateContent?alt=sse", model),
+                body: serde_json::to_vec(&body).unwrap_or_default(),
+                extra_headers: vec![
+                    ("user-agent", default_user_agent(cli_type).to_string()),
+                    ("accept", "*/*".to_string()),
+                    ("accept-encoding", "gzip, deflate".to_string()),
+                ],
+            }
         }
     }
+}
+
+/// Build the upstream `reqwest::Request` shared by the real proxy path and the
+/// test-provider path.
+///
+/// Single source of truth for: hop-by-hop filtering, auth injection, and
+/// per-provider User-Agent override. Real forwarding passes the Agent's
+/// original headers; testing passes a synthetic header map built from the
+/// probe template (optionally refined by captured headers).
+pub fn build_upstream_request(
+    client: &reqwest::Client,
+    provider: &Provider,
+    cli_type: CliType,
+    upstream_url: &str,
+    client_headers: &HeaderMap,
+    body: Vec<u8>,
+    method: reqwest::Method,
+) -> Result<reqwest::Request, reqwest::Error> {
+    let mut req_headers = filter_headers(client_headers);
+    set_auth_header(&mut req_headers, &provider.api_key, cli_type);
+    apply_useragent_override(&mut req_headers, provider.custom_useragent.as_deref());
+
+    // Content-Length is intentionally not set: filter_headers stripped the
+    // original value, and reqwest recomputes it from the body length on build.
+    let mut builder = client.request(method, upstream_url);
+    builder = builder.headers(req_headers);
+    if !body.is_empty() {
+        builder = builder.body(body);
+    }
+    builder.build()
 }
 
 /// Timeout configuration

@@ -15,9 +15,9 @@ use tokio::sync::{mpsc, Mutex};
 use super::AppState;
 use crate::db::models::{RequestLogInfo, RequestLogItem};
 use crate::services::proxy::{
-    apply_body_model_mapping, apply_url_model_mapping, apply_useragent_override, detect_cli_type,
-    detect_gateway_profile, extract_model_from_body, extract_model_from_path, filter_headers,
-    is_streaming, parse_streaming_token_usage, parse_token_usage, set_auth_header, CliType,
+    apply_body_model_mapping, apply_url_model_mapping, detect_cli_type,
+    detect_gateway_profile, extract_model_from_body, extract_model_from_path,
+    is_streaming, parse_streaming_token_usage, parse_token_usage, CliType,
     TimeoutConfig, TokenUsage,
 };
 use crate::services::routing::{select_provider, split_gateway_profile_path};
@@ -188,39 +188,18 @@ pub async fn proxy_handler_catchall(
     let base_url = provider.base_url.trim_end_matches('/');
     let upstream_url = format!("{}{}", base_url, final_path);
 
-    // Prepare headers - filter hop-by-hop headers and set auth
-    let mut req_headers = filter_headers(&headers);
-    set_auth_header(&mut req_headers, &provider.api_key, cli_type);
-
-    // Apply User-Agent override (per-provider)
-    apply_useragent_override(&mut req_headers, provider.custom_useragent.as_deref());
-
-    // Content-Length is intentionally not set here: filter_headers already stripped the
-    // original value, and reqwest recomputes it from the body length when building.
-
-    // Build the request to inspect actual headers and body that will be sent
-    let request_builder = match method.as_str() {
-        "GET" => state.http_client.get(&upstream_url),
-        "POST" => state.http_client.post(&upstream_url),
-        "PUT" => state.http_client.put(&upstream_url),
-        "DELETE" => state.http_client.delete(&upstream_url),
-        "PATCH" => state.http_client.patch(&upstream_url),
-        _ => state.http_client.request(
-            reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET),
-            &upstream_url,
-        ),
-    };
-
-    let request_builder = request_builder.headers(req_headers);
-
-    let request_builder = if !final_body.is_empty() {
-        request_builder.body(final_body)
-    } else {
-        request_builder
-    };
-
-    // Build the request to inspect actual headers and body that will be sent
-    let request = match request_builder.build() {
+    // Build the upstream request via the shared constructor (single source of
+    // truth for hop-by-hop filtering, auth injection, and UA override).
+    let request = match crate::services::proxy::build_upstream_request(
+        &state.http_client,
+        provider,
+        cli_type,
+        &upstream_url,
+        &headers,
+        final_body,
+        reqwest::Method::from_bytes(method.as_str().as_bytes())
+            .unwrap_or(reqwest::Method::GET),
+    ) {
         Ok(req) => req,
         Err(e) => {
             tracing::error!(error = %e, "Failed to build request");
