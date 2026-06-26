@@ -59,8 +59,14 @@ pub async fn proxy_handler_catchall(
             (None, raw_full_path.clone())
         };
 
-    // Detect CLI type from User-Agent
-    let cli_type = detect_cli_type(&headers);
+    // Detect CLI type from request path / protocol type
+    let cli_type = match detect_cli_type(&full_path) {
+        Some(t) => t,
+        None => {
+            tracing::error!(path = %full_path, "Unknown request protocol / path");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
     let provider_profile = path_profile.unwrap_or_else(|| detect_gateway_profile(&headers));
 
     // Serialize client headers for logging

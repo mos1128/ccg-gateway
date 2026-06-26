@@ -207,20 +207,18 @@ pub struct TokenUsage {
     gemini_thoughts_token_count: i64,
 }
 
-/// Detect CLI type from User-Agent header
-pub fn detect_cli_type(headers: &HeaderMap) -> CliType {
-    let ua = headers
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_lowercase();
+/// Detect CLI type from request path / protocol type
+pub fn detect_cli_type(path: &str) -> Option<CliType> {
+    let path_lower = path.to_lowercase();
 
-    if ua.contains("codex") || ua.contains("openai") {
-        CliType::Codex
-    } else if ua.contains("gemini") || ua.contains("google") {
-        CliType::Gemini
+    if path_lower.contains("responses") || path_lower.contains("chat/completions") {
+        Some(CliType::Codex)
+    } else if path_lower.contains("messages") {
+        Some(CliType::ClaudeCode)
+    } else if path_lower.contains("generatecontent") {
+        Some(CliType::Gemini)
     } else {
-        CliType::ClaudeCode
+        None
     }
 }
 
