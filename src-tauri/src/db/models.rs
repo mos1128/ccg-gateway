@@ -710,6 +710,7 @@ pub struct RequestLogInfo {
 pub struct RequestLogItem {
     pub id: i64,
     pub created_at: i64,
+    pub finished_at: Option<i64>,
     pub cli_type: String,
     pub provider_name: String,
     pub model_id: Option<String>,
@@ -732,6 +733,7 @@ pub struct RequestLogItem {
 pub struct RequestLogDetail {
     pub id: i64,
     pub created_at: i64,
+    pub finished_at: Option<i64>,
     pub cli_type: String,
     pub provider_name: String,
     pub model_id: Option<String>,

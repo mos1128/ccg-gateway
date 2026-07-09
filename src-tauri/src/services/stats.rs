@@ -251,10 +251,11 @@ pub async fn record_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, finished_at, cli_type, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
+    .bind(now)
     .bind(now)
     .bind(cli_type)
     .bind(provider_name)
@@ -278,6 +279,116 @@ pub async fn record_request_log(
     let log_id = result.last_insert_rowid();
     write_request_log_details(log_id, now, &info).await;
     Ok(log_id)
+}
+
+pub async fn start_request_log(
+    log_db: &SqlitePool,
+    cli_type: &str,
+    provider_name: &str,
+    model_id: Option<&str>,
+    client_method: &str,
+    client_path: &str,
+    forward_url: Option<&str>,
+    source_model: Option<&str>,
+    target_model: Option<&str>,
+) -> Result<i64, sqlx::Error> {
+    let now = now_timestamp();
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO request_logs (created_at, finished_at, cli_type, provider_name, model_id, client_method, client_path, forward_url, source_model, target_model)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(now)
+    .bind(cli_type)
+    .bind(provider_name)
+    .bind(model_id)
+    .bind(client_method)
+    .bind(client_path)
+    .bind(forward_url)
+    .bind(source_model)
+    .bind(target_model)
+    .execute(log_db)
+    .await?;
+
+    Ok(result.last_insert_rowid())
+}
+
+pub async fn finish_request_log(
+    log_db: &SqlitePool,
+    log_id: i64,
+    cli_type: &str,
+    provider_name: &str,
+    model_id: Option<&str>,
+    status_code: Option<u16>,
+    elapsed_ms: i64,
+    first_byte_ms: i64,
+    input_tokens: i64,
+    cache_read_input_tokens: i64,
+    cache_creation_input_tokens: i64,
+    output_tokens: i64,
+    client_method: &str,
+    client_path: &str,
+    source_model: Option<&str>,
+    target_model: Option<&str>,
+    info: Option<RequestLogInfo>,
+) -> Result<(), sqlx::Error> {
+    let (created_at,) = sqlx::query_as::<_, (i64,)>(
+        "SELECT created_at FROM request_logs WHERE id = ?",
+    )
+    .bind(log_id)
+    .fetch_one(log_db)
+    .await?;
+    let finished_at = now_timestamp();
+    let info = info.unwrap_or_default();
+
+    sqlx::query(
+        r#"
+        UPDATE request_logs
+        SET finished_at = ?, cli_type = ?, provider_name = ?, model_id = ?, status_code = ?,
+            elapsed_ms = ?, first_byte_ms = ?, input_tokens = ?, cache_read_input_tokens = ?,
+            cache_creation_input_tokens = ?, output_tokens = ?, client_method = ?, client_path = ?,
+            forward_url = ?, error_message = ?, source_model = ?, target_model = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(finished_at)
+    .bind(cli_type)
+    .bind(provider_name)
+    .bind(model_id)
+    .bind(status_code.map(|c| c as i64))
+    .bind(elapsed_ms)
+    .bind(first_byte_ms)
+    .bind(input_tokens)
+    .bind(cache_read_input_tokens)
+    .bind(cache_creation_input_tokens)
+    .bind(output_tokens)
+    .bind(client_method)
+    .bind(client_path)
+    .bind(&info.forward_url)
+    .bind(&info.error_message)
+    .bind(source_model)
+    .bind(target_model)
+    .bind(log_id)
+    .execute(log_db)
+    .await?;
+
+    write_request_log_details(log_id, created_at, &info).await;
+    Ok(())
+}
+
+pub async fn update_request_log_first_byte(
+    log_db: &SqlitePool,
+    log_id: i64,
+    first_byte_ms: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE request_logs SET first_byte_ms = ? WHERE id = ? AND finished_at IS NULL")
+        .bind(first_byte_ms)
+        .bind(log_id)
+        .execute(log_db)
+        .await?;
+    Ok(())
 }
 
 /// Record a system log entry

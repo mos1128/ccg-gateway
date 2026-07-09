@@ -443,6 +443,7 @@ export interface AdvancedStatsRow {
 export interface RequestLogListItem {
   id: number
   created_at: number
+  finished_at: number | null
   cli_type: CliType
   provider_name: string
   model_id: string | null

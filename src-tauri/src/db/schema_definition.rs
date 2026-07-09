@@ -106,7 +106,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 14,
+            version: 15,
             tables: Self::define_log_tables(),
             indexes: Self::define_log_indexes(),
         }
@@ -982,6 +982,12 @@ impl DatabaseSchema {
                         name: "created_at".to_string(),
                         data_type: "INTEGER".to_string(),
                         nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "finished_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
                         default_value: None,
                     },
                     ColumnDefinition {

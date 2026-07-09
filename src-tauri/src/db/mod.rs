@@ -57,6 +57,8 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
         // 插入默认数据（仅主数据库）
         if !is_log_db {
             init_default_data(&pool).await?;
+        } else {
+            recover_unfinished_request_logs(&pool).await?;
         }
 
         return Ok(pool);
@@ -73,6 +75,9 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     // 8. 版本检查
     if current_version >= expected_schema.version {
         create_schema_indexes(&pool, &expected_schema).await?;
+        if is_log_db {
+            recover_unfinished_request_logs(&pool).await?;
+        }
         tracing::info!("数据库已是最新版本，跳过迁移");
         return Ok(pool);
     }
@@ -102,10 +107,38 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     // 14. 插入默认数据（仅主数据库）
     if !is_log_db {
         init_default_data(&pool).await?;
+    } else {
+        recover_unfinished_request_logs(&pool).await?;
     }
 
     tracing::info!("数据库迁移完成");
     Ok(pool)
+}
+
+async fn recover_unfinished_request_logs(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let now = now_timestamp();
+    sqlx::query(
+        "UPDATE request_logs
+         SET finished_at = created_at + ((elapsed_ms + 999) / 1000)
+         WHERE finished_at IS NULL
+           AND (elapsed_ms > 0 OR status_code IS NOT NULL OR error_message IS NOT NULL
+                OR input_tokens > 0 OR cache_read_input_tokens > 0
+                OR cache_creation_input_tokens > 0 OR output_tokens > 0)",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "UPDATE request_logs
+         SET finished_at = ?, elapsed_ms = MAX(0, (? - created_at) * 1000),
+             error_message = COALESCE(error_message, 'Gateway stopped before request completed')
+         WHERE finished_at IS NULL",
+    )
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 pub async fn init_stats_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {

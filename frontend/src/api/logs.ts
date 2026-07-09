@@ -75,6 +75,11 @@ export const logsApi = {
       callback(event.payload)
     })
   },
+  listenRequestLogUpdates: (callback: (log: RequestLogListItem) => void): Promise<UnlistenFn> => {
+    return listen<RequestLogListItem>('request-log-updated', (event) => {
+      callback(event.payload)
+    })
+  },
 
   listSystemLogs: async (params: SystemLogQuery) => {
     const data = await invoke<SystemLogListResponse>('get_system_logs', {

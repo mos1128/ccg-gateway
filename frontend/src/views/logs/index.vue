@@ -66,7 +66,13 @@
                   </el-tooltip>
                 </td>
                 <td>{{ row.provider_name }}</td>
-                <td><span v-if="row.status_code" class="v2-pill dot" :class="statusPill(row.status_code)">{{ row.status_code }}</span><span v-else>-</span></td>
+                <td>
+                  <el-tooltip v-if="!row.finished_at" content="请求进行中" placement="top" effect="light" :show-after="250">
+                    <span class="v2-pill dot v2-pill-info logs-running">Run</span>
+                  </el-tooltip>
+                  <span v-else-if="row.status_code" class="v2-pill dot" :class="statusPill(row.status_code)">{{ row.status_code }}</span>
+                  <span v-else>-</span>
+                </td>
                 <td class="mono" :class="elapsedTimeClass(row)">{{ formatLatencyPair(row) }}</td>
                 <td class="mono">
                   <span class="tok-group">
@@ -91,7 +97,7 @@
                   </template>
                   <span v-else class="logs-model-empty">-</span>
                 </td>
-                <td class="logs-sticky-col"><a class="logs-link" @click="showRequestDetail(row.id)">详情</a></td>
+                <td class="logs-sticky-col"><a v-if="row.finished_at" class="logs-link" @click="showRequestDetail(row.id)">详情</a><span v-else class="v2-hint">-</span></td>
               </tr>
               <tr v-if="requestLogs.length === 0"><td colspan="11" class="logs-empty">暂无日志记录</td></tr>
             </tbody>
@@ -236,6 +242,8 @@ const cleanMenuItems: AppSelectOption[] = [
 const gatewayUrl = ref('')
 const providerOptions = ref<string[]>([])
 let requestLogListener: (() => void) | null = null
+let requestLogUpdateListener: (() => void) | null = null
+let requestElapsedTimer: ReturnType<typeof setInterval> | null = null
 
 const cliFilterOptions: AppSelectOption[] = [
   { label: 'ALL', value: '' },
@@ -254,6 +262,7 @@ const requestTotal = ref(0)
 const requestFilters = ref({ cli_type: '', provider_name: '' })
 const requestDetailVisible = ref(false)
 const requestDetail = ref<RequestLogDetail | null>(null)
+const currentTimestamp = ref(Math.floor(Date.now() / 1000))
 const detailBlocks = ref<DetailBlock[]>([])
 const detailBlockGroups = computed(() => ({
   client: detailBlocks.value.filter((block) => block.group === 'client'),
@@ -361,6 +370,18 @@ function resetRequestFilters() {
   requestPage.value = 1
   fetchRequestLogs()
 }
+function shouldIgnoreStaleRequestLog(current: RequestLogListItem, next: RequestLogListItem): boolean {
+  if (current.finished_at && !next.finished_at) return true
+  if (!next.finished_at && current.first_byte_ms > next.first_byte_ms) return true
+  return false
+}
+function replaceRequestLog(log: RequestLogListItem): boolean {
+  const index = requestLogs.value.findIndex(item => item.id === log.id)
+  if (index < 0) return false
+  if (shouldIgnoreStaleRequestLog(requestLogs.value[index], log)) return true
+  requestLogs.value.splice(index, 1, log)
+  return true
+}
 type CleanAction = 'all_logs' | 'all_details' | 'stats_data' | 'old_logs' | 'old_details'
 async function handleClean(action: string | number) {
   const confirmMap: Record<CleanAction, string> = {
@@ -447,6 +468,7 @@ function formatCliLabel(type: string): string {
 }
 
 function elapsedTimeClass(row: RequestLogListItem) {
+  if (!row.finished_at) return ''
   const isErr = row.status_code && row.status_code >= 500
   if (isErr) return 'logs-time-danger'
   if (row.elapsed_ms >= 50000) return 'logs-time-danger-slow'
@@ -459,7 +481,8 @@ function formatDuration(ms: number): string {
 }
 
 function formatLatencyPair(row: RequestLogListItem): string {
-  return `${formatDuration(row.first_byte_ms)}/${formatDuration(row.elapsed_ms)}`
+  const elapsed = row.finished_at ? row.elapsed_ms : Math.max(0, (currentTimestamp.value - row.created_at) * 1000)
+  return `${formatDuration(row.first_byte_ms)}/${formatDuration(elapsed)}`
 }
 
 function buildDetailBlocks(detail: RequestLogDetail): DetailBlock[] {
@@ -563,20 +586,40 @@ onMounted(async () => {
   fetchLogSettings()
   fetchGatewayStatus()
   fetchProviders()
+  const listeners = await Promise.all([
+    logsApi.listenRequestLogs((log) => {
+      if (activeTab.value === 'request' && requestPage.value === 1 && !requestFilters.value.cli_type && !requestFilters.value.provider_name) {
+        if (!replaceRequestLog(log)) {
+          requestLogs.value.unshift(log)
+          requestTotal.value += 1
+          if (requestLogs.value.length > requestPageSize.value) requestLogs.value.pop()
+        }
+      }
+    }),
+    logsApi.listenRequestLogUpdates((log) => {
+      replaceRequestLog(log)
+    })
+  ])
+  requestLogListener = listeners[0]
+  requestLogUpdateListener = listeners[1]
   if (activeTab.value === 'request') fetchRequestLogs()
   else fetchSystemLogs()
-  requestLogListener = await logsApi.listenRequestLogs((log) => {
-    if (activeTab.value === 'request' && requestPage.value === 1 && !requestFilters.value.cli_type && !requestFilters.value.provider_name) {
-      requestLogs.value.unshift(log)
-      requestTotal.value += 1
-      if (requestLogs.value.length > requestPageSize.value) requestLogs.value.pop()
-    }
-  })
+  requestElapsedTimer = setInterval(() => {
+    currentTimestamp.value = Math.floor(Date.now() / 1000)
+  }, 1000)
 })
 onUnmounted(() => {
   if (requestLogListener) {
     requestLogListener()
     requestLogListener = null
+  }
+  if (requestLogUpdateListener) {
+    requestLogUpdateListener()
+    requestLogUpdateListener = null
+  }
+  if (requestElapsedTimer) {
+    clearInterval(requestElapsedTimer)
+    requestElapsedTimer = null
   }
 })
 </script>
@@ -594,6 +637,7 @@ onUnmounted(() => {
 .logs-scroll tbody td { text-align: center; }
 .logs-map { text-align: center; }
 .logs-danger { color: var(--v2-danger); }
+.logs-running { min-width: 42px; justify-content: center; }
 .logs-link { color: var(--v2-accent); cursor: pointer; font-size: var(--v2-fs-sm); }
 .logs-empty { text-align: center; color: var(--v2-text-3); padding: 40px; }
 .logs-pager { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--v2-surface-2); flex-shrink: 0; }

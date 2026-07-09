@@ -225,6 +225,19 @@ pub async fn proxy_handler_catchall(
         ..Default::default()
     };
 
+    let request_log_id = start_request_log(
+        &state,
+        cli_type,
+        &provider_name,
+        model_id.as_deref(),
+        method.as_ref(),
+        &raw_full_path,
+        Some(&upstream_url),
+        source_model.as_deref(),
+        target_model.as_deref(),
+    )
+    .await;
+
     // Execute request
     if streaming {
         handle_streaming_request(
@@ -242,6 +255,7 @@ pub async fn proxy_handler_catchall(
             source_model.as_deref(),
             target_model.as_deref(),
             log_info,
+            request_log_id,
         )
         .await
     } else {
@@ -260,6 +274,7 @@ pub async fn proxy_handler_catchall(
             source_model.as_deref(),
             target_model.as_deref(),
             log_info,
+            request_log_id,
         )
         .await
     }
@@ -437,6 +452,7 @@ async fn handle_streaming_request(
     source_model: Option<&str>,
     target_model: Option<&str>,
     mut log_info: RequestLogInfo,
+    request_log_id: Option<i64>,
 ) -> Result<Response<Body>, StatusCode> {
     // Send request with timeout for first byte
     let response =
@@ -472,6 +488,7 @@ async fn handle_streaming_request(
                     source_model,
                     target_model,
                     Some(log_info),
+                    request_log_id,
                 )
                 .await;
                 return Ok(Response::builder()
@@ -513,6 +530,7 @@ async fn handle_streaming_request(
                     source_model,
                     target_model,
                     Some(log_info),
+                    request_log_id,
                 )
                 .await;
                 return Ok(Response::builder()
@@ -551,6 +569,8 @@ async fn handle_streaming_request(
     let idle_timeout_flag_for_stream = idle_timeout_flag.clone();
     let first_chunk_ms = Arc::new(Mutex::new(None::<i64>));
     let first_chunk_ms_for_stream = first_chunk_ms.clone();
+    let first_byte_log_state = state.clone();
+    let first_byte_log_id = request_log_id;
     let response_encoded = has_body_encoding(
         resp_headers
             .get("content-encoding")
@@ -573,8 +593,27 @@ async fn handle_streaming_request(
                 Ok(Some(Ok(chunk))) => {
                     chunk_count += 1;
                     if chunk_count == 1 {
-                        *first_chunk_ms_for_stream.lock().await =
-                            Some(start_time.elapsed().as_millis() as i64);
+                        let first_byte_ms = start_time.elapsed().as_millis() as i64;
+                        *first_chunk_ms_for_stream.lock().await = Some(first_byte_ms);
+                        if let Some(log_id) = first_byte_log_id {
+                            match stats_service::update_request_log_first_byte(
+                                &first_byte_log_state.log_db,
+                                log_id,
+                                first_byte_ms,
+                            )
+                            .await
+                            {
+                                Ok(_) => emit_request_log_event(
+                                    &first_byte_log_state,
+                                    "request-log-updated",
+                                    log_id,
+                                )
+                                .await,
+                                Err(e) => {
+                                    tracing::error!(error = %e, "Failed to update request first byte time");
+                                }
+                            }
+                        }
                     }
                     let chunk_size = chunk.len();
                     total_bytes += chunk_size;
@@ -661,6 +700,7 @@ async fn handle_streaming_request(
     let log_is_success = is_success;
     let log_source_model = source_model.map(|s| s.to_string());
     let log_target_model = target_model.map(|s| s.to_string());
+    let log_request_log_id = request_log_id;
 
     tokio::spawn(async move {
         let _ = stream_end_rx.recv().await;
@@ -771,6 +811,7 @@ async fn handle_streaming_request(
             log_source_model.as_deref(),
             log_target_model.as_deref(),
             Some(final_log_info),
+            log_request_log_id,
         )
         .await;
 
@@ -795,6 +836,7 @@ async fn handle_non_streaming_request(
     source_model: Option<&str>,
     target_model: Option<&str>,
     mut log_info: RequestLogInfo,
+    request_log_id: Option<i64>,
 ) -> Result<Response<Body>, StatusCode> {
     // Send request with timeout
     let response =
@@ -830,6 +872,7 @@ async fn handle_non_streaming_request(
                     source_model,
                     target_model,
                     Some(log_info),
+                    request_log_id,
                 )
                 .await;
                 return Ok(Response::builder()
@@ -871,6 +914,7 @@ async fn handle_non_streaming_request(
                     source_model,
                     target_model,
                     Some(log_info),
+                    request_log_id,
                 )
                 .await;
                 return Ok(Response::builder()
@@ -922,6 +966,7 @@ async fn handle_non_streaming_request(
                 source_model,
                 target_model,
                 Some(log_info),
+                request_log_id,
             )
             .await;
             return Err(StatusCode::BAD_GATEWAY);
@@ -982,6 +1027,7 @@ async fn handle_non_streaming_request(
         source_model,
         target_model,
         Some(log_info),
+        request_log_id,
     )
     .await;
 
@@ -1006,6 +1052,81 @@ fn filter_log_detail(log_info: &mut RequestLogInfo, mode: &str, is_success: bool
     }
 }
 
+async fn emit_request_log_event(state: &Arc<AppState>, event: &str, log_id: i64) {
+    let log_item = sqlx::query_as::<_, RequestLogItem>(
+        "SELECT id, created_at, finished_at, cli_type, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
+    )
+    .bind(log_id)
+    .fetch_one(&state.log_db)
+    .await;
+
+    if let Ok(mut item) = log_item {
+        let pricing = crate::services::cost::provider_pricing(
+            &state.db,
+            &item.cli_type,
+            &item.provider_name,
+        )
+        .await
+        .unwrap_or_default();
+        item.total_cost = crate::services::cost::calculate_token_cost(
+            pricing,
+            item.input_tokens,
+            item.cache_read_input_tokens,
+            item.cache_creation_input_tokens,
+            item.output_tokens,
+        );
+        if let Err(e) = state.app_handle.emit(event, item) {
+            tracing::error!(error = %e, event, "Failed to emit request log event");
+        }
+    }
+}
+
+async fn start_request_log(
+    state: &Arc<AppState>,
+    cli_type: CliType,
+    provider_name: &str,
+    model_id: Option<&str>,
+    client_method: &str,
+    client_path: &str,
+    forward_url: Option<&str>,
+    source_model: Option<&str>,
+    target_model: Option<&str>,
+) -> Option<i64> {
+    let (debug_log,) = sqlx::query_as::<_, (i64,)>(
+        "SELECT debug_log FROM gateway_settings WHERE id = 1",
+    )
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or((0,));
+
+    if debug_log == 0 {
+        return None;
+    }
+
+    let log_id = match stats_service::start_request_log(
+        &state.log_db,
+        cli_type.as_str(),
+        provider_name,
+        model_id,
+        client_method,
+        client_path,
+        forward_url,
+        source_model,
+        target_model,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to start request log");
+            return None;
+        }
+    };
+
+    emit_request_log_event(state, "request-log-new", log_id).await;
+    Some(log_id)
+}
+
 async fn record_request_stats(
     state: &Arc<AppState>,
     cli_type: CliType,
@@ -1020,6 +1141,7 @@ async fn record_request_stats(
     source_model: Option<&str>,
     target_model: Option<&str>,
     log_info: Option<RequestLogInfo>,
+    request_log_id: Option<i64>,
 ) {
     // 读取 gateway 设置
     let settings: (i64, String) = sqlx::query_as::<_, (i64, String)>(
@@ -1052,8 +1174,8 @@ async fn record_request_stats(
         tracing::error!(error = %e, "Failed to record usage stats");
     }
 
-    // debug_log = 0 时跳过日志记录
-    if settings.0 == 0 {
+    // debug_log = 0 时跳过新日志；已开始的日志仍要完成，避免页面一直显示进行中。
+    if settings.0 == 0 && request_log_id.is_none() {
         return;
     }
 
@@ -1063,57 +1185,61 @@ async fn record_request_stats(
         filter_log_detail(info, &settings.1, success);
     }
 
-    // Record to request_logs and get the inserted ID
-    let log_id = match stats_service::record_request_log(
-        &state.log_db,
-        cli_type.as_str(),
-        provider_name,
-        model_id,
-        status_code,
-        elapsed_ms,
-        first_byte_ms,
-        usage.input_tokens,
-        usage.cache_read_input_tokens,
-        usage.cache_creation_input_tokens,
-        usage.output_tokens,
-        client_method,
-        client_path,
-        source_model,
-        target_model,
-        filtered_log_info,
-    )
-    .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to record request log");
-            return;
-        }
-    };
-
-    // Query the inserted log item
-    let log_item = sqlx::query_as::<_, RequestLogItem>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
-    )
-    .bind(log_id)
-    .fetch_one(&state.log_db)
-    .await;
-
-    // Emit event to frontend
-    if let Ok(mut item) = log_item {
-        let pricing =
-            crate::services::cost::provider_pricing(&state.db, cli_type.as_str(), provider_name)
-                .await
-                .unwrap_or_default();
-        item.total_cost = crate::services::cost::calculate_token_cost(
-            pricing,
+    let (log_id, event) = if let Some(log_id) = request_log_id {
+        if let Err(e) = stats_service::finish_request_log(
+            &state.log_db,
+            log_id,
+            cli_type.as_str(),
+            provider_name,
+            model_id,
+            status_code,
+            elapsed_ms,
+            first_byte_ms,
             usage.input_tokens,
             usage.cache_read_input_tokens,
             usage.cache_creation_input_tokens,
             usage.output_tokens,
-        );
-        if let Err(e) = state.app_handle.emit("request-log-new", item) {
-            tracing::error!(error = %e, "Failed to emit request log event");
+            client_method,
+            client_path,
+            source_model,
+            target_model,
+            filtered_log_info,
+        )
+        .await
+        {
+            tracing::error!(error = %e, "Failed to finish request log");
+            return;
         }
-    }
+        (log_id, "request-log-updated")
+    } else {
+        let log_id = match stats_service::record_request_log(
+            &state.log_db,
+            cli_type.as_str(),
+            provider_name,
+            model_id,
+            status_code,
+            elapsed_ms,
+            first_byte_ms,
+            usage.input_tokens,
+            usage.cache_read_input_tokens,
+            usage.cache_creation_input_tokens,
+            usage.output_tokens,
+            client_method,
+            client_path,
+            source_model,
+            target_model,
+            filtered_log_info,
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to record request log");
+                return;
+            }
+        };
+        (log_id, "request-log-new")
+    };
+
+    emit_request_log_event(state, event, log_id).await;
 }
