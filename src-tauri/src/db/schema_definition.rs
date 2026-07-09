@@ -106,7 +106,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 13,
+            version: 14,
             tables: Self::define_log_tables(),
             indexes: Self::define_log_indexes(),
         }
@@ -1010,6 +1010,12 @@ impl DatabaseSchema {
                     },
                     ColumnDefinition {
                         name: "elapsed_ms".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "first_byte_ms".to_string(),
                         data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: Some("0".to_string()),

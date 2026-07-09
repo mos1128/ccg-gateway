@@ -457,13 +457,15 @@ async fn handle_streaming_request(
                     }
                 }
                 log_info.error_message = Some(format!("Upstream error: {}", e));
+                let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
                     cli_type,
                     provider_name,
                     model_id,
                     None,
-                    start_time.elapsed().as_millis() as i64,
+                    elapsed,
+                    elapsed,
                     TokenUsage::default(),
                     client_method,
                     client_path,
@@ -496,13 +498,15 @@ async fn handle_streaming_request(
                     }
                 }
                 log_info.error_message = Some("First byte timeout".to_string());
+                let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
                     cli_type,
                     provider_name,
                     model_id,
                     None,
-                    start_time.elapsed().as_millis() as i64,
+                    elapsed,
+                    elapsed,
                     TokenUsage::default(),
                     client_method,
                     client_path,
@@ -519,6 +523,7 @@ async fn handle_streaming_request(
             }
         };
 
+    let first_byte_fallback_ms = start_time.elapsed().as_millis() as i64;
     let status = response.status();
     let resp_headers = response.headers().clone();
 
@@ -544,6 +549,8 @@ async fn handle_streaming_request(
     let body_truncated_flag_for_stream = body_truncated_flag.clone();
     let idle_timeout_flag = Arc::new(Mutex::new(false));
     let idle_timeout_flag_for_stream = idle_timeout_flag.clone();
+    let first_chunk_ms = Arc::new(Mutex::new(None::<i64>));
+    let first_chunk_ms_for_stream = first_chunk_ms.clone();
     let response_encoded = has_body_encoding(
         resp_headers
             .get("content-encoding")
@@ -565,6 +572,10 @@ async fn handle_streaming_request(
             match tokio::time::timeout(idle_timeout, byte_stream.next()).await {
                 Ok(Some(Ok(chunk))) => {
                     chunk_count += 1;
+                    if chunk_count == 1 {
+                        *first_chunk_ms_for_stream.lock().await =
+                            Some(start_time.elapsed().as_millis() as i64);
+                    }
                     let chunk_size = chunk.len();
                     total_bytes += chunk_size;
 
@@ -719,6 +730,7 @@ async fn handle_streaming_request(
 
         // Record stats
         let elapsed = start_time.elapsed().as_millis() as i64;
+        let first_byte_ms = (*first_chunk_ms.lock().await).unwrap_or(first_byte_fallback_ms);
         if log_is_success {
             if let Ok(had_failures) =
                 provider_service::record_success(&log_state.db, log_provider_id).await
@@ -752,6 +764,7 @@ async fn handle_streaming_request(
             log_model_id.as_deref(),
             Some(log_status.as_u16()),
             elapsed,
+            first_byte_ms,
             usage,
             &log_client_method,
             &log_client_path,
@@ -802,13 +815,15 @@ async fn handle_non_streaming_request(
                     }
                 }
                 log_info.error_message = Some(format!("Upstream error: {}", e));
+                let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
                     cli_type,
                     provider_name,
                     model_id,
                     None,
-                    start_time.elapsed().as_millis() as i64,
+                    elapsed,
+                    elapsed,
                     TokenUsage::default(),
                     client_method,
                     client_path,
@@ -841,13 +856,15 @@ async fn handle_non_streaming_request(
                     }
                 }
                 log_info.error_message = Some("Request timeout".to_string());
+                let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
                     cli_type,
                     provider_name,
                     model_id,
                     None,
-                    start_time.elapsed().as_millis() as i64,
+                    elapsed,
+                    elapsed,
                     TokenUsage::default(),
                     client_method,
                     client_path,
@@ -864,6 +881,7 @@ async fn handle_non_streaming_request(
             }
         };
 
+    let first_byte_ms = start_time.elapsed().as_millis() as i64;
     let status = response.status();
     let resp_headers = response.headers().clone();
     let is_success = status.is_success();
@@ -889,13 +907,15 @@ async fn handle_non_streaming_request(
                 }
             }
             log_info.error_message = Some(format!("Failed to read response body: {}", e));
+            let elapsed = start_time.elapsed().as_millis() as i64;
             record_request_stats(
                 state,
                 cli_type,
                 provider_name,
                 model_id,
                 Some(status.as_u16()),
-                start_time.elapsed().as_millis() as i64,
+                elapsed,
+                first_byte_ms,
                 TokenUsage::default(),
                 client_method,
                 client_path,
@@ -955,6 +975,7 @@ async fn handle_non_streaming_request(
         model_id,
         Some(status.as_u16()),
         elapsed,
+        first_byte_ms,
         usage,
         client_method,
         client_path,
@@ -992,6 +1013,7 @@ async fn record_request_stats(
     model_id: Option<&str>,
     status_code: Option<u16>,
     elapsed_ms: i64,
+    first_byte_ms: i64,
     usage: TokenUsage,
     client_method: &str,
     client_path: &str,
@@ -1049,6 +1071,7 @@ async fn record_request_stats(
         model_id,
         status_code,
         elapsed_ms,
+        first_byte_ms,
         usage.input_tokens,
         usage.cache_read_input_tokens,
         usage.cache_creation_input_tokens,
@@ -1070,7 +1093,7 @@ async fn record_request_stats(
 
     // Query the inserted log item
     let log_item = sqlx::query_as::<_, RequestLogItem>(
-        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(log_id)
     .fetch_one(&state.log_db)

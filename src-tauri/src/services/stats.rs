@@ -235,6 +235,7 @@ pub async fn record_request_log(
     model_id: Option<&str>,
     status_code: Option<u16>,
     elapsed_ms: i64,
+    first_byte_ms: i64,
     input_tokens: i64,
     cache_read_input_tokens: i64,
     cache_creation_input_tokens: i64,
@@ -250,8 +251,8 @@ pub async fn record_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, cli_type, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
@@ -260,6 +261,7 @@ pub async fn record_request_log(
     .bind(model_id)
     .bind(status_code.map(|c| c as i64))
     .bind(elapsed_ms)
+    .bind(first_byte_ms)
     .bind(input_tokens)
     .bind(cache_read_input_tokens)
     .bind(cache_creation_input_tokens)

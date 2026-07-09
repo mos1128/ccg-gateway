@@ -448,6 +448,7 @@ export interface RequestLogListItem {
   model_id: string | null
   status_code: number | null
   elapsed_ms: number
+  first_byte_ms: number
   input_tokens: number
   cache_read_input_tokens: number
   cache_creation_input_tokens: number

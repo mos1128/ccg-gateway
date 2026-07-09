@@ -38,7 +38,7 @@
           <table class="v2-table">
             <thead>
               <tr>
-                <th>ID</th><th>时间</th><th>Agent</th><th>服务商</th><th>状态</th><th>耗时</th>
+                <th>ID</th><th>时间</th><th>Agent</th><th>服务商</th><th>状态</th><th>耗时 (首/总)</th>
                 <th>
                   <el-tooltip content="输入 / 输出" placement="top" effect="light" :show-after="250">
                     <span>Token (I/O)</span>
@@ -67,7 +67,7 @@
                 </td>
                 <td>{{ row.provider_name }}</td>
                 <td><span v-if="row.status_code" class="v2-pill dot" :class="statusPill(row.status_code)">{{ row.status_code }}</span><span v-else>-</span></td>
-                <td class="mono" :class="elapsedTimeClass(row)">{{ (row.elapsed_ms / 1000).toFixed(2) }}s</td>
+                <td class="mono" :class="elapsedTimeClass(row)">{{ formatLatencyPair(row) }}</td>
                 <td class="mono">
                   <span class="tok-group">
                     <span class="tok-val">{{ formatTokens(row.input_tokens) }}</span>
@@ -452,6 +452,14 @@ function elapsedTimeClass(row: RequestLogListItem) {
   if (row.elapsed_ms >= 50000) return 'logs-time-danger-slow'
   if (row.elapsed_ms >= 20000) return 'logs-time-warning'
   return ''
+}
+
+function formatDuration(ms: number): string {
+  return ms > 0 ? `${(ms / 1000).toFixed(2)}s` : '-'
+}
+
+function formatLatencyPair(row: RequestLogListItem): string {
+  return `${formatDuration(row.first_byte_ms)}/${formatDuration(row.elapsed_ms)}`
 }
 
 function buildDetailBlocks(detail: RequestLogDetail): DetailBlock[] {
