@@ -7,6 +7,7 @@ use bytes::Bytes;
 use flate2::read::{DeflateDecoder, GzDecoder, ZlibDecoder};
 use futures_util::StreamExt;
 use std::io::Read;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::Emitter;
@@ -15,10 +16,9 @@ use tokio::sync::{mpsc, Mutex};
 use super::AppState;
 use crate::db::models::{RequestLogInfo, RequestLogItem};
 use crate::services::proxy::{
-    apply_body_model_mapping, apply_url_model_mapping, detect_cli_type,
-    detect_gateway_profile, extract_model_from_body, extract_model_from_path,
-    is_streaming, parse_streaming_token_usage, parse_token_usage, CliType,
-    TimeoutConfig, TokenUsage,
+    apply_body_model_mapping, apply_url_model_mapping, detect_cli_type, detect_gateway_profile,
+    extract_model_from_body, extract_model_from_path, is_streaming, parse_streaming_token_usage,
+    parse_token_usage, CliType, TimeoutConfig, TokenUsage,
 };
 use crate::services::routing::{select_provider, split_gateway_profile_path};
 use crate::services::{provider as provider_service, stats as stats_service};
@@ -34,6 +34,73 @@ const RESPONSE_FILTERED_HEADERS: &[&str] = &[
     "upgrade",
     "content-length",
 ];
+const CLIENT_CLOSED_REQUEST_STATUS: u16 = 499;
+const CLIENT_CLOSED_REQUEST_MESSAGE: &str = "Client closed request before completion";
+
+struct RequestLogCancelGuard {
+    state: Arc<AppState>,
+    log_id: i64,
+    start_time: Instant,
+    first_byte_ms: Arc<AtomicI64>,
+    completed: AtomicBool,
+}
+
+impl RequestLogCancelGuard {
+    fn new(state: &Arc<AppState>, log_id: Option<i64>, start_time: Instant) -> Option<Self> {
+        log_id.map(|log_id| Self {
+            state: state.clone(),
+            log_id,
+            start_time,
+            first_byte_ms: Arc::new(AtomicI64::new(0)),
+            completed: AtomicBool::new(false),
+        })
+    }
+
+    fn set_first_byte_ms(&self, first_byte_ms: i64) {
+        self.first_byte_ms.store(first_byte_ms, Ordering::Relaxed);
+    }
+
+    fn disarm(&self) {
+        self.completed.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for RequestLogCancelGuard {
+    fn drop(&mut self) {
+        if self.completed.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let state = self.state.clone();
+        let log_id = self.log_id;
+        let elapsed_ms = self.start_time.elapsed().as_millis() as i64;
+        let recorded_first_byte_ms = self.first_byte_ms.load(Ordering::Relaxed);
+        let first_byte_ms = if recorded_first_byte_ms > 0 {
+            recorded_first_byte_ms
+        } else {
+            elapsed_ms
+        };
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                match stats_service::cancel_request_log(
+                    &state.log_db,
+                    log_id,
+                    CLIENT_CLOSED_REQUEST_STATUS,
+                    elapsed_ms,
+                    first_byte_ms,
+                    CLIENT_CLOSED_REQUEST_MESSAGE,
+                )
+                .await
+                {
+                    Ok(true) => emit_request_log_event(&state, "request-log-updated", log_id).await,
+                    Ok(false) => {}
+                    Err(e) => tracing::error!(error = %e, "Failed to cancel request log"),
+                }
+            });
+        }
+    }
+}
 
 // Catch-all proxy handler - forwards any non-API request to the appropriate provider
 pub async fn proxy_handler_catchall(
@@ -197,8 +264,7 @@ pub async fn proxy_handler_catchall(
         &upstream_url,
         &headers,
         final_body,
-        reqwest::Method::from_bytes(method.as_str().as_bytes())
-            .unwrap_or(reqwest::Method::GET),
+        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET),
     ) {
         Ok(req) => req,
         Err(e) => {
@@ -307,7 +373,10 @@ fn copy_response_headers(
     headers: &reqwest::header::HeaderMap,
 ) -> axum::http::response::Builder {
     for (name, value) in headers.iter() {
-        if RESPONSE_FILTERED_HEADERS.iter().any(|h| name.as_str().eq_ignore_ascii_case(h)) {
+        if RESPONSE_FILTERED_HEADERS
+            .iter()
+            .any(|h| name.as_str().eq_ignore_ascii_case(h))
+        {
             continue;
         }
 
@@ -454,6 +523,8 @@ async fn handle_streaming_request(
     mut log_info: RequestLogInfo,
     request_log_id: Option<i64>,
 ) -> Result<Response<Body>, StatusCode> {
+    let cancel_guard = RequestLogCancelGuard::new(state, request_log_id, start_time);
+
     // Send request with timeout for first byte
     let response =
         match tokio::time::timeout(timeouts.first_byte_timeout, client.execute(request)).await {
@@ -491,6 +562,9 @@ async fn handle_streaming_request(
                     request_log_id,
                 )
                 .await;
+                if let Some(guard) = &cancel_guard {
+                    guard.disarm();
+                }
                 return Ok(Response::builder()
                     .status(StatusCode::BAD_GATEWAY)
                     .header("content-type", "application/json")
@@ -533,6 +607,9 @@ async fn handle_streaming_request(
                     request_log_id,
                 )
                 .await;
+                if let Some(guard) = &cancel_guard {
+                    guard.disarm();
+                }
                 return Ok(Response::builder()
                     .status(StatusCode::GATEWAY_TIMEOUT)
                     .header("content-type", "application/json")
@@ -542,6 +619,9 @@ async fn handle_streaming_request(
         };
 
     let first_byte_fallback_ms = start_time.elapsed().as_millis() as i64;
+    if let Some(guard) = &cancel_guard {
+        guard.set_first_byte_ms(first_byte_fallback_ms);
+    }
     let status = response.status();
     let resp_headers = response.headers().clone();
 
@@ -703,8 +783,12 @@ async fn handle_streaming_request(
     let log_request_log_id = request_log_id;
 
     tokio::spawn(async move {
-        let _ = stream_end_rx.recv().await;
-        tracing::debug!("[{}] Received stream end notification", cli_type);
+        let client_cancelled = stream_end_rx.recv().await.is_none();
+        tracing::debug!(
+            "[{}] Received stream end notification, client_cancelled={}",
+            cli_type,
+            client_cancelled
+        );
 
         // Reconstruct body from collected chunks (up to 10MB)
         let chunks = collected_chunks.lock().await.clone();
@@ -764,14 +848,16 @@ async fn handle_streaming_request(
 
         // Check idle timeout flag
         let is_idle_timeout = *idle_timeout_flag.lock().await;
-        if is_idle_timeout {
+        if client_cancelled {
+            final_log_info.error_message = Some(CLIENT_CLOSED_REQUEST_MESSAGE.to_string());
+        } else if is_idle_timeout {
             final_log_info.error_message = Some("Stream idle timeout".to_string());
         }
 
         // Record stats
         let elapsed = start_time.elapsed().as_millis() as i64;
         let first_byte_ms = (*first_chunk_ms.lock().await).unwrap_or(first_byte_fallback_ms);
-        if log_is_success {
+        if !client_cancelled && log_is_success {
             if let Ok(had_failures) =
                 provider_service::record_success(&log_state.db, log_provider_id).await
             {
@@ -784,16 +870,18 @@ async fn handle_streaming_request(
                     .await;
                 }
             }
-        } else if let Ok((was_blacklisted, prov_name)) =
-            provider_service::record_failure(&log_state.db, log_provider_id).await
-        {
-            if was_blacklisted {
-                let _ = stats_service::record_system_log(
-                    &log_state.log_db,
-                    "provider_blacklisted",
-                    &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                )
-                .await;
+        } else if !client_cancelled {
+            if let Ok((was_blacklisted, prov_name)) =
+                provider_service::record_failure(&log_state.db, log_provider_id).await
+            {
+                if was_blacklisted {
+                    let _ = stats_service::record_system_log(
+                        &log_state.log_db,
+                        "provider_blacklisted",
+                        &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
+                    )
+                    .await;
+                }
             }
         }
 
@@ -802,7 +890,11 @@ async fn handle_streaming_request(
             cli_type,
             &log_provider_name,
             log_model_id.as_deref(),
-            Some(log_status.as_u16()),
+            Some(if client_cancelled {
+                CLIENT_CLOSED_REQUEST_STATUS
+            } else {
+                log_status.as_u16()
+            }),
             elapsed,
             first_byte_ms,
             usage,
@@ -818,6 +910,9 @@ async fn handle_streaming_request(
         tracing::info!("[{}] Delayed log recording completed", cli_type);
     });
 
+    if let Some(guard) = &cancel_guard {
+        guard.disarm();
+    }
     Ok(builder.body(Body::from_stream(stream)).unwrap())
 }
 
@@ -838,6 +933,8 @@ async fn handle_non_streaming_request(
     mut log_info: RequestLogInfo,
     request_log_id: Option<i64>,
 ) -> Result<Response<Body>, StatusCode> {
+    let cancel_guard = RequestLogCancelGuard::new(state, request_log_id, start_time);
+
     // Send request with timeout
     let response =
         match tokio::time::timeout(timeouts.non_stream_timeout, client.execute(request)).await {
@@ -875,6 +972,9 @@ async fn handle_non_streaming_request(
                     request_log_id,
                 )
                 .await;
+                if let Some(guard) = &cancel_guard {
+                    guard.disarm();
+                }
                 return Ok(Response::builder()
                     .status(StatusCode::BAD_GATEWAY)
                     .header("content-type", "application/json")
@@ -917,6 +1017,9 @@ async fn handle_non_streaming_request(
                     request_log_id,
                 )
                 .await;
+                if let Some(guard) = &cancel_guard {
+                    guard.disarm();
+                }
                 return Ok(Response::builder()
                     .status(StatusCode::GATEWAY_TIMEOUT)
                     .header("content-type", "application/json")
@@ -926,6 +1029,9 @@ async fn handle_non_streaming_request(
         };
 
     let first_byte_ms = start_time.elapsed().as_millis() as i64;
+    if let Some(guard) = &cancel_guard {
+        guard.set_first_byte_ms(first_byte_ms);
+    }
     let status = response.status();
     let resp_headers = response.headers().clone();
     let is_success = status.is_success();
@@ -969,6 +1075,9 @@ async fn handle_non_streaming_request(
                 request_log_id,
             )
             .await;
+            if let Some(guard) = &cancel_guard {
+                guard.disarm();
+            }
             return Err(StatusCode::BAD_GATEWAY);
         }
     };
@@ -1030,6 +1139,9 @@ async fn handle_non_streaming_request(
         request_log_id,
     )
     .await;
+    if let Some(guard) = &cancel_guard {
+        guard.disarm();
+    }
 
     // Build response
     let mut builder =
@@ -1061,13 +1173,10 @@ async fn emit_request_log_event(state: &Arc<AppState>, event: &str, log_id: i64)
     .await;
 
     if let Ok(mut item) = log_item {
-        let pricing = crate::services::cost::provider_pricing(
-            &state.db,
-            &item.cli_type,
-            &item.provider_name,
-        )
-        .await
-        .unwrap_or_default();
+        let pricing =
+            crate::services::cost::provider_pricing(&state.db, &item.cli_type, &item.provider_name)
+                .await
+                .unwrap_or_default();
         item.total_cost = crate::services::cost::calculate_token_cost(
             pricing,
             item.input_tokens,
@@ -1092,12 +1201,11 @@ async fn start_request_log(
     source_model: Option<&str>,
     target_model: Option<&str>,
 ) -> Option<i64> {
-    let (debug_log,) = sqlx::query_as::<_, (i64,)>(
-        "SELECT debug_log FROM gateway_settings WHERE id = 1",
-    )
-    .fetch_one(&state.db)
-    .await
-    .unwrap_or((0,));
+    let (debug_log,) =
+        sqlx::query_as::<_, (i64,)>("SELECT debug_log FROM gateway_settings WHERE id = 1")
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or((0,));
 
     if debug_log == 0 {
         return None;

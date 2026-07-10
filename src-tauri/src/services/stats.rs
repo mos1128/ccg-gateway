@@ -334,12 +334,11 @@ pub async fn finish_request_log(
     target_model: Option<&str>,
     info: Option<RequestLogInfo>,
 ) -> Result<(), sqlx::Error> {
-    let (created_at,) = sqlx::query_as::<_, (i64,)>(
-        "SELECT created_at FROM request_logs WHERE id = ?",
-    )
-    .bind(log_id)
-    .fetch_one(log_db)
-    .await?;
+    let (created_at,) =
+        sqlx::query_as::<_, (i64,)>("SELECT created_at FROM request_logs WHERE id = ?")
+            .bind(log_id)
+            .fetch_one(log_db)
+            .await?;
     let finished_at = now_timestamp();
     let info = info.unwrap_or_default();
 
@@ -389,6 +388,36 @@ pub async fn update_request_log_first_byte(
         .execute(log_db)
         .await?;
     Ok(())
+}
+
+pub async fn cancel_request_log(
+    log_db: &SqlitePool,
+    log_id: i64,
+    status_code: u16,
+    elapsed_ms: i64,
+    first_byte_ms: i64,
+    error_message: &str,
+) -> Result<bool, sqlx::Error> {
+    let finished_at = now_timestamp();
+    let result = sqlx::query(
+        r#"
+        UPDATE request_logs
+        SET finished_at = ?, status_code = ?, elapsed_ms = ?,
+            first_byte_ms = CASE WHEN first_byte_ms > 0 THEN first_byte_ms ELSE ? END,
+            error_message = COALESCE(error_message, ?)
+        WHERE id = ? AND finished_at IS NULL
+        "#,
+    )
+    .bind(finished_at)
+    .bind(status_code as i64)
+    .bind(elapsed_ms)
+    .bind(first_byte_ms)
+    .bind(error_message)
+    .bind(log_id)
+    .execute(log_db)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
 }
 
 /// Record a system log entry
