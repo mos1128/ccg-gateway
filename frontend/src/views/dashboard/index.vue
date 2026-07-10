@@ -57,6 +57,7 @@
             end-placeholder="结束日期"
             size="default"
             value-format="YYYY-MM-DD"
+            :default-value="datePanelDefaultValue"
             :shortcuts="shortcuts"
             @change="handleRangeChange"
             class="v2-date-picker"
@@ -206,6 +207,13 @@ async function setMode(cli: CliType, mode: CliMode) {
 
 // ===== 时间段筛选 =====
 const dateRange = ref<[string, string] | null>(null)
+const datePanelDefaultValue = computed<[Date, Date]>(() => {
+  const currentMonth = new Date()
+  currentMonth.setDate(1)
+  const previousMonth = new Date(currentMonth)
+  previousMonth.setMonth(previousMonth.getMonth() - 1)
+  return [previousMonth, currentMonth]
+})
 
 const shortcuts = [
   {
@@ -529,6 +537,8 @@ const chartOption = computed(() => {
     })
   }
 
+  const legendRows = Math.max(1, Math.min(4, Math.ceil(groups.length / 8)))
+  const legendBottom = 12 + legendRows * 18
   const c = ct.value
   return {
     tooltip: {
@@ -631,8 +641,8 @@ const chartOption = computed(() => {
       }
     },
     textStyle: { fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500 },
-    legend: { data: groups, bottom: 0, left: 'center', type: 'scroll', icon: 'circle', selected: legendSelectedMap.value[dimMode.value], textStyle: { color: c.label, fontFamily: CHART_FONT, fontSize: 14, fontWeight: 500 } },
-    grid: { top: 16, right: '1.5%', bottom: 36, left: '1.5%', containLabel: true },
+    legend: { data: groups, bottom: 0, left: 'center', width: '96%', type: 'plain', icon: 'circle', itemWidth: 11, itemHeight: 11, itemGap: 8, selected: legendSelectedMap.value[dimMode.value], textStyle: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, lineHeight: 16 } },
+    grid: { top: 16, right: '1.5%', bottom: legendBottom, left: '1.5%', containLabel: true },
     xAxis: { type: 'category', data: dates, boundaryGap: isBar, axisLine: { lineStyle: { color: c.axis } }, axisTick: { show: false }, axisLabel: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, formatter: (v: string) => v.substring(5) } },
     yAxis: { type: 'value', splitNumber: 4, splitLine: { lineStyle: { type: 'dashed', color: c.split } }, axisLabel: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, formatter: (v: number) => fmtToken(v) } },
     series
