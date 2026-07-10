@@ -157,7 +157,7 @@ import { formatCost, formatTokens } from '@/utils/json'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { CLI_TABS, CLI_LABELS, CLI_TYPES } from '@/types/models'
-import type { CliType, CliMode, ProviderStats, AdvancedStatsRow } from '@/types/models'
+import type { CliType, CliMode, AdvancedStatsRow } from '@/types/models'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
 
 use([LineChart, BarChart, TooltipComponent, GridComponent, DatasetComponent, TransformComponent, LegendComponent, CanvasRenderer, SVGRenderer])
@@ -262,7 +262,6 @@ function handleRangeChange() {
 }
 
 // ===== KPI =====
-const providerStats = ref<ProviderStats[]>([])
 const statsLoading = ref(false)
 const refreshKey = ref(0)
 const isPaused = ref(false)
@@ -275,7 +274,9 @@ function togglePause() {
 }
 
 const kpis = computed(() => {
-  const s = providerStats.value
+  const groupKey = dimMode.value === 'provider' ? 'provider_name' : 'model_id'
+  const selectedMap = legendSelectedMap.value[dimMode.value] || {}
+  const s = advancedStats.value.filter((x) => selectedMap[x[groupKey]] !== false)
   const reqs = s.reduce((a, x) => a + x.total_requests, 0)
   const succ = s.reduce((a, x) => a + x.total_success, 0)
   const cache = s.reduce((a, x) => a + (x.total_cache_read_tokens || 0) + (x.total_cache_creation_tokens || 0), 0)
@@ -387,8 +388,6 @@ async function fetchStats() {
       params.start_date = fmt(start)
       params.end_date = fmt(today)
     }
-    const { data: prov } = await statsApi.getProviders(params)
-    providerStats.value = prov
     const { data: adv } = await statsApi.getAdvanced(params)
     if (chartHovering.value) pendingAdvanced.value = adv
     else advancedStats.value = adv
