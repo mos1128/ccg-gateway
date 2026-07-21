@@ -169,26 +169,80 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
     if feature.operations.is_empty() {
         return Err("enabled official_login 必须提供 operations".to_string());
     }
+    let mut source_formats = HashMap::new();
     for operation in &feature.operations {
-        use crate::db::models::OfficialLoginOperationKind;
-        match operation.op {
+        use crate::db::models::{ConfigFormat, OfficialLoginOperationKind};
+        let format = operation.format.unwrap_or(ConfigFormat::Json);
+        let source = match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
-                if operation.content_from.is_none() {
-                    return Err(format!(
+                let source = operation.content_from.as_ref().ok_or_else(|| {
+                    format!(
                         "official_login operation `{}` 缺少 content_from",
+                        operation.id
+                    )
+                })?;
+                if format != ConfigFormat::Json && !source.path.is_empty() {
+                    return Err(format!(
+                        "official_login operation `{}` 的非 JSON 来源不能配置 path",
                         operation.id
                     ));
                 }
+                Some(source)
             }
             OfficialLoginOperationKind::SetField => {
                 if operation.path.is_empty()
                     || operation.value.is_some() == operation.value_from.is_some()
+                    || operation.format != Some(ConfigFormat::Json)
                 {
                     return Err(format!(
-                        "official_login operation `{}` 的 path 或 value 配置无效",
+                        "official_login operation `{}` 必须使用 JSON format，并正确配置 path 和 value",
                         operation.id
                     ));
                 }
+                operation.value_from.as_ref()
+            }
+        };
+        if let Some(source) = source {
+            if let Some(existing) = source_formats.insert(source.file_id.as_str(), format) {
+                if existing != format {
+                    return Err(format!(
+                        "official_login 逻辑文件 `{}` 不能使用不同 format",
+                        source.file_id
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_icon(definition: &AgentDefinition) -> Result<(), String> {
+    let Some(icon) = &definition.icon else {
+        return Ok(());
+    };
+    if icon.view_box.trim().is_empty()
+        || icon.paths.is_empty()
+        || icon.paths.iter().any(|path| path.d.trim().is_empty())
+    {
+        return Err("Agent icon 必须提供 view_box 和非空 paths".to_string());
+    }
+    if icon.color.as_ref().is_some_and(|color| {
+        color.len() != 7
+            || !color.starts_with('#')
+            || !color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+    }) {
+        return Err("Agent icon color 必须是六位十六进制颜色".to_string());
+    }
+    for path in &icon.paths {
+        if path
+            .opacity
+            .is_some_and(|opacity| !(0.0..=1.0).contains(&opacity))
+        {
+            return Err("Agent icon path opacity 必须在 0 到 1 之间".to_string());
+        }
+        for rule in [&path.fill_rule, &path.clip_rule].into_iter().flatten() {
+            if rule != "nonzero" && rule != "evenodd" {
+                return Err("Agent icon path rule 只支持 nonzero 或 evenodd".to_string());
             }
         }
     }
@@ -342,6 +396,7 @@ fn validate_definition(definition: &AgentDefinition) -> Result<(), String> {
     if definition.name.trim().is_empty() {
         return Err("Agent name 不能为空".to_string());
     }
+    validate_icon(definition)?;
     if definition.config_dir.trim().is_empty() {
         return Err("Agent config_dir 不能为空".to_string());
     }
@@ -582,6 +637,7 @@ fn resolve_definition(definition: &AgentDefinition) -> AgentInfo {
         schema_version: definition.schema_version,
         id: definition.id.clone(),
         name: definition.name.clone(),
+        icon: definition.icon.clone(),
         config_dir: definition.config_dir.clone(),
         user_agent: definition.user_agent.clone(),
         protocols: definition.protocols.clone(),
@@ -670,4 +726,5 @@ mod tests {
             data_dir.join("agent-definitions")
         );
     }
+
 }

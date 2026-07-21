@@ -84,16 +84,16 @@
 
       <!-- 下方：left CLI client, right stats overview -->
       <div class="dash-row">
-        <aside class="dash-rail">
+        <aside class="dash-rail" :style="railStyle">
           <div class="v2-card v2-card-pad rail-card">
             <div class="cli-list">
               <div v-for="cli in cliList" :key="cli.type" class="cli-row" :class="{ loading: cliLoading[cli.type] }">
                 <div class="cli-id">
-                  <span class="cli-brand-icon" :class="cli.type">
+                  <span class="cli-brand-icon" :style="{ '--agent-color': cli.color || 'var(--v2-text-2)' }">
                     <CliBrandIcon :type="cli.type" width="14" height="14" />
                   </span>
                   <span class="cli-name">{{ cli.label }}</span>
-                  <el-tooltip v-if="cli.type === 'claude_code'" effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
+                  <el-tooltip effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
                     <template #content>
                       <div class="profile-help">
                         <div class="tooltip-title">模式说明</div>
@@ -123,7 +123,7 @@
           </div>
         </aside>
 
-        <div class="v2-card v2-card-pad chart-card">
+        <div ref="chartCardRef" class="v2-card v2-card-pad chart-card">
           <div class="chart-head">
             <div class="v2-seg">
               <div class="v2-seg-slider" :style="{ transform: `translateX(${dimTabs.findIndex(t => dimMode === t.id) * 100}%)`, width: 'calc((100% - 8px) / 2)' }"></div>
@@ -149,6 +149,7 @@ import { LineChart, BarChart } from 'echarts/charts'
 import { TooltipComponent, GridComponent, DatasetComponent, TransformComponent, LegendComponent } from 'echarts/components'
 import { CanvasRenderer, SVGRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
+import { useResizeObserver } from '@vueuse/core'
 import { statsApi } from '@/api/stats'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemeStore } from '@/stores/theme'
@@ -168,9 +169,19 @@ const agentStore = useAgentStore()
 const REFRESH_MS = 5000
 const CHART_FONT = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Microsoft YaHei UI', Arial, sans-serif"
 const chartInitOptions = { renderer: 'svg' } as const
+const chartCardRef = ref<HTMLElement | null>(null)
+const chartCardHeight = ref(0)
+const railStyle = computed(() => chartCardHeight.value
+  ? { height: `${chartCardHeight.value}px` }
+  : undefined)
+
+useResizeObserver(chartCardRef, ([entry]) => {
+  const height = Math.ceil(entry.target.getBoundingClientRect().height)
+  if (height > 0) chartCardHeight.value = height
+})
 
 // ===== CLI 模式控制 =====
-const cliList = computed(() => agentStore.agents.map(({ id, name }) => ({ type: id, label: name })))
+const cliList = computed(() => agentStore.agents.map(({ id, name, icon }) => ({ type: id, label: name, color: icon?.color })))
 const cliLoading = reactive<Record<CliType, boolean>>({})
 const modeOptions: { id: CliMode; label: string }[] = [
   { id: 'proxy_route', label: '路由' },
@@ -695,8 +706,8 @@ onMounted(async () => {
 @media (max-width: 920px) {
   .dash-row { grid-template-columns: 1fr; }
 }
-.dash-rail { display: flex; }
-.dash-rail .rail-card { flex: 1; }
+.dash-rail { display: flex; min-height: 0; overflow: hidden; }
+.dash-rail .rail-card { flex: 1; min-height: 0; overflow: hidden; }
 
 .rail-card {
   display: flex;
@@ -709,9 +720,16 @@ onMounted(async () => {
   height: 28px;
   margin-bottom: 10px;
 }
-.cli-list { display: flex; flex-direction: column; }
+.cli-list {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
 .cli-row {
-  padding: 13px 0;
+  padding: 13px 8px 13px 0;
   border-bottom: 1px solid var(--v2-surface-2);
 }
 .cli-row:last-child { border-bottom: none; }
@@ -730,18 +748,8 @@ onMounted(async () => {
   height: 20px;
   border-radius: 4px;
   flex-shrink: 0;
-}
-.cli-brand-icon.claude_code {
-  background: color-mix(in srgb, var(--v2-brand-claude) 12%, transparent);
-  color: var(--v2-brand-claude);
-}
-.cli-brand-icon.codex {
-  background: color-mix(in srgb, var(--v2-brand-openai) 12%, transparent);
-  color: var(--v2-brand-openai);
-}
-.cli-brand-icon.gemini {
-  background: color-mix(in srgb, var(--v2-brand-gemini) 12%, transparent);
-  color: var(--v2-brand-gemini);
+  background: color-mix(in srgb, var(--agent-color) 12%, transparent);
+  color: var(--agent-color);
 }
 .cli-icon {
   width: 13px;
@@ -775,6 +783,8 @@ onMounted(async () => {
 
 .chart-card {
   min-width: 0;
+  width: 100%;
+  align-self: start;
 }
 .chart-head {
   display: flex;

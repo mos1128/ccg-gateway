@@ -9,6 +9,16 @@ use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+#[derive(Debug)]
+enum PreparedFile {
+    Json(Value),
+    Text(String),
+}
+
+fn operation_format(operation: &OfficialLoginOperation) -> ConfigFormat {
+    operation.format.unwrap_or(ConfigFormat::Json)
+}
+
 pub fn parse_payload(json: &str) -> Result<OfficialCredentialPayload, String> {
     let payload: OfficialCredentialPayload =
         serde_json::from_str(json).map_err(|error| format!("凭证 JSON 格式无效: {}", error))?;
@@ -20,13 +30,6 @@ pub fn parse_payload(json: &str) -> Result<OfficialCredentialPayload, String> {
     }
     if payload.files.is_empty() {
         return Err("凭证 files 不能为空".to_string());
-    }
-    if payload
-        .files
-        .values()
-        .any(|file| file.format != ConfigFormat::Json)
-    {
-        return Err("官方凭证首版只支持 JSON 逻辑文件".to_string());
     }
     Ok(payload)
 }
@@ -49,11 +52,27 @@ pub fn validate_payload(agent_id: &str, json: &str) -> Result<(), String> {
                 .files
                 .get(&source.file_id)
                 .ok_or_else(|| format!("凭证缺少逻辑文件 `{}`", source.file_id))?;
-            if value_at(&file.content, &source.path).is_none() {
+            let expected_format = operation_format(operation);
+            if file.format != expected_format {
+                return Err(format!(
+                    "逻辑文件 `{}` 应为 {:?} 格式",
+                    source.file_id, expected_format
+                ));
+            }
+            if file.format == ConfigFormat::Json && value_at(&file.content, &source.path).is_none()
+            {
                 return Err(format!(
                     "逻辑文件 `{}` 缺少来源路径 `{}`",
                     source.file_id,
                     source.path.join(".")
+                ));
+            }
+            if file.format != ConfigFormat::Json
+                && (!source.path.is_empty() || !file.content.is_string())
+            {
+                return Err(format!(
+                    "非 JSON 逻辑文件 `{}` 必须使用原始文本且不能配置来源路径",
+                    source.file_id
                 ));
             }
         }
@@ -110,12 +129,32 @@ fn source_value(
         .files
         .get(&source.file_id)
         .ok_or_else(|| format!("逻辑文件 `{}` 不存在", source.file_id))?;
-    if file.format != ConfigFormat::Json {
-        return Err(format!("逻辑文件 `{}` 不是 JSON", source.file_id));
+    if file.format != operation_format(operation) {
+        return Err(format!("逻辑文件 `{}` 格式与模板不一致", source.file_id));
+    }
+    if file.format != ConfigFormat::Json && !source.path.is_empty() {
+        return Err(format!(
+            "非 JSON 逻辑文件 `{}` 不支持来源路径",
+            source.file_id
+        ));
     }
     value_at(&file.content, &source.path)
         .cloned()
         .ok_or_else(|| format!("逻辑文件 `{}` 中的来源路径不存在", source.file_id))
+}
+
+fn prepared_replacement(
+    payload: &OfficialCredentialPayload,
+    operation: &OfficialLoginOperation,
+) -> Result<PreparedFile, String> {
+    let value = source_value(payload, operation)?;
+    match operation_format(operation) {
+        ConfigFormat::Json => Ok(PreparedFile::Json(value)),
+        ConfigFormat::Jsonc | ConfigFormat::Toml | ConfigFormat::Env => value
+            .as_str()
+            .map(|content| PreparedFile::Text(content.to_string()))
+            .ok_or_else(|| format!("operation `{}` 的凭证内容必须是文本", operation.id)),
+    }
 }
 
 fn operation_value(
@@ -204,13 +243,13 @@ pub async fn apply_payload(
     let payload = parse_payload(json)?;
     let operations = resolved_operations(db, agent_id).await?;
     let config_dir = get_cli_config_dir_path(db, agent_id).await;
-    let mut prepared: HashMap<PathBuf, Value> = HashMap::new();
+    let mut prepared: HashMap<PathBuf, PreparedFile> = HashMap::new();
 
     for operation in &operations {
         let path = resolve_cli_config_file_from_dir(&config_dir, &operation.file);
         match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
-                prepared.insert(path, source_value(&payload, operation)?);
+                prepared.insert(path, prepared_replacement(&payload, operation)?);
             }
             OfficialLoginOperationKind::SetField => {
                 if operation.format != Some(ConfigFormat::Json) {
@@ -221,17 +260,29 @@ pub async fn apply_payload(
                 }
                 let next = operation_value(&payload, operation)?;
                 if !prepared.contains_key(&path) {
-                    prepared.insert(path.clone(), read_target_json(&path).await?);
+                    prepared.insert(
+                        path.clone(),
+                        PreparedFile::Json(read_target_json(&path).await?),
+                    );
                 }
-                let target = prepared.get_mut(&path).expect("prepared target");
+                let PreparedFile::Json(target) = prepared.get_mut(&path).expect("prepared target")
+                else {
+                    return Err(format!(
+                        "operation `{}` 与同一目标文件的原文替换规则冲突",
+                        operation.id
+                    ));
+                };
                 set_value_at(target, &operation.path, next, &operation.id)?;
             }
         }
     }
 
     let mut written = Vec::with_capacity(prepared.len());
-    for (path, value) in prepared {
-        config_patch::write_atomic_json(&path, &value).await?;
+    for (path, content) in prepared {
+        match content {
+            PreparedFile::Json(value) => config_patch::write_atomic_json(&path, &value).await?,
+            PreparedFile::Text(value) => config_patch::write_atomic_text(&path, &value).await?,
+        }
         written.push(path);
     }
     Ok(written)
@@ -253,13 +304,17 @@ pub async fn remove_payload(
         match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
                 let actual = match tokio::fs::read_to_string(&path).await {
-                    Ok(content) => serde_json::from_str::<Value>(&content).map_err(|error| {
-                        format!("目标文件 {} 不是合法 JSON: {}", path.display(), error)
-                    })?,
+                    Ok(content) => content,
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                     Err(error) => return Err(error.to_string()),
                 };
-                if actual == source_value(&payload, operation)? {
+                let matches = match prepared_replacement(&payload, operation)? {
+                    PreparedFile::Json(expected) => serde_json::from_str::<Value>(&actual)
+                        .map(|value| value == expected)
+                        .unwrap_or(false),
+                    PreparedFile::Text(expected) => actual == expected,
+                };
+                if matches {
                     remove_files.insert(path);
                 }
             }
@@ -316,19 +371,31 @@ pub async fn payload_matches(db: &SqlitePool, agent_id: &str, json: &str) -> Res
     }
     for operation in &operations {
         let path = resolve_cli_config_file_from_dir(&config_dir, &operation.file);
-        let actual = match tokio::fs::read_to_string(&path).await {
-            Ok(content) => serde_json::from_str::<Value>(&content)
-                .map_err(|error| format!("目标文件 {} 不是合法 JSON: {}", path.display(), error))?,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => return Err(error.to_string()),
-        };
         match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
-                if actual != source_value(&payload, operation)? {
+                let actual = match tokio::fs::read_to_string(&path).await {
+                    Ok(content) => content,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                    Err(error) => return Err(error.to_string()),
+                };
+                let matches = match prepared_replacement(&payload, operation)? {
+                    PreparedFile::Json(expected) => serde_json::from_str::<Value>(&actual)
+                        .map(|value| value == expected)
+                        .unwrap_or(false),
+                    PreparedFile::Text(expected) => actual == expected,
+                };
+                if !matches {
                     return Ok(false);
                 }
             }
             OfficialLoginOperationKind::SetField => {
+                let actual = match tokio::fs::read_to_string(&path).await {
+                    Ok(content) => serde_json::from_str::<Value>(&content).map_err(|error| {
+                        format!("目标文件 {} 不是合法 JSON: {}", path.display(), error)
+                    })?,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                    Err(error) => return Err(error.to_string()),
+                };
                 let expected = operation_value(&payload, operation)?;
                 if value_at(&actual, &operation.path) != Some(&expected) {
                     return Ok(false);
@@ -345,22 +412,38 @@ pub async fn read_current_payload(db: &SqlitePool, agent_id: &str) -> Result<Str
     let mut files: HashMap<String, OfficialCredentialFile> = HashMap::new();
     for operation in &operations {
         let path = resolve_cli_config_file_from_dir(&config_dir, &operation.file);
-        let target = read_target_json(&path).await?;
         match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
                 let source = operation
                     .content_from
                     .as_ref()
                     .ok_or_else(|| format!("operation `{}` 缺少 content_from", operation.id))?;
+                let format = operation_format(operation);
+                let raw = match tokio::fs::read_to_string(&path).await {
+                    Ok(content) => content,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+                    Err(error) => {
+                        return Err(format!("读取目标文件 {} 失败: {}", path.display(), error))
+                    }
+                };
+                let content = if format == ConfigFormat::Json {
+                    if raw.trim().is_empty() {
+                        Value::Object(Map::new())
+                    } else {
+                        serde_json::from_str(&raw).map_err(|error| {
+                            format!("目标文件 {} 不是合法 JSON: {}", path.display(), error)
+                        })?
+                    }
+                } else {
+                    Value::String(raw)
+                };
                 files.insert(
                     source.file_id.clone(),
-                    OfficialCredentialFile {
-                        format: ConfigFormat::Json,
-                        content: target,
-                    },
+                    OfficialCredentialFile { format, content },
                 );
             }
             OfficialLoginOperationKind::SetField => {
+                let target = read_target_json(&path).await?;
                 let Some(source) = &operation.value_from else {
                     continue;
                 };
@@ -409,5 +492,22 @@ pub fn display_info(json: &str) -> String {
             .find_map(|file| find_display_value(&file.content))
             .unwrap_or_else(|| format!("已保存 {} 个文件", payload.files.len())),
         Err(_) => "无效凭证格式".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_raw_text_credential_files() {
+        let payload = parse_payload(
+            r#"{"schema_version":1,"files":{"credentials":{"format":"toml","content":"token = 'demo'"}}}"#,
+        )
+        .expect("TOML credentials should be accepted");
+
+        let file = payload.files.get("credentials").expect("credential file");
+        assert_eq!(file.format, ConfigFormat::Toml);
+        assert_eq!(file.content.as_str(), Some("token = 'demo'"));
     }
 }

@@ -200,9 +200,6 @@ onMounted(async () => {
 :root {
   --v2-bg-base: var(--el-bg-color-page);
   --v2-mask-bg: var(--el-mask-color);
-  --v2-brand-claude: #cc7a5c;
-  --v2-brand-openai: #10a37f;
-  --v2-brand-gemini: #3b82f6;
   --v2-surface: var(--el-bg-color);
   --v2-surface-2: var(--el-fill-color-light);
   --v2-surface-3: var(--el-border-color-extra-light);
@@ -929,10 +926,12 @@ textarea.v2-input {
 .v2-shell ::-webkit-scrollbar-track { background: transparent; }
 .v2-shell ::-webkit-scrollbar-thumb { background-color: rgba(0, 0, 0, 0.15); border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
 .v2-shell ::-webkit-scrollbar-thumb:hover { background-color: rgba(0, 0, 0, 0.3); }
+.v2-shell ::-webkit-scrollbar-corner { background: transparent; }
 .v2-scope ::-webkit-scrollbar { width: 10px; height: 10px; }
 .v2-scope ::-webkit-scrollbar-track { background: transparent; }
 .v2-scope ::-webkit-scrollbar-thumb { background-color: rgba(0, 0, 0, 0.15); border: 3px solid transparent; background-clip: padding-box; border-radius: 999px; }
 .v2-scope ::-webkit-scrollbar-thumb:hover { background-color: rgba(0, 0, 0, 0.3); }
+.v2-scope ::-webkit-scrollbar-corner { background: transparent; }
 
 html.dark .v2-shell ::-webkit-scrollbar-thumb,
 html.dark .v2-scope ::-webkit-scrollbar-thumb {

@@ -3,6 +3,14 @@
   "id": "gemini",
   "sort_order": 30,
   "name": "Gemini CLI",
+  "icon": {
+    "view_box": "0 0 24 24",
+    "color": "#3b82f6",
+    "paths": [
+      { "d": "M12 2c0 5.523 4.477 10 10 10-5.523 0-10 4.477-10 10 0-5.523-4.477-10-10-10 5.523 0 10-4.477 10-10z" },
+      { "d": "M19 3c0 2.21-1.79 4-4 4 2.21 0 4 1.79 4 4 0-2.21 1.79-4 4-4-2.21 0-4-1.79-4-4z", "opacity": 0.7 }
+    ]
+  },
   "config_dir": "~/.gemini",
   "user_agent": ["geminicli", "gemini-cli"],
   "protocols": ["gemini_generate_content"],

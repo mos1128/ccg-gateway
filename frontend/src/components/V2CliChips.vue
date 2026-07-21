@@ -5,7 +5,8 @@
       :key="c.id"
       type="button"
       class="v2-chip"
-      :class="[c.id, { on: flags[c.id] }]"
+      :class="{ on: flags[c.id] }"
+      :style="{ '--v2-chip-agent': c.color || 'var(--v2-text-2)' }"
       @click="emit('toggle', c.id, !flags[c.id])"
     >
       <span class="v2-chip-icon-wrapper">
@@ -27,7 +28,7 @@ const agentStore = useAgentStore()
 const tabs = computed(() => (props.feature
   ? agentStore.agentsFor(props.feature)
   : agentStore.agents
-).map((agent) => ({ id: agent.id, label: agent.name })))
+).map((agent) => ({ id: agent.id, label: agent.name, color: agent.icon?.color })))
 </script>
 
 <style scoped>
@@ -40,15 +41,6 @@ const tabs = computed(() => (props.feature
 }
 .v2-chip.on .v2-chip-icon-wrapper {
   filter: none;
-}
-.v2-chip.claude_code {
-  --v2-chip-agent: var(--v2-brand-claude);
-}
-.v2-chip.codex {
-  --v2-chip-agent: var(--v2-brand-openai);
-}
-.v2-chip.gemini {
-  --v2-chip-agent: var(--v2-brand-gemini);
 }
 .v2-chip.on {
   background: color-mix(in srgb, var(--v2-chip-agent) 10%, var(--v2-surface));

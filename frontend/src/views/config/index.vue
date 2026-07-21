@@ -282,6 +282,7 @@ import { getErrorMessage } from '@/utils/error'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { useAgentStore } from '@/stores/agents'
+import { agentsApi } from '@/api/agents'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 import * as backupApi from '@/api/backup'
 import type { WebdavSettings, WebdavBackup } from '@/api/backup'
@@ -345,7 +346,7 @@ function openPresetDrawer() {
   presetDrawerVisible.value = true
 }
 
-function validatePresetConfig(): boolean {
+async function validatePresetConfig(): Promise<boolean> {
   presetValidationError.value = ''
   const config = presetTempConfig.value.trim()
   if (!config) return true
@@ -353,9 +354,11 @@ function validatePresetConfig(): boolean {
     presetValidationError.value = validateJson(config)
     return !presetValidationError.value
   }
-  if (!isJsonFormat.value) {
-    if (config.includes('{') || (config.includes('[') && config.includes(']') && config.includes(','))) {
-      presetValidationError.value = 'TOML 格式错误: 请使用 TOML 格式而非 JSON 格式'
+  if (globalPresetFeature.value?.format === 'toml') {
+    try {
+      await agentsApi.validateConfigContent('toml', config)
+    } catch (error) {
+      presetValidationError.value = getErrorMessage(error, 'TOML 格式错误')
       return false
     }
   }
@@ -373,7 +376,7 @@ function formatPresetJson() {
 }
 
 async function handleSavePreset() {
-  if (!validatePresetConfig()) {
+  if (!await validatePresetConfig()) {
     notify('配置格式错误，请修正后再保存', 'error')
     return
   }

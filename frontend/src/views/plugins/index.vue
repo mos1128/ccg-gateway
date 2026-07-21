@@ -455,8 +455,4 @@ onMounted(() => {
 .pg-dname { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text); display: flex; align-items: center; }
 .pg-ddesc { font-size: var(--v2-fs-sm); color: var(--v2-text-3); margin-top: 3px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-install { flex-shrink: 0; }
-:deep(.v2-chip.codex),
-:deep(.v2-chip.gemini) {
-  display: none !important;
-}
 </style>

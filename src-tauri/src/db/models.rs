@@ -191,6 +191,23 @@ pub struct OfficialLoginFeature {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct AgentIconPath {
+    pub d: String,
+    pub opacity: Option<f64>,
+    pub fill_rule: Option<String>,
+    pub clip_rule: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentIcon {
+    pub view_box: String,
+    pub color: Option<String>,
+    pub paths: Vec<AgentIconPath>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentFeatures {
     pub provider_config: ProviderConfigFeature,
     pub global_preset: GlobalPresetFeature,
@@ -212,6 +229,7 @@ pub struct AgentDefinition {
     pub id: String,
     pub sort_order: i64,
     pub name: String,
+    pub icon: Option<AgentIcon>,
     pub config_dir: String,
     pub user_agent: Vec<String>,
     pub protocols: Vec<Protocol>,
@@ -223,6 +241,7 @@ pub struct AgentInfo {
     pub schema_version: u32,
     pub id: String,
     pub name: String,
+    pub icon: Option<AgentIcon>,
     pub config_dir: String,
     pub user_agent: Vec<String>,
     pub protocols: Vec<Protocol>,

@@ -23,7 +23,7 @@
         <input v-model="form.base_url" type="text" class="v2-input" :placeholder="baseUrlPlaceholder">
       </div>
       <div class="v2-field">
-        <label class="v2-label">{{ form.protocol === 'anthropic_messages' ? 'API Token' : 'API Key' }} <span class="req">*</span></label>
+        <label class="v2-label">API 密钥 <span class="req">*</span></label>
         <div class="v2-input-wrapper">
           <input v-model="form.api_key" :type="showApiKey ? 'text' : 'password'" class="v2-input" placeholder="sk-...">
           <el-tooltip :content="showApiKey ? '隐藏 Token' : '显示 Token'" placement="top" effect="light" :show-after="250">
@@ -143,7 +143,7 @@
 import V2Drawer from '@/components/V2Drawer.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { PROTOCOL_LABELS } from '@/types/models'
-import type { CliType, Protocol } from '@/types/models'
+import type { Protocol } from '@/types/models'
 
 interface ProviderEditForm {
   protocol: Protocol | ''
@@ -165,7 +165,6 @@ const props = defineProps<{
   modelValue: boolean
   title: string
   form: ProviderEditForm
-  activeCliType: CliType
   baseUrlPlaceholder: string
   protocols: Protocol[]
 }>()

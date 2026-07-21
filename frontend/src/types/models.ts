@@ -45,7 +45,20 @@ export interface ProviderConfigFeature extends ToggleFeature {
 
 export interface GlobalPresetFeature extends ToggleFeature {
   file?: string | null
-  format?: 'json' | 'toml' | null
+  format?: ConfigFormat | null
+}
+
+export interface AgentIconPath {
+  d: string
+  opacity?: number
+  fill_rule?: 'nonzero' | 'evenodd'
+  clip_rule?: 'nonzero' | 'evenodd'
+}
+
+export interface AgentIcon {
+  view_box: string
+  color?: string | null
+  paths: AgentIconPath[]
 }
 
 export interface CredentialSource {
@@ -57,7 +70,7 @@ export interface OfficialLoginOperation {
   id: string
   op: 'replace_file' | 'set_field'
   file: string
-  format?: 'json' | null
+  format?: ConfigFormat | null
   path?: string[]
   content_from?: CredentialSource | null
   value?: unknown
@@ -100,6 +113,7 @@ export interface AgentInfo {
   schema_version: number
   id: CliType
   name: string
+  icon?: AgentIcon | null
   config_dir: string
   user_agent: string[]
   protocols: Protocol[]
@@ -407,12 +421,13 @@ export interface OfficialCredentialUpdate {
 
 export interface OfficialCredentialPayload {
   schema_version: 1
-  files: Record<string, { format: 'json'; content: unknown }>
+  files: Record<string, { format: ConfigFormat; content: unknown }>
 }
 
 export interface CredentialFileDefinition {
   key: string
   name: string
+  format: ConfigFormat
   placeholder?: string
   compact?: boolean
 }

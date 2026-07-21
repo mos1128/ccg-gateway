@@ -358,6 +358,7 @@ pub fn run() {
             commands::agent_commands::get_agents,
             commands::agent_commands::get_agent_definition_errors,
             commands::agent_commands::get_agent_diagnostics,
+            commands::agent_commands::validate_config_content,
             commands::provider_commands::get_providers,
             commands::provider_commands::get_provider_profiles,
             commands::provider_commands::create_provider_profile,

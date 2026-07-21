@@ -26,12 +26,11 @@
     <div class="v2-card prov-shell">
     <div class="prov-toolbar">
       <div class="toolbar-left">
-        <div v-if="canUseOfficialCredentials" class="v2-seg">
-          <div class="v2-seg-slider" :style="{ transform: `translateX(${viewMode === 'proxy' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
-          <button class="v2-seg-btn" :class="{ active: viewMode === 'proxy' }" type="button" @click="handleSwitchProxy">{{ providerModeLabel }}</button>
-          <button class="v2-seg-btn" :class="{ active: viewMode === 'direct' }" type="button" @click="handleSwitchDirect">官方直连</button>
+        <div class="v2-seg">
+          <div class="v2-seg-slider" :style="{ transform: `translateX(${viewMode === 'relay' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
+          <button class="v2-seg-btn" :class="{ active: viewMode === 'relay' }" type="button" @click="handleSwitchRelay">中转</button>
+          <button class="v2-seg-btn" :class="{ active: viewMode === 'official' }" type="button" @click="handleSwitchOfficial">官方</button>
         </div>
-        <span v-else class="v2-pill v2-pill-neutral">{{ providerModeLabel }}</span>
 
         <div v-if="showProfileControls" class="v2-seg profile-tabs">
           <div class="v2-seg-slider" :style="profileSliderStyle"></div>
@@ -121,7 +120,7 @@
       </div>
 
       <div class="toolbar-right">
-        <template v-if="viewMode === 'proxy'">
+        <template v-if="viewMode === 'relay'">
           <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="showDetectDialog = true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             检测
@@ -142,24 +141,15 @@
       </div>
     </div>
 
-    <template v-if="viewMode === 'proxy'">
+    <template v-if="viewMode === 'relay'">
       <V2Empty v-if="providerStore.providers.length === 0" v-loading="providerStore.loading" title="还没有服务商" description="添加服务商，网关会自动路由、负载均衡与故障转移">
         <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg></template>
       </V2Empty>
       <div v-else class="prov-body" v-loading="providerStore.loading">
         <div class="pt-head">
-          <div v-if="isProviderDirectMode" class="pt-cols m-direct">
+          <div class="pt-cols m-route">
             <div>启用</div>
             <div>服务商</div>
-            <div>端点类型</div>
-            <div class="pt-col-endpoint">服务地址</div>
-            <div>状态</div>
-            <div>操作</div>
-          </div>
-          <div v-else class="pt-cols m-route">
-            <div>启用</div>
-            <div>服务商</div>
-            <div>端点类型</div>
             <div class="pt-col-endpoint">服务地址</div>
             <div>状态</div>
             <el-tooltip content="连续失败次数 / 熔断阈值" placement="top" effect="light" :show-after="250">
@@ -173,13 +163,10 @@
           <template #item="{ element }">
             <ProviderRow
               :provider="element"
-              :mode="isProviderDirectMode ? 'direct' : 'route'"
               :unblacklist-text="getUnblacklistTime(element)"
               :toggle-loading="toggleLoadingId === element.id"
-              :write-loading="writeProviderLoadingId === element.id"
               @copy="handleCopyProvider"
               @edit="handleEdit"
-              @write="handleWriteProviderDirect"
               @reset="handleReset"
               @delete="(provider) => handleCommand('delete', provider)"
               @toggle="handleToggle"
@@ -222,7 +209,6 @@
       v-model="showDialog"
       :title="editingProvider ? '编辑服务商' : '添加服务商'"
       :form="form"
-      :active-cli-type="activeCliType"
       :base-url-placeholder="baseUrlPlaceholder"
       :protocols="activeProtocols"
       @confirm="handleSave"
@@ -276,7 +262,7 @@ import { useAgentStore } from '@/stores/agents'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
-import type { Provider, ProviderCreate, ProviderUpdate, CliType, CliMode, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult } from '@/types/models'
+import type { Provider, ProviderCreate, ProviderUpdate, CliType, CliMode, ConfigFormat, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult } from '@/types/models'
 import { getReusableModelName, saveReusableModelName, getReusableTestText, saveReusableTestText } from '@/utils/modelDefaults'
 
 const providerStore = useProviderStore()
@@ -285,7 +271,9 @@ const uiStore = useUiStore()
 const settingsStore = useSettingsStore()
 const agentStore = useAgentStore()
 
-const cliTabs = computed(() => agentStore.tabs)
+const cliTabs = computed(() => agentStore.agents
+  .filter((agent) => agent.features.provider_config.enabled)
+  .map((agent) => ({ id: agent.id, label: agent.name })))
 
 const profileTabs = ref<ProviderProfileItem[]>([
   { cli_type: 'claude_code', name: 'default', label: '默认', is_default: true, sort_order: 0 }
@@ -310,37 +298,19 @@ const activeProfile = computed({
   set: (val) => uiStore.setProvidersActiveProfile(val)
 })
 
-type ViewMode = 'proxy' | 'direct'
+type ViewMode = 'relay' | 'official'
 const currentCliMode = computed<CliMode>(() => settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'disabled')
-const isProviderDirectMode = computed(() => currentCliMode.value === 'provider_direct')
 const isProxyRouteMode = computed(() => currentCliMode.value === 'proxy_route')
-const isDisabledMode = computed(() => currentCliMode.value === 'disabled')
-const viewModes = ref<Record<CliType, ViewMode>>({})
+const viewMode = ref<ViewMode>('relay')
 const activeAgent = computed(() => agentStore.get(activeCliType.value))
 const activeProtocols = computed<Protocol[]>(() => activeAgent.value?.protocols ?? [])
-const providerConfigFeature = computed(() => activeAgent.value?.features.provider_config)
 const profileFeature = computed(() => activeAgent.value?.features.profiles)
 const supportsProfiles = computed(() => profileFeature.value?.enabled === true)
 const officialLoginFeature = computed(() => activeAgent.value?.features.official_login)
 const canUseOfficialCredentials = computed(() => Boolean(
   officialLoginFeature.value?.enabled === true && officialLoginFeature.value.operations?.length,
 ))
-const viewMode = computed<ViewMode>({
-  get: () => canUseOfficialCredentials.value && viewModes.value[activeCliType.value] === 'direct' ? 'direct' : 'proxy',
-  set: (mode) => {
-    if (mode === 'direct' && !canUseOfficialCredentials.value) {
-      notify('该 Agent 不支持托管官方凭证', 'warning')
-      return
-    }
-    viewModes.value[activeCliType.value] = mode
-  }
-})
-const providerModeLabel = computed(() => {
-  if (providerConfigFeature.value?.enabled === false) return '已关闭'
-  if (isDisabledMode.value) return '停用'
-  return isProviderDirectMode.value ? '中转直连' : '中转路由'
-})
-const showProfileControls = computed(() => viewMode.value === 'proxy' && supportsProfiles.value)
+const showProfileControls = computed(() => viewMode.value === 'relay' && supportsProfiles.value)
 const showProfileHelp = computed(() => showProfileControls.value && supportsProfiles.value)
 const currentProviderProfile = computed<ProviderProfile>(() => showProfileControls.value ? activeProfile.value : 'default')
 const profileSwitching = ref<ProviderProfile | null>(null)
@@ -374,12 +344,7 @@ function profileStatusKey(cliType: CliType, profile: ProviderProfile) {
 const currentProfileSettingsStatus = computed(() => profileSettingsStatusMap.value[profileStatusKey(activeCliType.value, activeProfile.value)])
 const currentProfileLaunchCommand = computed(() => currentProfileSettingsStatus.value?.launch_command || '')
 const isCurrentProfileCommandLoading = computed(() => profileCommandLoading.value === profileStatusKey(activeCliType.value, activeProfile.value))
-const profileUsageText = computed(() => {
-  if (isProviderDirectMode.value) {
-    return '中转直连会将服务商写入当前 Profile 对应配置文件，通过对应启动命令启动的 Agent 会直连该服务商'
-  }
-  return '切换到 Profile 时会自动生成对应配置文件，通过对应启动命令启动的 Agent 会路由到对应 Profile 配置的服务商'
-})
+const profileUsageText = '切换到 Profile 时会自动生成对应配置文件，通过对应启动命令启动的 Agent 会路由到对应 Profile 配置的服务商'
 
 function profileDisplayLabel(profile?: ProviderProfileItem) {
   if (!profile) return ''
@@ -587,14 +552,23 @@ async function handleDeleteProfile(profile: ProviderProfileItem) {
   }
 }
 
-function handleSwitchProxy() {
-  if (viewMode.value === 'proxy') return
-  viewMode.value = 'proxy'
+async function handleSwitchRelay() {
+  if (viewMode.value === 'relay') return
+  viewMode.value = 'relay'
+  const profile = await ensureCurrentProfileOrFallback()
+  const key = providerStore.getCacheKey(activeCliType.value, profile)
+  if (!providerStore.providersMap[key]?.length) {
+    providerStore.fetchProviders(activeCliType.value, profile)
+  }
 }
-function handleSwitchDirect() {
-  if (viewMode.value === 'direct') return
-  viewMode.value = 'direct'
-  if (viewMode.value === 'direct') credentialStore.fetchCredentials(activeCliType.value as CliType)
+function handleSwitchOfficial() {
+  if (viewMode.value === 'official') return
+  if (!canUseOfficialCredentials.value) {
+    notify('该 Agent 不支持托管官方凭证', 'warning')
+    return
+  }
+  viewMode.value = 'official'
+  credentialStore.fetchCredentials(activeCliType.value)
 }
 
 function handleAddCredential() {
@@ -649,7 +623,6 @@ interface ProviderDraft {
 interface ProviderTogglePayload { provider: Provider; enabled: boolean }
 
 const toggleLoadingId = ref<number | null>(null)
-const writeProviderLoadingId = ref<number | null>(null)
 const writeCredentialLoadingId = ref<number | null>(null)
 
 const form = ref({
@@ -667,20 +640,28 @@ function credentialSource(operation: OfficialLoginOperation) {
   return operation.op === 'replace_file' ? operation.content_from : operation.value_from
 }
 
+function credentialFormat(operation: OfficialLoginOperation): ConfigFormat {
+  return operation.format || 'json'
+}
+
 const credentialFileDefinitions = computed<CredentialFileDefinition[]>(() => {
-  const targets = new Map<string, Set<string>>()
+  const targets = new Map<string, { names: Set<string>; format: ConfigFormat }>()
   for (const operation of officialLoginFeature.value?.operations ?? []) {
     const source = credentialSource(operation)
     if (!source) continue
-    const paths = targets.get(source.file_id) ?? new Set<string>()
-    paths.add(operation.file)
-    targets.set(source.file_id, paths)
+    const target = targets.get(source.file_id) ?? {
+      names: new Set<string>(),
+      format: credentialFormat(operation),
+    }
+    target.names.add(operation.file.split(/[\\/]/).pop() || operation.file)
+    targets.set(source.file_id, target)
   }
   const compact = targets.size > 1
-  return Array.from(targets, ([key, paths]) => ({
+  return Array.from(targets, ([key, target]) => ({
     key,
-    name: `${key} (${Array.from(paths).join(', ')})`,
-    placeholder: '{}',
+    name: Array.from(target.names).join('、'),
+    format: target.format,
+    placeholder: target.format === 'json' ? '{}' : '',
     compact,
   }))
 })
@@ -749,7 +730,7 @@ const detectTestText = ref('')
 const detectSelectedIds = ref<number[]>([])
 const detectResults = ref<TestProviderResult[]>([])
 
-const detectProviderList = computed(() => isProviderDirectMode.value ? providerStore.providers : providerStore.providers.filter((p) => p.enabled))
+const detectProviderList = computed(() => providerStore.providers.filter((provider) => provider.enabled))
 const isAllDetectSelected = computed(() => detectProviderList.value.length > 0 && detectSelectedIds.value.length === detectProviderList.value.length)
 
 function toggleDetectProvider(id: number) {
@@ -866,7 +847,7 @@ function normalizePrice(value: unknown): number {
 
 async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
   const cliType = activeCliType.value
-  if (!supportsProfiles.value || viewMode.value !== 'proxy' || !isProxyRouteMode.value) return true
+  if (!supportsProfiles.value || viewMode.value !== 'relay' || !isProxyRouteMode.value) return true
   if (profile === 'default') return true
   profileSwitching.value = profile
   try {
@@ -907,6 +888,7 @@ async function ensureCurrentProfileOrFallback(): Promise<ProviderProfile> {
 }
 
 watch(() => activeCliType.value, async (cliType) => {
+  viewMode.value = 'relay'
   if (!showDialog.value) resetForm()
   await loadProfiles()
   const profile = await ensureCurrentProfileOrFallback()
@@ -916,9 +898,6 @@ watch(() => activeCliType.value, async (cliType) => {
   }
   if (canUseOfficialCredentials.value) credentialStore.fetchCredentials(cliType as CliType)
 })
-watch([activeCliType, currentCliMode], ([cliType, mode]) => {
-  viewModes.value[cliType as CliType] = mode === 'official_direct' ? 'direct' : 'proxy'
-}, { immediate: true })
 watch(() => activeProfile.value, (profile) => {
   if (!showProfileControls.value) return
   const key = providerStore.getCacheKey(activeCliType.value as CliType, profile)
@@ -931,22 +910,6 @@ watch(profileRenameDraft, (value) => {
   profileRenameError.value = profileNameError(value)
 })
 watch([profileRenameError, editingProfileName], updateProfileErrorTooltip)
-watch(() => viewMode.value, async (mode) => {
-  if (mode !== 'proxy') return
-  const profile = await ensureCurrentProfileOrFallback()
-  const key = providerStore.getCacheKey(activeCliType.value as CliType, profile)
-  if (!providerStore.providersMap[key] || providerStore.providersMap[key].length === 0) {
-    providerStore.fetchProviders(activeCliType.value as CliType, profile)
-  }
-})
-watch(() => currentCliMode.value, async () => {
-  if (viewMode.value === 'proxy') {
-    const profile = await ensureCurrentProfileOrFallback()
-    providerStore.fetchProviders(activeCliType.value as CliType, profile)
-  } else {
-    if (canUseOfficialCredentials.value) credentialStore.fetchCredentials(activeCliType.value as CliType)
-  }
-})
 watch([showProfileHelp, activeCliType, activeProfile], ([visible, cliType, profile]) => {
   if (!visible || profileSettingsStatusMap.value[profileStatusKey(cliType as CliType, profile as ProviderProfile)]) return
   loadProfileSettingsStatus(cliType as CliType, profile as ProviderProfile, true)
@@ -1042,7 +1005,6 @@ async function handleSave() {
   }
 }
 async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
-  if (isProviderDirectMode.value) return
   toggleLoadingId.value = provider.id
   try {
     await providerStore.updateProvider(provider.id, { enabled })
@@ -1052,19 +1014,6 @@ async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
     notify(getErrorMessage(e, '切换失败'), 'error')
   } finally {
     toggleLoadingId.value = null
-  }
-}
-async function handleWriteProviderDirect(provider: Provider) {
-  writeProviderLoadingId.value = provider.id
-  try {
-    await providersApi.writeDirectConfig(provider.id)
-    await settingsStore.fetchSettings()
-    await providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
-    notify(`已写入服务商：${provider.name}`)
-  } catch (e: any) {
-    notify(getErrorMessage(e, '写入失败'), 'error')
-  } finally {
-    writeProviderLoadingId.value = null
   }
 }
 async function handleDragEnd() {
@@ -1096,7 +1045,9 @@ function applyCredentialPayload(raw: string) {
   for (const definition of credentialFileDefinitions.value) {
     const file = payload.files[definition.key]
     credentialForm.value.files[definition.key] = file
-      ? JSON.stringify(file.content, null, 2)
+      ? file.format === 'json'
+        ? JSON.stringify(file.content, null, 2)
+        : typeof file.content === 'string' ? file.content : String(file.content ?? '')
       : ''
   }
 }
@@ -1158,11 +1109,15 @@ async function handleSaveCredential() {
       notify(`请填写 ${definition.key}`, 'error')
       return
     }
-    try {
-      files[definition.key] = { format: 'json', content: JSON.parse(raw) }
-    } catch {
-      notify(`${definition.key} 不是有效 JSON`, 'error')
-      return
+    if (definition.format === 'json') {
+      try {
+        files[definition.key] = { format: definition.format, content: JSON.parse(raw) }
+      } catch {
+        notify(`${definition.name} 不是有效 JSON`, 'error')
+        return
+      }
+    } else {
+      files[definition.key] = { format: definition.format, content: raw }
     }
   }
   const payload: OfficialCredentialPayload = { schema_version: 1, files }
@@ -1211,8 +1166,8 @@ onMounted(async () => {
     agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
     settingsStore.fetchSettings(),
   ])
-  if (!agentStore.get(activeCliType.value) && agentStore.agents.length) {
-    activeCliType.value = agentStore.agents[0].id
+  if (!cliTabs.value.some((tab) => tab.id === activeCliType.value) && cliTabs.value.length) {
+    activeCliType.value = cliTabs.value[0].id
   }
   await loadProfiles()
   const profile = await ensureCurrentProfileOrFallback()
@@ -1317,12 +1272,10 @@ onUnmounted(() => {
 .pt-head { position: sticky; top: 0; z-index: 2; padding: 11px 18px; border-bottom: 1px solid var(--v2-surface-2); background: var(--v2-surface-2); overflow-x: visible; }
 .pt-head .pt-cols > div { font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); }
 .pt-cols { display: grid; align-items: center; gap: 16px; width: 100%; }
-.pt-cols.m-route { grid-template-columns: 72px repeat(6, minmax(80px, 1fr)) 128px; }
-.pt-cols.m-direct { grid-template-columns: 72px repeat(4, minmax(80px, 1fr)) 96px; }
+.pt-cols.m-route { grid-template-columns: 72px repeat(5, minmax(80px, 1fr)) 128px; }
 .pt-cols.m-cred { grid-template-columns: 72px repeat(3, minmax(80px, 1fr)) 72px; }
 .pt-cols > div { text-align: center; min-width: 0; }
 .pt-cols.m-route > div:nth-child(2),
-.pt-cols.m-direct > div:nth-child(2),
 .pt-cols.m-cred > div:nth-child(2) { text-align: left; }
 .pt-cols .pt-col-endpoint { text-align: left; }
 .pt-row { position: relative; padding: 0 18px; border-bottom: 1px solid var(--v2-surface-2); transition: background 0.15s; }

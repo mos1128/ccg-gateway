@@ -1,4 +1,4 @@
-use crate::db::models::{AgentDefinitionLoadError, AgentDiagnostic, AgentInfo};
+use crate::db::models::{AgentDefinitionLoadError, AgentDiagnostic, AgentInfo, ConfigFormat};
 use crate::services::agent;
 use crate::LogDb;
 use sqlx::SqlitePool;
@@ -14,6 +14,19 @@ pub async fn get_agents(db: State<'_, SqlitePool>) -> Result<Vec<AgentInfo>, Str
 #[tauri::command]
 pub fn get_agent_definition_errors() -> Vec<AgentDefinitionLoadError> {
     agent::definition_load_errors().to_vec()
+}
+
+#[tauri::command]
+pub fn validate_config_content(format: ConfigFormat, content: String) -> Result<(), String> {
+    match format {
+        ConfigFormat::Json => serde_json::from_str::<serde_json::Value>(&content)
+            .map(|_| ())
+            .map_err(|error| format!("JSON 格式错误: {error}")),
+        ConfigFormat::Toml => toml::from_str::<toml::Value>(&content)
+            .map(|_| ())
+            .map_err(|error| format!("TOML 格式错误: {error}")),
+        ConfigFormat::Jsonc | ConfigFormat::Env => Ok(()),
+    }
 }
 
 #[tauri::command]
@@ -39,5 +52,19 @@ pub async fn get_agent_diagnostics(
         .fetch_all(&log_db.0)
         .await
         .map_err(|error| error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_json_and_toml_with_their_real_parsers() {
+        assert!(validate_config_content(ConfigFormat::Json, r#"{"ok":true}"#.into()).is_ok());
+        assert!(validate_config_content(ConfigFormat::Json, "{]".into()).is_err());
+        assert!(validate_config_content(ConfigFormat::Toml, "model = \"gpt\"".into()).is_ok());
+        assert!(validate_config_content(ConfigFormat::Toml, "model = [".into()).is_err());
+        assert!(validate_config_content(ConfigFormat::Env, "NOT TOML = [".into()).is_ok());
     }
 }

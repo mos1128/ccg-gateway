@@ -225,13 +225,14 @@ async fn provider_direct_rewrite_providers(
 ) -> Result<Vec<Provider>> {
     let mut providers = Vec::new();
     for id in preferred_ids {
-        if let Some(provider) =
-            sqlx::query_as::<_, Provider>("SELECT * FROM providers WHERE id = ? AND cli_type = ?")
-                .bind(id)
-                .bind(cli_type)
-                .fetch_optional(db)
-                .await
-                .map_err(|e| e.to_string())?
+        if let Some(provider) = sqlx::query_as::<_, Provider>(
+            "SELECT * FROM providers WHERE id = ? AND cli_type = ? AND enabled = 1",
+        )
+        .bind(id)
+        .bind(cli_type)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| e.to_string())?
         {
             validate_provider_direct_provider(&provider)?;
             providers.push(provider);
@@ -243,14 +244,14 @@ async fn provider_direct_rewrite_providers(
     }
 
     let provider = sqlx::query_as::<_, Provider>(
-        "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id LIMIT 1",
+        "SELECT * FROM providers WHERE cli_type = ? AND profile = ? AND enabled = 1 ORDER BY sort_order, id LIMIT 1",
     )
     .bind(cli_type)
     .bind(DEFAULT_PROFILE)
     .fetch_optional(db)
     .await
     .map_err(|e| e.to_string())?
-    .ok_or_else(|| "default Profile 下没有可用服务商，请先添加服务商".to_string())?;
+    .ok_or_else(|| "default Profile 下没有已启用的服务商，请先启用服务商".to_string())?;
 
     validate_provider_direct_provider(&provider)?;
     Ok(vec![provider])

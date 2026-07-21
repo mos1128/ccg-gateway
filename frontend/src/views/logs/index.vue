@@ -38,7 +38,7 @@
           <table class="v2-table">
             <thead>
               <tr>
-                <th>ID</th><th>时间</th><th>Agent</th><th>Profile</th><th>端点类型</th><th>服务商</th><th>状态</th><th>耗时 (首/总)</th>
+                <th>ID</th><th>时间</th><th>Agent</th><th>服务商</th><th>状态</th><th>耗时 (首/总)</th>
                 <th>
                   <el-tooltip content="输入 / 输出" placement="top" effect="light" :show-after="250">
                     <span>Token (I/O)</span>
@@ -65,12 +65,7 @@
                     </div>
                   </el-tooltip>
                 </td>
-                <td class="mono">{{ row.profile || 'default' }}</td>
-                <td class="mono">{{ formatProtocolLabel(row.protocol) }}</td>
-                <td>
-                  <span>{{ row.provider_name || '-' }}</span>
-                  <span v-if="row.provider_id != null" class="logs-provider-id mono">#{{ row.provider_id }}</span>
-                </td>
+                <td>{{ row.provider_name || '-' }}</td>
                 <td>
                   <el-tooltip v-if="!row.finished_at" content="请求进行中" placement="top" effect="light" :show-after="250">
                     <span class="v2-pill dot v2-pill-info logs-running">Run</span>
@@ -104,7 +99,7 @@
                 </td>
                 <td class="logs-sticky-col"><a v-if="row.finished_at" class="logs-link" @click="showRequestDetail(row.id)">详情</a><span v-else class="v2-hint">-</span></td>
               </tr>
-              <tr v-if="requestLogs.length === 0"><td colspan="13" class="logs-empty">暂无日志记录</td></tr>
+              <tr v-if="requestLogs.length === 0"><td colspan="11" class="logs-empty">暂无日志记录</td></tr>
             </tbody>
           </table>
         </div>
@@ -159,7 +154,7 @@
           <span class="v2-pill v2-pill-neutral">{{ formatCliLabel(requestDetail.cli_type) }}</span>
           <span class="v2-pill v2-pill-neutral mono">{{ requestDetail.profile || 'default' }}</span>
           <span class="v2-pill v2-pill-info mono">{{ formatProtocolLabel(requestDetail.protocol) }}</span>
-          <span class="v2-pill v2-pill-neutral">{{ requestDetail.provider_name || '未选择服务商' }}<template v-if="requestDetail.provider_id != null"> #{{ requestDetail.provider_id }}</template></span>
+          <span class="v2-pill v2-pill-neutral">{{ requestDetail.provider_name || '未选择服务商' }}</span>
         </div>
         <div v-if="requestDetail.error_message" class="logs-detail-err">{{ requestDetail.error_message }}</div>
         <div class="logs-detail-list">
@@ -685,8 +680,6 @@ onUnmounted(() => {
 .logs-cli-cell { display: inline-flex; align-items: center; gap: 6px; }
 .logs-cli-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex-shrink: 0; }
 .logs-cli-text { font-size: var(--v2-fs-sm); color: var(--v2-text); }
-.logs-provider-id { margin-left: 5px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); }
-
 .logs-model-badge { display: inline-block; font-size: var(--v2-fs-xs); padding: 2px 6px; background: var(--v2-surface-2); border: 1px solid var(--v2-surface-2); border-radius: 4px; color: var(--v2-text-2); white-space: nowrap; vertical-align: middle; }
 .logs-model-arrow { margin: 0 4px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); vertical-align: middle; }
 .logs-model-empty { color: var(--v2-text-3); }
