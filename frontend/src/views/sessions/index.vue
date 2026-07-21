@@ -1,7 +1,7 @@
 <template>
   <div class="ses-page">
     <div class="v2-tabs ses-tabs">
-      <div v-for="cli in CLI_TABS" :key="cli.id" class="v2-tab" :class="{ active: activeCliType === cli.id }" @click="handleCliChange(cli.id)">
+      <div v-for="cli in sessionTabs" :key="cli.id" class="v2-tab" :class="{ active: activeCliType === cli.id }" @click="handleCliChange(cli.id)">
         <span class="tab-label-text">{{ cli.label }}</span>
       </div>
     </div>
@@ -103,12 +103,16 @@ import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { useSessionStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
-import { CLI_TABS } from '@/types/models'
+import { useAgentStore } from '@/stores/agents'
 import type { CliType } from '@/types/models'
 import type { ProjectInfo, SessionInfo } from '@/api/sessions'
 
 const sessionStore = useSessionStore()
 const uiStore = useUiStore()
+const agentStore = useAgentStore()
+const sessionTabs = computed(() => agentStore.agents
+  .filter((agent) => agent.features.sessions.enabled)
+  .map((agent) => ({ id: agent.id, label: agent.name })))
 
 const activeCliType = computed({
   get: () => uiStore.sessionsActiveCliType,
@@ -215,7 +219,11 @@ function toggleExpand(index: number) {
   else expandedMessages.value.add(index)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  if (!agentStore.agents.length) await agentStore.fetchAgents()
+  if (!sessionTabs.value.some((tab) => tab.id === activeCliType.value) && sessionTabs.value.length) {
+    activeCliType.value = sessionTabs.value[0].id
+  }
   sessionStore.fetchProjects(1)
 })
 </script>

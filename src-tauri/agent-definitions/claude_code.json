@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "id": "claude_code",
+  "sort_order": 10,
+  "name": "Claude Code",
+  "config_dir": "~/.claude",
+  "user_agent": ["claude-cli", "claude-code"],
+  "protocols": ["anthropic_messages"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-endpoint",
+          "op": "set",
+          "file": "settings.json",
+          "format": "json",
+          "path": ["env", "ANTHROPIC_BASE_URL"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-token",
+          "op": "set",
+          "file": "settings.json",
+          "format": "json",
+          "path": ["env", "ANTHROPIC_AUTH_TOKEN"],
+          "value": "{target.token}"
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "settings.json",
+      "format": "json"
+    },
+    "profiles": {
+      "enabled": true,
+      "profile_file": "settings-ccg-{profile}.json",
+      "operations": [
+        {
+          "id": "set-profile-endpoint",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "json",
+          "path": ["env", "ANTHROPIC_BASE_URL"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-profile-token",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "json",
+          "path": ["env", "ANTHROPIC_AUTH_TOKEN"],
+          "value": "{target.token}"
+        }
+      ],
+      "launch": {
+        "default": ["claude"],
+        "non_default": ["claude", "--settings", "{profile.absolute_path}"]
+      }
+    },
+    "official_login": { "enabled": false },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "../.claude.json",
+      "format": "json",
+      "servers_path": ["mcpServers"]
+    },
+    "sessions": { "enabled": true, "adapter": "claude_code" },
+    "plugins": { "enabled": true, "adapter": "claude_code" },
+    "prompts": { "enabled": true, "file": "CLAUDE.md" }
+  }
+}

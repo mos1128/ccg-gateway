@@ -9,14 +9,23 @@
     <path d="M12 2c0 5.523 4.477 10 10 10-5.523 0-10 4.477-10 10 0-5.523-4.477-10-10-10 5.523 0 10-4.477 10-10z"/>
     <path d="M19 3c0 2.21-1.79 4-4 4 2.21 0 4 1.79 4 4 0-2.21 1.79-4 4-4-2.21 0-4-1.79-4-4z" opacity="0.7" />
   </svg>
+  <el-icon v-else class="cli-icon generic" :class="type" :style="{ width: iconSize(width), height: iconSize(height), fontSize: iconSize(width) }">
+    <Monitor />
+  </el-icon>
 </template>
 
 <script setup lang="ts">
+import { Monitor } from '@element-plus/icons-vue'
+
 defineProps<{
   type: string
   width?: string | number
   height?: string | number
 }>()
+
+function iconSize(value?: string | number) {
+  return typeof value === 'number' ? `${value}px` : value || '1em'
+}
 </script>
 
 <style scoped>
@@ -27,4 +36,5 @@ defineProps<{
 .cli-icon.claude { color: var(--v2-brand-claude); }
 .cli-icon.openai { color: var(--v2-brand-openai); }
 .cli-icon.gemini { color: var(--v2-brand-gemini); }
+.cli-icon.generic { color: var(--v2-text-2); }
 </style>

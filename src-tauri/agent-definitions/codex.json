@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "id": "codex",
+  "sort_order": 20,
+  "name": "Codex",
+  "config_dir": "~/.codex",
+  "user_agent": ["codex-tui", "codex_cli_rs", "codex"],
+  "protocols": ["openai_responses"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "select-provider",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model_provider"],
+          "value": "ccg-gateway"
+        },
+        {
+          "id": "set-provider-name",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway", "name"],
+          "value": "ccg-gateway"
+        },
+        {
+          "id": "set-endpoint",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway", "base_url"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-wire-api",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway", "wire_api"],
+          "value": "responses"
+        },
+        {
+          "id": "disable-openai-auth",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway", "requires_openai_auth"],
+          "value": false
+        },
+        {
+          "id": "set-token",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway", "experimental_bearer_token"],
+          "value": "{target.token}"
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "config.toml",
+      "format": "toml"
+    },
+    "profiles": {
+      "enabled": true,
+      "profile_file": "{profile}.config.toml",
+      "operations": [
+        {
+          "id": "select-profile-provider",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "toml",
+          "path": ["model_provider"],
+          "value": "ccg-gateway-{profile}"
+        },
+        {
+          "id": "set-profile-provider-name",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway-{profile}", "name"],
+          "value": "ccg-gateway-{profile}"
+        },
+        {
+          "id": "set-profile-endpoint",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway-{profile}", "base_url"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-profile-wire-api",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway-{profile}", "wire_api"],
+          "value": "responses"
+        },
+        {
+          "id": "disable-profile-openai-auth",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway-{profile}", "requires_openai_auth"],
+          "value": false
+        },
+        {
+          "id": "set-profile-token",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "toml",
+          "path": ["model_providers", "ccg-gateway-{profile}", "experimental_bearer_token"],
+          "value": "{target.token}"
+        }
+      ],
+      "launch": {
+        "default": ["codex"],
+        "non_default": ["codex", "--profile", "{profile}"]
+      }
+    },
+    "official_login": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "replace-codex-auth",
+          "op": "replace_file",
+          "file": "auth.json",
+          "content_from": { "file_id": "codex_auth" }
+        }
+      ]
+    },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "config.toml",
+      "format": "toml",
+      "servers_path": ["mcp_servers"]
+    },
+    "sessions": { "enabled": true, "adapter": "codex" },
+    "plugins": { "enabled": false },
+    "prompts": { "enabled": true, "file": "AGENTS.md" }
+  }
+}

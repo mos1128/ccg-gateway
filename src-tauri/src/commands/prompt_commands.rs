@@ -1,5 +1,43 @@
 use super::*;
 
+async fn resolve_prompt_file(db: &SqlitePool, agent_id: &str) -> Result<std::path::PathBuf> {
+    let agent = crate::services::agent::get_agent(db, agent_id)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+    let feature = agent.features.prompts;
+    if !feature.enabled {
+        return Err(format!("Agent {} 的 Prompt 功能不可用", agent_id));
+    }
+    let file = feature
+        .file
+        .as_deref()
+        .ok_or_else(|| format!("Agent {} 的 Prompt 缺少 file", agent_id))?;
+    Ok(crate::services::cli_config::resolve_cli_config_file(db, agent_id, file).await)
+}
+
+fn normalize_prompt_text(text: &str) -> String {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+async fn prompt_enabled_in_file_async(
+    db: &SqlitePool,
+    agent_id: &str,
+    prompt_content: &str,
+) -> bool {
+    let Ok(path) = resolve_prompt_file(db, agent_id).await else {
+        return false;
+    };
+    let Ok(file_content) = tokio::fs::read_to_string(path).await else {
+        return false;
+    };
+    normalize_prompt_text(prompt_content) == normalize_prompt_text(&file_content)
+}
+
 // Prompt commands
 #[tauri::command]
 pub async fn get_prompts(db: State<'_, SqlitePool>) -> Result<Vec<PromptResponse>> {
@@ -11,7 +49,7 @@ pub async fn get_prompts(db: State<'_, SqlitePool>) -> Result<Vec<PromptResponse
     let mut results = Vec::new();
     for prompt in prompts {
         let mut cli_flags = Vec::new();
-        for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+        for cli_type in crate::services::agent::agent_ids_for_feature("prompts") {
             let enabled = prompt_enabled_in_file_async(db.inner(), cli_type, &prompt.content).await;
             cli_flags.push(PromptCliFlag {
                 cli_type: cli_type.to_string(),
@@ -39,7 +77,7 @@ pub async fn get_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<PromptResp
         .ok_or_else(|| "Prompt not found".to_string())?;
 
     let mut cli_flags = Vec::new();
-    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+    for cli_type in crate::services::agent::agent_ids_for_feature("prompts") {
         let enabled = prompt_enabled_in_file_async(db.inner(), cli_type, &prompt.content).await;
         cli_flags.push(PromptCliFlag {
             cli_type: cli_type.to_string(),
@@ -153,14 +191,22 @@ pub async fn toggle_prompt_cli(
 
 #[tauri::command]
 pub async fn delete_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
+    let prompt = sqlx::query_as::<_, PromptPreset>("SELECT * FROM prompt_presets WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Prompt not found".to_string())?;
+
     sqlx::query("DELETE FROM prompt_presets WHERE id = ?")
         .bind(id)
         .execute(db.inner())
         .await
         .map_err(map_db_error)?;
 
-    // Sync prompt configs to CLI files
-    sync_prompt_configs_to_cli(db).await?;
+    for agent_id in crate::services::agent::agent_ids_for_feature("prompts") {
+        sync_prompt_to_cli_async(db.inner(), &prompt.content, agent_id, false).await?;
+    }
 
     Ok(())
 }
@@ -171,9 +217,7 @@ async fn sync_prompt_to_cli_async(
     cli_type: &str,
     is_enabled: bool,
 ) -> Result<()> {
-    let path = get_prompt_file_path(db, cli_type)
-        .await
-        .ok_or_else(|| format!("Invalid CLI type: {}", cli_type))?;
+    let path = resolve_prompt_file(db, cli_type).await?;
 
     if let Some(parent) = path.parent() {
         if !tokio::fs::try_exists(parent).await.unwrap_or(false) {
@@ -187,7 +231,7 @@ async fn sync_prompt_to_cli_async(
             })?;
         } else if tokio::fs::try_exists(&path).await.unwrap_or(false) {
             let file_content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
-            if normalize_text(prompt_content) == normalize_text(&file_content) {
+            if normalize_prompt_text(prompt_content) == normalize_prompt_text(&file_content) {
                 tokio::fs::write(&path, "").await.map_err(|e| {
                     tracing::error!("Failed to clear prompt file: {}", e);
                     e.to_string()
@@ -205,7 +249,7 @@ async fn sync_single_prompt_to_cli(
     prompt_content: &str,
     cli_flags: &[PromptCliFlag],
 ) -> Result<()> {
-    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+    for cli_type in crate::services::agent::agent_ids_for_feature("prompts") {
         let is_enabled = cli_flags
             .iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
@@ -214,14 +258,4 @@ async fn sync_single_prompt_to_cli(
     }
 
     Ok(())
-}
-
-async fn sync_prompt_configs_to_cli(_db: State<'_, SqlitePool>) -> Result<()> {
-    // This function is no longer used, keeping for compatibility
-    Ok(())
-}
-
-async fn get_prompt_file_path(db: &SqlitePool, cli_type: &str) -> Option<std::path::PathBuf> {
-    let base_path = get_cli_config_dir_path(db, cli_type).await;
-    cli_helpers::prompt_file_path(&base_path, cli_type)
 }

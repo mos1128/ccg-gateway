@@ -3,9 +3,16 @@ import { ref, computed } from 'vue'
 import { providersApi } from '@/api/providers'
 import type { CliType, Provider, ProviderCreate, ProviderProfile, ProviderUpdate } from '@/types/models'
 import { useUiStore } from './ui'
+import { useAgentStore } from './agents'
 
 export const useProviderStore = defineStore('providers', () => {
   const uiStore = useUiStore()
+  const agentStore = useAgentStore()
+
+  function supportsProfiles(cliType: CliType) {
+    const feature = agentStore.get(cliType)?.features.profiles
+    return feature?.enabled === true
+  }
   
   // Cache map: key is `${cliType}_${profile}`
   const providersMap = ref<Record<string, Provider[]>>({})
@@ -13,7 +20,7 @@ export const useProviderStore = defineStore('providers', () => {
 
   const activeCacheKey = computed(() => {
     const type = uiStore.providersActiveCliType
-    const profile = type === 'claude_code' || type === 'codex' 
+    const profile = supportsProfiles(type)
       ? uiStore.getProvidersActiveProfile(type)
       : 'default'
     return `${type}_${profile}`
@@ -28,7 +35,7 @@ export const useProviderStore = defineStore('providers', () => {
 
   function getCacheKey(cliType?: CliType, profile?: ProviderProfile) {
     const type = cliType || uiStore.providersActiveCliType
-    const targetProfile = type === 'claude_code' || type === 'codex'
+    const targetProfile = supportsProfiles(type)
       ? (profile || uiStore.getProvidersActiveProfile(type))
       : 'default'
     return `${type}_${targetProfile}`
@@ -38,7 +45,7 @@ export const useProviderStore = defineStore('providers', () => {
     loading.value = true
     try {
       const type = cliType || uiStore.providersActiveCliType
-      const targetProfile = type === 'claude_code' || type === 'codex'
+      const targetProfile = supportsProfiles(type)
         ? (profile || uiStore.getProvidersActiveProfile(type))
         : 'default'
       const key = `${type}_${targetProfile}`

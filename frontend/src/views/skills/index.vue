@@ -32,7 +32,7 @@
                 </el-tooltip>
               </div>
             </div>
-            <V2CliChips :flags="skill.cli_flags" @toggle="(c, e) => handleCliToggle(skill, c, e)" />
+            <V2CliChips :flags="skill.cli_flags" feature="skills" @toggle="(c, e) => handleCliToggle(skill, c, e)" />
           </div>
         </div>
       </div>

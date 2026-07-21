@@ -355,6 +355,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::agent_commands::get_agents,
+            commands::agent_commands::get_agent_definition_errors,
+            commands::agent_commands::get_agent_diagnostics,
             commands::provider_commands::get_providers,
             commands::provider_commands::get_provider_profiles,
             commands::provider_commands::create_provider_profile,
@@ -381,10 +384,8 @@ pub fn run() {
             commands::settings_commands::get_timeout_settings,
             commands::settings_commands::update_timeout_settings,
             commands::settings_commands::get_cli_settings,
-            commands::settings_commands::get_claude_profile_settings_status,
-            commands::settings_commands::ensure_claude_profile_settings,
-            commands::settings_commands::get_codex_profile_settings_status,
-            commands::settings_commands::ensure_codex_profile_settings,
+            commands::settings_commands::get_profile_settings_status,
+            commands::settings_commands::ensure_profile_settings,
             commands::settings_commands::update_cli_settings,
             commands::log_commands::get_request_logs,
             commands::log_commands::get_request_log_detail,

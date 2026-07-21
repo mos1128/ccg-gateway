@@ -70,18 +70,15 @@ pub fn is_file_log_enabled() -> bool {
 
 /// 获取 CLI 默认配置目录（不涉及数据库）
 pub fn get_default_cli_config_dir(cli_type: &str) -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_default();
-    match cli_type {
-        "claude_code" => home.join(".claude"),
-        "codex" => home.join(".codex"),
-        "gemini" => home.join(".gemini"),
-        _ => home,
-    }
+    crate::services::agent::default_config_directory(cli_type)
+        .map(expand_home_path)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| get_data_dir().join("unmanaged-agents").join(cli_type))
 }
 
 /// 展开 ~ 为用户目录
 pub fn expand_home_path(path: &str) -> String {
-    if path.starts_with('~') {
+    if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
         let home = dirs::home_dir().unwrap_or_default();
         let remaining = &path[1..];
         let remaining = remaining

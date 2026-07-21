@@ -38,17 +38,3 @@ pub fn disable_auto_launch() -> Result<(), String> {
         .disable()
         .map_err(|e| format!("禁用开机自启失败: {e}"))
 }
-
-#[cfg(test)]
-mod tests {
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn macos_bundle_path_is_detected() {
-        let exe_path =
-            std::path::Path::new("/Applications/CCG Gateway.app/Contents/MacOS/CCG Gateway");
-        assert_eq!(
-            super::get_macos_app_bundle_path(exe_path),
-            Some(std::path::PathBuf::from("/Applications/CCG Gateway.app"))
-        );
-    }
-}

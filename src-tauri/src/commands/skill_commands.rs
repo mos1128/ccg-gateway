@@ -59,8 +59,16 @@ fn get_ssot_dir() -> std::path::PathBuf {
 
 // 获取 CLI 的 skills 目录（异步版本，支持自定义配置目录）
 async fn get_skill_cli_dir_async(db: &SqlitePool, cli_type: &str) -> Option<std::path::PathBuf> {
-    let config_dir = get_cli_config_dir_path(db, cli_type).await;
-    Some(config_dir.join("skills"))
+    let resolved = crate::services::agent::get_agent(db, cli_type)
+        .await
+        .ok()
+        .flatten()?;
+    let feature = resolved.features.skills;
+    if !feature.enabled {
+        return None;
+    }
+    let directory = feature.directory?;
+    Some(crate::services::cli_config::resolve_cli_config_file(db, cli_type, &directory).await)
 }
 
 // 检查 skill 是否在 CLI 目录中启用（异步版本）
@@ -75,20 +83,14 @@ async fn skill_enabled_in_cli_async(db: &SqlitePool, cli_type: &str, directory: 
 }
 
 async fn build_skill_cli_flags(db: &SqlitePool, directory: &str) -> Vec<SkillCliFlag> {
-    vec![
-        SkillCliFlag {
-            cli_type: "claude_code".to_string(),
-            enabled: skill_enabled_in_cli_async(db, "claude_code", directory).await,
-        },
-        SkillCliFlag {
-            cli_type: "codex".to_string(),
-            enabled: skill_enabled_in_cli_async(db, "codex", directory).await,
-        },
-        SkillCliFlag {
-            cli_type: "gemini".to_string(),
-            enabled: skill_enabled_in_cli_async(db, "gemini", directory).await,
-        },
-    ]
+    let mut flags = Vec::new();
+    for cli_type in crate::services::agent::agent_ids_for_feature("skills") {
+        flags.push(SkillCliFlag {
+            cli_type: cli_type.to_string(),
+            enabled: skill_enabled_in_cli_async(db, cli_type, directory).await,
+        });
+    }
+    flags
 }
 
 // 解析 SKILL.md frontmatter
@@ -182,7 +184,7 @@ async fn sync_skill_to_cli_async(db: &SqlitePool, directory: &str, cli_type: &st
     let source = ssot_dir.join(directory);
     let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
         Some(d) => d,
-        None => return Err(format!("Unsupported CLI type: {}", cli_type)),
+        None => return Err(format!("Agent {} 的 Skill 功能未启用", cli_type)),
     };
 
     let dest = cli_dir.join(directory);
@@ -226,7 +228,7 @@ async fn remove_skill_from_cli_async(
 
 // 从所有 CLI 目录移除 skill（异步版本）
 async fn remove_skill_from_all_cli_async(db: &SqlitePool, directory: &str) -> Result<()> {
-    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+    for cli_type in crate::services::agent::agent_ids_for_feature("skills") {
         remove_skill_from_cli_async(db, directory, cli_type).await?;
     }
     Ok(())
@@ -247,7 +249,7 @@ async fn batch_set_skill_cli(db: &SqlitePool, directory: &str, cli_types: &[Stri
 // 检测技能在各 CLI 的启用状态（遍历文件系统）
 async fn detect_skill_cli_status(db: &SqlitePool, directory: &str) -> Vec<String> {
     let mut enabled_clis = Vec::new();
-    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+    for cli_type in crate::services::agent::agent_ids_for_feature("skills") {
         if skill_enabled_in_cli_async(db, cli_type, directory).await {
             enabled_clis.push(cli_type.to_string());
         }

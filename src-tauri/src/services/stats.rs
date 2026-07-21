@@ -231,6 +231,9 @@ pub async fn cleanup_request_log_detail_files(retention_days: i64) -> std::io::R
 pub async fn record_request_log(
     log_db: &SqlitePool,
     cli_type: &str,
+    protocol: &str,
+    provider_id: i64,
+    profile: &str,
     provider_name: &str,
     model_id: Option<&str>,
     status_code: Option<u16>,
@@ -251,13 +254,16 @@ pub async fn record_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, finished_at, cli_type, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
     .bind(now)
     .bind(cli_type)
+    .bind(protocol)
+    .bind(provider_id)
+    .bind(profile)
     .bind(provider_name)
     .bind(model_id)
     .bind(status_code.map(|c| c as i64))
@@ -284,6 +290,9 @@ pub async fn record_request_log(
 pub async fn start_request_log(
     log_db: &SqlitePool,
     cli_type: &str,
+    protocol: &str,
+    provider_id: i64,
+    profile: &str,
     provider_name: &str,
     model_id: Option<&str>,
     client_method: &str,
@@ -296,12 +305,15 @@ pub async fn start_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, finished_at, cli_type, provider_name, model_id, client_method, client_path, forward_url, source_model, target_model)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, client_method, client_path, forward_url, source_model, target_model)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
     .bind(cli_type)
+    .bind(protocol)
+    .bind(provider_id)
+    .bind(profile)
     .bind(provider_name)
     .bind(model_id)
     .bind(client_method)
@@ -319,6 +331,9 @@ pub async fn finish_request_log(
     log_db: &SqlitePool,
     log_id: i64,
     cli_type: &str,
+    protocol: &str,
+    provider_id: i64,
+    profile: &str,
     provider_name: &str,
     model_id: Option<&str>,
     status_code: Option<u16>,
@@ -345,7 +360,8 @@ pub async fn finish_request_log(
     sqlx::query(
         r#"
         UPDATE request_logs
-        SET finished_at = ?, cli_type = ?, provider_name = ?, model_id = ?, status_code = ?,
+        SET finished_at = ?, cli_type = ?, protocol = ?, provider_id = ?, profile = ?,
+            provider_name = ?, model_id = ?, status_code = ?,
             elapsed_ms = ?, first_byte_ms = ?, input_tokens = ?, cache_read_input_tokens = ?,
             cache_creation_input_tokens = ?, output_tokens = ?, client_method = ?, client_path = ?,
             forward_url = ?, error_message = ?, source_model = ?, target_model = ?
@@ -354,6 +370,9 @@ pub async fn finish_request_log(
     )
     .bind(finished_at)
     .bind(cli_type)
+    .bind(protocol)
+    .bind(provider_id)
+    .bind(profile)
     .bind(provider_name)
     .bind(model_id)
     .bind(status_code.map(|c| c as i64))
@@ -441,4 +460,28 @@ pub async fn record_system_log(
     .await?;
 
     Ok(())
+}
+
+pub async fn record_system_log_dedup(
+    log_db: &SqlitePool,
+    event_type: &str,
+    message: &str,
+    window_seconds: i64,
+) -> Result<bool, sqlx::Error> {
+    let now = now_timestamp();
+    let duplicate: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM system_logs
+         WHERE event_type = ? AND message = ? AND created_at >= ?
+         ORDER BY id DESC LIMIT 1",
+    )
+    .bind(event_type)
+    .bind(message)
+    .bind(now - window_seconds.max(0))
+    .fetch_optional(log_db)
+    .await?;
+    if duplicate.is_some() {
+        return Ok(false);
+    }
+    record_system_log(log_db, event_type, message).await?;
+    Ok(true)
 }

@@ -32,7 +32,7 @@
                 </el-tooltip>
               </div>
             </div>
-            <V2CliChips :flags="{ claude_code: !!plugin.is_enabled, codex: false, gemini: false }" @toggle="(_, e) => handleToggleEnable(plugin, e)" />
+            <V2CliChips :flags="{ claude_code: !!plugin.is_enabled }" feature="plugins" @toggle="(_, e) => handleToggleEnable(plugin, e)" />
           </div>
         </div>
       </div>

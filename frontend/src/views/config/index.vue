@@ -7,7 +7,7 @@
         <div class="v2-card v2-card-pad cfg-cli">
           <div class="cfg-head">Agent 运行配置</div>
           <div class="v2-tabs cfg-tabs">
-            <div v-for="cli in CLI_TABS" :key="cli.id" class="v2-tab" :class="{ active: activeCliTab === cli.id }" @click="activeCliTab = cli.id">
+            <div v-for="cli in cliTabs" :key="cli.id" class="v2-tab" :class="{ active: activeCliTab === cli.id }" @click="activeCliTab = cli.id">
               <span class="tab-label-text">{{ cli.label }}</span>
             </div>
           </div>
@@ -22,7 +22,7 @@
             </div>
           </div>
 
-          <div class="v2-field">
+          <div v-if="globalPresetEnabled" class="v2-field">
             <label class="v2-label">全局预设</label>
             <div class="cfg-preset-card" :class="{ empty: !cliForm.default_json_config }" @click="openPresetDrawer">
               <div class="cfg-preset-body">
@@ -281,7 +281,7 @@ import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
-import { CLI_TABS } from '@/types/models'
+import { useAgentStore } from '@/stores/agents'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 import * as backupApi from '@/api/backup'
 import type { WebdavSettings, WebdavBackup } from '@/api/backup'
@@ -289,6 +289,8 @@ import type { CliType } from '@/types/models'
 
 const settingsStore = useSettingsStore()
 const uiStore = useUiStore()
+const agentStore = useAgentStore()
+const cliTabs = computed(() => agentStore.tabs)
 
 const activeCliTab = computed<CliType>({
   get: () => uiStore.configActiveCliTab,
@@ -310,14 +312,10 @@ const presetTempConfig = ref('')
 const presetTempWriteMode = ref<'overwrite' | 'merge'>('merge')
 const presetValidationError = ref('')
 
-const activeCliLabel = computed(() => {
-  switch (activeCliTab.value) {
-    case 'claude_code': return 'Claude Code'
-    case 'codex': return 'Codex'
-    case 'gemini': return 'Gemini'
-    default: return activeCliTab.value
-  }
-})
+const activeCliLabel = computed(() => agentStore.get(activeCliTab.value)?.name || activeCliTab.value)
+const globalPresetFeature = computed(() => agentStore.get(activeCliTab.value)?.features.global_preset)
+const globalPresetEnabled = computed(() => globalPresetFeature.value?.enabled === true)
+const isJsonFormat = computed(() => globalPresetFeature.value?.format === 'json')
 
 function getPresetPreviewText(config: string): string {
   if (!config) return ''
@@ -355,7 +353,7 @@ function validatePresetConfig(): boolean {
     presetValidationError.value = validateJson(config)
     return !presetValidationError.value
   }
-  if (activeCliTab.value === 'codex') {
+  if (!isJsonFormat.value) {
     if (config.includes('{') || (config.includes('[') && config.includes(']') && config.includes(','))) {
       presetValidationError.value = 'TOML 格式错误: 请使用 TOML 格式而非 JSON 格式'
       return false
@@ -390,15 +388,7 @@ async function handleSavePreset() {
   }
 }
 
-const isJsonFormat = computed(() => activeCliTab.value === 'claude_code' || activeCliTab.value === 'gemini')
-const placeholder = computed(() => {
-  switch (activeCliTab.value) {
-    case 'codex': return 'model_reasoning_effort = "high"\nmodel_reasoning_summary = "detailed"'
-    case 'claude_code': return '{\n  "env": {},\n  "permissions": {}\n}'
-    case 'gemini': return '{\n  "theme": "dark"\n}'
-    default: return '{}'
-  }
-})
+const placeholder = ''
 
 function loadCliForm() {
   const s = settingsStore.settings?.cli_settings?.[activeCliTab.value]
@@ -589,8 +579,14 @@ function formatSize(bytes: number) {
   return (bytes / 1024 / 1024).toFixed(1) + ' MB'
 }
 
-onMounted(() => {
-  settingsStore.fetchSettings()
+onMounted(async () => {
+  await Promise.all([
+    agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
+    settingsStore.fetchSettings(),
+  ])
+  if (!agentStore.get(activeCliTab.value) && agentStore.agents.length) {
+    activeCliTab.value = agentStore.agents[0].id
+  }
   loadWebdavSettings()
 })
 </script>

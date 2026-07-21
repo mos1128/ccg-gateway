@@ -1,12 +1,11 @@
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 
-use crate::db::models::{Provider, ProviderModelBlacklist, ProviderModelMap};
+use crate::db::models::{Protocol, Provider, ProviderModelBlacklist, ProviderModelMap};
 use crate::services::proxy::wildcard_match;
 use crate::time::now_timestamp;
 
 pub const DEFAULT_PROFILE: &str = "default";
-pub const GATEWAY_PROFILE_PATH_ROOT: &str = "/__ccg";
 
 pub fn normalize_profile(profile: Option<&str>) -> Option<String> {
     let profile = profile.unwrap_or(DEFAULT_PROFILE).trim();
@@ -60,34 +59,6 @@ pub fn profile_from_gateway_token(token: &str) -> Option<String> {
 
     let profile = token.strip_prefix("ccg-gateway-")?;
     normalize_profile(Some(profile))
-}
-
-pub fn gateway_path_prefix_for_profile(profile: &str) -> Option<String> {
-    let profile = normalize_profile(Some(profile))?;
-    if profile == DEFAULT_PROFILE {
-        Some(String::new())
-    } else {
-        Some(format!("{}/{}", GATEWAY_PROFILE_PATH_ROOT, profile))
-    }
-}
-
-pub fn split_gateway_profile_path(full_path: &str) -> Option<(String, String)> {
-    let rest = full_path.strip_prefix("/__ccg/")?;
-    let (profile_segment, suffix) = match rest.find(|c| c == '/' || c == '?') {
-        Some(index) => (&rest[..index], &rest[index..]),
-        None => (rest, ""),
-    };
-    let profile = normalize_profile(Some(profile_segment))?;
-
-    let stripped_path = if suffix.is_empty() {
-        "/".to_string()
-    } else if suffix.starts_with('/') {
-        suffix.to_string()
-    } else {
-        format!("/{}", suffix)
-    };
-
-    Some((profile, stripped_path))
 }
 
 /// Provider with its model mappings and blacklist
@@ -166,6 +137,7 @@ pub async fn select_provider(
     db: &SqlitePool,
     cli_type: &str,
     profile: &str,
+    protocol: Protocol,
     model: Option<&str>,
 ) -> Result<Option<ProviderWithMaps>, sqlx::Error> {
     let now = now_timestamp();
@@ -177,6 +149,7 @@ pub async fn select_provider(
         SELECT * FROM providers
         WHERE cli_type = ?
           AND profile = ?
+          AND protocol = ?
           AND enabled = 1
           AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
         ORDER BY sort_order, id
@@ -184,6 +157,7 @@ pub async fn select_provider(
     )
     .bind(cli_type)
     .bind(&profile)
+    .bind(protocol.as_str())
     .bind(now)
     .fetch_all(db)
     .await?;
@@ -221,6 +195,7 @@ pub async fn get_available_providers(
     db: &SqlitePool,
     cli_type: &str,
     profile: &str,
+    protocol: Protocol,
     model: Option<&str>,
 ) -> Result<Vec<ProviderWithMaps>, sqlx::Error> {
     let now = now_timestamp();
@@ -231,6 +206,7 @@ pub async fn get_available_providers(
         SELECT * FROM providers
         WHERE cli_type = ?
           AND profile = ?
+          AND protocol = ?
           AND enabled = 1
           AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
         ORDER BY sort_order, id
@@ -238,6 +214,7 @@ pub async fn get_available_providers(
     )
     .bind(cli_type)
     .bind(&profile)
+    .bind(protocol.as_str())
     .bind(now)
     .fetch_all(db)
     .await?;

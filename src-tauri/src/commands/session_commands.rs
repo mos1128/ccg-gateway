@@ -681,11 +681,12 @@ fn get_codex_sessions(
 // Handle Codex sessions (find by cwd) - 异步版本，支持自定义配置目录
 async fn get_codex_sessions_async(
     db: &SqlitePool,
+    agent_id: &str,
     project_name: &str,
     page: i64,
     page_size: i64,
 ) -> Result<PaginatedSessions> {
-    let config_dir = get_cli_config_dir_path(db, "codex").await;
+    let config_dir = get_cli_config_dir_path(db, agent_id).await;
     let sessions_dir = config_dir.join("sessions");
     let project_name = project_name.to_string();
 
@@ -820,11 +821,12 @@ fn get_gemini_sessions(
 // Handle Gemini sessions - 异步版本，支持自定义配置目录
 async fn get_gemini_sessions_async(
     db: &SqlitePool,
+    agent_id: &str,
     project_name: &str,
     page: i64,
     page_size: i64,
 ) -> Result<PaginatedSessions> {
-    let config_dir = get_cli_config_dir_path(db, "gemini").await;
+    let config_dir = get_cli_config_dir_path(db, agent_id).await;
     let chats_dir = config_dir.join("tmp").join(project_name).join("chats");
     run_session_blocking(move || get_gemini_sessions(chats_dir, page, page_size)).await
 }
@@ -832,12 +834,13 @@ async fn get_gemini_sessions_async(
 // Parse Codex messages from JSONL file - 异步版本，支持自定义配置目录
 async fn get_codex_messages_async(
     db: &SqlitePool,
+    agent_id: &str,
     session_id: &str,
 ) -> Result<Vec<SessionMessage>> {
     use std::io::{BufRead, BufReader};
     use walkdir::WalkDir;
 
-    let config_dir = get_cli_config_dir_path(db, "codex").await;
+    let config_dir = get_cli_config_dir_path(db, agent_id).await;
     let sessions_dir = config_dir.join("sessions");
     let session_id = session_id.to_string();
 
@@ -1266,6 +1269,24 @@ fn parse_session_messages_content(cli_type: &str, content: &str) -> Result<Vec<S
     Ok(messages)
 }
 
+async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
+    let resolved = crate::services::agent::get_agent(db, agent_id)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+    let feature = resolved.features.sessions;
+    if !feature.enabled {
+        return Err(format!("Agent {} 的 Session 功能未启用", agent_id));
+    }
+    let adapter = feature
+        .adapter
+        .ok_or_else(|| format!("Agent {} 的 Session 缺少 adapter", agent_id))?;
+    if !matches!(adapter.as_str(), "claude_code" | "codex" | "gemini") {
+        return Err(format!("Session adapter `{}` 不存在", adapter));
+    }
+    Ok(adapter)
+}
+
 // Session commands
 #[tauri::command]
 pub async fn get_session_projects(
@@ -1276,18 +1297,19 @@ pub async fn get_session_projects(
 ) -> Result<PaginatedProjects> {
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(20).clamp(1, 100);
+    let adapter = session_adapter(db.inner(), &cli_type).await?;
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
-    let projects_dir = cli_helpers::projects_dir(&base_dir, &cli_type);
+    let projects_dir = cli_helpers::projects_dir(&base_dir, &adapter);
 
     // For Codex, we need special handling since sessions are not in project folders
-    if cli_type == "codex" {
+    if adapter == "codex" {
         return run_session_blocking(move || get_codex_projects(projects_dir, page, page_size))
             .await;
     }
 
     // For Gemini, check if sessions are in hash directories with chats subfolder
-    if cli_type == "gemini" {
+    if adapter == "gemini" {
         return run_session_blocking(move || get_gemini_projects(projects_dir, page, page_size))
             .await;
     }
@@ -1352,7 +1374,7 @@ pub async fn get_session_projects(
                             }
                         }
 
-                        let (display_name, full_path) = if cli_type == "claude_code" {
+                        let (display_name, full_path) = if adapter == "claude_code" {
                             // Decode path from project name (format: -D-my-develop-project-other)
                             decode_claude_project_name(&name)
                         } else {
@@ -1407,15 +1429,18 @@ pub async fn get_project_sessions(
 ) -> Result<PaginatedSessions> {
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(20).clamp(1, 100);
+    let adapter = session_adapter(db.inner(), &cli_type).await?;
 
     // Special handling for Codex
-    if cli_type == "codex" {
-        return get_codex_sessions_async(db.inner(), &project_name, page, page_size).await;
+    if adapter == "codex" {
+        return get_codex_sessions_async(db.inner(), &cli_type, &project_name, page, page_size)
+            .await;
     }
 
     // Special handling for Gemini
-    if cli_type == "gemini" {
-        return get_gemini_sessions_async(db.inner(), &project_name, page, page_size).await;
+    if adapter == "gemini" {
+        return get_gemini_sessions_async(db.inner(), &cli_type, &project_name, page, page_size)
+            .await;
     }
 
     // Claude Code default handling
@@ -1511,16 +1536,17 @@ pub async fn get_session_messages(
     project_name: String,
     session_id: String,
 ) -> Result<Vec<SessionMessage>> {
+    let adapter = session_adapter(db.inner(), &cli_type).await?;
     // Special handling for Codex JSONL format
-    if cli_type == "codex" {
-        return get_codex_messages_async(db.inner(), &session_id).await;
+    if adapter == "codex" {
+        return get_codex_messages_async(db.inner(), &cli_type, &session_id).await;
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
     let session_file =
-        cli_helpers::session_file_path(&base_dir, &cli_type, &project_name, &session_id);
+        cli_helpers::session_file_path(&base_dir, &adapter, &project_name, &session_id);
 
-    run_session_blocking(move || get_session_messages_from_file(&cli_type, session_file)).await
+    run_session_blocking(move || get_session_messages_from_file(&adapter, session_file)).await
 }
 
 #[tauri::command]
@@ -1530,10 +1556,11 @@ pub async fn delete_session(
     project_name: String,
     session_id: String,
 ) -> Result<()> {
+    let adapter = session_adapter(db.inner(), &cli_type).await?;
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
 
     // Special handling for Codex - need to search recursively
-    if cli_type == "codex" {
+    if adapter == "codex" {
         let sessions_dir = base_dir.join("sessions");
         return run_session_blocking(move || {
             use walkdir::WalkDir;
@@ -1565,7 +1592,7 @@ pub async fn delete_session(
     }
 
     let session_file =
-        cli_helpers::session_file_path(&base_dir, &cli_type, &project_name, &session_id);
+        cli_helpers::session_file_path(&base_dir, &adapter, &project_name, &session_id);
 
     if tokio::fs::metadata(&session_file).await.is_err() {
         return Err(format!(
@@ -1591,9 +1618,10 @@ pub async fn delete_project(
     cli_type: String,
     project_name: String,
 ) -> Result<()> {
+    let adapter = session_adapter(db.inner(), &cli_type).await?;
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
 
-    if cli_type == "codex" {
+    if adapter == "codex" {
         // For Codex, delete all session files matching the project cwd
         let sessions_dir = base_dir.join("sessions");
         return run_session_blocking(move || {
@@ -1625,7 +1653,7 @@ pub async fn delete_project(
     }
 
     // For Claude Code and Gemini, delete the project directory
-    let project_dir = cli_helpers::project_dir(&base_dir, &cli_type, &project_name);
+    let project_dir = cli_helpers::project_dir(&base_dir, &adapter, &project_name);
 
     tokio::fs::remove_dir_all(&project_dir)
         .await

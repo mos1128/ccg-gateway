@@ -1,21 +1,125 @@
-// CLI Type
-export const CLI_TYPES = ['claude_code', 'codex', 'gemini'] as const
-export type CliType = typeof CLI_TYPES[number]
-export const CLI_LABELS: Record<CliType, string> = {
-  claude_code: 'Claude Code',
-  codex: 'Codex',
-  gemini: 'Gemini'
+// Agent / Protocol
+export type CliType = string
+export type Protocol = 'anthropic_messages' | 'openai_chat' | 'openai_responses' | 'gemini_generate_content'
+export const PROTOCOL_LABELS: Record<Protocol, string> = {
+  anthropic_messages: 'Anthropic Messages',
+  openai_chat: 'OpenAI Chat Completions',
+  openai_responses: 'OpenAI Responses',
+  gemini_generate_content: 'Gemini GenerateContent',
 }
-export const CLI_SHORT_LABELS: Record<CliType, string> = {
-  claude_code: 'Claude',
-  codex: 'Codex',
-  gemini: 'Gemini'
+export type AgentFeatureName = 'provider_config' | 'global_preset' | 'profiles' | 'official_login' | 'model_mapping' | 'token_usage' | 'skills' | 'mcp' | 'sessions' | 'plugins' | 'prompts'
+
+export interface ToggleFeature {
+  enabled: boolean
 }
-export const CLI_TABS: { id: CliType; label: string }[] = CLI_TYPES.map((id) => ({
-  id,
-  label: CLI_LABELS[id]
-}))
-export const PROFILE_CAPABLE_CLI_TYPES: readonly CliType[] = ['claude_code', 'codex']
+
+export interface AdapterFeature extends ToggleFeature {
+  adapter?: string | null
+}
+
+export interface ProfileLaunch {
+  default: string[]
+  non_default: string[]
+}
+
+export interface ProfileFeature extends ToggleFeature {
+  profile_file?: string | null
+  operations: ProviderConfigOperation[]
+  launch?: ProfileLaunch | null
+}
+
+export type ConfigFormat = 'json' | 'jsonc' | 'toml' | 'env'
+
+export interface ProviderConfigOperation {
+  id: string
+  op: 'set' | 'remove'
+  file: string
+  format: ConfigFormat
+  path: string[]
+  value?: unknown
+}
+
+export interface ProviderConfigFeature extends ToggleFeature {
+  operations: ProviderConfigOperation[]
+}
+
+export interface GlobalPresetFeature extends ToggleFeature {
+  file?: string | null
+  format?: 'json' | 'toml' | null
+}
+
+export interface CredentialSource {
+  file_id: string
+  path?: string[]
+}
+
+export interface OfficialLoginOperation {
+  id: string
+  op: 'replace_file' | 'set_field'
+  file: string
+  format?: 'json' | null
+  path?: string[]
+  content_from?: CredentialSource | null
+  value?: unknown
+  value_from?: CredentialSource | null
+}
+
+export interface OfficialLoginFeature extends ToggleFeature {
+  operations?: OfficialLoginOperation[]
+}
+
+export interface McpFeature extends ToggleFeature {
+  file?: string | null
+  format?: 'json' | 'toml' | null
+  servers_path?: string[]
+}
+
+export interface FileFeature extends ToggleFeature {
+  file?: string | null
+}
+
+export interface SkillFeature extends ToggleFeature {
+  directory?: string | null
+}
+
+export interface AgentFeatures {
+  provider_config: ProviderConfigFeature
+  global_preset: GlobalPresetFeature
+  profiles: ProfileFeature
+  official_login: OfficialLoginFeature
+  model_mapping: ToggleFeature
+  token_usage: ToggleFeature
+  skills: SkillFeature
+  mcp: McpFeature
+  sessions: AdapterFeature
+  plugins: AdapterFeature
+  prompts: FileFeature
+}
+
+export interface AgentInfo {
+  schema_version: number
+  id: CliType
+  name: string
+  config_dir: string
+  user_agent: string[]
+  protocols: Protocol[]
+  features: AgentFeatures
+}
+
+export interface AgentDefinitionLoadError {
+  source: string
+  message: string
+}
+
+export interface AgentDiagnostic {
+  id: number
+  kind: string
+  key: string
+  payload_json: string
+  first_seen: number
+  last_seen: number
+  occurrence_count: number
+}
 export type ProviderProfile = string
 export type CliMode = 'proxy_route' | 'provider_direct' | 'official_direct' | 'disabled'
 
@@ -44,6 +148,7 @@ export interface Provider {
   id: number
   cli_type: CliType
   profile: ProviderProfile
+  protocol: Protocol
   name: string
   base_url: string
   api_key: string
@@ -65,8 +170,9 @@ export interface Provider {
 }
 
 export interface ProviderCreate {
-  cli_type?: CliType
+  cli_type: CliType
   profile?: ProviderProfile
+  protocol?: Protocol
   name: string
   base_url: string
   api_key: string
@@ -84,6 +190,7 @@ export interface ProviderCreate {
 
 export interface ProviderUpdate {
   profile?: ProviderProfile
+  protocol?: Protocol
   name?: string
   base_url?: string
   api_key?: string
@@ -247,13 +354,10 @@ export interface CliProfileSettingsStatus {
   uses_gateway: boolean
 }
 
-export type ClaudeProfileSettingsStatus = CliProfileSettingsStatus
-export type CodexProfileSettingsStatus = CliProfileSettingsStatus
-
 export interface AllSettings {
   gateway: GatewaySettings
   timeouts: TimeoutSettings
-  cli_settings: Record<CliType, CliSettings>
+  cli_settings: Record<string, CliSettings>
   status: SystemStatus
 }
 
@@ -301,6 +405,18 @@ export interface OfficialCredentialUpdate {
   credential_json?: string
 }
 
+export interface OfficialCredentialPayload {
+  schema_version: 1
+  files: Record<string, { format: 'json'; content: unknown }>
+}
+
+export interface CredentialFileDefinition {
+  key: string
+  name: string
+  placeholder?: string
+  compact?: boolean
+}
+
 export interface SystemStatus {
   status: 'running' | 'stopped'
   host: string
@@ -311,7 +427,7 @@ export interface SystemStatus {
 }
 
 // MCP types
-export type CliFlags = Record<CliType, boolean>
+export type CliFlags = Record<string, boolean>
 
 export interface CliFlagItem {
   cli_type: CliType
@@ -445,6 +561,9 @@ export interface RequestLogListItem {
   created_at: number
   finished_at: number | null
   cli_type: CliType
+  protocol: Protocol | null
+  provider_id: number | null
+  profile: string | null
   provider_name: string
   model_id: string | null
   status_code: number | null

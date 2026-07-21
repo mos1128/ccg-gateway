@@ -18,7 +18,7 @@
         </el-tooltip>
       </div>
     </div>
-    <V2CliChips :flags="flags" @toggle="(c, e) => emit('toggle', c, e)" />
+    <V2CliChips :flags="flags" :feature="icon === 'mcp' ? 'mcp' : 'prompts'" @toggle="(c, e) => emit('toggle', c, e)" />
   </div>
 </template>
 

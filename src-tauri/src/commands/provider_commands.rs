@@ -32,19 +32,22 @@ pub async fn create_provider_profile(
 #[tauri::command]
 pub async fn rename_provider_profile(
     db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
     profile: String,
     input: ProviderProfileRename,
 ) -> Result<ProviderProfileResponse> {
-    provider_profile::rename_profile(db.inner(), &profile, input).await
+    provider_profile::rename_profile(db.inner(), &config.gateway_base_url(), &profile, input).await
 }
 
 #[tauri::command]
 pub async fn delete_provider_profile(
     db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
     cli_type: String,
     profile: String,
 ) -> Result<()> {
-    provider_profile::delete_profile(db.inner(), &cli_type, &profile).await
+    provider_profile::delete_profile(db.inner(), &config.gateway_base_url(), &cli_type, &profile)
+        .await
 }
 
 fn normalize_price_per_m(value: Option<f64>, field: &str) -> Result<f64> {
@@ -87,6 +90,64 @@ fn normalize_provider_update_prices(
     ))
 }
 
+fn validate_provider_protocol(agent_id: &str, protocol: Option<&str>) -> Result<String> {
+    let definition = crate::services::agent::get_definition(agent_id)
+        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+    let declared = &definition.protocols;
+    let protocol = match protocol.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => value
+            .parse::<crate::db::models::Protocol>()
+            .map_err(|_| format!("无效 Protocol: {}", value))?,
+        None if declared.len() == 1 => declared[0],
+        None => return Err("该 Agent 支持多个 Protocol，请明确选择".to_string()),
+    };
+    if !declared.contains(&protocol) {
+        return Err(format!("Agent {} 未声明 Protocol {}", agent_id, protocol));
+    }
+    Ok(protocol.as_str().to_string())
+}
+
+struct ProviderInsert<'a> {
+    cli_type: &'a str,
+    profile: &'a str,
+    protocol: &'a str,
+    input: &'a ProviderCreate,
+    custom_useragent: Option<&'a str>,
+    prices: (f64, f64, f64, f64),
+    now: i64,
+}
+
+async fn insert_provider_record(pool: &SqlitePool, values: ProviderInsert<'_>) -> Result<i64> {
+    let result = sqlx::query(
+        r#"
+        INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, enabled, failure_threshold, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(values.cli_type)
+    .bind(values.profile)
+    .bind(values.protocol)
+    .bind(&values.input.name)
+    .bind(&values.input.base_url)
+    .bind(&values.input.api_key)
+    .bind(values.input.enabled.unwrap_or(true) as i64)
+    .bind(values.input.failure_threshold.unwrap_or(5))
+    .bind(values.input.blacklist_minutes.unwrap_or(10))
+    .bind(values.cli_type)
+    .bind(values.profile)
+    .bind(values.custom_useragent)
+    .bind(values.now)
+    .bind(values.now)
+    .bind(values.prices.0)
+    .bind(values.prices.1)
+    .bind(values.prices.2)
+    .bind(values.prices.3)
+    .execute(pool)
+    .await
+    .map_err(map_db_error)?;
+    Ok(result.last_insert_rowid())
+}
+
 #[tauri::command]
 pub async fn get_providers(
     db: State<'_, SqlitePool>,
@@ -98,9 +159,15 @@ pub async fn get_providers(
         None => None,
     };
     let active_provider_id = match (&cli_type, &profile) {
-        (Some(ct), Some(profile)) => provider_direct_active_provider_id(db.inner(), ct, profile)
+        (Some(ct), Some(profile)) => {
+            crate::services::agent_config::provider_direct_active_provider_id(
+                db.inner(),
+                ct,
+                profile,
+            )
             .await
-            .unwrap_or(None),
+            .unwrap_or(None)
+        }
         _ => None,
     };
 
@@ -250,10 +317,13 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Provider not found".to_string())?;
 
-    let active_provider_id =
-        provider_direct_active_provider_id(db.inner(), &provider.cli_type, &provider.profile)
-            .await
-            .unwrap_or(None);
+    let active_provider_id = crate::services::agent_config::provider_direct_active_provider_id(
+        db.inner(),
+        &provider.cli_type,
+        &provider.profile,
+    )
+    .await
+    .unwrap_or(None);
     let mut response = ProviderResponse::from(provider);
     response.is_direct_active = active_provider_id == Some(response.id);
 
@@ -298,6 +368,7 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
 #[tauri::command]
 pub async fn write_provider_direct_config_command(
     db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
     log_db: State<'_, LogDb>,
     id: i64,
 ) -> Result<ProviderResponse> {
@@ -308,7 +379,41 @@ pub async fn write_provider_direct_config_command(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "服务商不存在".to_string())?;
 
-    write_provider_direct_config(db.inner(), &provider).await?;
+    let agent = crate::services::agent::get_agent(db.inner(), &provider.cli_type)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("未知 Agent: {}", provider.cli_type))?;
+    if !agent.features.provider_config.enabled
+        || agent.features.provider_config.operations.is_empty()
+    {
+        return Err(format!("Agent {} 不支持服务商直连模式", agent.name));
+    }
+
+    let gateway_url = config.gateway_base_url();
+    if crate::services::agent_config::is_provider_config_applied(
+        db.inner(),
+        &provider.cli_type,
+        &gateway_url,
+        &provider.profile,
+    )
+    .await
+    {
+        let default_config = get_cli_default_config(db.inner(), &provider.cli_type).await?;
+        let write_mode = get_config_write_mode(db.inner(), &provider.cli_type).await;
+        crate::services::agent_config::sync_proxy_route_config(
+            db.inner(),
+            &provider.cli_type,
+            false,
+            &gateway_url,
+            &provider.profile,
+            &default_config,
+            None,
+            &write_mode,
+        )
+        .await?;
+    }
+
+    crate::services::agent_config::write_provider_direct_config(db.inner(), &provider).await?;
     let now = now_timestamp();
     remember_default_provider_direct_provider(db.inner(), &provider, now).await?;
 
@@ -331,7 +436,13 @@ pub async fn create_provider(
     let now = now_timestamp();
     let (input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m) =
         normalize_provider_prices(&input)?;
-    let cli_type = validate_cli_type(input.cli_type.as_deref().unwrap_or("claude_code"))?;
+    let cli_type = validate_cli_type(
+        input
+            .cli_type
+            .as_deref()
+            .ok_or_else(|| "必须指定 Agent".to_string())?,
+    )?;
+    let protocol = validate_provider_protocol(&cli_type, input.protocol.as_deref())?;
     let profile = validate_provider_profile(input.profile.as_deref())?.to_string();
     if !provider_profile_exists_if_supported(db.inner(), &cli_type, &profile).await? {
         return Err("Profile 不存在".to_string());
@@ -346,34 +457,24 @@ pub async fn create_provider(
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
-    let result = sqlx::query(
-        r#"
-        INSERT INTO providers (cli_type, profile, name, base_url, api_key, enabled, failure_threshold, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?, ?, ?, ?)
-        "#,
+    let id = insert_provider_record(
+        db.inner(),
+        ProviderInsert {
+            cli_type: &cli_type,
+            profile: &profile,
+            protocol: &protocol,
+            input: &input,
+            custom_useragent: custom_ua.as_deref(),
+            prices: (
+                input_price_per_m,
+                output_price_per_m,
+                cache_read_price_per_m,
+                cache_creation_price_per_m,
+            ),
+            now,
+        },
     )
-    .bind(&cli_type)
-    .bind(&profile)
-    .bind(&input.name)
-    .bind(&input.base_url)
-    .bind(&input.api_key)
-    .bind(input.enabled.unwrap_or(true) as i64)
-    .bind(input.failure_threshold.unwrap_or(5))
-    .bind(input.blacklist_minutes.unwrap_or(10))
-    .bind(&cli_type)
-    .bind(&profile)
-    .bind(&custom_ua)
-    .bind(now)
-    .bind(now)
-    .bind(input_price_per_m)
-    .bind(output_price_per_m)
-    .bind(cache_read_price_per_m)
-    .bind(cache_creation_price_per_m)
-    .execute(db.inner())
-    .await
-    .map_err(map_db_error)?;
-
-    let id = result.last_insert_rowid();
+    .await?;
 
     // Insert model maps if provided
     if let Some(model_maps) = input.model_maps {
@@ -427,17 +528,21 @@ pub async fn update_provider(
     let (input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m) =
         normalize_provider_update_prices(&input)?;
 
-    // Get provider name for logging
-    let provider_name: Option<(String,)> =
-        sqlx::query_as("SELECT name FROM providers WHERE id = ?")
-            .bind(id)
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let provider_name = provider_name
-        .map(|(n,)| n)
-        .unwrap_or_else(|| format!("Provider#{}", id));
+    let provider_before: Provider = sqlx::query_as("SELECT * FROM providers WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "服务商不存在".to_string())?;
+    let provider_name = provider_before.name.clone();
+    let provider_cli_type = provider_before.cli_type.clone();
+    let was_direct_active = crate::services::agent_config::provider_direct_active_provider_id(
+        db.inner(),
+        &provider_before.cli_type,
+        &provider_before.profile,
+    )
+    .await?
+        == Some(id);
 
     // Check if model maps will be updated (before moving)
     let has_model_maps_update = input.model_maps.is_some();
@@ -447,16 +552,39 @@ pub async fn update_provider(
     } else {
         None
     };
+    let normalized_protocol = input
+        .protocol
+        .as_deref()
+        .map(|protocol| validate_provider_protocol(&provider_cli_type, Some(protocol)))
+        .transpose()?;
     if let Some(ref profile) = normalized_profile {
-        let (provider_cli_type,): (String,) =
-            sqlx::query_as("SELECT cli_type FROM providers WHERE id = ?")
-                .bind(id)
-                .fetch_optional(db.inner())
-                .await
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "服务商不存在".to_string())?;
         if !provider_profile_exists_if_supported(db.inner(), &provider_cli_type, profile).await? {
             return Err("Profile 不存在".to_string());
+        }
+    }
+    let profile_changed = normalized_profile
+        .as_ref()
+        .is_some_and(|profile| profile != &provider_before.profile);
+    let provider_config_changed = profile_changed
+        || normalized_protocol
+            .as_ref()
+            .is_some_and(|protocol| protocol != &provider_before.protocol)
+        || input.base_url.as_ref().is_some_and(|base_url| {
+            base_url.trim().trim_end_matches('/')
+                != provider_before.base_url.trim().trim_end_matches('/')
+        })
+        || input
+            .api_key
+            .as_ref()
+            .is_some_and(|api_key| api_key.trim() != provider_before.api_key.trim());
+    if was_direct_active && provider_config_changed {
+        let base_url = input
+            .base_url
+            .as_deref()
+            .unwrap_or(&provider_before.base_url);
+        let api_key = input.api_key.as_deref().unwrap_or(&provider_before.api_key);
+        if base_url.trim().is_empty() || api_key.trim().is_empty() {
+            return Err("当前直连服务商的 Base URL 或 API Key 不能为空".to_string());
         }
     }
 
@@ -466,6 +594,10 @@ pub async fn update_provider(
 
     if normalized_profile.is_some() {
         updates.push("profile = ?".to_string());
+        has_updates = true;
+    }
+    if normalized_protocol.is_some() {
+        updates.push("protocol = ?".to_string());
         has_updates = true;
     }
     if input.name.is_some() {
@@ -519,6 +651,9 @@ pub async fn update_provider(
 
         if let Some(ref profile) = normalized_profile {
             q = q.bind(profile);
+        }
+        if let Some(ref protocol) = normalized_protocol {
+            q = q.bind(protocol);
         }
         if let Some(ref name) = input.name {
             q = q.bind(name);
@@ -609,6 +744,23 @@ pub async fn update_provider(
         }
     }
 
+    if was_direct_active && provider_config_changed {
+        let provider_after: Provider = sqlx::query_as("SELECT * FROM providers WHERE id = ?")
+            .bind(id)
+            .fetch_one(db.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+        if profile_changed {
+            crate::services::agent_config::remove_provider_direct_config_for_provider(
+                db.inner(),
+                &provider_before,
+            )
+            .await?;
+        }
+        crate::services::agent_config::write_provider_direct_config(db.inner(), &provider_after)
+            .await?;
+    }
+
     // Log system event (only if there were actual updates)
     if has_updates || has_model_maps_update || has_model_blacklist_update {
         let _ = crate::services::stats::record_system_log(
@@ -628,38 +780,56 @@ pub async fn delete_provider(
     log_db: State<'_, LogDb>,
     id: i64,
 ) -> Result<()> {
-    // Get provider name before deletion
-    let provider_name: Option<(String,)> =
-        sqlx::query_as("SELECT name FROM providers WHERE id = ?")
-            .bind(id)
-            .fetch_optional(db.inner())
-            .await
-            .map_err(|e| e.to_string())?;
+    let Some(provider) = sqlx::query_as::<_, Provider>("SELECT * FROM providers WHERE id = ?")
+        .bind(id)
+        .fetch_optional(db.inner())
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(());
+    };
+    let provider_name = provider.name.clone();
+    let was_direct_active = crate::services::agent_config::provider_direct_active_provider_id(
+        db.inner(),
+        &provider.cli_type,
+        &provider.profile,
+    )
+    .await?
+        == Some(id);
+    if was_direct_active {
+        crate::services::agent_config::remove_provider_direct_config_for_provider(
+            db.inner(),
+            &provider,
+        )
+        .await?;
+    }
 
-    let provider_name = provider_name
-        .map(|(n,)| n)
-        .unwrap_or_else(|| format!("Provider#{}", id));
-
-    // Delete associated model maps first (cascade delete)
+    let mut tx = db.begin().await.map_err(|e| e.to_string())?;
     sqlx::query("DELETE FROM provider_model_map WHERE provider_id = ?")
         .bind(id)
-        .execute(db.inner())
+        .execute(&mut *tx)
         .await
         .map_err(map_db_error)?;
 
-    // Delete associated model blacklist
     sqlx::query("DELETE FROM provider_model_blacklist WHERE provider_id = ?")
         .bind(id)
-        .execute(db.inner())
+        .execute(&mut *tx)
         .await
         .map_err(map_db_error)?;
 
-    // Then delete the provider
     sqlx::query("DELETE FROM providers WHERE id = ?")
         .bind(id)
-        .execute(db.inner())
+        .execute(&mut *tx)
         .await
         .map_err(map_db_error)?;
+    sqlx::query(
+        "UPDATE cli_settings SET last_provider_direct_provider_id = NULL WHERE last_provider_direct_provider_id = ?",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     // Log system event
     let _ = crate::services::stats::record_system_log(
@@ -759,9 +929,14 @@ pub async fn test_provider_models(
         let app_handle = app.clone();
 
         tokio::spawn(async move {
-            let result =
-                provider_service::test_provider_model(&pool, provider_id, &model, test_text.as_deref(), timeout_secs)
-                    .await;
+            let result = provider_service::test_provider_model(
+                &pool,
+                provider_id,
+                &model,
+                test_text.as_deref(),
+                timeout_secs,
+            )
+            .await;
             if let Err(e) = app_handle.emit("provider-test-result", result) {
                 tracing::error!(error = %e, "Failed to emit test result");
             }

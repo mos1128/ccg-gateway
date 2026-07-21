@@ -14,14 +14,17 @@ use tauri::Emitter;
 use tokio::sync::{mpsc, Mutex};
 
 use super::AppState;
-use crate::db::models::{RequestLogInfo, RequestLogItem};
+use crate::db::models::{Protocol, RequestLogInfo, RequestLogItem};
 use crate::services::proxy::{
-    apply_body_model_mapping, apply_url_model_mapping, detect_cli_type, detect_gateway_profile,
+    apply_body_model_mapping, apply_url_model_mapping, detect_gateway_profile,
     extract_model_from_body, extract_model_from_path, is_streaming, parse_streaming_token_usage,
-    parse_token_usage, CliType, TimeoutConfig, TokenUsage,
+    parse_token_usage, TimeoutConfig, TokenUsage,
 };
-use crate::services::routing::{select_provider, split_gateway_profile_path};
-use crate::services::{provider as provider_service, stats as stats_service};
+use crate::services::routing::select_provider;
+use crate::services::{
+    agent as agent_service, protocol as protocol_service, provider as provider_service,
+    stats as stats_service,
+};
 
 const RESPONSE_FILTERED_HEADERS: &[&str] = &[
     "connection",
@@ -36,6 +39,15 @@ const RESPONSE_FILTERED_HEADERS: &[&str] = &[
 ];
 const CLIENT_CLOSED_REQUEST_STATUS: u16 = 499;
 const CLIENT_CLOSED_REQUEST_MESSAGE: &str = "Client closed request before completion";
+
+#[derive(Clone)]
+struct RequestIdentity {
+    agent_id: String,
+    profile: String,
+    protocol: Protocol,
+    provider_id: i64,
+    token_usage_enabled: bool,
+}
 
 struct RequestLogCancelGuard {
     state: Arc<AppState>,
@@ -119,16 +131,134 @@ pub async fn proxy_handler_catchall(
         uri.path().to_string()
     };
 
-    let (path_profile, full_path) =
-        if let Some((profile, stripped_path)) = split_gateway_profile_path(&raw_full_path) {
-            (Some(profile), stripped_path)
-        } else {
-            (None, raw_full_path.clone())
-        };
+    let full_path = raw_full_path.clone();
 
-    // Detect CLI type from User-Agent
-    let cli_type = detect_cli_type(&headers);
-    let provider_profile = path_profile.unwrap_or_else(|| detect_gateway_profile(&headers));
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let agent_match = match agent_service::match_user_agent(&state.db, &user_agent).await {
+        Ok(Some(agent_match)) => agent_match,
+        Ok(None) => {
+            let payload = serde_json::json!({
+                "type": "unknown_agent",
+                "user_agent": user_agent,
+            });
+            let key = user_agent.to_lowercase();
+            let _ =
+                agent_service::record_diagnostic(&state.log_db, "unknown_agent", &key, &payload)
+                    .await;
+            let _ = stats_service::record_system_log_dedup(
+                &state.log_db,
+                "unknown_agent",
+                &payload.to_string(),
+                600,
+            )
+            .await;
+            return Ok(json_error_response(
+                StatusCode::BAD_REQUEST,
+                "unknown_agent",
+                "User-Agent does not match any built-in Agent",
+            ));
+        }
+        Err(error) => {
+            tracing::error!(error = %error, "Failed to load Agent definitions");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    let agent = agent_match.selected;
+    if agent_match.matched_agents.len() > 1 {
+        let payload = serde_json::json!({
+            "type": "config_conflict",
+            "user_agent": user_agent,
+            "matched_agents": agent_match.matched_agents,
+            "selected_agent": agent.id,
+        });
+        let key = format!(
+            "{}|{}|{}",
+            user_agent.to_lowercase(),
+            payload["matched_agents"],
+            agent.id
+        );
+        let _ = agent_service::record_diagnostic(&state.log_db, "config_conflict", &key, &payload)
+            .await;
+        let _ = stats_service::record_system_log_dedup(
+            &state.log_db,
+            "config_conflict",
+            &payload.to_string(),
+            600,
+        )
+        .await;
+    }
+    let requested_profile = detect_gateway_profile(&headers);
+    let profiles_enabled = agent.features.profiles.enabled;
+    let provider_profile = if profiles_enabled {
+        requested_profile
+    } else {
+        crate::services::routing::DEFAULT_PROFILE.to_string()
+    };
+
+    let protocol_match = match protocol_service::detect_protocol(&agent, &method, &full_path) {
+        Some(protocol_match) => protocol_match,
+        None => {
+            let payload = serde_json::json!({
+                "type": "protocol_not_matched",
+                "agent_id": agent.id,
+                "method": method.as_str(),
+                "path": full_path,
+            });
+            let key = format!("{}|{}|{}", agent.id, method, full_path);
+            let _ = agent_service::record_diagnostic(
+                &state.log_db,
+                "protocol_not_matched",
+                &key,
+                &payload,
+            )
+            .await;
+            let _ = stats_service::record_system_log_dedup(
+                &state.log_db,
+                "protocol_not_matched",
+                &payload.to_string(),
+                600,
+            )
+            .await;
+            return Ok(json_error_response(
+                StatusCode::NOT_FOUND,
+                "protocol_not_matched",
+                "Request path does not match any protocol declared by this Agent",
+            ));
+        }
+    };
+    let protocol = protocol_match.selected;
+    if protocol_match.matched_protocols.len() > 1 {
+        let matched: Vec<_> = protocol_match
+            .matched_protocols
+            .iter()
+            .map(|protocol| protocol.as_str())
+            .collect();
+        let payload = serde_json::json!({
+            "type": "protocol_conflict",
+            "agent_id": agent.id,
+            "path": full_path,
+            "matched_protocols": matched,
+            "selected_protocol": protocol.as_str(),
+        });
+        let key = format!(
+            "{}|{}|{}",
+            agent.id, full_path, payload["matched_protocols"]
+        );
+        let _ =
+            agent_service::record_diagnostic(&state.log_db, "protocol_conflict", &key, &payload)
+                .await;
+        let _ = stats_service::record_system_log_dedup(
+            &state.log_db,
+            "protocol_conflict",
+            &payload.to_string(),
+            600,
+        )
+        .await;
+    }
 
     // Serialize client headers for logging
     let client_headers_json = serialize_headers(&headers);
@@ -146,28 +276,25 @@ pub async fn proxy_handler_catchall(
     let client_body_str = truncate_body(&body_bytes);
 
     // Check if streaming
-    let streaming = is_streaming(&body_bytes, &full_path, cli_type);
+    let streaming = is_streaming(&body_bytes, &full_path, protocol);
 
     // Only learn from streaming requests since our test is streaming
     if streaming {
-        match cli_type {
-            CliType::ClaudeCode => crate::services::proxy::update_captured_claude_headers(&headers),
-            CliType::Codex => crate::services::proxy::update_captured_codex_headers(&headers),
-            CliType::Gemini => crate::services::proxy::update_captured_gemini_headers(&headers),
-        }
+        crate::services::proxy::update_captured_headers(&agent.id, protocol, &headers);
     }
 
     // Extract model name before selecting provider (for blacklist filtering)
-    let extracted_model = match cli_type {
-        CliType::Gemini => extract_model_from_path(&full_path),
+    let extracted_model = match protocol {
+        Protocol::GeminiGenerateContent => extract_model_from_path(&full_path),
         _ => extract_model_from_body(&body_bytes),
     };
 
     // Select provider based on CLI type and model
     let provider_with_maps = match select_provider(
         &state.db,
-        cli_type.as_str(),
+        &agent.id,
         &provider_profile,
+        protocol,
         extracted_model.as_deref(),
     )
     .await
@@ -175,7 +302,8 @@ pub async fn proxy_handler_catchall(
         Ok(Some(p)) => p,
         Ok(None) => {
             tracing::warn!(
-                cli_type = %cli_type,
+                agent_id = agent.id,
+                protocol = %protocol,
                 profile = provider_profile,
                 "No available provider"
             );
@@ -184,8 +312,8 @@ pub async fn proxy_handler_catchall(
                 &state.log_db,
                 "no_provider_available",
                 &format!(
-                    "CLI 类型 {} / profile {} 没有可用的服务商",
-                    cli_type, provider_profile
+                    "Agent {} / profile {} / protocol {} 没有可用的服务商",
+                    agent.id, provider_profile, protocol
                 ),
             )
             .await;
@@ -222,8 +350,9 @@ pub async fn proxy_handler_catchall(
     // (streaming flag already determined above)
 
     // Apply model mapping and extract model info
-    let (final_body, final_path, source_model, target_model) = match cli_type {
-        CliType::Gemini => {
+    let model_mapping_enabled = agent.features.model_mapping.enabled;
+    let (final_body, final_path, source_model, target_model) = match protocol {
+        Protocol::GeminiGenerateContent if model_mapping_enabled => {
             let mapping = apply_url_model_mapping(
                 &provider_with_maps,
                 &full_path,
@@ -236,7 +365,13 @@ pub async fn proxy_handler_catchall(
                 mapping.target_model,
             )
         }
-        _ => {
+        Protocol::GeminiGenerateContent => (
+            body_bytes.clone(),
+            full_path.clone(),
+            extract_model_from_path(&full_path),
+            None,
+        ),
+        _ if model_mapping_enabled => {
             let mapping = apply_body_model_mapping(&provider_with_maps, &body_bytes, &full_path);
             (
                 mapping.body,
@@ -245,6 +380,12 @@ pub async fn proxy_handler_catchall(
                 mapping.target_model,
             )
         }
+        _ => (
+            body_bytes.clone(),
+            full_path.clone(),
+            extract_model_from_body(&body_bytes),
+            None,
+        ),
     };
 
     // Use target model if mapped, otherwise use source model
@@ -252,15 +393,14 @@ pub async fn proxy_handler_catchall(
 
     // Build upstream URL: base_url + original_path
     // e.g., base_url="https://api.example.com/v1", path="/responses" -> "https://api.example.com/v1/responses"
-    let base_url = provider.base_url.trim_end_matches('/');
-    let upstream_url = format!("{}{}", base_url, final_path);
+    let upstream_url = crate::services::proxy::join_upstream_url(&provider.base_url, &final_path);
 
     // Build the upstream request via the shared constructor (single source of
     // truth for hop-by-hop filtering, auth injection, and UA override).
     let request = match crate::services::proxy::build_upstream_request(
         &state.http_client,
         provider,
-        cli_type,
+        protocol,
         &upstream_url,
         &headers,
         final_body,
@@ -291,9 +431,17 @@ pub async fn proxy_handler_catchall(
         ..Default::default()
     };
 
+    let identity = RequestIdentity {
+        agent_id: agent.id.clone(),
+        profile: provider_profile.clone(),
+        protocol,
+        provider_id,
+        token_usage_enabled: agent.features.token_usage.enabled,
+    };
+
     let request_log_id = start_request_log(
         &state,
-        cli_type,
+        &identity,
         &provider_name,
         model_id.as_deref(),
         method.as_ref(),
@@ -312,7 +460,7 @@ pub async fn proxy_handler_catchall(
             &state,
             provider_id,
             &provider_name,
-            cli_type,
+            identity,
             model_id.as_deref(),
             method.as_ref(),
             &raw_full_path,
@@ -331,7 +479,7 @@ pub async fn proxy_handler_catchall(
             &state,
             provider_id,
             &provider_name,
-            cli_type,
+            identity,
             model_id.as_deref(),
             method.as_ref(),
             &raw_full_path,
@@ -344,6 +492,20 @@ pub async fn proxy_handler_catchall(
         )
         .await
     }
+}
+
+fn json_error_response(status: StatusCode, error_type: &str, message: &str) -> Response<Body> {
+    let body = serde_json::json!({
+        "error": {
+            "type": error_type,
+            "message": message,
+        }
+    });
+    Response::builder()
+        .status(status)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .expect("valid JSON error response")
 }
 
 fn serialize_headers(headers: &axum::http::HeaderMap) -> String {
@@ -460,7 +622,7 @@ fn read_all<R: Read>(mut reader: R) -> Option<Vec<u8>> {
 fn parse_streaming_usage_chunk(
     buffer: &mut String,
     chunk: &[u8],
-    cli_type: CliType,
+    protocol: Protocol,
     usage: &mut TokenUsage,
 ) {
     const MAX_SSE_LINE_BUFFER: usize = 1024 * 1024;
@@ -474,25 +636,25 @@ fn parse_streaming_usage_chunk(
         if line.ends_with('\r') {
             line.pop();
         }
-        parse_streaming_token_usage(&line, cli_type, usage);
+        parse_streaming_token_usage(&line, protocol, usage);
     }
 
     if buffer.len() > MAX_SSE_LINE_BUFFER {
         tracing::warn!(
             "[{}] SSE line exceeded {} bytes before newline; dropping buffered line, token usage in this event may be missed",
-            cli_type,
+            protocol,
             MAX_SSE_LINE_BUFFER
         );
         buffer.clear();
     }
 }
 
-fn parse_streaming_usage_body(body: &[u8], cli_type: CliType) -> TokenUsage {
+fn parse_streaming_usage_body(body: &[u8], protocol: Protocol) -> TokenUsage {
     let mut usage = TokenUsage::default();
     let mut buffer = String::new();
-    parse_streaming_usage_chunk(&mut buffer, body, cli_type, &mut usage);
+    parse_streaming_usage_chunk(&mut buffer, body, protocol, &mut usage);
     if !buffer.is_empty() {
-        parse_streaming_token_usage(buffer.trim_end_matches('\r'), cli_type, &mut usage);
+        parse_streaming_token_usage(buffer.trim_end_matches('\r'), protocol, &mut usage);
     }
     usage
 }
@@ -512,7 +674,7 @@ async fn handle_streaming_request(
     state: &Arc<AppState>,
     provider_id: i64,
     provider_name: &str,
-    cli_type: CliType,
+    identity: RequestIdentity,
     model_id: Option<&str>,
     client_method: &str,
     client_path: &str,
@@ -523,6 +685,7 @@ async fn handle_streaming_request(
     mut log_info: RequestLogInfo,
     request_log_id: Option<i64>,
 ) -> Result<Response<Body>, StatusCode> {
+    let protocol = identity.protocol;
     let cancel_guard = RequestLogCancelGuard::new(state, request_log_id, start_time);
 
     // Send request with timeout for first byte
@@ -547,7 +710,7 @@ async fn handle_streaming_request(
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
-                    cli_type,
+                    &identity,
                     provider_name,
                     model_id,
                     None,
@@ -592,7 +755,7 @@ async fn handle_streaming_request(
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
-                    cli_type,
+                    &identity,
                     provider_name,
                     model_id,
                     None,
@@ -703,7 +866,7 @@ async fn handle_streaming_request(
                         parse_streaming_usage_chunk(
                             &mut sse_buffer,
                             chunk.as_ref(),
-                            cli_type,
+                            protocol,
                             &mut usage,
                         );
                     }
@@ -725,7 +888,7 @@ async fn handle_streaming_request(
 
                     tracing::debug!(
                         "[{}] Chunk #{}: size={} bytes, total={} bytes",
-                        cli_type, chunk_count, chunk_size, total_bytes
+                        protocol, chunk_count, chunk_size, total_bytes
                     );
 
                     yield Ok::<Bytes, std::io::Error>(chunk);
@@ -733,21 +896,21 @@ async fn handle_streaming_request(
                 Ok(Some(Err(e))) => {
                     tracing::error!(
                         "[{}] Stream error after {} chunks, {} bytes: {}",
-                        cli_type, chunk_count, total_bytes, e
+                        protocol, chunk_count, total_bytes, e
                     );
                     break;
                 }
                 Ok(None) => {
                     tracing::info!(
                         "[{}] Stream completed normally: {} chunks, {} bytes",
-                        cli_type, chunk_count, total_bytes
+                        protocol, chunk_count, total_bytes
                     );
                     break;
                 }
                 Err(_) => {
                     tracing::warn!(
                         "[{}] Stream idle timeout after {} chunks, {} bytes",
-                        cli_type, chunk_count, total_bytes
+                        protocol, chunk_count, total_bytes
                     );
                     *idle_timeout_flag_for_stream.lock().await = true;
                     break;
@@ -759,12 +922,12 @@ async fn handle_streaming_request(
             let mut usage = stream_usage_for_stream.lock().await;
             parse_streaming_token_usage(
                 sse_buffer.trim_end_matches('\r'),
-                cli_type,
+                protocol,
                 &mut usage,
             );
         }
 
-        tracing::debug!("[{}] Stream loop ended naturally", cli_type);
+        tracing::debug!("[{}] Stream loop ended naturally", protocol);
         let _ = stream_end_tx.send(()).await;
     };
 
@@ -781,12 +944,13 @@ async fn handle_streaming_request(
     let log_source_model = source_model.map(|s| s.to_string());
     let log_target_model = target_model.map(|s| s.to_string());
     let log_request_log_id = request_log_id;
+    let log_identity = identity.clone();
 
     tokio::spawn(async move {
         let client_cancelled = stream_end_rx.recv().await.is_none();
         tracing::debug!(
             "[{}] Received stream end notification, client_cancelled={}",
-            cli_type,
+            protocol,
             client_cancelled
         );
 
@@ -798,7 +962,7 @@ async fn handle_streaming_request(
 
         tracing::info!(
             "[{}] Processing stream log: {} bytes collected",
-            cli_type,
+            protocol,
             full_body.len()
         );
 
@@ -809,13 +973,17 @@ async fn handle_streaming_request(
         let (usage, body_str) = if response_encoded {
             match try_decompress(&full_body, content_encoding) {
                 Some(body) => (
-                    parse_streaming_usage_body(&body, cli_type),
+                    if log_identity.token_usage_enabled {
+                        parse_streaming_usage_body(&body, protocol)
+                    } else {
+                        TokenUsage::default()
+                    },
                     streaming_body_log_text(&body, MAX_BODY_LOG, body_truncated),
                 ),
                 None => {
                     tracing::warn!(
                         "[{}] Failed to decompress streaming response body",
-                        cli_type
+                        protocol
                     );
                     (
                         TokenUsage::default(),
@@ -829,14 +997,18 @@ async fn handle_streaming_request(
             }
         } else {
             (
-                stream_usage.lock().await.clone(),
+                if log_identity.token_usage_enabled {
+                    stream_usage.lock().await.clone()
+                } else {
+                    TokenUsage::default()
+                },
                 streaming_body_log_text(&full_body, MAX_BODY_LOG, body_truncated),
             )
         };
 
         tracing::debug!(
             "[{}] Parsed tokens: input={}, cache_read={}, cache_creation={}, output={}",
-            cli_type,
+            protocol,
             usage.input_tokens,
             usage.cache_read_input_tokens,
             usage.cache_creation_input_tokens,
@@ -887,7 +1059,7 @@ async fn handle_streaming_request(
 
         record_request_stats(
             &log_state,
-            cli_type,
+            &log_identity,
             &log_provider_name,
             log_model_id.as_deref(),
             Some(if client_cancelled {
@@ -907,7 +1079,7 @@ async fn handle_streaming_request(
         )
         .await;
 
-        tracing::info!("[{}] Delayed log recording completed", cli_type);
+        tracing::info!("[{}] Delayed log recording completed", protocol);
     });
 
     if let Some(guard) = &cancel_guard {
@@ -922,7 +1094,7 @@ async fn handle_non_streaming_request(
     state: &Arc<AppState>,
     provider_id: i64,
     provider_name: &str,
-    cli_type: CliType,
+    identity: RequestIdentity,
     model_id: Option<&str>,
     client_method: &str,
     client_path: &str,
@@ -933,6 +1105,7 @@ async fn handle_non_streaming_request(
     mut log_info: RequestLogInfo,
     request_log_id: Option<i64>,
 ) -> Result<Response<Body>, StatusCode> {
+    let protocol = identity.protocol;
     let cancel_guard = RequestLogCancelGuard::new(state, request_log_id, start_time);
 
     // Send request with timeout
@@ -957,7 +1130,7 @@ async fn handle_non_streaming_request(
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
-                    cli_type,
+                    &identity,
                     provider_name,
                     model_id,
                     None,
@@ -1002,7 +1175,7 @@ async fn handle_non_streaming_request(
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
-                    cli_type,
+                    &identity,
                     provider_name,
                     model_id,
                     None,
@@ -1060,7 +1233,7 @@ async fn handle_non_streaming_request(
             let elapsed = start_time.elapsed().as_millis() as i64;
             record_request_stats(
                 state,
-                cli_type,
+                &identity,
                 provider_name,
                 model_id,
                 Some(status.as_u16()),
@@ -1093,7 +1266,9 @@ async fn handle_non_streaming_request(
 
     // Parse token usage (use decompressed body)
     let mut usage = TokenUsage::default();
-    parse_token_usage(&decompressed_body, cli_type, &mut usage);
+    if identity.token_usage_enabled {
+        parse_token_usage(&decompressed_body, protocol, &mut usage);
+    }
 
     // Record success/failure
     if is_success {
@@ -1124,7 +1299,7 @@ async fn handle_non_streaming_request(
     let elapsed = start_time.elapsed().as_millis() as i64;
     record_request_stats(
         state,
-        cli_type,
+        &identity,
         provider_name,
         model_id,
         Some(status.as_u16()),
@@ -1166,7 +1341,7 @@ fn filter_log_detail(log_info: &mut RequestLogInfo, mode: &str, is_success: bool
 
 async fn emit_request_log_event(state: &Arc<AppState>, event: &str, log_id: i64) {
     let log_item = sqlx::query_as::<_, RequestLogItem>(
-        "SELECT id, created_at, finished_at, cli_type, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(log_id)
     .fetch_one(&state.log_db)
@@ -1192,7 +1367,7 @@ async fn emit_request_log_event(state: &Arc<AppState>, event: &str, log_id: i64)
 
 async fn start_request_log(
     state: &Arc<AppState>,
-    cli_type: CliType,
+    identity: &RequestIdentity,
     provider_name: &str,
     model_id: Option<&str>,
     client_method: &str,
@@ -1213,7 +1388,10 @@ async fn start_request_log(
 
     let log_id = match stats_service::start_request_log(
         &state.log_db,
-        cli_type.as_str(),
+        &identity.agent_id,
+        identity.protocol.as_str(),
+        identity.provider_id,
+        &identity.profile,
         provider_name,
         model_id,
         client_method,
@@ -1237,7 +1415,7 @@ async fn start_request_log(
 
 async fn record_request_stats(
     state: &Arc<AppState>,
-    cli_type: CliType,
+    identity: &RequestIdentity,
     provider_name: &str,
     model_id: Option<&str>,
     status_code: Option<u16>,
@@ -1267,7 +1445,7 @@ async fn record_request_stats(
     if let Err(e) = stats_service::record_request(
         &state.stats_db,
         provider_name,
-        cli_type.as_str(),
+        &identity.agent_id,
         model_id,
         source_model,
         success,
@@ -1297,7 +1475,10 @@ async fn record_request_stats(
         if let Err(e) = stats_service::finish_request_log(
             &state.log_db,
             log_id,
-            cli_type.as_str(),
+            &identity.agent_id,
+            identity.protocol.as_str(),
+            identity.provider_id,
+            &identity.profile,
             provider_name,
             model_id,
             status_code,
@@ -1322,7 +1503,10 @@ async fn record_request_stats(
     } else {
         let log_id = match stats_service::record_request_log(
             &state.log_db,
-            cli_type.as_str(),
+            &identity.agent_id,
+            identity.protocol.as_str(),
+            identity.provider_id,
+            &identity.profile,
             provider_name,
             model_id,
             status_code,

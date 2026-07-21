@@ -1,5 +1,4 @@
 use crate::config::{expand_home_path, get_default_cli_config_dir};
-use crate::services::routing::{normalize_profile, DEFAULT_PROFILE};
 use sqlx::SqlitePool;
 use std::path::{Path, PathBuf};
 
@@ -12,29 +11,26 @@ pub async fn get_cli_config_dir_path(db: &SqlitePool, cli_type: &str) -> PathBuf
             .ok()
             .flatten();
 
-    match result.and_then(|r| r.0) {
+    match result
+        .and_then(|r| r.0)
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+    {
         Some(path) => PathBuf::from(expand_home_path(&path)),
         None => get_default_cli_config_dir(cli_type),
     }
 }
 
-pub fn claude_settings_filename(profile: &str) -> String {
-    let profile = normalize_profile(Some(profile)).unwrap_or_else(|| DEFAULT_PROFILE.to_string());
-    if profile == DEFAULT_PROFILE {
-        "settings.json".to_string()
-    } else {
-        format!("settings-ccg-{}.json", profile)
-    }
+pub async fn resolve_cli_config_file(db: &SqlitePool, cli_type: &str, file: &str) -> PathBuf {
+    let config_dir = get_cli_config_dir_path(db, cli_type).await;
+    resolve_cli_config_file_from_dir(&config_dir, file)
 }
 
-pub fn codex_profile_config_filename(profile: &str) -> String {
-    if profile == DEFAULT_PROFILE {
-        "config.toml".to_string()
+pub fn resolve_cli_config_file_from_dir(config_dir: &Path, file: &str) -> PathBuf {
+    let expanded = PathBuf::from(expand_home_path(file));
+    if expanded.is_absolute() || file == "~" || file.starts_with("~/") || file.starts_with("~\\") {
+        expanded
     } else {
-        format!("{}.config.toml", profile)
+        config_dir.join(expanded)
     }
-}
-
-pub fn codex_profile_config_path(config_dir: &Path, profile: &str) -> PathBuf {
-    config_dir.join(codex_profile_config_filename(profile))
 }

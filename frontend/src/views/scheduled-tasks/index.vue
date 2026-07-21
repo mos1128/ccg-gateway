@@ -169,10 +169,9 @@ import { providersApi } from '@/api/providers'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
+import { useAgentStore } from '@/stores/agents'
 import { DEFAULT_MODEL_NAMES, getReusableModelName, getReusableTestText } from '@/utils/modelDefaults'
 import {
-  CLI_TABS,
-  PROFILE_CAPABLE_CLI_TYPES,
   type CliType,
   type Provider,
   type ProviderKeepalivePayload,
@@ -189,6 +188,7 @@ import {
 const profileTabs = ref<ProviderProfileItem[]>([
   { cli_type: 'claude_code', name: 'default', label: '默认', is_default: true, sort_order: 0 }
 ])
+const agentStore = useAgentStore()
 
 const hourOptions: AppSelectOption[] = Array.from({ length: 24 }, (_, hour) => {
   const value = String(hour).padStart(2, '0')
@@ -223,7 +223,9 @@ interface FormState {
   retry_interval_minutes: number
 }
 
-const cliSelectOptions: AppSelectOption[] = CLI_TABS.map(cli => ({ label: cli.label, value: cli.id }))
+const cliSelectOptions = computed<AppSelectOption[]>(() =>
+  agentStore.agents.map(agent => ({ label: agent.name, value: agent.id })),
+)
 function profileDisplayLabel(profile: ProviderProfileItem) {
   if (profile.is_default) return profile.label
   return profile.label.replace(/_/g, ' ')
@@ -252,14 +254,18 @@ const form = ref<FormState>(defaultForm())
 let hasLoadedTasks = false
 let scheduledTaskListener: (() => void) | null = null
 
-const supportsProfiles = computed(() => PROFILE_CAPABLE_CLI_TYPES.includes(form.value.cli_type))
+const supportsProfiles = computed(() => {
+  const feature = agentStore.get(form.value.cli_type)?.features.profiles
+  return feature?.enabled === true
+})
 const selectableProviders = computed(() => providerOptions.value.filter(p => p.enabled))
 const isAllProvidersSelected = computed(() => selectableProviders.value.length > 0 && form.value.provider_ids.length === selectableProviders.value.length)
 
 function defaultForm(): FormState {
+  const cliType = agentStore.agents[0]?.id || 'claude_code'
   return {
-    name: '', cli_type: 'claude_code', profile: 'default', target_mode: 'all', provider_ids: [],
-    model_name: getReusableModelName('claude_code'), schedule_type: 'interval', interval_minutes: 60,
+    name: '', cli_type: cliType, profile: 'default', target_mode: 'all', provider_ids: [],
+    model_name: getReusableModelName(cliType), schedule_type: 'interval', interval_minutes: 60,
     period_days: 1, period_hour: '09', period_minute: '00', retry_limit: 3, retry_interval_minutes: 10
   }
 }
@@ -539,6 +545,8 @@ function handleScheduledTaskChange() {
 
 onMounted(async () => {
   try {
+    if (!agentStore.agents.length) await agentStore.fetchAgents()
+    if (!agentStore.get(form.value.cli_type)) form.value = defaultForm()
     if (supportsProfiles.value) await fetchProfiles()
     await fetchTasks()
     hasLoadedTasks = true
@@ -559,7 +567,8 @@ onUnmounted(() => {
 })
 
 watch(() => form.value.cli_type, async (cliType, oldCliType) => {
-  if (!PROFILE_CAPABLE_CLI_TYPES.includes(cliType)) {
+  const profileFeature = agentStore.get(cliType)?.features.profiles
+  if (!profileFeature?.enabled) {
     form.value.profile = 'default'
   }
   if (!oldCliType || form.value.model_name === getReusableModelName(oldCliType)) {

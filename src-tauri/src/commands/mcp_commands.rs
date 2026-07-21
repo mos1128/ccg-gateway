@@ -1,5 +1,159 @@
 use super::*;
 
+struct McpTarget {
+    path: std::path::PathBuf,
+    format: crate::db::models::ConfigFormat,
+    servers_path: Vec<String>,
+}
+
+async fn resolve_mcp_target(db: &SqlitePool, agent_id: &str) -> Result<McpTarget> {
+    let agent = crate::services::agent::get_agent(db, agent_id)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+    let feature = agent.features.mcp;
+    if !feature.enabled {
+        return Err(format!("Agent {} 的 MCP 功能不可用", agent_id));
+    }
+    let file = feature
+        .file
+        .as_deref()
+        .ok_or_else(|| format!("Agent {} 的 MCP 缺少 file", agent_id))?;
+    let format = feature
+        .format
+        .ok_or_else(|| format!("Agent {} 的 MCP 缺少 format", agent_id))?;
+    if !matches!(
+        format,
+        crate::db::models::ConfigFormat::Json | crate::db::models::ConfigFormat::Toml
+    ) {
+        return Err(format!(
+            "Agent {} 的 MCP format 只支持 json 或 toml",
+            agent_id
+        ));
+    }
+    if feature.servers_path.is_empty() {
+        return Err(format!("Agent {} 的 MCP 缺少 servers_path", agent_id));
+    }
+    Ok(McpTarget {
+        path: crate::services::cli_config::resolve_cli_config_file(db, agent_id, file).await,
+        format,
+        servers_path: feature.servers_path,
+    })
+}
+
+fn json_value_at<'a>(
+    value: &'a serde_json::Value,
+    path: &[String],
+) -> Option<&'a serde_json::Value> {
+    path.iter().try_fold(value, |current, key| current.get(key))
+}
+
+fn json_object_at_mut<'a>(
+    value: &'a mut serde_json::Value,
+    path: &[String],
+) -> Option<&'a mut serde_json::Map<String, serde_json::Value>> {
+    let current = path
+        .iter()
+        .try_fold(value, |current, key| current.get_mut(key))?;
+    current.as_object_mut()
+}
+
+fn ensure_json_object<'a>(
+    value: &'a mut serde_json::Value,
+    path: &[String],
+) -> Result<&'a mut serde_json::Map<String, serde_json::Value>> {
+    let mut current = value;
+    for key in path {
+        let object = current
+            .as_object_mut()
+            .ok_or_else(|| format!("MCP 路径 `{}` 不是对象", path.join(".")))?;
+        current = object
+            .entry(key.clone())
+            .or_insert_with(|| serde_json::json!({}));
+    }
+    current
+        .as_object_mut()
+        .ok_or_else(|| format!("MCP 路径 `{}` 不是对象", path.join(".")))
+}
+
+fn toml_table_at<'a>(table: &'a toml_edit::Table, path: &[String]) -> Option<&'a toml_edit::Table> {
+    path.iter().try_fold(table, |current, key| {
+        current.get(key).and_then(toml_edit::Item::as_table)
+    })
+}
+
+fn toml_table_at_mut<'a>(
+    table: &'a mut toml_edit::Table,
+    path: &[String],
+) -> Option<&'a mut toml_edit::Table> {
+    let mut current = table;
+    for key in path {
+        current = current.get_mut(key)?.as_table_mut()?;
+    }
+    Some(current)
+}
+
+fn ensure_toml_table<'a>(
+    table: &'a mut toml_edit::Table,
+    path: &[String],
+) -> Result<&'a mut toml_edit::Table> {
+    let mut current = table;
+    for key in path {
+        if !current.contains_key(key) {
+            current.insert(key, toml_edit::Item::Table(toml_edit::Table::new()));
+        }
+        current = current
+            .get_mut(key)
+            .and_then(toml_edit::Item::as_table_mut)
+            .ok_or_else(|| format!("MCP 路径 `{}` 不是 TOML table", path.join(".")))?;
+    }
+    Ok(current)
+}
+
+async fn mcp_enabled_in_file_async(db: &SqlitePool, agent_id: &str, mcp_name: &str) -> bool {
+    let Ok(target) = resolve_mcp_target(db, agent_id).await else {
+        return false;
+    };
+    let Ok(content) = tokio::fs::read_to_string(&target.path).await else {
+        return false;
+    };
+    match target.format {
+        crate::db::models::ConfigFormat::Json => {
+            serde_json::from_str::<serde_json::Value>(&content)
+                .ok()
+                .and_then(|config| {
+                    json_value_at(&config, &target.servers_path)
+                        .and_then(serde_json::Value::as_object)
+                        .map(|servers| servers.contains_key(mcp_name))
+                })
+                .unwrap_or(false)
+        }
+        crate::db::models::ConfigFormat::Toml => content
+            .parse::<toml_edit::DocumentMut>()
+            .ok()
+            .and_then(|document| {
+                toml_table_at(document.as_table(), &target.servers_path)
+                    .map(|servers| servers.contains_key(mcp_name))
+            })
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
+async fn validate_mcp_config_for_flags(
+    db: &SqlitePool,
+    config_json: &str,
+    cli_flags: &[McpCliFlag],
+) -> Result<()> {
+    for flag in cli_flags.iter().filter(|flag| flag.enabled) {
+        let target = resolve_mcp_target(db, &flag.cli_type).await?;
+        if target.format == crate::db::models::ConfigFormat::Toml {
+            parse_mcp_toml_table(config_json)?;
+        }
+    }
+    Ok(())
+}
+
 // MCP commands
 #[tauri::command]
 pub async fn get_mcps(db: State<'_, SqlitePool>) -> Result<Vec<McpResponse>> {
@@ -11,7 +165,7 @@ pub async fn get_mcps(db: State<'_, SqlitePool>) -> Result<Vec<McpResponse>> {
     let mut results = Vec::new();
     for mcp in mcps {
         let mut cli_flags = Vec::new();
-        for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+        for cli_type in crate::services::agent::agent_ids_for_feature("mcp") {
             let enabled = mcp_enabled_in_file_async(db.inner(), cli_type, &mcp.name).await;
             cli_flags.push(McpCliFlag {
                 cli_type: cli_type.to_string(),
@@ -39,7 +193,7 @@ pub async fn get_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<McpResponse> 
         .ok_or_else(|| "MCP not found".to_string())?;
 
     let mut cli_flags = Vec::new();
-    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+    for cli_type in crate::services::agent::agent_ids_for_feature("mcp") {
         let enabled = mcp_enabled_in_file_async(db.inner(), cli_type, &mcp.name).await;
         cli_flags.push(McpCliFlag {
             cli_type: cli_type.to_string(),
@@ -65,6 +219,8 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
         serde_json::from_str::<serde_json::Value>(config_trimmed)
             .map_err(|e| format!("JSON 格式错误: {}", e))?;
     }
+    let cli_flags = input.cli_flags.unwrap_or_default();
+    validate_mcp_config_for_flags(db.inner(), config_trimmed, &cli_flags).await?;
 
     let result =
         sqlx::query("INSERT INTO mcp_configs (name, config_json, updated_at) VALUES (?, ?, ?)")
@@ -78,7 +234,6 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
     let id = result.last_insert_rowid();
 
     // Sync to CLI files if cli_flags provided
-    let cli_flags = input.cli_flags.unwrap_or_default();
     if !cli_flags.is_empty() {
         sync_single_mcp_to_cli(db.inner(), id, &input.name, config_trimmed, &cli_flags).await?;
     }
@@ -112,7 +267,7 @@ pub async fn update_mcp(
 
     let current_cli_flags = {
         let mut flags = Vec::new();
-        for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+        for cli_type in crate::services::agent::agent_ids_for_feature("mcp") {
             flags.push(McpCliFlag {
                 cli_type: cli_type.to_string(),
                 enabled: mcp_enabled_in_file_async(db.inner(), cli_type, &current.name).await,
@@ -129,9 +284,7 @@ pub async fn update_mcp(
         .unwrap_or_else(|| current.config_json.clone());
     let cli_flags = input.cli_flags.unwrap_or(current_cli_flags);
 
-    if cli_flags.iter().any(|f| f.cli_type == "codex" && f.enabled) {
-        parse_codex_mcp_toml_table(&new_config)?;
-    }
+    validate_mcp_config_for_flags(db.inner(), &new_config, &cli_flags).await?;
 
     if new_name != current.name || new_config != current.config_json {
         sqlx::query(
@@ -210,33 +363,45 @@ async fn sync_mcp_to_cli_async(
     cli_type: &str,
     is_enabled: bool,
 ) -> Result<()> {
-    let path = get_mcp_config_path(db, cli_type)
-        .await
-        .ok_or_else(|| format!("Invalid CLI type: {}", cli_type))?;
-
-    if !is_enabled && !tokio::fs::try_exists(&path).await.unwrap_or(false) {
+    let target = resolve_mcp_target(db, cli_type).await?;
+    if !is_enabled && !tokio::fs::try_exists(&target.path).await.unwrap_or(false) {
         return Ok(());
     }
-
-    if cli_type == "codex" {
-        sync_single_codex_mcp(path, mcp_name, mcp_config_json, is_enabled).await?;
-        return Ok(());
+    match target.format {
+        crate::db::models::ConfigFormat::Json => {
+            sync_json_mcp(&target, mcp_name, mcp_config_json, is_enabled).await
+        }
+        crate::db::models::ConfigFormat::Toml => {
+            sync_toml_mcp(&target, mcp_name, mcp_config_json, is_enabled).await
+        }
+        _ => Err("MCP format 只支持 json 或 toml".to_string()),
     }
+}
 
-    let mut config = if tokio::fs::try_exists(&path).await.unwrap_or(false) {
-        let content = tokio::fs::read_to_string(&path)
+async fn sync_json_mcp(
+    target: &McpTarget,
+    mcp_name: &str,
+    mcp_config_json: &str,
+    is_enabled: bool,
+) -> Result<()> {
+    let mut config = if tokio::fs::try_exists(&target.path).await.unwrap_or(false) {
+        let content = tokio::fs::read_to_string(&target.path)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
         match serde_json::from_str::<serde_json::Value>(&content) {
             Ok(config) => config,
-            Err(e) => {
-                if is_enabled {
-                    return Err(format!("{} 解析失败，未写入: {}", path.display(), e));
-                }
+            Err(error) if is_enabled => {
+                return Err(format!(
+                    "{} 解析失败，未写入: {}",
+                    target.path.display(),
+                    error
+                ));
+            }
+            Err(error) => {
                 tracing::warn!(
                     "Failed to parse {}, leaving file untouched: {}",
-                    path.display(),
-                    e
+                    target.path.display(),
+                    error
                 );
                 return Ok(());
             }
@@ -246,33 +411,77 @@ async fn sync_mcp_to_cli_async(
     };
 
     if is_enabled {
-        if let Ok(mcp_json) = serde_json::from_str::<serde_json::Value>(mcp_config_json) {
-            if let Some(obj) = config.as_object_mut() {
-                if !obj.contains_key("mcpServers") {
-                    obj.insert("mcpServers".to_string(), serde_json::json!({}));
-                }
-                if let Some(servers) = obj.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-                    servers.insert(mcp_name.to_string(), mcp_json);
-                }
-            }
-        }
-    } else if let Some(obj) = config.as_object_mut() {
-        if let Some(servers) = obj.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-            servers.remove(mcp_name);
-        }
+        let mcp_config = serde_json::from_str::<serde_json::Value>(mcp_config_json)
+            .map_err(|error| format!("MCP JSON 格式错误: {}", error))?;
+        ensure_json_object(&mut config, &target.servers_path)?
+            .insert(mcp_name.to_string(), mcp_config);
+    } else if let Some(servers) = json_object_at_mut(&mut config, &target.servers_path) {
+        servers.remove(mcp_name);
+    } else {
+        return Ok(());
     }
 
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = target.path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
     }
-    let config_str = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    tokio::fs::write(&path, config_str)
+    let content = serde_json::to_string_pretty(&config).map_err(|error| error.to_string())?;
+    tokio::fs::write(&target.path, content)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| error.to_string())
+}
 
-    Ok(())
+async fn sync_toml_mcp(
+    target: &McpTarget,
+    mcp_name: &str,
+    mcp_config_json: &str,
+    is_enabled: bool,
+) -> Result<()> {
+    let mut document = if tokio::fs::try_exists(&target.path).await.unwrap_or(false) {
+        let content = tokio::fs::read_to_string(&target.path)
+            .await
+            .map_err(|error| error.to_string())?;
+        match content.parse::<toml_edit::DocumentMut>() {
+            Ok(document) => document,
+            Err(error) if is_enabled => {
+                return Err(format!(
+                    "{} 解析失败，未写入: {}",
+                    target.path.display(),
+                    error
+                ));
+            }
+            Err(error) => {
+                tracing::warn!(
+                    "Failed to parse {}, leaving file untouched: {}",
+                    target.path.display(),
+                    error
+                );
+                return Ok(());
+            }
+        }
+    } else {
+        toml_edit::DocumentMut::new()
+    };
+
+    if is_enabled {
+        let server = parse_mcp_toml_table(mcp_config_json)?;
+        ensure_toml_table(document.as_table_mut(), &target.servers_path)?
+            .insert(mcp_name, toml_edit::Item::Table(server));
+    } else if let Some(servers) = toml_table_at_mut(document.as_table_mut(), &target.servers_path) {
+        servers.remove(mcp_name);
+    } else {
+        return Ok(());
+    }
+
+    if let Some(parent) = target.path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    tokio::fs::write(&target.path, document.to_string())
+        .await
+        .map_err(|error| error.to_string())
 }
 
 async fn sync_enabled_mcp_to_cli(
@@ -296,7 +505,7 @@ async fn sync_single_mcp_to_cli(
     mcp_config_json: &str,
     cli_flags: &[McpCliFlag],
 ) -> Result<()> {
-    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
+    for cli_type in crate::services::agent::agent_ids_for_feature("mcp") {
         let is_enabled = cli_flags
             .iter()
             .any(|f| f.cli_type == cli_type && f.enabled);
@@ -307,132 +516,10 @@ async fn sync_single_mcp_to_cli(
     Ok(())
 }
 
-// Helper function to sync a single MCP to Codex config.toml
-async fn sync_single_codex_mcp(
-    config_path: std::path::PathBuf,
-    mcp_name: &str,
-    mcp_config_json: &str,
-    is_enabled: bool,
-) -> Result<()> {
-    // Read existing TOML or create new one
-    let mut doc = if tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
-        let content = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
-            tracing::error!("Failed to read config.toml: {}", e);
-            e.to_string()
-        })?;
-        match content.parse::<toml_edit::DocumentMut>() {
-            Ok(doc) => doc,
-            Err(e) => {
-                if is_enabled {
-                    return Err(format!("{} 解析失败，未写入: {}", config_path.display(), e));
-                }
-                tracing::warn!(
-                    "Failed to parse {}, leaving file untouched: {}",
-                    config_path.display(),
-                    e
-                );
-                return Ok(());
-            }
-        }
-    } else {
-        toml_edit::DocumentMut::new()
-    };
-
-    // Ensure mcp_servers table exists
-    if !doc.contains_table("mcp_servers") {
-        doc["mcp_servers"] = toml_edit::table();
-    }
-
-    if is_enabled {
-        let server_table = parse_codex_mcp_toml_table(mcp_config_json)?;
-        doc["mcp_servers"][mcp_name] = toml_edit::Item::Table(server_table);
-    } else {
-        // Remove this MCP by name
-        if let Some(table) = doc.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
-            table.remove(mcp_name);
-        }
-    }
-
-    // Write config file
-    if let Some(parent) = config_path.parent() {
-        tokio::fs::create_dir_all(parent).await.map_err(|e| {
-            tracing::error!("Failed to create directory: {}", e);
-            e.to_string()
-        })?;
-    }
-    tokio::fs::write(&config_path, doc.to_string())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to write config.toml: {}", e);
-            e.to_string()
-        })?;
-
-    Ok(())
-}
-
 // Delete a single MCP from all CLI configs
 async fn delete_mcp_from_cli(db: &SqlitePool, mcp_name: &str) -> Result<()> {
-    for cli_type in CliType::ALL.iter().map(CliType::as_str) {
-        let config_path = get_mcp_config_path(db, cli_type).await;
-        if let Some(path) = config_path {
-            if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
-                continue;
-            }
-
-            if cli_type == "codex" {
-                // Handle Codex TOML format
-                let content = tokio::fs::read_to_string(&path)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let mut doc = match content.parse::<toml_edit::DocumentMut>() {
-                    Ok(doc) => doc,
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to parse {}, leaving file untouched: {}",
-                            path.display(),
-                            e
-                        );
-                        continue;
-                    }
-                };
-
-                if let Some(table) = doc["mcp_servers"].as_table_mut() {
-                    table.remove(mcp_name);
-                }
-
-                tokio::fs::write(&path, doc.to_string())
-                    .await
-                    .map_err(|e| e.to_string())?;
-            } else {
-                // Handle Claude/Gemini JSON format
-                let content = tokio::fs::read_to_string(&path)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let mut config: serde_json::Value = match serde_json::from_str(&content) {
-                    Ok(config) => config,
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to parse {}, leaving file untouched: {}",
-                            path.display(),
-                            e
-                        );
-                        continue;
-                    }
-                };
-
-                if let Some(mcp_servers) =
-                    config.get_mut("mcpServers").and_then(|v| v.as_object_mut())
-                {
-                    mcp_servers.remove(mcp_name);
-                }
-
-                let config_str =
-                    serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-                tokio::fs::write(&path, config_str)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-        }
+    for cli_type in crate::services::agent::agent_ids_for_feature("mcp") {
+        sync_mcp_to_cli_async(db, mcp_name, "{}", cli_type, false).await?;
     }
 
     Ok(())

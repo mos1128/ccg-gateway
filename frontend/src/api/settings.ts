@@ -1,5 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
-import { CLI_TYPES } from '@/types/models'
+import { invoke } from './tauri-bridge'
 import type {
   AllSettings,
   CliType,
@@ -11,20 +10,22 @@ import type {
   SystemStatus,
   ProviderProfile,
   CliProfileSettingsStatus,
-  CliMode
+  CliMode,
+  AgentInfo,
 } from '@/types/models'
 
 export const settingsApi = {
   getAll: async () => {
+    const agents = await invoke<AgentInfo[]>('get_agents')
     const [gateway, timeouts, cliSettingsList, status] = await Promise.all([
       invoke<GatewaySettingsRaw>('get_gateway_settings'),
       invoke<{ stream_first_byte_timeout: number; stream_idle_timeout: number; non_stream_timeout: number }>('get_timeout_settings'),
-      Promise.all(CLI_TYPES.map((cliType) => invoke<CliSettings>('get_cli_settings', { cliType }))),
+      Promise.all(agents.map((agent) => invoke<CliSettings>('get_cli_settings', { cliType: agent.id }))),
       invoke<SystemStatus>('get_system_status'),
     ])
-    const cliSettings = {} as Record<CliType, CliSettings>
-    for (const [index, cliType] of CLI_TYPES.entries()) {
-      cliSettings[cliType] = cliSettingsList[index]
+    const cliSettings: Record<string, CliSettings> = {}
+    for (const [index, agent] of agents.entries()) {
+      cliSettings[agent.id] = cliSettingsList[index]
     }
 
     return {
@@ -68,20 +69,12 @@ export const settingsApi = {
     await invoke('set_dashboard_cli_mode', { cliType, mode })
     return { data: null }
   },
-  getClaudeProfileSettingsStatus: async (profile: ProviderProfile) => {
-    const data = await invoke<CliProfileSettingsStatus>('get_claude_profile_settings_status', { profile })
+  getProfileSettingsStatus: async (cliType: CliType, profile: ProviderProfile) => {
+    const data = await invoke<CliProfileSettingsStatus>('get_profile_settings_status', { cliType, profile })
     return { data }
   },
-  ensureClaudeProfileSettings: async (profile: ProviderProfile) => {
-    const data = await invoke<CliProfileSettingsStatus>('ensure_claude_profile_settings', { profile })
-    return { data }
-  },
-  getCodexProfileSettingsStatus: async (profile: ProviderProfile) => {
-    const data = await invoke<CliProfileSettingsStatus>('get_codex_profile_settings_status', { profile })
-    return { data }
-  },
-  ensureCodexProfileSettings: async (profile: ProviderProfile) => {
-    const data = await invoke<CliProfileSettingsStatus>('ensure_codex_profile_settings', { profile })
+  ensureProfileSettings: async (cliType: CliType, profile: ProviderProfile) => {
+    const data = await invoke<CliProfileSettingsStatus>('ensure_profile_settings', { cliType, profile })
     return { data }
   },
   getStatus: async () => {

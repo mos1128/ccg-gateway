@@ -1,6 +1,11 @@
+pub mod agent;
+pub mod agent_config;
 pub mod cli_config;
+pub mod config_patch;
 pub mod cost;
+pub mod official_credential;
 pub mod plugin;
+pub mod protocol;
 pub mod provider;
 pub mod provider_profile;
 pub mod proxy;

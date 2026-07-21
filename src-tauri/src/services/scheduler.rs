@@ -695,11 +695,16 @@ async fn execute_keepalive_task(
         return Ok(outcome);
     }
 
-    let results = join_all(
-        targets
-            .into_iter()
-            .map(|target| execute_keepalive_target(db, log_db, run_id, target, &model_name, test_text.as_deref())),
-    )
+    let results = join_all(targets.into_iter().map(|target| {
+        execute_keepalive_target(
+            db,
+            log_db,
+            run_id,
+            target,
+            &model_name,
+            test_text.as_deref(),
+        )
+    }))
     .await;
 
     for result in results {
@@ -746,7 +751,8 @@ async fn execute_keepalive_target(
 
     let timeout_secs = provider_service::get_stream_first_byte_timeout(db).await;
     let result =
-        provider_service::test_provider_model(db, provider.id, model_name, test_text, timeout_secs).await;
+        provider_service::test_provider_model(db, provider.id, model_name, test_text, timeout_secs)
+            .await;
     let ok = result
         .status_code
         .map(|code| (200..300).contains(&code))

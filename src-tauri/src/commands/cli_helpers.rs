@@ -1,27 +1,5 @@
 use std::path::{Path, PathBuf};
 
-pub fn claude_settings_filename(profile: &str) -> String {
-    crate::services::cli_config::claude_settings_filename(profile)
-}
-
-pub fn mcp_config_path(config_dir: &Path, cli_type: &str) -> Option<PathBuf> {
-    match cli_type {
-        "claude_code" => config_dir.parent().map(|p| p.join(".claude.json")),
-        "codex" => Some(config_dir.join("config.toml")),
-        "gemini" => Some(config_dir.join("settings.json")),
-        _ => None,
-    }
-}
-
-pub fn prompt_file_path(config_dir: &Path, cli_type: &str) -> Option<PathBuf> {
-    match cli_type {
-        "claude_code" => Some(config_dir.join("CLAUDE.md")),
-        "codex" => Some(config_dir.join("AGENTS.md")),
-        "gemini" => Some(config_dir.join("GEMINI.md")),
-        _ => None,
-    }
-}
-
 /// Returns the projects listing directory for a given CLI type.
 pub fn projects_dir(base_dir: &Path, cli_type: &str) -> PathBuf {
     match cli_type {
@@ -61,17 +39,21 @@ pub fn project_dir(base_dir: &Path, cli_type: &str, project: &str) -> PathBuf {
 
 /// Validates that the given config content matches the expected format for the CLI type.
 pub fn validate_config_format(cli_type: &str, content: &str) -> std::result::Result<(), String> {
-    match cli_type {
-        "claude_code" | "gemini" => {
+    let feature = &crate::services::agent::get_definition(cli_type)
+        .ok_or_else(|| format!("未知 Agent: {}", cli_type))?
+        .features
+        .global_preset;
+    match feature.format {
+        Some(crate::db::models::ConfigFormat::Json) => {
             serde_json::from_str::<serde_json::Value>(content)
                 .map_err(|e| format!("JSON 格式错误: {}", e))?;
         }
-        "codex" => {
+        Some(crate::db::models::ConfigFormat::Toml) => {
             content
                 .parse::<toml_edit::DocumentMut>()
                 .map_err(|e| format!("TOML 格式错误: {}", e))?;
         }
-        _ => {}
+        _ => return Err(format!("Agent {} 未声明可用的全局预设格式", cli_type)),
     }
     Ok(())
 }

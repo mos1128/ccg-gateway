@@ -37,9 +37,9 @@ export const useCredentialStore = defineStore('credentials', () => {
     credentials.value = credentials.value.filter(c => c.id !== id)
   }
 
-  async function reorderCredentials(ids: number[]) {
+  async function reorderCredentials(ids: number[], cliType: CliType) {
     await credentialsApi.reorder(ids)
-    await fetchCredentials(credentials.value[0]?.cli_type || 'claude_code')
+    await fetchCredentials(cliType)
   }
 
   return {

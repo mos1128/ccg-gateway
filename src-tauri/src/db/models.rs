@@ -3,6 +3,249 @@ use sqlx::FromRow;
 
 use crate::time::now_timestamp;
 
+// ==================== Agent / Protocol ====================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Protocol {
+    AnthropicMessages,
+    OpenaiChat,
+    OpenaiResponses,
+    GeminiGenerateContent,
+}
+
+impl Protocol {
+    pub const ALL: [Protocol; 4] = [
+        Protocol::AnthropicMessages,
+        Protocol::OpenaiChat,
+        Protocol::OpenaiResponses,
+        Protocol::GeminiGenerateContent,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Protocol::AnthropicMessages => "anthropic_messages",
+            Protocol::OpenaiChat => "openai_chat",
+            Protocol::OpenaiResponses => "openai_responses",
+            Protocol::GeminiGenerateContent => "gemini_generate_content",
+        }
+    }
+}
+
+impl std::str::FromStr for Protocol {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim() {
+            "anthropic_messages" => Ok(Protocol::AnthropicMessages),
+            "openai_chat" => Ok(Protocol::OpenaiChat),
+            "openai_responses" => Ok(Protocol::OpenaiResponses),
+            "gemini_generate_content" => Ok(Protocol::GeminiGenerateContent),
+            _ => Err(format!("未知 Protocol: {}", value)),
+        }
+    }
+}
+
+impl std::fmt::Display for Protocol {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToggleFeature {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterFeature {
+    pub enabled: bool,
+    pub adapter: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileLaunch {
+    #[serde(default)]
+    pub default: Vec<String>,
+    #[serde(default)]
+    pub non_default: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileFeature {
+    pub enabled: bool,
+    pub profile_file: Option<String>,
+    #[serde(default)]
+    pub operations: Vec<ConfigOperation>,
+    pub launch: Option<ProfileLaunch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SkillFeature {
+    pub enabled: bool,
+    pub directory: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpFeature {
+    pub enabled: bool,
+    pub file: Option<String>,
+    pub format: Option<ConfigFormat>,
+    #[serde(default)]
+    pub servers_path: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileFeature {
+    pub enabled: bool,
+    pub file: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigFormat {
+    Json,
+    Jsonc,
+    Toml,
+    Env,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigOperationKind {
+    Set,
+    Remove,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigOperation {
+    pub id: String,
+    pub op: ConfigOperationKind,
+    pub file: String,
+    pub format: ConfigFormat,
+    #[serde(default)]
+    pub path: Vec<String>,
+    pub value: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderConfigFeature {
+    pub enabled: bool,
+    #[serde(default)]
+    pub operations: Vec<ConfigOperation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GlobalPresetFeature {
+    pub enabled: bool,
+    pub file: Option<String>,
+    pub format: Option<ConfigFormat>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CredentialSource {
+    pub file_id: String,
+    #[serde(default)]
+    pub path: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OfficialLoginOperationKind {
+    ReplaceFile,
+    SetField,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfficialLoginOperation {
+    pub id: String,
+    pub op: OfficialLoginOperationKind,
+    pub file: String,
+    pub format: Option<ConfigFormat>,
+    #[serde(default)]
+    pub path: Vec<String>,
+    pub content_from: Option<CredentialSource>,
+    pub value: Option<serde_json::Value>,
+    pub value_from: Option<CredentialSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfficialLoginFeature {
+    pub enabled: bool,
+    #[serde(default)]
+    pub operations: Vec<OfficialLoginOperation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentFeatures {
+    pub provider_config: ProviderConfigFeature,
+    pub global_preset: GlobalPresetFeature,
+    pub profiles: ProfileFeature,
+    pub official_login: OfficialLoginFeature,
+    pub model_mapping: ToggleFeature,
+    pub token_usage: ToggleFeature,
+    pub skills: SkillFeature,
+    pub mcp: McpFeature,
+    pub sessions: AdapterFeature,
+    pub plugins: AdapterFeature,
+    pub prompts: FileFeature,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentDefinition {
+    pub schema_version: u32,
+    pub id: String,
+    pub sort_order: i64,
+    pub name: String,
+    pub config_dir: String,
+    pub user_agent: Vec<String>,
+    pub protocols: Vec<Protocol>,
+    pub features: AgentFeatures,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentInfo {
+    pub schema_version: u32,
+    pub id: String,
+    pub name: String,
+    pub config_dir: String,
+    pub user_agent: Vec<String>,
+    pub protocols: Vec<Protocol>,
+    pub features: AgentFeatures,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentDefinitionLoadError {
+    pub source: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct AgentDiagnostic {
+    pub id: i64,
+    pub kind: String,
+    pub key: String,
+    pub payload_json: String,
+    pub first_seen: i64,
+    pub last_seen: i64,
+    pub occurrence_count: i64,
+}
+
 // ==================== Provider 相关实体 ====================
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -40,6 +283,7 @@ pub struct Provider {
     pub id: i64,
     pub cli_type: String,
     pub profile: String,
+    pub protocol: String,
     pub name: String,
     pub base_url: String,
     pub api_key: String,
@@ -91,6 +335,7 @@ pub struct ModelBlacklistInput {
 pub struct ProviderCreate {
     pub cli_type: Option<String>,
     pub profile: Option<String>,
+    pub protocol: Option<String>,
     pub name: String,
     pub base_url: String,
     pub api_key: String,
@@ -109,6 +354,7 @@ pub struct ProviderCreate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderUpdate {
     pub profile: Option<String>,
+    pub protocol: Option<String>,
     pub name: Option<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
@@ -144,6 +390,7 @@ pub struct ProviderResponse {
     pub id: i64,
     pub cli_type: String,
     pub profile: String,
+    pub protocol: String,
     pub name: String,
     pub base_url: String,
     pub api_key: String,
@@ -179,6 +426,7 @@ impl From<Provider> for ProviderResponse {
             id: p.id,
             cli_type: p.cli_type,
             profile: p.profile,
+            protocol: p.protocol,
             name: p.name,
             base_url: p.base_url,
             api_key: p.api_key,
@@ -518,6 +766,20 @@ pub struct OfficialCredentialResponse {
     pub display_info: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfficialCredentialFile {
+    pub format: ConfigFormat,
+    pub content: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OfficialCredentialPayload {
+    pub schema_version: u32,
+    pub files: std::collections::HashMap<String, OfficialCredentialFile>,
+}
+
 // ==================== MCP 相关实体 ====================
 
 // MCP Config (对应数据库表)
@@ -712,6 +974,9 @@ pub struct RequestLogItem {
     pub created_at: i64,
     pub finished_at: Option<i64>,
     pub cli_type: String,
+    pub protocol: Option<String>,
+    pub provider_id: Option<i64>,
+    pub profile: Option<String>,
     pub provider_name: String,
     pub model_id: Option<String>,
     pub status_code: Option<i64>,
@@ -735,6 +1000,9 @@ pub struct RequestLogDetail {
     pub created_at: i64,
     pub finished_at: Option<i64>,
     pub cli_type: String,
+    pub protocol: Option<String>,
+    pub provider_id: Option<i64>,
+    pub profile: Option<String>,
     pub provider_name: String,
     pub model_id: Option<String>,
     pub status_code: Option<i64>,

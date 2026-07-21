@@ -152,11 +152,11 @@ import VChart from 'vue-echarts'
 import { statsApi } from '@/api/stats'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemeStore } from '@/stores/theme'
+import { useAgentStore } from '@/stores/agents'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { formatCost, formatTokens } from '@/utils/json'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
-import { CLI_TABS, CLI_LABELS, CLI_TYPES } from '@/types/models'
 import type { CliType, CliMode, AdvancedStatsRow } from '@/types/models'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
 
@@ -164,13 +164,14 @@ use([LineChart, BarChart, TooltipComponent, GridComponent, DatasetComponent, Tra
 
 const settingsStore = useSettingsStore()
 const themeStore = useThemeStore()
+const agentStore = useAgentStore()
 const REFRESH_MS = 5000
 const CHART_FONT = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Microsoft YaHei UI', Arial, sans-serif"
 const chartInitOptions = { renderer: 'svg' } as const
 
 // ===== CLI 模式控制 =====
-const cliList = CLI_TABS.map(({ id, label }) => ({ type: id, label }))
-const cliLoading = reactive(Object.fromEntries(CLI_TYPES.map((t) => [t, false] as [CliType, boolean])) as Record<CliType, boolean>)
+const cliList = computed(() => agentStore.agents.map(({ id, name }) => ({ type: id, label: name })))
+const cliLoading = reactive<Record<CliType, boolean>>({})
 const modeOptions: { id: CliMode; label: string }[] = [
   { id: 'proxy_route', label: '路由' },
   { id: 'provider_direct', label: '直连' },
@@ -186,18 +187,32 @@ function getCliMode(cli: CliType): CliMode {
 //   return getCliMode(cli) === 'proxy_route'
 // }
 function isModeDisabled(cli: CliType, mode: CliMode) {
-  return cli === 'claude_code' && mode === 'official_direct'
+  const agent = agentStore.get(cli)
+  if (!agent) return true
+  if (mode === 'disabled') return false
+  if (mode === 'proxy_route' || mode === 'provider_direct') {
+    const feature = agent.features.provider_config
+    return !feature.enabled || !feature.operations.length
+  }
+  return !agent.features.official_login.enabled
+    || !agent.features.official_login.operations?.length
+}
+function disabledModeMessage(mode: CliMode) {
+  if (mode === 'proxy_route') return '该 Agent 不支持自动写入网关配置'
+  if (mode === 'provider_direct') return '该 Agent 不支持自动写入服务商直连配置'
+  if (mode === 'official_direct') return '该 Agent 不支持托管官方凭证'
+  return '该模式不可用'
 }
 async function setMode(cli: CliType, mode: CliMode) {
   if (getCliMode(cli) === mode || cliLoading[cli]) return
   if (isModeDisabled(cli, mode)) {
-    notify('Claude Code 暂不支持官方直连', 'warning')
+    notify(disabledModeMessage(mode), 'warning')
     return
   }
   cliLoading[cli] = true
   try {
     await settingsStore.setDashboardCliMode(cli, mode)
-    notify(`${CLI_LABELS[cli]} 已切换至 ${modeLabels[mode]}`)
+    notify(`${agentStore.get(cli)?.name || cli} 已切换至 ${modeLabels[mode]}`)
   } catch (e) {
     notify(`切换失败: ${getErrorMessage(e)}`, 'error')
   } finally {
@@ -655,8 +670,11 @@ useAutoRefresh(fetchStats, {
   onError: (e) => notify(getErrorMessage(e, '数据刷新失败'), 'error')
 })
 
-onMounted(() => {
-  if (!settingsStore.settings) settingsStore.fetchSettings()
+onMounted(async () => {
+  await Promise.all([
+    agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
+    settingsStore.settings ? Promise.resolve() : settingsStore.fetchSettings(),
+  ])
 })
 </script>
 

@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ccg-gateway.local/schemas/agent-definition.schema.json",
+  "title": "CCG Gateway built-in Agent definition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "sort_order", "name", "config_dir", "user_agent", "protocols", "features"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+    "sort_order": { "type": "integer", "minimum": 0 },
+    "name": { "type": "string", "minLength": 1 },
+    "config_dir": { "type": "string", "minLength": 1 },
+    "user_agent": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "protocols": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/protocol" }
+    },
+    "features": {
+      "type": "object",
+      "required": [
+        "provider_config",
+        "global_preset",
+        "profiles",
+        "official_login",
+        "model_mapping",
+        "token_usage",
+        "skills",
+        "mcp",
+        "sessions",
+        "plugins",
+        "prompts"
+      ],
+      "properties": {
+        "provider_config": { "$ref": "#/$defs/providerConfigFeature" },
+        "global_preset": { "$ref": "#/$defs/globalPresetFeature" },
+        "profiles": { "$ref": "#/$defs/profileFeature" },
+        "official_login": { "$ref": "#/$defs/officialLogin" },
+        "model_mapping": { "$ref": "#/$defs/toggleFeature" },
+        "token_usage": { "$ref": "#/$defs/toggleFeature" },
+        "skills": { "$ref": "#/$defs/skillFeature" },
+        "mcp": { "$ref": "#/$defs/mcpFeature" },
+        "sessions": { "$ref": "#/$defs/adapterFeature" },
+        "plugins": { "$ref": "#/$defs/adapterFeature" },
+        "prompts": { "$ref": "#/$defs/fileFeature" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "protocol": {
+      "enum": ["anthropic_messages", "openai_chat", "openai_responses", "gemini_generate_content"]
+    },
+    "toggleFeature": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": { "enabled": { "type": "boolean" } },
+      "additionalProperties": false
+    },
+    "adapterFeature": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "adapter": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "profileLaunch": {
+      "type": "object",
+      "required": ["default", "non_default"],
+      "properties": {
+        "default": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "non_default": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "profileFeature": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "profile_file": { "type": "string", "minLength": 1, "pattern": "\\{profile\\}" },
+        "operations": { "type": "array", "items": { "$ref": "#/$defs/operation" } },
+        "launch": { "$ref": "#/$defs/profileLaunch" }
+      },
+      "additionalProperties": false
+    },
+    "skillFeature": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "directory": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "mcpFeature": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "file": { "type": "string", "minLength": 1 },
+        "format": { "enum": ["json", "toml"] },
+        "servers_path": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "fileFeature": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "file": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "operation": {
+      "type": "object",
+      "required": ["id", "op", "file", "format", "path"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "op": { "enum": ["set", "remove"] },
+        "file": { "type": "string", "minLength": 1 },
+        "format": { "enum": ["json", "jsonc", "toml", "env"] },
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "value": {}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "format": { "const": "env" } },
+            "required": ["format"]
+          },
+          "then": {
+            "properties": {
+              "path": { "maxItems": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "op": { "const": "set" } },
+            "required": ["op"]
+          },
+          "then": { "required": ["value"] },
+          "else": { "not": { "required": ["value"] } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "providerConfigFeature": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "operations": { "type": "array", "items": { "$ref": "#/$defs/operation" } }
+      },
+      "additionalProperties": false
+    },
+    "globalPresetFeature": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "file": { "type": "string", "minLength": 1 },
+        "format": { "enum": ["json", "toml"] }
+      },
+      "additionalProperties": false
+    },
+    "credentialSource": {
+      "type": "object",
+      "required": ["file_id"],
+      "properties": {
+        "file_id": { "type": "string", "minLength": 1 },
+        "path": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    },
+    "officialOperation": {
+      "type": "object",
+      "required": ["id", "op", "file"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "op": { "enum": ["replace_file", "set_field"] },
+        "file": { "type": "string", "minLength": 1 },
+        "format": { "const": "json" },
+        "path": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "content_from": { "$ref": "#/$defs/credentialSource" },
+        "value": {},
+        "value_from": { "$ref": "#/$defs/credentialSource" }
+      },
+      "additionalProperties": false
+    },
+    "officialLogin": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "operations": { "type": "array", "items": { "$ref": "#/$defs/officialOperation" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

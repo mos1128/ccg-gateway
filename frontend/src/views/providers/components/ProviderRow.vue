@@ -10,6 +10,7 @@
       <div class="pt-name" :class="{ off: !provider.enabled }">
         <OverflowText :text="provider.name" />
       </div>
+      <div class="pt-cell mono"><OverflowText :text="protocolLabel" /></div>
       <div class="pt-cell pt-endpoint pt-col-endpoint mono"><OverflowText :text="provider.base_url" /></div>
       <div>
         <el-tooltip :content="statusTitle" placement="top" effect="light" :disabled="!provider.is_blacklisted" :show-after="250">
@@ -40,6 +41,7 @@
       <div class="pt-name">
         <OverflowText :text="provider.name" />
       </div>
+      <div class="pt-cell mono"><OverflowText :text="protocolLabel" /></div>
       <div class="pt-cell pt-endpoint pt-col-endpoint mono"><OverflowText :text="provider.base_url" /></div>
       <div><span class="v2-pill dot" :class="health.cls">{{ health.text }}</span></div>
       <div class="pt-acts">
@@ -59,6 +61,7 @@
 
 <script setup lang="ts">
 import OverflowText from './OverflowText.vue'
+import { PROTOCOL_LABELS } from '@/types/models'
 import type { Provider } from '@/types/models'
 
 const props = defineProps<{
@@ -81,6 +84,7 @@ const emit = defineEmits<{
 const isDirectMode = computed(() => props.mode === 'direct')
 const isRouteMode = computed(() => props.mode !== 'direct')
 const failDanger = computed(() => isRouteMode.value && props.provider.consecutive_failures >= props.provider.failure_threshold)
+const protocolLabel = computed(() => PROTOCOL_LABELS[props.provider.protocol] || props.provider.protocol)
 
 const mappingText = computed(() => {
   if (props.provider.model_maps?.length) return props.provider.model_maps.map((m) => m.target_model).join('、')

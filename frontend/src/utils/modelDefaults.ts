@@ -1,9 +1,9 @@
 import type { CliType } from '@/types/models'
 
-export const DEFAULT_MODEL_NAMES: Record<CliType, string> = {
+export const DEFAULT_MODEL_NAMES: Record<string, string> = {
   claude_code: 'claude-opus-4-8',
   codex: 'gpt-5.5',
-  gemini: 'gemini-3.1-pro-preview'
+  gemini: 'gemini-3.1-pro-preview',
 }
 
 function modelStorageKey(cliType: CliType): string {

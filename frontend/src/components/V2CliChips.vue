@@ -1,7 +1,7 @@
 <template>
   <div class="v2-chip-row">
     <button
-      v-for="c in CLI_TABS"
+      v-for="c in tabs"
       :key="c.id"
       type="button"
       class="v2-chip"
@@ -17,12 +17,17 @@
 </template>
 
 <script setup lang="ts">
-import { CLI_TABS } from '@/types/models'
-import type { CliType, CliFlags } from '@/types/models'
+import type { AgentFeatureName, CliType, CliFlags } from '@/types/models'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
+import { useAgentStore } from '@/stores/agents'
 
-defineProps<{ flags: CliFlags }>()
+const props = defineProps<{ flags: CliFlags; feature?: AgentFeatureName }>()
 const emit = defineEmits<{ toggle: [cliType: CliType, enabled: boolean] }>()
+const agentStore = useAgentStore()
+const tabs = computed(() => (props.feature
+  ? agentStore.agentsFor(props.feature)
+  : agentStore.agents
+).map((agent) => ({ id: agent.id, label: agent.name })))
 </script>
 
 <style scoped>

@@ -5,16 +5,25 @@
     </div>
 
     <div v-show="tab === 'basic'">
+      <div v-if="protocols.length > 1" class="v2-field">
+        <label class="v2-label">端点类型 <span class="req">*</span></label>
+        <AppSelect
+          :model-value="form.protocol"
+          :options="protocolOptions"
+          width="100%"
+          @change="value => form.protocol = value as Protocol"
+        />
+      </div>
       <div class="v2-field">
         <label class="v2-label">服务商名称 <span class="req">*</span></label>
         <input v-model="form.name" type="text" class="v2-input" placeholder="例如：OpenAI 官方">
       </div>
       <div class="v2-field">
-        <label class="v2-label">Base URL <span class="req">*</span></label>
+        <label class="v2-label">服务地址 <span class="req">*</span></label>
         <input v-model="form.base_url" type="text" class="v2-input" :placeholder="baseUrlPlaceholder">
       </div>
       <div class="v2-field">
-        <label class="v2-label">{{ activeCliType === 'claude_code' ? 'API Token' : 'API Key' }} <span class="req">*</span></label>
+        <label class="v2-label">{{ form.protocol === 'anthropic_messages' ? 'API Token' : 'API Key' }} <span class="req">*</span></label>
         <div class="v2-input-wrapper">
           <input v-model="form.api_key" :type="showApiKey ? 'text' : 'password'" class="v2-input" placeholder="sk-...">
           <el-tooltip :content="showApiKey ? '隐藏 Token' : '显示 Token'" placement="top" effect="light" :show-after="250">
@@ -132,9 +141,12 @@
 
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
-import type { CliType } from '@/types/models'
+import AppSelect from '@/components/AppSelect.vue'
+import { PROTOCOL_LABELS } from '@/types/models'
+import type { CliType, Protocol } from '@/types/models'
 
 interface ProviderEditForm {
+  protocol: Protocol | ''
   name: string
   base_url: string
   api_key: string
@@ -155,6 +167,7 @@ const props = defineProps<{
   form: ProviderEditForm
   activeCliType: CliType
   baseUrlPlaceholder: string
+  protocols: Protocol[]
 }>()
 
 const emit = defineEmits<{
@@ -173,6 +186,10 @@ const tabs = [
 ]
 const tab = ref('basic')
 const showApiKey = ref(false)
+const protocolOptions = computed(() => props.protocols.map((protocol) => ({
+  value: protocol,
+  label: PROTOCOL_LABELS[protocol],
+})))
 
 const visible = computed({
   get: () => props.modelValue,

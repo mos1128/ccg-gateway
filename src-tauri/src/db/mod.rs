@@ -4,7 +4,7 @@ pub mod schema_diff;
 pub mod schema_inspector;
 pub mod schema_migrator;
 
-use crate::services::skill;
+use crate::services::{agent, skill};
 use crate::time::now_timestamp;
 use schema_definition::DatabaseSchema;
 use schema_diff::SchemaDiff;
@@ -77,6 +77,8 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
         create_schema_indexes(&pool, &expected_schema).await?;
         if is_log_db {
             recover_unfinished_request_logs(&pool).await?;
+        } else {
+            init_default_data(&pool).await?;
         }
         tracing::info!("数据库已是最新版本，跳过迁移");
         return Ok(pool);
@@ -97,6 +99,10 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
         let migrator = SchemaMigrator::new(&pool, &expected_schema);
         migrator.apply(diff).await?;
         tracing::info!("数据库迁移完成");
+    }
+
+    if !is_log_db && current_version < 32 {
+        migrate_provider_protocols(&pool).await?;
     }
 
     create_schema_indexes(&pool, &expected_schema).await?;
@@ -260,21 +266,36 @@ async fn init_default_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .execute(pool)
     .await?;
 
-    // cli_settings（插入默认配置）
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('claude_code', '{\n  \"env\": {},\n  \"permissions\": {}\n}', ?)")
+    // 为内置和用户提供的有效 Agent 定义补齐设置行。
+    for definition in agent::definitions() {
+        sqlx::query(
+            "INSERT OR IGNORE INTO cli_settings
+                (cli_type, default_json_config, updated_at)
+             VALUES (?, ?, ?)",
+        )
+        .bind(&definition.id)
+        .bind("")
         .bind(now)
         .execute(pool)
         .await?;
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('codex', 'model_reasoning_effort = \"high\"\nmodel_reasoning_summary = \"detailed\"', ?)")
-        .bind(now)
-        .execute(pool)
-        .await?;
-    sqlx::query("INSERT OR IGNORE INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('gemini', '{\n  \"theme\": \"dark\"\n}', ?)")
-        .bind(now)
-        .execute(pool)
-        .await?;
+    }
 
     let _ = skill::ensure_default_skill_repos();
+
+    Ok(())
+}
+
+async fn migrate_provider_protocols(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    for definition in agent::definitions() {
+        let Some(protocol) = definition.protocols.first() else {
+            continue;
+        };
+        sqlx::query("UPDATE providers SET protocol = ? WHERE cli_type = ?")
+            .bind(protocol.as_str())
+            .bind(&definition.id)
+            .execute(pool)
+            .await?;
+    }
 
     Ok(())
 }

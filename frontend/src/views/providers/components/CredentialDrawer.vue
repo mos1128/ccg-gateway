@@ -7,7 +7,7 @@
 
     <label class="v2-label dr-config-label">配置文件</label>
 
-    <div v-for="file in credentialFiles" :key="file.key" class="v2-field">
+    <div v-for="file in fileDefinitions" :key="file.key" class="v2-field">
       <div class="v2-file-editor">
         <div class="v2-file-editor-header">
           <div class="v2-file-editor-title">
@@ -27,7 +27,7 @@
         </div>
         <div class="v2-file-editor-body">
           <V2CodeEditor
-            v-model="form[file.key]"
+            v-model="form.files[file.key]"
             class="cred-editor"
             :class="{ compact: file.compact }"
             :placeholder="file.placeholder"
@@ -41,22 +41,18 @@
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2CodeEditor from '@/components/V2CodeEditor.vue'
-import type { CliType } from '@/types/models'
+import type { CredentialFileDefinition } from '@/types/models'
 
 interface CredentialEditForm {
   name: string
-  claude_settings: string
-  codex_auth: string
-  gemini_oauth: string
-  gemini_accounts: string
+  files: Record<string, string>
 }
-type CredentialFileKey = Exclude<keyof CredentialEditForm, 'name'>
 
 const props = defineProps<{
   modelValue: boolean
   title: string
   form: CredentialEditForm
-  activeCliType: CliType
+  fileDefinitions: CredentialFileDefinition[]
 }>()
 
 const emit = defineEmits<{
@@ -70,19 +66,6 @@ const visible = computed({
   set: (value) => emit('update:modelValue', value)
 })
 
-const credentialFiles = computed<Array<{ key: CredentialFileKey; name: string; placeholder?: string; compact?: boolean }>>(() => {
-  switch (props.activeCliType) {
-    case 'claude_code':
-      return [{ key: 'claude_settings', name: '~/.claude/settings.json', placeholder: '{"ANTHROPIC_API_KEY": "..."}' }]
-    case 'codex':
-      return [{ key: 'codex_auth', name: '~/.codex/auth.json' }]
-    default:
-      return [
-        { key: 'gemini_oauth', name: '~/.gemini/oauth_creds.json', compact: true },
-        { key: 'gemini_accounts', name: '~/.gemini/google_accounts.json', compact: true }
-      ]
-  }
-})
 </script>
 
 <style scoped>

@@ -1,21 +1,19 @@
 use axum::http::HeaderMap;
 use regex::Regex;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::db::models::{Provider, ProviderModelMap};
+use crate::db::models::{Protocol, Provider, ProviderModelMap};
 use crate::services::routing::{profile_from_gateway_token, ProviderWithMaps, DEFAULT_PROFILE};
 
 pub struct CapturedHeaders {
     pub headers: Vec<(String, String)>,
 }
 
-static CLAUDE_HEADERS: std::sync::OnceLock<std::sync::RwLock<CapturedHeaders>> =
-    std::sync::OnceLock::new();
-static CODEX_HEADERS: std::sync::OnceLock<std::sync::RwLock<CapturedHeaders>> =
-    std::sync::OnceLock::new();
-static GEMINI_HEADERS: std::sync::OnceLock<std::sync::RwLock<CapturedHeaders>> =
-    std::sync::OnceLock::new();
+static CAPTURED_HEADERS: std::sync::OnceLock<
+    std::sync::RwLock<HashMap<(String, Protocol), CapturedHeaders>>,
+> = std::sync::OnceLock::new();
 
 fn extract_safe_headers(headers: &HeaderMap) -> Vec<(String, String)> {
     let mut safe = Vec::new();
@@ -41,78 +39,30 @@ fn extract_safe_headers(headers: &HeaderMap) -> Vec<(String, String)> {
     safe
 }
 
-pub fn get_captured_claude_headers() -> std::sync::RwLockReadGuard<'static, CapturedHeaders> {
-    CLAUDE_HEADERS
-        .get_or_init(|| {
-            std::sync::RwLock::new(CapturedHeaders {
-                headers: Vec::new(),
-            })
-        })
+pub fn get_captured_headers(agent_id: &str, protocol: Protocol) -> Vec<(String, String)> {
+    CAPTURED_HEADERS
+        .get_or_init(|| std::sync::RwLock::new(HashMap::new()))
         .read()
-        .unwrap()
-}
-
-pub fn update_captured_claude_headers(headers: &HeaderMap) {
-    if let Some(mut guard) = CLAUDE_HEADERS
-        .get_or_init(|| {
-            std::sync::RwLock::new(CapturedHeaders {
-                headers: Vec::new(),
-            })
-        })
-        .write()
         .ok()
-    {
-        guard.headers = extract_safe_headers(headers);
-    }
+        .and_then(|headers| {
+            headers
+                .get(&(agent_id.to_string(), protocol))
+                .map(|captured| captured.headers.clone())
+        })
+        .unwrap_or_default()
 }
 
-pub fn get_captured_codex_headers() -> std::sync::RwLockReadGuard<'static, CapturedHeaders> {
-    CODEX_HEADERS
-        .get_or_init(|| {
-            std::sync::RwLock::new(CapturedHeaders {
-                headers: Vec::new(),
-            })
-        })
-        .read()
-        .unwrap()
-}
-
-pub fn update_captured_codex_headers(headers: &HeaderMap) {
-    if let Some(mut guard) = CODEX_HEADERS
-        .get_or_init(|| {
-            std::sync::RwLock::new(CapturedHeaders {
-                headers: Vec::new(),
-            })
-        })
+pub fn update_captured_headers(agent_id: &str, protocol: Protocol, headers: &HeaderMap) {
+    if let Ok(mut captured) = CAPTURED_HEADERS
+        .get_or_init(|| std::sync::RwLock::new(HashMap::new()))
         .write()
-        .ok()
     {
-        guard.headers = extract_safe_headers(headers);
-    }
-}
-
-pub fn get_captured_gemini_headers() -> std::sync::RwLockReadGuard<'static, CapturedHeaders> {
-    GEMINI_HEADERS
-        .get_or_init(|| {
-            std::sync::RwLock::new(CapturedHeaders {
-                headers: Vec::new(),
-            })
-        })
-        .read()
-        .unwrap()
-}
-
-pub fn update_captured_gemini_headers(headers: &HeaderMap) {
-    if let Some(mut guard) = GEMINI_HEADERS
-        .get_or_init(|| {
-            std::sync::RwLock::new(CapturedHeaders {
-                headers: Vec::new(),
-            })
-        })
-        .write()
-        .ok()
-    {
-        guard.headers = extract_safe_headers(headers);
+        captured.insert(
+            (agent_id.to_string(), protocol),
+            CapturedHeaders {
+                headers: extract_safe_headers(headers),
+            },
+        );
     }
 }
 
@@ -168,47 +118,6 @@ pub fn extract_model_from_path(path: &str) -> Option<String> {
     caps.get(1).map(|m| m.as_str().to_string())
 }
 
-/// CLI type enum
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CliType {
-    ClaudeCode,
-    Codex,
-    Gemini,
-}
-
-impl CliType {
-    pub const ALL: [CliType; 3] = [CliType::ClaudeCode, CliType::Codex, CliType::Gemini];
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            CliType::ClaudeCode => "claude_code",
-            CliType::Codex => "codex",
-            CliType::Gemini => "gemini",
-        }
-    }
-}
-
-impl std::fmt::Display for CliType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-/// Parse a stored `cli_type` string into a [`CliType`].
-///
-/// Unknown values fall back to [`CliType::ClaudeCode`]. Most third-party /
-/// OpenAI-compatible coding agents also speak the Anthropic Messages protocol,
-/// and Anthropic-only ones (e.g. ZCode) require it — so defaulting to the
-/// Anthropic family covers the broadest set of providers.
-pub fn cli_type_from_str(s: &str) -> CliType {
-    match s {
-        "claude_code" => CliType::ClaudeCode,
-        "codex" => CliType::Codex,
-        "gemini" => CliType::Gemini,
-        _ => CliType::ClaudeCode,
-    }
-}
-
 /// Token usage tracking
 #[derive(Debug, Default, Clone)]
 pub struct TokenUsage {
@@ -220,23 +129,6 @@ pub struct TokenUsage {
     gemini_tool_use_prompt_tokens: i64,
     gemini_candidates_token_count: i64,
     gemini_thoughts_token_count: i64,
-}
-
-/// Detect CLI type from User-Agent header
-pub fn detect_cli_type(headers: &HeaderMap) -> CliType {
-    let ua = headers
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_lowercase();
-
-    if ua.contains("codex") || ua.contains("openai") {
-        CliType::Codex
-    } else if ua.contains("gemini") || ua.contains("google") {
-        CliType::Gemini
-    } else {
-        CliType::ClaudeCode
-    }
 }
 
 fn bearer_token(value: &str) -> &str {
@@ -265,31 +157,14 @@ pub fn detect_gateway_profile(headers: &HeaderMap) -> String {
 }
 
 /// Check if request is streaming based on body content
-pub fn is_streaming(body: &[u8], path: &str, cli_type: CliType) -> bool {
-    match cli_type {
-        CliType::ClaudeCode => {
-            // Claude uses "stream": true in body
-            if let Ok(json) = serde_json::from_slice::<Value>(body) {
-                json.get("stream")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-            } else {
-                false
-            }
-        }
-        CliType::Codex => {
-            // Codex uses "stream": true in body
-            if let Ok(json) = serde_json::from_slice::<Value>(body) {
-                json.get("stream")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false)
-            } else {
-                false
-            }
-        }
-        CliType::Gemini => {
-            // Gemini uses streamGenerateContent in path
-            path.contains("streamGenerateContent")
+pub fn is_streaming(body: &[u8], path: &str, protocol: Protocol) -> bool {
+    match protocol {
+        Protocol::GeminiGenerateContent => path.contains("streamGenerateContent"),
+        Protocol::AnthropicMessages | Protocol::OpenaiChat | Protocol::OpenaiResponses => {
+            serde_json::from_slice::<Value>(body)
+                .ok()
+                .and_then(|json| json.get("stream").and_then(Value::as_bool))
+                .unwrap_or(false)
         }
     }
 }
@@ -400,13 +275,13 @@ pub fn apply_url_model_mapping(
 }
 
 /// Parse token usage from response data
-pub fn parse_token_usage(data: &[u8], cli_type: CliType, usage: &mut TokenUsage) {
+pub fn parse_token_usage(data: &[u8], protocol: Protocol, usage: &mut TokenUsage) {
     let Ok(json) = serde_json::from_slice::<Value>(data) else {
         return;
     };
 
-    match cli_type {
-        CliType::ClaudeCode => {
+    match protocol {
+        Protocol::AnthropicMessages => {
             // Claude format: message.usage or usage at root
             if let Some(msg_usage) = json.get("message").and_then(|m| m.get("usage")) {
                 apply_claude_usage(msg_usage, usage);
@@ -414,7 +289,7 @@ pub fn parse_token_usage(data: &[u8], cli_type: CliType, usage: &mut TokenUsage)
                 apply_claude_usage(root_usage, usage);
             }
         }
-        CliType::Codex => {
+        Protocol::OpenaiChat | Protocol::OpenaiResponses => {
             // Codex format: response.usage in response.completed event
             // Or usage at root for non-streaming
             if let Some(response) = json.get("response") {
@@ -425,7 +300,7 @@ pub fn parse_token_usage(data: &[u8], cli_type: CliType, usage: &mut TokenUsage)
                 apply_openai_usage(root_usage, usage);
             }
         }
-        CliType::Gemini => {
+        Protocol::GeminiGenerateContent => {
             // Gemini format: usageMetadata
             if let Some(metadata) = json.get("usageMetadata") {
                 apply_gemini_usage(metadata, usage);
@@ -524,7 +399,7 @@ fn apply_gemini_usage(value: &Value, usage: &mut TokenUsage) {
 }
 
 /// Parse token usage from SSE streaming data
-pub fn parse_streaming_token_usage(line: &str, cli_type: CliType, usage: &mut TokenUsage) {
+pub fn parse_streaming_token_usage(line: &str, protocol: Protocol, usage: &mut TokenUsage) {
     // SSE format: data: {...}
     let data = if let Some(stripped) = line.strip_prefix("data: ") {
         stripped
@@ -538,7 +413,7 @@ pub fn parse_streaming_token_usage(line: &str, cli_type: CliType, usage: &mut To
         return;
     }
 
-    parse_token_usage(data.as_bytes(), cli_type, usage);
+    parse_token_usage(data.as_bytes(), protocol, usage);
 }
 
 /// Headers to filter out when forwarding requests
@@ -561,7 +436,10 @@ pub fn filter_headers(headers: &HeaderMap) -> reqwest::header::HeaderMap {
     let mut filtered = reqwest::header::HeaderMap::new();
 
     for (name, value) in headers.iter() {
-        if !FILTERED_HEADERS.iter().any(|h| name.as_str().eq_ignore_ascii_case(h)) {
+        if !FILTERED_HEADERS
+            .iter()
+            .any(|h| name.as_str().eq_ignore_ascii_case(h))
+        {
             if let Ok(header_name) =
                 reqwest::header::HeaderName::from_bytes(name.as_str().as_bytes())
             {
@@ -577,26 +455,20 @@ pub fn filter_headers(headers: &HeaderMap) -> reqwest::header::HeaderMap {
 }
 
 /// Set authentication header based on CLI type
-pub fn set_auth_header(headers: &mut reqwest::header::HeaderMap, api_key: &str, cli_type: CliType) {
-    match cli_type {
-        CliType::ClaudeCode => {
-            // Claude uses Authorization: Bearer
+pub fn set_auth_header(
+    headers: &mut reqwest::header::HeaderMap,
+    api_key: &str,
+    protocol: Protocol,
+) {
+    match protocol {
+        Protocol::AnthropicMessages | Protocol::OpenaiChat | Protocol::OpenaiResponses => {
             if let Ok(value) =
                 reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
             {
                 headers.insert(reqwest::header::AUTHORIZATION, value);
             }
         }
-        CliType::Codex => {
-            // Codex uses Authorization: Bearer
-            if let Ok(value) =
-                reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
-            {
-                headers.insert(reqwest::header::AUTHORIZATION, value);
-            }
-        }
-        CliType::Gemini => {
-            // Gemini uses x-goog-api-key
+        Protocol::GeminiGenerateContent => {
             if let Ok(value) = reqwest::header::HeaderValue::from_str(api_key) {
                 headers.insert("x-goog-api-key", value);
             }
@@ -616,6 +488,24 @@ pub fn apply_useragent_override(headers: &mut reqwest::header::HeaderMap, custom
     }
 }
 
+pub fn join_upstream_url(base_url: &str, request_path: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if request_path.is_empty() || request_path == "/" {
+        return base.to_string();
+    }
+    for prefix in ["/v1beta", "/v1"] {
+        if base.to_ascii_lowercase().ends_with(prefix)
+            && request_path
+                .get(..prefix.len())
+                .is_some_and(|value| value.eq_ignore_ascii_case(prefix))
+            && request_path.as_bytes().get(prefix.len()) == Some(&b'/')
+        {
+            return format!("{}{}", base, &request_path[prefix.len()..]);
+        }
+    }
+    format!("{}{}", base, request_path)
+}
+
 // ---------------------------------------------------------------------------
 // Agent probe templates
 //
@@ -630,11 +520,12 @@ pub fn apply_useragent_override(headers: &mut reqwest::header::HeaderMap, custom
 // ---------------------------------------------------------------------------
 
 /// Default User-Agent strings per CLI type.
-pub fn default_user_agent(cli_type: CliType) -> &'static str {
-    match cli_type {
-        CliType::ClaudeCode => "claude-cli/2.1.121 (external, cli)",
-        CliType::Codex => "codex-tui/0.125.0 (Windows 10.0.22631; x86_64) unknown (codex-tui; 0.125.0)",
-        CliType::Gemini => "GeminiCLI/0.39.1/gemini-3.1-pro-preview (win32; x64; terminal)",
+pub fn default_user_agent(agent_id: &str) -> &'static str {
+    match agent_id {
+        "claude_code" => "claude-cli/2.1.121 (external, cli)",
+        "codex" => "codex-tui/0.125.0 (Windows 10.0.22631; x86_64) unknown (codex-tui; 0.125.0)",
+        "gemini" => "GeminiCLI/0.39.1/gemini-3.1-pro-preview (win32; x64; terminal)",
+        _ => "ccg-gateway/protocol-probe",
     }
 }
 
@@ -654,58 +545,87 @@ pub struct ProbeRequest {
     pub path: String,
     pub body: Vec<u8>,
     pub extra_headers: Vec<(&'static str, String)>,
+    pub method: reqwest::Method,
+    pub streaming: bool,
 }
 
 /// Build a probe request emulating the given CLI type.
 ///
 /// `test_text` overrides the default user prompt (`今天天气不错`) when `Some`.
-pub fn build_probe_request(cli_type: CliType, model: &str, test_text: Option<&str>) -> ProbeRequest {
+pub fn build_probe_request(
+    agent_id: &str,
+    protocol: Protocol,
+    model: &str,
+    test_text: Option<&str>,
+) -> ProbeRequest {
     let text = test_text
         .map(str::trim)
         .filter(|t| !t.is_empty())
         .unwrap_or("今天天气不错");
-    match cli_type {
-        CliType::ClaudeCode => {
+    match protocol {
+        Protocol::AnthropicMessages => {
             let body = serde_json::json!({
                 "model": model,
                 "messages": [{"role": "user", "content": [{"type": "text", "text": text}]}],
-                "system": [{"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."}],
-                "max_tokens": 1024,
-                "thinking": {"type": "adaptive"},
+                "max_tokens": 32,
                 "stream": true
             });
+            let mut extra_headers = vec![
+                ("user-agent", default_user_agent(agent_id).to_string()),
+                ("accept", "text/event-stream".to_string()),
+                ("accept-encoding", "identity".to_string()),
+            ];
+            if agent_id == "claude_code" {
+                extra_headers.push(("anthropic-beta", DEFAULT_ANTHROPIC_BETA.to_string()));
+                extra_headers.push(("x-app", "cli".to_string()));
+            }
             ProbeRequest {
                 path: "/v1/messages".to_string(),
                 body: serde_json::to_vec(&body).unwrap_or_default(),
-                extra_headers: vec![
-                    ("user-agent", default_user_agent(cli_type).to_string()),
-                    ("anthropic-beta", DEFAULT_ANTHROPIC_BETA.to_string()),
-                    ("x-app", "cli".to_string()),
-                    ("accept", "application/json".to_string()),
-                    ("accept-encoding", "gzip, deflate, br, zstd".to_string()),
-                ],
+                extra_headers,
+                method: reqwest::Method::POST,
+                streaming: true,
             }
         }
-        CliType::Codex => {
+        Protocol::OpenaiChat => {
             let body = serde_json::json!({
                 "model": model,
-                "instructions": "You are Codex, a coding agent based on GPT-5.",
-                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
-                "reasoning": {"effort": "high"},
+                "messages": [{"role": "user", "content": text}],
+                "max_tokens": 32,
                 "stream": true
             });
             ProbeRequest {
-                path: "/responses".to_string(),
+                path: "/v1/chat/completions".to_string(),
                 body: serde_json::to_vec(&body).unwrap_or_default(),
                 extra_headers: vec![
-                    ("user-agent", default_user_agent(cli_type).to_string()),
-                    ("originator", "codex-tui".to_string()),
+                    ("user-agent", default_user_agent(agent_id).to_string()),
                     ("accept", "text/event-stream".to_string()),
                     ("accept-encoding", "identity".to_string()),
                 ],
+                method: reqwest::Method::POST,
+                streaming: true,
             }
         }
-        CliType::Gemini => {
+        Protocol::OpenaiResponses => {
+            let body = serde_json::json!({
+                "model": model,
+                "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
+                "max_output_tokens": 32,
+                "stream": true
+            });
+            ProbeRequest {
+                path: "/v1/responses".to_string(),
+                body: serde_json::to_vec(&body).unwrap_or_default(),
+                extra_headers: vec![
+                    ("user-agent", default_user_agent(agent_id).to_string()),
+                    ("accept", "text/event-stream".to_string()),
+                    ("accept-encoding", "identity".to_string()),
+                ],
+                method: reqwest::Method::POST,
+                streaming: true,
+            }
+        }
+        Protocol::GeminiGenerateContent => {
             let body = serde_json::json!({
                 "contents": [{"role": "user", "parts": [{"text": text}]}],
                 "systemInstruction": {"parts": [{"text": "You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks."}]},
@@ -715,10 +635,12 @@ pub fn build_probe_request(cli_type: CliType, model: &str, test_text: Option<&st
                 path: format!("/v1beta/models/{}:streamGenerateContent?alt=sse", model),
                 body: serde_json::to_vec(&body).unwrap_or_default(),
                 extra_headers: vec![
-                    ("user-agent", default_user_agent(cli_type).to_string()),
+                    ("user-agent", default_user_agent(agent_id).to_string()),
                     ("accept", "*/*".to_string()),
                     ("accept-encoding", "gzip, deflate".to_string()),
                 ],
+                method: reqwest::Method::POST,
+                streaming: true,
             }
         }
     }
@@ -734,14 +656,14 @@ pub fn build_probe_request(cli_type: CliType, model: &str, test_text: Option<&st
 pub fn build_upstream_request(
     client: &reqwest::Client,
     provider: &Provider,
-    cli_type: CliType,
+    protocol: Protocol,
     upstream_url: &str,
     client_headers: &HeaderMap,
     body: Vec<u8>,
     method: reqwest::Method,
 ) -> Result<reqwest::Request, reqwest::Error> {
     let mut req_headers = filter_headers(client_headers);
-    set_auth_header(&mut req_headers, &provider.api_key, cli_type);
+    set_auth_header(&mut req_headers, &provider.api_key, protocol);
     apply_useragent_override(&mut req_headers, provider.custom_useragent.as_deref());
 
     // Content-Length is intentionally not set: filter_headers stripped the

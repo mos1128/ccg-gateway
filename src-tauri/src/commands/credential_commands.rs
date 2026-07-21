@@ -2,162 +2,16 @@ use super::*;
 
 // ==================== Official Credential 相关命令 ====================
 
-/// 解析凭证 JSON 生成显示信息
-fn parse_display_info(cli_type: &str, credential_json: &str) -> String {
-    // 尝试解析为文件列表格式
-    if let Ok(files) = serde_json::from_str::<Vec<serde_json::Value>>(credential_json) {
-        match cli_type {
-            "claude_code" => {
-                // 查找 settings.json 文件
-                if let Some(file) = files.iter().find(|f| {
-                    f.get("path")
-                        .and_then(|p| p.as_str())
-                        .map(|p| p.contains("settings.json"))
-                        .unwrap_or(false)
-                }) {
-                    if let Some(content) = file.get("content").and_then(|c| c.as_str()) {
-                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(content) {
-                            return data
-                                .get("ANTHROPIC_API_KEY")
-                                .and_then(|v| v.as_str())
-                                .map(|key| {
-                                    if key.len() > 12 {
-                                        format!("sk-ant-...{}", &key[key.len() - 8..])
-                                    } else {
-                                        "已配置".to_string()
-                                    }
-                                })
-                                .unwrap_or_else(|| "未知".to_string());
-                        }
-                    }
-                }
-                "未配置".to_string()
-            }
-            "codex" => {
-                // 查找 auth.json 文件
-                if let Some(file) = files.iter().find(|f| {
-                    f.get("path")
-                        .and_then(|p| p.as_str())
-                        .map(|p| p.contains("auth.json"))
-                        .unwrap_or(false)
-                }) {
-                    if let Some(content) = file.get("content").and_then(|c| c.as_str()) {
-                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(content) {
-                            return data
-                                .get("tokens")
-                                .and_then(|t| t.get("access_token"))
-                                .and_then(|v| v.as_str())
-                                .map(|_| "已配置".to_string())
-                                .unwrap_or_else(|| "未知".to_string());
-                        }
-                    }
-                }
-                "未配置".to_string()
-            }
-            "gemini" => {
-                // 查找 google_accounts.json 文件
-                if let Some(file) = files.iter().find(|f| {
-                    f.get("path")
-                        .and_then(|p| p.as_str())
-                        .map(|p| p.contains("google_accounts.json"))
-                        .unwrap_or(false)
-                }) {
-                    if let Some(content) = file.get("content").and_then(|c| c.as_str()) {
-                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(content) {
-                            return data
-                                .get("active")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| "已配置".to_string());
-                        }
-                    }
-                }
-                "未配置".to_string()
-            }
-            _ => "未知".to_string(),
-        }
-    } else {
-        // 兼容旧格式：直接解析为 JSON 对象
-        match serde_json::from_str::<serde_json::Value>(credential_json) {
-            Ok(creds) => match cli_type {
-                "claude_code" => creds
-                    .get("ANTHROPIC_API_KEY")
-                    .and_then(|v| v.as_str())
-                    .map(|key| {
-                        if key.len() > 12 {
-                            format!("sk-ant-...{}", &key[key.len() - 8..])
-                        } else {
-                            "已配置".to_string()
-                        }
-                    })
-                    .unwrap_or_else(|| "未知".to_string()),
-                "codex" => creds
-                    .get("tokens")
-                    .and_then(|t| t.get("active_email"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "已配置".to_string()),
-                "gemini" => creds
-                    .get("google_accounts")
-                    .and_then(|g| g.get("active"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "已配置".to_string()),
-                _ => "未知".to_string(),
-            },
-            Err(_) => "无效 JSON".to_string(),
-        }
-    }
-}
-
-fn credential_file_target<'a>(
-    config_dir: &'a std::path::Path,
-    cli_type: &str,
-    path: &str,
-) -> Option<std::path::PathBuf> {
-    match cli_type {
-        "claude_code" if path.contains("settings.json") => Some(config_dir.join("settings.json")),
-        "codex" if path.contains("auth.json") => Some(config_dir.join("auth.json")),
-        "gemini" if path.contains("oauth_creds.json") => Some(config_dir.join("oauth_creds.json")),
-        "gemini" if path.contains("google_accounts.json") => {
-            Some(config_dir.join("google_accounts.json"))
-        }
-        _ => None,
-    }
-}
-
 pub(super) async fn credential_matches_cli_files(
     db: &SqlitePool,
     credential: &OfficialCredential,
 ) -> Result<bool> {
-    let files: Vec<serde_json::Value> = serde_json::from_str(&credential.credential_json)
-        .map_err(|e| format!("解析凭证文件列表失败: {}", e))?;
-    let config_dir = get_cli_config_dir_path(db, &credential.cli_type).await;
-    let mut matched_any = false;
-
-    for file in files {
-        let path = file.get("path").and_then(|p| p.as_str()).unwrap_or("");
-        let expected = file.get("content").and_then(|c| c.as_str()).unwrap_or("");
-        let Some(target_path) = credential_file_target(&config_dir, &credential.cli_type, path)
-        else {
-            continue;
-        };
-
-        matched_any = true;
-        let actual = if tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
-            tokio::fs::read_to_string(&target_path)
-                .await
-                .map_err(|e| e.to_string())?
-        } else {
-            String::new()
-        };
-
-        if actual != expected {
-            return Ok(false);
-        }
-    }
-
-    Ok(matched_any)
+    crate::services::official_credential::payload_matches(
+        db,
+        &credential.cli_type,
+        &credential.credential_json,
+    )
+    .await
 }
 
 async fn official_direct_written_credential_id(
@@ -177,7 +31,7 @@ fn official_credential_response(
     is_active: bool,
     is_written: bool,
 ) -> OfficialCredentialResponse {
-    let display_info = parse_display_info(&c.cli_type, &c.credential_json);
+    let display_info = crate::services::official_credential::display_info(&c.credential_json);
     OfficialCredentialResponse {
         is_active,
         is_written,
@@ -192,94 +46,8 @@ fn official_credential_response(
 
 /// 读取 CLI 当前凭证（异步版本，支持自定义配置目录）
 async fn read_cli_credential_impl_async(db: &SqlitePool, cli_type: &str) -> Result<String> {
-    let config_dir = get_cli_config_dir_path(db, cli_type).await;
-
-    match cli_type {
-        "claude_code" => {
-            let config_path = config_dir.join("settings.json");
-
-            // 如果文件不存在，返回空内容（而不是报错）
-            if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
-                let files = vec![serde_json::json!({
-                    "path": format!("{}/settings.json", config_dir.display()),
-                    "content": ""
-                })];
-                return Ok(serde_json::to_string(&files).unwrap());
-            }
-
-            let content = tokio::fs::read_to_string(&config_path)
-                .await
-                .map_err(|e| format!("读取失败: {}", e))?;
-
-            let files = vec![serde_json::json!({
-                "path": format!("{}/settings.json", config_dir.display()),
-                "content": content
-            })];
-            Ok(serde_json::to_string(&files).unwrap())
-        }
-        "codex" => {
-            let auth_path = config_dir.join("auth.json");
-
-            // 如果文件不存在，返回空的文件列表（而不是报错）
-            if !tokio::fs::try_exists(&auth_path).await.unwrap_or(false) {
-                let files = vec![serde_json::json!({
-                    "path": format!("{}/auth.json", config_dir.display()),
-                    "content": ""
-                })];
-                return Ok(serde_json::to_string(&files).unwrap());
-            }
-
-            let content = tokio::fs::read_to_string(&auth_path)
-                .await
-                .map_err(|e| format!("读取失败: {}", e))?;
-
-            let files = vec![serde_json::json!({
-                "path": format!("{}/auth.json", config_dir.display()),
-                "content": content
-            })];
-            Ok(serde_json::to_string(&files).unwrap())
-        }
-        "gemini" => {
-            let oauth_path = config_dir.join("oauth_creds.json");
-            let accounts_path = config_dir.join("google_accounts.json");
-
-            let mut files = vec![];
-
-            // 即使文件不存在，也添加空内容的占位符
-            if tokio::fs::try_exists(&oauth_path).await.unwrap_or(false) {
-                let content = tokio::fs::read_to_string(&oauth_path)
-                    .await
-                    .map_err(|e| format!("读取 oauth_creds.json 失败: {}", e))?;
-                files.push(serde_json::json!({
-                    "path": format!("{}/oauth_creds.json", config_dir.display()),
-                    "content": content
-                }));
-            } else {
-                files.push(serde_json::json!({
-                    "path": format!("{}/oauth_creds.json", config_dir.display()),
-                    "content": ""
-                }));
-            }
-
-            if tokio::fs::try_exists(&accounts_path).await.unwrap_or(false) {
-                let content = tokio::fs::read_to_string(&accounts_path)
-                    .await
-                    .map_err(|e| format!("读取 google_accounts.json 失败: {}", e))?;
-                files.push(serde_json::json!({
-                    "path": format!("{}/google_accounts.json", config_dir.display()),
-                    "content": content
-                }));
-            } else {
-                files.push(serde_json::json!({
-                    "path": format!("{}/google_accounts.json", config_dir.display()),
-                    "content": ""
-                }));
-            }
-
-            Ok(serde_json::to_string(&files).unwrap())
-        }
-        _ => Err("Unsupported CLI type".to_string()),
-    }
+    crate::services::agent::validate_agent_id(cli_type)?;
+    crate::services::official_credential::read_current_payload(db, cli_type).await
 }
 
 /// 同步凭证到 CLI 配置文件（异步版本，支持自定义配置目录）
@@ -290,246 +58,17 @@ async fn sync_credential_to_cli_async(
     default_config: &str,
     previous_default_config: Option<&str>,
 ) -> Result<()> {
-    // 解析文件列表
-    let files: Vec<serde_json::Value> = serde_json::from_str(credential_json)
-        .map_err(|e| format!("解析凭证文件列表失败: {}", e))?;
-
-    let config_dir = get_cli_config_dir_path(db, cli_type).await;
     let write_mode = get_config_write_mode(db, cli_type).await;
-    let use_merge = write_mode == "merge";
-
-    match cli_type {
-        "claude_code" => {
-            // TODO: Claude Code 的具体实现待完善
-            tracing::warn!("Claude Code 的直连模式配置写入功能尚未实现");
-        }
-        "codex" => {
-            let auth_path = config_dir.join("auth.json");
-            let config_path = config_dir.join("config.toml");
-
-            // 直连模式不备份
-            tokio::fs::create_dir_all(&config_dir)
-                .await
-                .map_err(|e| e.to_string())?;
-
-            // 查找 auth.json 文件
-            let auth_file = files.iter().find(|f| {
-                f.get("path")
-                    .and_then(|p| p.as_str())
-                    .map(|p| p.contains("auth.json"))
-                    .unwrap_or(false)
-            });
-
-            if let Some(file) = auth_file {
-                let content = file.get("content").and_then(|c| c.as_str()).unwrap_or("");
-
-                // 只有当内容不为空时才写入
-                if !content.is_empty() {
-                    tracing::info!(
-                        "写入 Codex auth.json，内容长度: {}，路径: {:?}",
-                        content.len(),
-                        auth_path
-                    );
-                    tokio::fs::write(&auth_path, content).await.map_err(|e| {
-                        tracing::error!("写入 auth.json 失败: {}", e);
-                        e.to_string()
-                    })?;
-                    tracing::info!("Codex auth.json 写入成功");
-                } else {
-                    tracing::warn!("Codex auth.json 内容为空，跳过写入");
-                }
-            } else {
-                tracing::warn!("未找到 Codex auth.json 文件配置");
-            }
-
-            // 处理 config.toml
-            let should_clean_previous = use_merge
-                && previous_config_to_remove(previous_default_config, default_config).is_some();
-            let config_exists = tokio::fs::try_exists(&config_path).await.unwrap_or(false);
-            if !default_config.is_empty() || (should_clean_previous && config_exists) {
-                let existing_content = if use_merge && config_exists {
-                    tokio::fs::read_to_string(&config_path).await.ok()
-                } else {
-                    None
-                };
-
-                let mut final_doc = if let Some(ref content) = existing_content {
-                    content
-                        .parse::<toml_edit::DocumentMut>()
-                        .unwrap_or_else(|e| {
-                            tracing::warn!("Failed to parse existing Codex config.toml: {}", e);
-                            toml_edit::DocumentMut::new()
-                        })
-                } else {
-                    toml_edit::DocumentMut::new()
-                };
-
-                if use_merge {
-                    remove_previous_codex_preset(
-                        &mut final_doc,
-                        previous_default_config,
-                        default_config,
-                        false,
-                    );
-                }
-
-                if !default_config.is_empty() {
-                    match default_config.parse::<toml_edit::DocumentMut>() {
-                        Ok(custom_doc) => {
-                            for (k, v) in custom_doc.iter() {
-                                final_doc.insert(&k, v.clone());
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to parse Codex default_config (invalid TOML): {}",
-                                e
-                            );
-                        }
-                    }
-                }
-
-                let final_content = final_doc.to_string();
-
-                tracing::info!(
-                    "写入 Codex config.toml（{}模式），路径: {:?}",
-                    write_mode,
-                    config_path
-                );
-                tokio::fs::write(&config_path, final_content)
-                    .await
-                    .map_err(|e| {
-                        tracing::error!("写入 config.toml 失败: {}", e);
-                        e.to_string()
-                    })?;
-                tracing::info!("Codex config.toml 写入成功");
-            } else {
-                tracing::info!("Codex 全局配置为空，跳过写入 config.toml");
-            }
-        }
-        "gemini" => {
-            let oauth_path = config_dir.join("oauth_creds.json");
-            let accounts_path = config_dir.join("google_accounts.json");
-            let settings_path = config_dir.join("settings.json");
-            let env_path = config_dir.join(".env");
-
-            // 直连模式不备份
-            tokio::fs::create_dir_all(&config_dir)
-                .await
-                .map_err(|e| e.to_string())?;
-
-            // 写入各个文件
-            for file in files.iter() {
-                let path_str = file.get("path").and_then(|p| p.as_str()).unwrap_or("");
-                let content = file.get("content").and_then(|c| c.as_str()).unwrap_or("");
-
-                if path_str.contains("oauth_creds.json") && !content.is_empty() {
-                    tracing::info!(
-                        "写入 Gemini oauth_creds.json，内容长度: {}，路径: {:?}",
-                        content.len(),
-                        oauth_path
-                    );
-                    tokio::fs::write(&oauth_path, content).await.map_err(|e| {
-                        tracing::error!("写入 oauth_creds.json 失败: {}", e);
-                        e.to_string()
-                    })?;
-                    tracing::info!("Gemini oauth_creds.json 写入成功");
-                } else if path_str.contains("google_accounts.json") && !content.is_empty() {
-                    tracing::info!(
-                        "写入 Gemini google_accounts.json，内容长度: {}，路径: {:?}",
-                        content.len(),
-                        accounts_path
-                    );
-                    tokio::fs::write(&accounts_path, content)
-                        .await
-                        .map_err(|e| {
-                            tracing::error!("写入 google_accounts.json 失败: {}", e);
-                            e.to_string()
-                        })?;
-                    tracing::info!("Gemini google_accounts.json 写入成功");
-                }
-            }
-
-            // 删除 .env 文件（如果存在）
-            if tokio::fs::try_exists(&env_path).await.unwrap_or(false) {
-                let _ = tokio::fs::remove_file(&env_path).await;
-            }
-
-            // 处理 settings.json
-            // 1. 根据写入模式决定是否读取现有文件作为基础
-            let mut config =
-                if use_merge && tokio::fs::try_exists(&settings_path).await.unwrap_or(false) {
-                    tokio::fs::read_to_string(&settings_path)
-                        .await
-                        .ok()
-                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-                        .unwrap_or_else(|| serde_json::json!({}))
-                } else {
-                    serde_json::json!({})
-                };
-
-            let protected = gemini_gateway_json_template();
-            if use_merge {
-                remove_previous_json_preset(
-                    &mut config,
-                    previous_default_config,
-                    default_config,
-                    &protected,
-                    "Gemini",
-                );
-            }
-
-            // 2. 注入直连模式强制配置 (OAuth Personal)
-            let direct_mode_auth = serde_json::json!({
-                "security": {
-                    "auth": {
-                        "selectedType": "oauth-personal"
-                    }
-                }
-            });
-            deep_merge(&mut config, &direct_mode_auth);
-            tracing::info!("Gemini 直连模式强制配置注入成功");
-
-            // 3. 合并全局配置（全局配置优先级最高，但过滤受保护字段）
-            if !default_config.is_empty() {
-                tracing::info!("Gemini 全局配置不为空，长度: {}", default_config.len());
-                if let Ok(default_val) = serde_json::from_str::<serde_json::Value>(default_config) {
-                    let sanitized = sanitize_json_config(default_val, &protected);
-                    deep_merge(&mut config, &sanitized);
-                    tracing::info!("Gemini 全局配置合并成功");
-                }
-            } else {
-                tracing::info!("Gemini 全局配置为空");
-            }
-
-            // 检查最终配置
-            let is_empty = config.as_object().map(|o| o.is_empty()).unwrap_or(true);
-            tracing::info!("Gemini settings.json 最终配置是否为空: {}", is_empty);
-
-            // 只有当配置不为空对象时才写入
-            if !is_empty {
-                tracing::info!(
-                    "写入 Gemini settings.json（{}模式），路径: {:?}",
-                    write_mode,
-                    settings_path
-                );
-                tokio::fs::write(
-                    &settings_path,
-                    serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?,
-                )
-                .await
-                .map_err(|e| {
-                    tracing::error!("写入 settings.json 失败: {}", e);
-                    e.to_string()
-                })?;
-                tracing::info!("Gemini settings.json 写入成功");
-            } else {
-                tracing::warn!("Gemini settings.json 配置为空对象，跳过写入");
-            }
-        }
-        _ => return Err("不支持的 CLI 类型".to_string()),
-    }
-
+    crate::services::agent_config::sync_global_preset(
+        db,
+        cli_type,
+        true,
+        default_config,
+        previous_default_config,
+        &write_mode,
+    )
+    .await?;
+    crate::services::official_credential::apply_payload(db, cli_type, credential_json).await?;
     Ok(())
 }
 
@@ -563,6 +102,7 @@ async fn sync_first_official_credential_or_clear(
     db: &SqlitePool,
     cli_type: &str,
     previous_default_config: Option<&str>,
+    removed_payload: Option<&str>,
 ) -> Result<()> {
     let cred: Option<OfficialCredential> = sqlx::query_as(
         "SELECT * FROM official_credentials WHERE cli_type = ? ORDER BY sort_order, id LIMIT 1",
@@ -577,7 +117,7 @@ async fn sync_first_official_credential_or_clear(
         sync_official_credential_to_cli(db, &cred, previous_default_config).await
     } else {
         tracing::warn!("{} 没有可用的凭证，清理官方直连文件", cli_type);
-        remove_direct_mode_files_async(db, cli_type).await
+        remove_official_mode_config(db, cli_type, removed_payload).await
     }
 }
 
@@ -603,24 +143,69 @@ pub(super) async fn auto_sync_credential_in_direct_mode(
     }
 
     tracing::info!("{} 开始同步凭证到文件", cli_type);
-    sync_first_official_credential_or_clear(db, cli_type, previous_default_config).await
+    sync_first_official_credential_or_clear(db, cli_type, previous_default_config, None).await
 }
 
-/// 删除直连模式写入的所有文件（异步版本，支持自定义配置目录）
-async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Result<()> {
-    let config_dir = get_cli_config_dir_path(db, cli_type).await;
-    let use_merge = get_config_write_mode(db, cli_type).await == "merge";
+pub(super) async fn rewrite_official_credential_in_current_mode(
+    db: &SqlitePool,
+    cli_type: &str,
+    previous_default_config: Option<&str>,
+) -> Result<()> {
+    sync_first_official_credential_or_clear(db, cli_type, previous_default_config, None).await
+}
 
-    match cli_type {
-        "claude_code" => {
-            // TODO: Claude Code 的具体实现待完善
-            tracing::warn!("Claude Code 的直连模式文件删除功能尚未实现");
-            Ok(())
+async fn remove_official_mode_config(
+    db: &SqlitePool,
+    cli_type: &str,
+    payload: Option<&str>,
+) -> Result<()> {
+    let owned_payload = if let Some(payload) = payload {
+        Some(payload.to_string())
+    } else {
+        let credentials: Vec<OfficialCredential> = sqlx::query_as(
+            "SELECT * FROM official_credentials WHERE cli_type = ? ORDER BY sort_order, id",
+        )
+        .bind(cli_type)
+        .fetch_all(db)
+        .await
+        .map_err(|error| error.to_string())?;
+        let mut matched = None;
+        for credential in credentials {
+            if crate::services::official_credential::payload_matches(
+                db,
+                cli_type,
+                &credential.credential_json,
+            )
+            .await
+            .unwrap_or(false)
+            {
+                matched = Some(credential.credential_json);
+                break;
+            }
         }
-        "codex" => remove_codex_direct_mode_files(&config_dir, use_merge).await,
-        "gemini" => remove_gemini_direct_mode_files(&config_dir, use_merge).await,
-        _ => Err("不支持的 CLI 类型".to_string()),
+        matched
+    };
+
+    if let Some(payload) = owned_payload {
+        crate::services::official_credential::remove_payload(db, cli_type, &payload).await?;
     }
+
+    let default_config = get_cli_default_config(db, cli_type).await?;
+    let write_mode = get_config_write_mode(db, cli_type).await;
+    crate::services::agent_config::sync_global_preset(
+        db,
+        cli_type,
+        false,
+        &default_config,
+        None,
+        &write_mode,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn remove_direct_mode_files_async(db: &SqlitePool, cli_type: &str) -> Result<()> {
+    remove_official_mode_config(db, cli_type, None).await
 }
 
 #[tauri::command]
@@ -661,6 +246,10 @@ pub async fn create_credential(
     input: OfficialCredentialCreate,
 ) -> Result<OfficialCredentialResponse> {
     let now = now_timestamp();
+    crate::services::official_credential::validate_payload(
+        &input.cli_type,
+        &input.credential_json,
+    )?;
 
     // Check if this is the first credential for this cli_type
     let count: (i64,) =
@@ -696,7 +285,9 @@ pub async fn create_credential(
 
     // 如果是直连模式，自动同步到文件
     let gateway_url = config.gateway_base_url();
-    if let Err(e) = auto_sync_credential_in_direct_mode(db.inner(), &gateway_url, &input.cli_type, None).await {
+    if let Err(e) =
+        auto_sync_credential_in_direct_mode(db.inner(), &gateway_url, &input.cli_type, None).await
+    {
         tracing::error!("自动同步凭证失败: {}", e);
     }
 
@@ -751,6 +342,13 @@ pub async fn update_credential(
     let was_written =
         official_direct_written_credential_id(db.inner(), &gateway_url, &old_cred.cli_type).await?
             == Some(old_cred.id);
+
+    if let Some(credential_json) = input.credential_json.as_deref() {
+        crate::services::official_credential::validate_payload(
+            &old_cred.cli_type,
+            credential_json,
+        )?;
+    }
 
     let mut updates = vec!["updated_at = ?".to_string()];
     if input.name.is_some() {
@@ -839,8 +437,13 @@ pub async fn delete_credential(
         .map_err(map_db_error)?;
 
     if was_written {
-        if let Err(e) =
-            sync_first_official_credential_or_clear(db.inner(), &old_cred.cli_type, None).await
+        if let Err(e) = sync_first_official_credential_or_clear(
+            db.inner(),
+            &old_cred.cli_type,
+            None,
+            Some(&old_cred.credential_json),
+        )
+        .await
         {
             tracing::error!("自动同步凭证失败: {}", e);
         }
@@ -856,7 +459,11 @@ pub async fn delete_credential(
 }
 
 #[tauri::command]
-pub async fn reorder_credentials(db: State<'_, SqlitePool>, config: State<'_, Config>, ids: Vec<i64>) -> Result<()> {
+pub async fn reorder_credentials(
+    db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    ids: Vec<i64>,
+) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
     }
@@ -902,15 +509,14 @@ pub async fn reorder_credentials(db: State<'_, SqlitePool>, config: State<'_, Co
     if was_official_direct {
         if let Some(cli_type_str) = cli_type {
             if let Err(e) =
-                sync_first_official_credential_or_clear(db.inner(), &cli_type_str, None).await
+                sync_first_official_credential_or_clear(db.inner(), &cli_type_str, None, None).await
             {
                 tracing::error!("自动同步凭证失败: {}", e);
             }
         }
     } else if let Some(cli_type_str) = cli_type {
         if let Err(e) =
-            auto_sync_credential_in_direct_mode(db.inner(), &gateway_url, &cli_type_str, None)
-                .await
+            auto_sync_credential_in_direct_mode(db.inner(), &gateway_url, &cli_type_str, None).await
         {
             tracing::error!("自动同步凭证失败: {}", e);
         }
@@ -939,20 +545,18 @@ pub async fn write_credential_config(
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "凭证不存在".to_string())?;
 
-    if cred.cli_type == "claude_code" {
-        return Err("Claude Code 暂不支持官方直连写入".to_string());
-    }
-
     let gateway_url = config.gateway_base_url();
     let current_mode = detect_cli_mode_from_url(db.inner(), &gateway_url, &cred.cli_type).await;
     let default_config = get_cli_default_config(db.inner(), &cred.cli_type).await?;
     if current_mode == CLI_MODE_PROVIDER_DIRECT {
-        remove_provider_direct_config_async(db.inner(), &cred.cli_type).await?;
+        crate::services::agent_config::remove_provider_direct_config(db.inner(), &cred.cli_type)
+            .await?;
     } else if current_mode == CLI_MODE_PROXY_ROUTE {
         let has_gateway_config = check_cli_enabled(db.inner(), &cred.cli_type, &gateway_url).await;
         if has_gateway_config {
-            sync_cli_config(
+            sync_cli_config_with_log(
                 db.inner(),
+                &log_db.0,
                 &cred.cli_type,
                 false,
                 &default_config,
@@ -963,14 +567,23 @@ pub async fn write_credential_config(
         }
     }
 
-    sync_credential_to_cli_async(
+    if let Err(error) = sync_credential_to_cli_async(
         db.inner(),
         &cred.cli_type,
         &cred.credential_json,
         &default_config,
         None,
     )
-    .await?;
+    .await
+    {
+        let _ = crate::services::stats::record_system_log(
+            &log_db.0,
+            "official_credential_write_failed",
+            &format!("Agent {} 官方凭证写入失败: {}", cred.cli_type, error),
+        )
+        .await;
+        return Err(error);
+    }
 
     remember_last_official_credential_id(db.inner(), &cred.cli_type, cred.id, now_timestamp())
         .await?;
@@ -1051,7 +664,10 @@ async fn first_official_credential(db: &SqlitePool, cli_type: &str) -> Result<Of
     .ok_or_else(|| "没有可用官方凭证，请先添加凭证".to_string())
 }
 
-async fn preferred_default_credential(db: &SqlitePool, cli_type: &str) -> Result<OfficialCredential> {
+async fn preferred_default_credential(
+    db: &SqlitePool,
+    cli_type: &str,
+) -> Result<OfficialCredential> {
     let last_cred_id: Option<i64> = sqlx::query_as::<_, (Option<i64>,)>(
         "SELECT last_official_credential_id FROM cli_settings WHERE cli_type = ?",
     )
@@ -1078,61 +694,17 @@ async fn preferred_default_credential(db: &SqlitePool, cli_type: &str) -> Result
     first_official_credential(db, cli_type).await
 }
 
-async fn remove_dashboard_provider_direct_config(db: &SqlitePool, cli_type: &str) -> Result<()> {
-    match cli_type {
-        "claude_code" => {
-            let config_dir = get_cli_config_dir_path(db, "claude_code").await;
-            let config_path =
-                config_dir.join(cli_helpers::claude_settings_filename(DEFAULT_PROFILE));
-            let gateway_config = claude_gateway_json_template();
-            remove_json_config_content(&config_path, &gateway_config, "", &gateway_config).await
-        }
-        "codex" => {
-            let config_dir = get_cli_config_dir_path(db, "codex").await;
-            let config_path = codex_profile_config_path(&config_dir, DEFAULT_PROFILE);
-            if !tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
-                return Ok(());
-            }
-
-            let content = tokio::fs::read_to_string(&config_path)
-                .await
-                .map_err(|e| e.to_string())?;
-            let mut doc = match content.parse::<toml_edit::DocumentMut>() {
-                Ok(doc) => doc,
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse Codex config {}, leaving file untouched: {}",
-                        config_path.display(),
-                        e
-                    );
-                    return Ok(());
-                }
-            };
-
-            remove_codex_provider_direct_entry(&mut doc, DEFAULT_PROFILE)?;
-            tokio::fs::write(&config_path, doc.to_string())
-                .await
-                .map_err(|e| e.to_string())
-        }
-        "gemini" => {
-            let config_dir = get_cli_config_dir_path(db, "gemini").await;
-            let env_path = config_dir.join(".env");
-            if tokio::fs::try_exists(&env_path).await.unwrap_or(false) {
-                tokio::fs::remove_file(&env_path)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(())
-        }
-        _ => Err("不支持的 CLI 类型".to_string()),
-    }
-}
-
 async fn remember_current_default_provider_direct_provider(
     db: &SqlitePool,
     cli_type: &str,
 ) -> Result<()> {
-    if let Some(id) = provider_direct_active_provider_id(db, cli_type, DEFAULT_PROFILE).await? {
+    if let Some(id) = crate::services::agent_config::provider_direct_active_provider_id(
+        db,
+        cli_type,
+        DEFAULT_PROFILE,
+    )
+    .await?
+    {
         remember_default_provider_direct_provider_id(db, cli_type, id, now_timestamp()).await?;
     }
     Ok(())
@@ -1150,11 +722,20 @@ async fn write_dashboard_proxy_route(
         remove_direct_mode_files_async(db, cli_type).await?;
     } else if current_mode == CLI_MODE_PROVIDER_DIRECT {
         remember_current_default_provider_direct_provider(db, cli_type).await?;
-        remove_dashboard_provider_direct_config(db, cli_type).await?;
+        crate::services::agent_config::remove_provider_direct_config(db, cli_type).await?;
     }
 
     let default_config = get_cli_default_config(db, cli_type).await?;
-    sync_cli_config(db, cli_type, true, &default_config, None, &gateway_url).await?;
+    sync_cli_config_with_log(
+        db,
+        &log_db.0,
+        cli_type,
+        true,
+        &default_config,
+        None,
+        &gateway_url,
+    )
+    .await?;
 
     let _ = crate::services::stats::record_system_log(
         &log_db.0,
@@ -1168,16 +749,30 @@ async fn write_dashboard_proxy_route(
 
 async fn write_dashboard_provider_direct(
     db: &SqlitePool,
+    config: &Config,
     log_db: &LogDb,
     cli_type: &str,
     current_mode: &str,
 ) -> Result<()> {
     if current_mode == CLI_MODE_OFFICIAL_DIRECT {
         remove_direct_mode_files_async(db, cli_type).await?;
+    } else if current_mode == CLI_MODE_PROXY_ROUTE {
+        let gateway_url = config.gateway_base_url();
+        let default_config = get_cli_default_config(db, cli_type).await?;
+        sync_cli_config_with_log(
+            db,
+            &log_db.0,
+            cli_type,
+            false,
+            &default_config,
+            None,
+            &gateway_url,
+        )
+        .await?;
     }
 
     let provider = preferred_default_provider(db, cli_type).await?;
-    write_provider_direct_config(db, &provider).await?;
+    crate::services::agent_config::write_provider_direct_config(db, &provider).await?;
     let now = now_timestamp();
     remember_default_provider_direct_provider(db, &provider, now).await?;
 
@@ -1198,25 +793,40 @@ async fn write_dashboard_official_direct(
     cli_type: &str,
     current_mode: &str,
 ) -> Result<()> {
-    if cli_type == "claude_code" {
-        return Err("Claude Code 暂不支持官方直连".to_string());
-    }
-
     let cred = preferred_default_credential(db, cli_type).await?;
     let gateway_url = config.gateway_base_url();
     let default_config = get_cli_default_config(db, cli_type).await?;
 
     if current_mode == CLI_MODE_PROVIDER_DIRECT {
         remember_current_default_provider_direct_provider(db, cli_type).await?;
-        remove_dashboard_provider_direct_config(db, cli_type).await?;
+        crate::services::agent_config::remove_provider_direct_config(db, cli_type).await?;
     } else if current_mode == CLI_MODE_PROXY_ROUTE
         && check_cli_enabled(db, cli_type, &gateway_url).await
     {
-        sync_cli_config(db, cli_type, false, &default_config, None, &gateway_url).await?;
+        sync_cli_config_with_log(
+            db,
+            &log_db.0,
+            cli_type,
+            false,
+            &default_config,
+            None,
+            &gateway_url,
+        )
+        .await?;
     }
 
-    sync_credential_to_cli_async(db, cli_type, &cred.credential_json, &default_config, None)
-        .await?;
+    if let Err(error) =
+        sync_credential_to_cli_async(db, cli_type, &cred.credential_json, &default_config, None)
+            .await
+    {
+        let _ = crate::services::stats::record_system_log(
+            &log_db.0,
+            "official_credential_write_failed",
+            &format!("Agent {} 官方凭证写入失败: {}", cli_type, error),
+        )
+        .await;
+        return Err(error);
+    }
     remember_last_official_credential_id(db, cli_type, cred.id, now_timestamp()).await?;
 
     let _ = crate::services::stats::record_system_log(
@@ -1241,89 +851,32 @@ async fn write_dashboard_disabled(
         CLI_MODE_PROXY_ROUTE => {
             let gateway_url = config.gateway_base_url();
             let default_config = get_cli_default_config(db, cli_type).await?;
-            sync_cli_config(db, cli_type, false, &default_config, None, &gateway_url).await?;
+            sync_cli_config_with_log(
+                db,
+                &log_db.0,
+                cli_type,
+                false,
+                &default_config,
+                None,
+                &gateway_url,
+            )
+            .await?;
         }
         // 直连 → 停用：删除服务商配置 + 全局预设配置
         CLI_MODE_PROVIDER_DIRECT => {
             let default_config = get_cli_default_config(db, cli_type).await?;
-            match cli_type {
-                "claude_code" => {
-                    let config_dir = get_cli_config_dir_path(db, "claude_code").await;
-                    let config_path =
-                        config_dir.join(cli_helpers::claude_settings_filename(DEFAULT_PROFILE));
-                    let gateway_config = claude_gateway_json_template();
-                    remove_json_config_content(
-                        &config_path,
-                        &gateway_config,
-                        &default_config,
-                        &gateway_config,
-                    )
-                    .await?;
-                }
-                "codex" => {
-                    let config_dir = get_cli_config_dir_path(db, "codex").await;
-                    let config_path = codex_profile_config_path(&config_dir, DEFAULT_PROFILE);
-                    if tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
-                        let content = tokio::fs::read_to_string(&config_path)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        if let Ok(mut doc) = content.parse::<toml_edit::DocumentMut>() {
-                            remove_codex_provider_direct_entry(&mut doc, DEFAULT_PROFILE)?;
-                            // 移除全局预设配置的 key
-                            if !default_config.is_empty() {
-                                if let Ok(preset_doc) =
-                                    default_config.parse::<toml_edit::DocumentMut>()
-                                {
-                                    for (key, _) in preset_doc.iter() {
-                                        doc.remove(key);
-                                    }
-                                }
-                            }
-                            tokio::fs::write(&config_path, doc.to_string())
-                                .await
-                                .map_err(|e| e.to_string())?;
-                        }
-                    }
-                }
-                "gemini" => {
-                    let config_dir = get_cli_config_dir_path(db, "gemini").await;
-                    // 清理 .env：移除 API key 和 base URL
-                    let env_path = config_dir.join(".env");
-                    if tokio::fs::try_exists(&env_path).await.unwrap_or(false) {
-                        let content = tokio::fs::read_to_string(&env_path)
-                            .await
-                            .map_err(|e| e.to_string())?;
-                        let filtered: Vec<&str> = content
-                            .lines()
-                            .filter(|line| {
-                                let t = line.trim();
-                                !t.starts_with("GEMINI_API_KEY=")
-                                    && !t.starts_with("GOOGLE_GEMINI_BASE_URL=")
-                            })
-                            .collect();
-                        if filtered.is_empty() {
-                            tokio::fs::remove_file(&env_path)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                        } else {
-                            tokio::fs::write(&env_path, filtered.join("\n") + "\n")
-                                .await
-                                .map_err(|e| e.to_string())?;
-                        }
-                    }
-                    // 清理 settings.json：移除 auth 配置和全局预设
-                    let settings_path = config_dir.join("settings.json");
-                    let gateway_config = gemini_gateway_json_template();
-                    remove_json_config_content(
-                        &settings_path,
-                        &gateway_config,
-                        &default_config,
-                        &gateway_config,
-                    )
-                    .await?;
-                }
-                _ => {}
-            }
+            remember_current_default_provider_direct_provider(db, cli_type).await?;
+            crate::services::agent_config::remove_provider_direct_config(db, cli_type).await?;
+            sync_cli_config_with_log(
+                db,
+                &log_db.0,
+                cli_type,
+                false,
+                &default_config,
+                None,
+                &config.gateway_base_url(),
+            )
+            .await?;
         }
         // 官方 → 停用：删除直连模式写入的文件
         CLI_MODE_OFFICIAL_DIRECT => {
@@ -1349,6 +902,12 @@ async fn apply_dashboard_cli_mode(
     cli_type: &str,
     mode: &str,
 ) -> Result<()> {
+    let agent = crate::services::agent::get_agent(db, cli_type)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("未知 Agent: {}", cli_type))?;
+    validate_dashboard_mode_capability(&agent, mode)?;
+
     let gateway_url = config.gateway_base_url();
     let current_mode = detect_cli_mode_from_url(db, &gateway_url, cli_type).await;
     if current_mode == mode {
@@ -1360,7 +919,7 @@ async fn apply_dashboard_cli_mode(
             write_dashboard_proxy_route(db, config, log_db, cli_type, current_mode).await
         }
         CLI_MODE_PROVIDER_DIRECT => {
-            write_dashboard_provider_direct(db, log_db, cli_type, current_mode).await
+            write_dashboard_provider_direct(db, config, log_db, cli_type, current_mode).await
         }
         CLI_MODE_OFFICIAL_DIRECT => {
             write_dashboard_official_direct(db, config, log_db, cli_type, current_mode).await
@@ -1370,6 +929,36 @@ async fn apply_dashboard_cli_mode(
         }
         _ => Err("不支持的 CLI 模式".to_string()),
     }
+}
+
+fn validate_dashboard_mode_capability(
+    agent: &crate::db::models::AgentInfo,
+    mode: &str,
+) -> Result<()> {
+    match mode {
+        CLI_MODE_PROXY_ROUTE => {
+            let feature = &agent.features.provider_config;
+            if !feature.enabled || feature.operations.is_empty() {
+                return Err(format!("Agent {} 不支持自动写入网关配置", agent.name));
+            }
+        }
+        CLI_MODE_PROVIDER_DIRECT => {
+            let feature = &agent.features.provider_config;
+            if !feature.enabled || feature.operations.is_empty() {
+                return Err(format!("Agent {} 不支持服务商直连模式", agent.name));
+            }
+        }
+        CLI_MODE_OFFICIAL_DIRECT => {
+            let feature = &agent.features.official_login;
+            let supported = feature.enabled && !feature.operations.is_empty();
+            if !supported {
+                return Err(format!("Agent {} 不支持托管官方凭证", agent.name));
+            }
+        }
+        CLI_MODE_DISABLED => {}
+        _ => return Err("不支持的 CLI 模式".to_string()),
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1388,11 +977,17 @@ pub async fn set_dashboard_cli_mode(
 }
 
 #[tauri::command]
-pub async fn get_cli_mode(db: State<'_, SqlitePool>, config: State<'_, Config>, cli_type: String) -> Result<String> {
+pub async fn get_cli_mode(
+    db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    cli_type: String,
+) -> Result<String> {
     let gateway_url = config.gateway_base_url();
-    Ok(detect_cli_mode_from_url(db.inner(), &gateway_url, &cli_type)
-        .await
-        .to_string())
+    Ok(
+        detect_cli_mode_from_url(db.inner(), &gateway_url, &cli_type)
+            .await
+            .to_string(),
+    )
 }
 
 #[tauri::command]

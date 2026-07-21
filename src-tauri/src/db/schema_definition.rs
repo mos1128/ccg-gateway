@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 31,
+            version: 32,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -106,7 +106,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 15,
+            version: 16,
             tables: Self::define_log_tables(),
             indexes: Self::define_log_indexes(),
         }
@@ -150,6 +150,12 @@ impl DatabaseSchema {
                         data_type: "TEXT".to_string(),
                         nullable: false,
                         default_value: Some("'default'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "protocol".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'anthropic_messages'".to_string()),
                     },
                     ColumnDefinition {
                         name: "name".to_string(),
@@ -997,6 +1003,24 @@ impl DatabaseSchema {
                         default_value: None,
                     },
                     ColumnDefinition {
+                        name: "protocol".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "provider_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "profile".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
                         name: "provider_name".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: false,
@@ -1125,6 +1149,59 @@ impl DatabaseSchema {
                 ],
                 primary_key: vec!["id".to_string()],
                 unique_constraints: vec![],
+            },
+        );
+
+        tables.insert(
+            "agent_diagnostics".to_string(),
+            TableDefinition {
+                name: "agent_diagnostics".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "kind".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "key".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "payload_json".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "first_seen".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "last_seen".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "occurrence_count".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("1".to_string()),
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![vec!["kind".to_string(), "key".to_string()]],
             },
         );
 

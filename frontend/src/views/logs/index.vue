@@ -38,7 +38,7 @@
           <table class="v2-table">
             <thead>
               <tr>
-                <th>ID</th><th>时间</th><th>Agent</th><th>服务商</th><th>状态</th><th>耗时 (首/总)</th>
+                <th>ID</th><th>时间</th><th>Agent</th><th>Profile</th><th>端点类型</th><th>服务商</th><th>状态</th><th>耗时 (首/总)</th>
                 <th>
                   <el-tooltip content="输入 / 输出" placement="top" effect="light" :show-after="250">
                     <span>Token (I/O)</span>
@@ -65,7 +65,12 @@
                     </div>
                   </el-tooltip>
                 </td>
-                <td>{{ row.provider_name }}</td>
+                <td class="mono">{{ row.profile || 'default' }}</td>
+                <td class="mono">{{ formatProtocolLabel(row.protocol) }}</td>
+                <td>
+                  <span>{{ row.provider_name || '-' }}</span>
+                  <span v-if="row.provider_id != null" class="logs-provider-id mono">#{{ row.provider_id }}</span>
+                </td>
                 <td>
                   <el-tooltip v-if="!row.finished_at" content="请求进行中" placement="top" effect="light" :show-after="250">
                     <span class="v2-pill dot v2-pill-info logs-running">Run</span>
@@ -99,7 +104,7 @@
                 </td>
                 <td class="logs-sticky-col"><a v-if="row.finished_at" class="logs-link" @click="showRequestDetail(row.id)">详情</a><span v-else class="v2-hint">-</span></td>
               </tr>
-              <tr v-if="requestLogs.length === 0"><td colspan="11" class="logs-empty">暂无日志记录</td></tr>
+              <tr v-if="requestLogs.length === 0"><td colspan="13" class="logs-empty">暂无日志记录</td></tr>
             </tbody>
           </table>
         </div>
@@ -150,6 +155,12 @@
 
     <V2Drawer v-model="requestDetailVisible" title="请求详情" :show-footer="false" width="80%">
       <div v-if="requestDetail" class="logs-detail">
+        <div class="logs-detail-meta">
+          <span class="v2-pill v2-pill-neutral">{{ formatCliLabel(requestDetail.cli_type) }}</span>
+          <span class="v2-pill v2-pill-neutral mono">{{ requestDetail.profile || 'default' }}</span>
+          <span class="v2-pill v2-pill-info mono">{{ formatProtocolLabel(requestDetail.protocol) }}</span>
+          <span class="v2-pill v2-pill-neutral">{{ requestDetail.provider_name || '未选择服务商' }}<template v-if="requestDetail.provider_id != null"> #{{ requestDetail.provider_id }}</template></span>
+        </div>
         <div v-if="requestDetail.error_message" class="logs-detail-err">{{ requestDetail.error_message }}</div>
         <div class="logs-detail-list">
           <section v-for="section in detailSections" :key="section.group" class="logs-sec" :class="{ open: expandedDetailGroups[section.group] }">
@@ -197,9 +208,11 @@ import { statsApi } from '@/api/stats'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { useUiStore } from '@/stores/ui'
+import { useAgentStore } from '@/stores/agents'
 import { getErrorMessage } from '@/utils/error'
 import { formatCost, formatJson as formatJsonUtil, formatTokens } from '@/utils/json'
-import type { RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
+import { PROTOCOL_LABELS } from '@/types/models'
+import type { Protocol, RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
 
 type LogRecordMode = 'full' | 'failure_only' | 'disabled'
 const logModeMap: Record<LogRecordMode, string> = { full: '全量记录', failure_only: '失败时记录详情', disabled: '停用日志' }
@@ -227,6 +240,7 @@ const DETAIL_FORMAT_CHARS = 128 * 1024
 const DETAIL_PREVIEW_CHARS = 32 * 1024
 
 const uiStore = useUiStore()
+const agentStore = useAgentStore()
 const activeTab = computed({
   get: () => uiStore.logsActiveTab,
   set: (v) => uiStore.setLogsActiveTab(v as 'request' | 'system')
@@ -245,12 +259,10 @@ let requestLogListener: (() => void) | null = null
 let requestLogUpdateListener: (() => void) | null = null
 let requestElapsedTimer: ReturnType<typeof setInterval> | null = null
 
-const cliFilterOptions: AppSelectOption[] = [
-  { label: 'ALL', value: '' },
-  { label: 'ClaudeCode', value: 'claude_code' },
-  { label: 'Codex', value: 'codex' },
-  { label: 'Gemini', value: 'gemini' }
-]
+const cliFilterOptions = computed<AppSelectOption[]>(() => [
+  { label: '全部 Agent', value: '' },
+  ...agentStore.agents.map((agent) => ({ label: agent.name, value: agent.id })),
+])
 const providerFilterOptions = computed<AppSelectOption[]>(() => [{ label: '全部服务商', value: '' }, ...providerOptions.value.map(p => ({ label: p, value: p }))])
 const logModeOptions = computed<AppSelectOption[]>(() => Object.entries(logModeMap).map(([value, label]) => ({ value, label })))
 
@@ -459,12 +471,11 @@ function formatTime(timestamp: number): string {
 }
 
 function formatCliLabel(type: string): string {
-  switch (type) {
-    case 'claude_code': return 'Claude Code'
-    case 'codex': return 'Codex'
-    case 'gemini': return 'Gemini'
-    default: return type
-  }
+  return agentStore.get(type)?.name || type
+}
+
+function formatProtocolLabel(protocol: Protocol | null): string {
+  return protocol ? PROTOCOL_LABELS[protocol] || protocol : '-'
 }
 
 function elapsedTimeClass(row: RequestLogListItem) {
@@ -542,7 +553,10 @@ function formatProviderSubtitle(): string {
 const eventTypeMap: Record<string, string> = {
   no_provider_available: '无可用服务商', provider_blacklisted: '服务商黑名单', provider_recovered: '服务商恢复',
   provider_created: '服务商创建', provider_updated: '服务商更新', provider_deleted: '服务商删除',
-  provider_reset: '状态重置', scheduled_task_failed: '定时任务失败'
+  provider_reset: '状态重置', scheduled_task_failed: '定时任务失败',
+  config_conflict: 'Agent 配置冲突', unknown_agent: '未知 Agent',
+  protocol_conflict: '端点类型冲突', protocol_not_matched: '端点类型未匹配',
+  config_patch_failed: '配置写入失败', official_credential_write_failed: '官方凭证写入失败',
 }
 const eventTypeOptions = computed<AppSelectOption[]>(() => [{ label: '全部事件', value: '' }, ...Object.entries(eventTypeMap).map(([value, label]) => ({ value, label }))])
 function formatEventType(eventType: string): string {
@@ -583,6 +597,7 @@ watch(requestDetailVisible, (visible) => {
 })
 
 onMounted(async () => {
+  if (!agentStore.agents.length) await agentStore.fetchAgents()
   fetchLogSettings()
   fetchGatewayStatus()
   fetchProviders()
@@ -643,6 +658,7 @@ onUnmounted(() => {
 .logs-pager { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--v2-surface-2); flex-shrink: 0; }
 
 .logs-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.logs-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .logs-detail-err { padding: 10px 12px; border-radius: var(--v2-r-sm); background: var(--v2-danger-bg); color: var(--v2-danger); font-size: var(--v2-fs-sm); }
 .logs-detail-list { display: flex; flex-direction: column; gap: 10px; }
 .logs-sec { min-width: 0; border: 1px solid var(--v2-surface-3); border-radius: var(--v2-r-sm); background: var(--v2-surface); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
@@ -669,6 +685,7 @@ onUnmounted(() => {
 .logs-cli-cell { display: inline-flex; align-items: center; gap: 6px; }
 .logs-cli-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex-shrink: 0; }
 .logs-cli-text { font-size: var(--v2-fs-sm); color: var(--v2-text); }
+.logs-provider-id { margin-left: 5px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); }
 
 .logs-model-badge { display: inline-block; font-size: var(--v2-fs-xs); padding: 2px 6px; background: var(--v2-surface-2); border: 1px solid var(--v2-surface-2); border-radius: 4px; color: var(--v2-text-2); white-space: nowrap; vertical-align: middle; }
 .logs-model-arrow { margin: 0 4px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); vertical-align: middle; }

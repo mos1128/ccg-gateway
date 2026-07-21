@@ -81,6 +81,7 @@ import { useWindowSize } from '@vueuse/core'
 import { checkForUpdates } from '@/utils/updater'
 import { useThemeStore } from '@/stores/theme'
 import { useSettingsStore } from '@/stores/settings'
+import { useAgentStore } from '@/stores/agents'
 import AppTitleBar from '@/components/AppTitleBar.vue'
 import type { ComponentPublicInstance } from 'vue'
 
@@ -88,10 +89,12 @@ const route = useRoute()
 const router = useRouter()
 const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
+const agentStore = useAgentStore()
 
 const nav = [
   { label: '仪表盘', path: '/' },
   { label: '服务商', path: '/providers' },
+  { label: 'Agent', path: '/agents' },
   { label: '全局设置', path: '/config' },
   { label: '日志记录', path: '/logs' },
   { label: '定时任务', path: '/scheduled-tasks' },
@@ -184,7 +187,10 @@ async function toggleDevtools() {
 onMounted(async () => {
   scheduleNavSliderUpdate()
   appVersion.value = await getVersion()
-  if (!settingsStore.settings) settingsStore.fetchSettings()
+  await Promise.all([
+    agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
+    settingsStore.settings ? Promise.resolve() : settingsStore.fetchSettings(),
+  ])
   checkForUpdates(true)
 })
 </script>

@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "id": "gemini",
+  "sort_order": 30,
+  "name": "Gemini CLI",
+  "config_dir": "~/.gemini",
+  "user_agent": ["geminicli", "gemini-cli"],
+  "protocols": ["gemini_generate_content"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-token",
+          "op": "set",
+          "file": ".env",
+          "format": "env",
+          "path": ["GEMINI_API_KEY"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-endpoint",
+          "op": "set",
+          "file": ".env",
+          "format": "env",
+          "path": ["GOOGLE_GEMINI_BASE_URL"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-auth-type",
+          "op": "set",
+          "file": "settings.json",
+          "format": "json",
+          "path": ["security", "auth", "selectedType"],
+          "value": "gemini-api-key"
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "settings.json",
+      "format": "json"
+    },
+    "profiles": { "enabled": false },
+    "official_login": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "replace-gemini-oauth",
+          "op": "replace_file",
+          "file": "oauth_creds.json",
+          "content_from": { "file_id": "gemini_oauth" }
+        },
+        {
+          "id": "replace-gemini-accounts",
+          "op": "replace_file",
+          "file": "google_accounts.json",
+          "content_from": { "file_id": "gemini_accounts" }
+        },
+        {
+          "id": "set-auth-type",
+          "op": "set_field",
+          "file": "settings.json",
+          "format": "json",
+          "path": ["security", "auth", "selectedType"],
+          "value": "oauth-personal"
+        }
+      ]
+    },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "settings.json",
+      "format": "json",
+      "servers_path": ["mcpServers"]
+    },
+    "sessions": { "enabled": true, "adapter": "gemini" },
+    "plugins": { "enabled": false },
+    "prompts": { "enabled": true, "file": "GEMINI.md" }
+  }
+}

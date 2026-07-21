@@ -26,11 +26,12 @@
     <div class="v2-card prov-shell">
     <div class="prov-toolbar">
       <div class="toolbar-left">
-        <div class="v2-seg">
+        <div v-if="canUseOfficialCredentials" class="v2-seg">
           <div class="v2-seg-slider" :style="{ transform: `translateX(${viewMode === 'proxy' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
           <button class="v2-seg-btn" :class="{ active: viewMode === 'proxy' }" type="button" @click="handleSwitchProxy">{{ providerModeLabel }}</button>
           <button class="v2-seg-btn" :class="{ active: viewMode === 'direct' }" type="button" @click="handleSwitchDirect">官方直连</button>
         </div>
+        <span v-else class="v2-pill v2-pill-neutral">{{ providerModeLabel }}</span>
 
         <div v-if="showProfileControls" class="v2-seg profile-tabs">
           <div class="v2-seg-slider" :style="profileSliderStyle"></div>
@@ -134,7 +135,7 @@
             添加
           </button>
         </template>
-        <button v-else class="v2-btn v2-btn-sm v2-btn-primary" @click="showAddCredentialDialog = true">
+        <button v-else class="v2-btn v2-btn-sm v2-btn-primary" @click="handleAddCredential">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           添加
         </button>
@@ -150,14 +151,16 @@
           <div v-if="isProviderDirectMode" class="pt-cols m-direct">
             <div>启用</div>
             <div>服务商</div>
-            <div class="pt-col-endpoint">端点</div>
+            <div>端点类型</div>
+            <div class="pt-col-endpoint">服务地址</div>
             <div>状态</div>
             <div>操作</div>
           </div>
           <div v-else class="pt-cols m-route">
             <div>启用</div>
             <div>服务商</div>
-            <div class="pt-col-endpoint">端点</div>
+            <div>端点类型</div>
+            <div class="pt-col-endpoint">服务地址</div>
             <div>状态</div>
             <el-tooltip content="连续失败次数 / 熔断阈值" placement="top" effect="light" :show-after="250">
               <div>容错</div>
@@ -221,6 +224,7 @@
       :form="form"
       :active-cli-type="activeCliType"
       :base-url-placeholder="baseUrlPlaceholder"
+      :protocols="activeProtocols"
       @confirm="handleSave"
       @add-model-map="addModelMap"
       @remove-model-map="removeModelMap"
@@ -231,7 +235,7 @@
       v-model="showCredentialDialog"
       :title="editingCredential ? '编辑凭证' : '添加凭证'"
       :form="credentialForm"
-      :active-cli-type="activeCliType"
+      :file-definitions="credentialFileDefinitions"
       @confirm="handleSaveCredential"
       @read-from-cli="handleReadFromCli"
     />
@@ -268,19 +272,20 @@ import { useProviderStore } from '@/stores/providers'
 import { useCredentialStore } from '@/stores/credentials'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore } from '@/stores/settings'
+import { useAgentStore } from '@/stores/agents'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
-import { CLI_TABS, PROFILE_CAPABLE_CLI_TYPES } from '@/types/models'
-import type { Provider, CliType, CliMode, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, OfficialCredential, OfficialCredentialCreate, TestProviderResult } from '@/types/models'
+import type { Provider, ProviderCreate, ProviderUpdate, CliType, CliMode, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult } from '@/types/models'
 import { getReusableModelName, saveReusableModelName, getReusableTestText, saveReusableTestText } from '@/utils/modelDefaults'
 
 const providerStore = useProviderStore()
 const credentialStore = useCredentialStore()
 const uiStore = useUiStore()
 const settingsStore = useSettingsStore()
+const agentStore = useAgentStore()
 
-const cliTabs = CLI_TABS
+const cliTabs = computed(() => agentStore.tabs)
 
 const profileTabs = ref<ProviderProfileItem[]>([
   { cli_type: 'claude_code', name: 'default', label: '默认', is_default: true, sort_order: 0 }
@@ -310,22 +315,33 @@ const currentCliMode = computed<CliMode>(() => settingsStore.settings?.cli_setti
 const isProviderDirectMode = computed(() => currentCliMode.value === 'provider_direct')
 const isProxyRouteMode = computed(() => currentCliMode.value === 'proxy_route')
 const isDisabledMode = computed(() => currentCliMode.value === 'disabled')
-const viewModes = ref<Record<CliType, ViewMode>>({ claude_code: 'proxy', codex: 'proxy', gemini: 'proxy' })
+const viewModes = ref<Record<CliType, ViewMode>>({})
+const activeAgent = computed(() => agentStore.get(activeCliType.value))
+const activeProtocols = computed<Protocol[]>(() => activeAgent.value?.protocols ?? [])
+const providerConfigFeature = computed(() => activeAgent.value?.features.provider_config)
+const profileFeature = computed(() => activeAgent.value?.features.profiles)
+const supportsProfiles = computed(() => profileFeature.value?.enabled === true)
+const officialLoginFeature = computed(() => activeAgent.value?.features.official_login)
+const canUseOfficialCredentials = computed(() => Boolean(
+  officialLoginFeature.value?.enabled === true && officialLoginFeature.value.operations?.length,
+))
 const viewMode = computed<ViewMode>({
-  get: () => activeCliType.value === 'claude_code' ? 'proxy' : viewModes.value[activeCliType.value],
+  get: () => canUseOfficialCredentials.value && viewModes.value[activeCliType.value] === 'direct' ? 'direct' : 'proxy',
   set: (mode) => {
-    if (activeCliType.value === 'claude_code') {
-      viewModes.value.claude_code = 'proxy'
-      if (mode === 'direct') notify('Claude Code 暂未实现官方直连功能', 'warning')
+    if (mode === 'direct' && !canUseOfficialCredentials.value) {
+      notify('该 Agent 不支持托管官方凭证', 'warning')
       return
     }
     viewModes.value[activeCliType.value] = mode
   }
 })
-const providerModeLabel = computed(() => isDisabledMode.value ? '停用' : isProviderDirectMode.value ? '中转直连' : '中转路由')
-const profileCapableCliTypes = PROFILE_CAPABLE_CLI_TYPES
-const showProfileControls = computed(() => viewMode.value === 'proxy' && profileCapableCliTypes.includes(activeCliType.value))
-const showProfileHelp = computed(() => showProfileControls.value)
+const providerModeLabel = computed(() => {
+  if (providerConfigFeature.value?.enabled === false) return '已关闭'
+  if (isDisabledMode.value) return '停用'
+  return isProviderDirectMode.value ? '中转直连' : '中转路由'
+})
+const showProfileControls = computed(() => viewMode.value === 'proxy' && supportsProfiles.value)
+const showProfileHelp = computed(() => showProfileControls.value && supportsProfiles.value)
 const currentProviderProfile = computed<ProviderProfile>(() => showProfileControls.value ? activeProfile.value : 'default')
 const profileSwitching = ref<ProviderProfile | null>(null)
 let testResultListener: (() => void) | null = null
@@ -438,7 +454,7 @@ async function focusProfileRenameInput() {
 }
 
 async function loadProfiles() {
-  if (!profileCapableCliTypes.includes(activeCliType.value)) {
+  if (!supportsProfiles.value) {
     profileTabs.value = [{ cli_type: activeCliType.value, name: 'default', label: '默认', is_default: true, sort_order: 0 }]
     activeProfile.value = 'default'
     return
@@ -578,7 +594,13 @@ function handleSwitchProxy() {
 function handleSwitchDirect() {
   if (viewMode.value === 'direct') return
   viewMode.value = 'direct'
-  credentialStore.fetchCredentials(activeCliType.value as CliType)
+  if (viewMode.value === 'direct') credentialStore.fetchCredentials(activeCliType.value as CliType)
+}
+
+function handleAddCredential() {
+  resetCredentialForm()
+  editingCredential.value = null
+  showAddCredentialDialog.value = true
 }
 
 const showAddDialog = ref(false)
@@ -609,6 +631,7 @@ const showCredentialDialog = computed({
 interface FormModelMap { source_model: string; target_model: string; enabled: boolean }
 interface FormModelBlacklist { model_pattern: string }
 interface ProviderDraft {
+  protocol: Protocol
   name: string
   base_url: string
   api_key: string
@@ -630,7 +653,7 @@ const writeProviderLoadingId = ref<number | null>(null)
 const writeCredentialLoadingId = ref<number | null>(null)
 
 const form = ref({
-  name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
+  protocol: '' as Protocol | '', name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
   custom_useragent: '', input_price_per_m: 0, output_price_per_m: 0,
   cache_read_price_per_m: 0, cache_creation_price_per_m: 0,
   model_maps: [] as FormModelMap[], model_blacklist: [] as FormModelBlacklist[]
@@ -638,26 +661,65 @@ const form = ref({
 const copiedProvider = ref<ProviderDraft | null>(null)
 const pasteLoading = ref(false)
 
-const credentialForm = ref({ name: '', claude_settings: '', codex_auth: '', gemini_oauth: '', gemini_accounts: '' })
+const credentialForm = ref<{ name: string; files: Record<string, string> }>({ name: '', files: {} })
 
-const baseUrlPlaceholder = computed(() => activeCliType.value === 'codex' ? 'https://api.example.com/v1' : 'https://api.example.com')
+function credentialSource(operation: OfficialLoginOperation) {
+  return operation.op === 'replace_file' ? operation.content_from : operation.value_from
+}
+
+const credentialFileDefinitions = computed<CredentialFileDefinition[]>(() => {
+  const targets = new Map<string, Set<string>>()
+  for (const operation of officialLoginFeature.value?.operations ?? []) {
+    const source = credentialSource(operation)
+    if (!source) continue
+    const paths = targets.get(source.file_id) ?? new Set<string>()
+    paths.add(operation.file)
+    targets.set(source.file_id, paths)
+  }
+  const compact = targets.size > 1
+  return Array.from(targets, ([key, paths]) => ({
+    key,
+    name: `${key} (${Array.from(paths).join(', ')})`,
+    placeholder: '{}',
+    compact,
+  }))
+})
+
+const baseUrlPlaceholder = computed(() => {
+  switch (form.value.protocol) {
+    case 'openai_chat':
+    case 'openai_responses':
+      return 'https://api.example.com/v1'
+    case 'gemini_generate_content':
+      return 'https://generativelanguage.googleapis.com/v1beta'
+    default:
+      return 'https://api.example.com'
+  }
+})
+
+function defaultProtocol(): Protocol | '' {
+  return activeProtocols.value.length === 1 ? activeProtocols.value[0] : ''
+}
 
 function resetForm() {
   form.value = {
-    name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
+    protocol: defaultProtocol(), name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
     custom_useragent: '', input_price_per_m: 0, output_price_per_m: 0,
     cache_read_price_per_m: 0, cache_creation_price_per_m: 0, model_maps: [], model_blacklist: []
   }
 }
 function resetCredentialForm() {
-  credentialForm.value = { name: '', claude_settings: '', codex_auth: '', gemini_oauth: '', gemini_accounts: '' }
+  credentialForm.value = {
+    name: '',
+    files: Object.fromEntries(credentialFileDefinitions.value.map((file) => [file.key, ''])),
+  }
 }
 function cloneProviderDraft(draft: ProviderDraft): ProviderDraft {
   return { ...draft, model_maps: draft.model_maps.map((m) => ({ ...m })), model_blacklist: draft.model_blacklist.map((b) => ({ ...b })) }
 }
 function createProviderDraft(provider: Provider): ProviderDraft {
   return {
-    name: provider.name, base_url: provider.base_url, api_key: provider.api_key, enabled: provider.enabled,
+    protocol: provider.protocol, name: provider.name, base_url: provider.base_url, api_key: provider.api_key, enabled: provider.enabled,
     failure_threshold: provider.failure_threshold, blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
     input_price_per_m: provider.input_price_per_m || 0, output_price_per_m: provider.output_price_per_m || 0,
@@ -765,9 +827,7 @@ async function loadProfileSettingsStatus(cliType: CliType, profile: ProviderProf
   const requestId = ++profileCommandRequestId
   profileCommandLoading.value = profileStatusKey(cliType, profile)
   try {
-    const { data } = cliType === 'codex'
-      ? await settingsApi.getCodexProfileSettingsStatus(profile)
-      : await settingsApi.getClaudeProfileSettingsStatus(profile)
+    const { data } = await settingsApi.getProfileSettingsStatus(cliType, profile)
     cacheProfileSettingsStatus(cliType, data)
     return data
   } catch (e: any) {
@@ -806,18 +866,14 @@ function normalizePrice(value: unknown): number {
 
 async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
   const cliType = activeCliType.value
-  if (!profileCapableCliTypes.includes(cliType) || viewMode.value !== 'proxy' || !isProxyRouteMode.value) return true
+  if (!supportsProfiles.value || viewMode.value !== 'proxy' || !isProxyRouteMode.value) return true
   if (profile === 'default') return true
   profileSwitching.value = profile
   try {
-    const { data: status } = cliType === 'codex'
-      ? await settingsApi.getCodexProfileSettingsStatus(profile)
-      : await settingsApi.getClaudeProfileSettingsStatus(profile)
+    const { data: status } = await settingsApi.getProfileSettingsStatus(cliType, profile)
     cacheProfileSettingsStatus(cliType, status)
     if (status.uses_gateway) return true
-    const { data: ensured } = cliType === 'codex'
-      ? await settingsApi.ensureCodexProfileSettings(profile)
-      : await settingsApi.ensureClaudeProfileSettings(profile)
+    const { data: ensured } = await settingsApi.ensureProfileSettings(cliType, profile)
     cacheProfileSettingsStatus(cliType, ensured)
     if (!ensured.uses_gateway) {
       notify(`写入后仍未检测到有效配置：${ensured.path}`, 'error')
@@ -851,13 +907,14 @@ async function ensureCurrentProfileOrFallback(): Promise<ProviderProfile> {
 }
 
 watch(() => activeCliType.value, async (cliType) => {
+  if (!showDialog.value) resetForm()
   await loadProfiles()
   const profile = await ensureCurrentProfileOrFallback()
   const key = providerStore.getCacheKey(cliType as CliType, profile)
   if (!providerStore.providersMap[key] || providerStore.providersMap[key].length === 0) {
     providerStore.fetchProviders(cliType as CliType, profile)
   }
-  credentialStore.fetchCredentials(cliType as CliType)
+  if (canUseOfficialCredentials.value) credentialStore.fetchCredentials(cliType as CliType)
 })
 watch([activeCliType, currentCliMode], ([cliType, mode]) => {
   viewModes.value[cliType as CliType] = mode === 'official_direct' ? 'direct' : 'proxy'
@@ -887,7 +944,7 @@ watch(() => currentCliMode.value, async () => {
     const profile = await ensureCurrentProfileOrFallback()
     providerStore.fetchProviders(activeCliType.value as CliType, profile)
   } else {
-    credentialStore.fetchCredentials(activeCliType.value as CliType)
+    if (canUseOfficialCredentials.value) credentialStore.fetchCredentials(activeCliType.value as CliType)
   }
 })
 watch([showProfileHelp, activeCliType, activeProfile], ([visible, cliType, profile]) => {
@@ -912,7 +969,13 @@ async function handlePasteProvider() {
   try {
     await providerStore.fetchProviders(targetCliType, targetProfile)
     const draft = cloneProviderDraft(copiedProvider.value)
-    const data = {
+    if (activeProtocols.value.length === 1) {
+      draft.protocol = activeProtocols.value[0]
+    } else if (!activeProtocols.value.includes(draft.protocol)) {
+      notify('复制的端点类型不受当前 Agent 支持，请通过编辑服务商重新选择', 'error')
+      return
+    }
+    const data: ProviderCreate = {
       cli_type: targetCliType, profile: targetProfile, ...draft,
       name: makeUniqueProviderName(draft.name),
       model_maps: draft.model_maps.filter((m) => m.source_model && m.target_model),
@@ -929,7 +992,7 @@ async function handlePasteProvider() {
 function handleEdit(provider: Provider) {
   editingProvider.value = provider
   form.value = {
-    name: provider.name, base_url: provider.base_url, api_key: provider.api_key,
+    protocol: provider.protocol, name: provider.name, base_url: provider.base_url, api_key: provider.api_key,
     failure_threshold: provider.failure_threshold, blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
     input_price_per_m: provider.input_price_per_m || 0, output_price_per_m: provider.output_price_per_m || 0,
@@ -938,25 +1001,37 @@ function handleEdit(provider: Provider) {
   }
 }
 async function handleSave() {
+  const protocol = form.value.protocol
+  if (!protocol || !activeProtocols.value.includes(protocol)) {
+    notify('请选择当前 Agent 支持的端点类型', 'error')
+    return
+  }
   if (!form.value.name.trim() || !form.value.base_url.trim() || !form.value.api_key.trim()) {
     notify('请填写完整的必填项', 'error')
     return
   }
   const data = {
-    cli_type: activeCliType.value, profile: currentProviderProfile.value, ...form.value,
+    profile: currentProviderProfile.value,
+    protocol,
+    name: form.value.name,
+    base_url: form.value.base_url,
+    api_key: form.value.api_key,
+    failure_threshold: form.value.failure_threshold,
+    blacklist_minutes: form.value.blacklist_minutes,
+    custom_useragent: form.value.custom_useragent,
     input_price_per_m: normalizePrice(form.value.input_price_per_m),
     output_price_per_m: normalizePrice(form.value.output_price_per_m),
     cache_read_price_per_m: normalizePrice(form.value.cache_read_price_per_m),
     cache_creation_price_per_m: normalizePrice(form.value.cache_creation_price_per_m),
     model_maps: form.value.model_maps.filter((m) => m.source_model && m.target_model),
-    model_blacklist: form.value.model_blacklist.filter((b) => b.model_pattern)
-  }
+    model_blacklist: form.value.model_blacklist.filter((b) => b.model_pattern),
+  } satisfies ProviderUpdate
   try {
     if (editingProvider.value) {
       await providerStore.updateProvider(editingProvider.value.id, data)
       notify('更新成功')
     } else {
-      await providerStore.createProvider(data as any)
+      await providerStore.createProvider({ cli_type: activeCliType.value, ...data })
       notify('添加成功')
     }
     showDialog.value = false
@@ -967,7 +1042,7 @@ async function handleSave() {
   }
 }
 async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
-  if (isProviderDirectMode.value || isDisabledMode.value) return
+  if (isProviderDirectMode.value) return
   toggleLoadingId.value = provider.id
   try {
     await providerStore.updateProvider(provider.id, { enabled })
@@ -1013,22 +1088,28 @@ async function handleCommand(command: string, provider: Provider) {
     }
   }
 }
+function applyCredentialPayload(raw: string) {
+  const payload = JSON.parse(raw) as OfficialCredentialPayload
+  if (payload.schema_version !== 1 || !payload.files || Array.isArray(payload.files)) {
+    throw new Error('凭证格式无效')
+  }
+  for (const definition of credentialFileDefinitions.value) {
+    const file = payload.files[definition.key]
+    credentialForm.value.files[definition.key] = file
+      ? JSON.stringify(file.content, null, 2)
+      : ''
+  }
+}
+
 function handleEditCredential(credential: OfficialCredential) {
+  resetCredentialForm()
   editingCredential.value = credential
   credentialForm.value.name = credential.name
   try {
-    const filesData = JSON.parse(credential.credential_json)
-    if (Array.isArray(filesData)) {
-      filesData.forEach((file) => {
-        const path = file.path || ''
-        const content = file.content || ''
-        if (path.includes('.claude') && path.includes('settings.json')) credentialForm.value.claude_settings = content
-        else if (path.includes('auth.json')) credentialForm.value.codex_auth = content
-        else if (path.includes('oauth_creds.json')) credentialForm.value.gemini_oauth = content
-        else if (path.includes('google_accounts.json')) credentialForm.value.gemini_accounts = content
-      })
-    }
-  } catch (e) {}
+    applyCredentialPayload(credential.credential_json)
+  } catch (error) {
+    notify(getErrorMessage(error, '凭证格式无效'), 'error')
+  }
 }
 async function handleDeleteCredential(credential: OfficialCredential) {
   try {
@@ -1055,19 +1136,7 @@ async function handleWriteCredential(credential: OfficialCredential) {
 async function handleReadFromCli() {
   try {
     const { data } = await credentialsApi.readCliCredential(activeCliType.value as CliType)
-    try {
-      const filesData = JSON.parse(data)
-      if (Array.isArray(filesData)) {
-        filesData.forEach((file) => {
-          const path = file.path || ''
-          const content = file.content || ''
-          if (path.includes('.claude') && path.includes('settings.json')) credentialForm.value.claude_settings = content
-          else if (path.includes('auth.json')) credentialForm.value.codex_auth = content
-          else if (path.includes('oauth_creds.json')) credentialForm.value.gemini_oauth = content
-          else if (path.includes('google_accounts.json')) credentialForm.value.gemini_accounts = content
-        })
-      }
-    } catch {}
+    applyCredentialPayload(data)
     notify('读取成功')
   } catch (e: any) {
     notify(getErrorMessage(e, '读取失败'), 'error')
@@ -1078,21 +1147,29 @@ async function handleSaveCredential() {
     notify('请输入凭证名称', 'error')
     return
   }
-  const files: Array<{ path: string; content: string }> = []
-  if (activeCliType.value === 'claude_code') {
-    if (credentialForm.value.claude_settings) files.push({ path: '~/.claude/settings.json', content: credentialForm.value.claude_settings })
-  } else if (activeCliType.value === 'codex') {
-    if (credentialForm.value.codex_auth) files.push({ path: '~/.codex/auth.json', content: credentialForm.value.codex_auth })
-  } else if (activeCliType.value === 'gemini') {
-    if (credentialForm.value.gemini_oauth) files.push({ path: '~/.gemini/oauth_creds.json', content: credentialForm.value.gemini_oauth })
-    if (credentialForm.value.gemini_accounts) files.push({ path: '~/.gemini/google_accounts.json', content: credentialForm.value.gemini_accounts })
-  }
-  if (files.length === 0) {
-    notify('请至少填写一个文件内容', 'error')
+  if (!canUseOfficialCredentials.value || credentialFileDefinitions.value.length === 0) {
+    notify('该 Agent 没有可用的官方凭证写入规则', 'error')
     return
   }
+  const files: OfficialCredentialPayload['files'] = {}
+  for (const definition of credentialFileDefinitions.value) {
+    const raw = credentialForm.value.files[definition.key]?.trim()
+    if (!raw) {
+      notify(`请填写 ${definition.key}`, 'error')
+      return
+    }
+    try {
+      files[definition.key] = { format: 'json', content: JSON.parse(raw) }
+    } catch {
+      notify(`${definition.key} 不是有效 JSON`, 'error')
+      return
+    }
+  }
+  const payload: OfficialCredentialPayload = { schema_version: 1, files }
   const data: OfficialCredentialCreate = {
-    cli_type: activeCliType.value as CliType, name: credentialForm.value.name.trim(), credential_json: JSON.stringify(files)
+    cli_type: activeCliType.value as CliType,
+    name: credentialForm.value.name.trim(),
+    credential_json: JSON.stringify(payload),
   }
   try {
     if (editingCredential.value) {
@@ -1111,7 +1188,7 @@ async function handleSaveCredential() {
 }
 async function handleCredentialDragEnd() {
   const ids = credentialStore.credentials.map((c) => c.id)
-  await credentialStore.reorderCredentials(ids)
+  await credentialStore.reorderCredentials(ids, activeCliType.value)
   notify('排序已保存')
 }
 
@@ -1130,11 +1207,19 @@ function getUnblacklistTime(provider: Provider): string {
 }
 
 onMounted(async () => {
-  await settingsStore.fetchSettings()
+  await Promise.all([
+    agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
+    settingsStore.fetchSettings(),
+  ])
+  if (!agentStore.get(activeCliType.value) && agentStore.agents.length) {
+    activeCliType.value = agentStore.agents[0].id
+  }
   await loadProfiles()
   const profile = await ensureCurrentProfileOrFallback()
   providerStore.fetchProviders(activeCliType.value as CliType, profile)
-  credentialStore.fetchCredentials(activeCliType.value as CliType)
+  if (canUseOfficialCredentials.value) {
+    credentialStore.fetchCredentials(activeCliType.value as CliType)
+  }
   document.addEventListener('visibilitychange', handleVisibilityChange)
   timer = setInterval(() => {
     if (document.visibilityState !== 'visible') return
@@ -1232,8 +1317,8 @@ onUnmounted(() => {
 .pt-head { position: sticky; top: 0; z-index: 2; padding: 11px 18px; border-bottom: 1px solid var(--v2-surface-2); background: var(--v2-surface-2); overflow-x: visible; }
 .pt-head .pt-cols > div { font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); }
 .pt-cols { display: grid; align-items: center; gap: 16px; width: 100%; }
-.pt-cols.m-route { grid-template-columns: 72px repeat(5, minmax(80px, 1fr)) 128px; }
-.pt-cols.m-direct { grid-template-columns: 72px repeat(3, minmax(80px, 1fr)) 96px; }
+.pt-cols.m-route { grid-template-columns: 72px repeat(6, minmax(80px, 1fr)) 128px; }
+.pt-cols.m-direct { grid-template-columns: 72px repeat(4, minmax(80px, 1fr)) 96px; }
 .pt-cols.m-cred { grid-template-columns: 72px repeat(3, minmax(80px, 1fr)) 72px; }
 .pt-cols > div { text-align: center; min-width: 0; }
 .pt-cols.m-route > div:nth-child(2),

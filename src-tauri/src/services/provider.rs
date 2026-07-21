@@ -194,6 +194,24 @@ pub async fn test_provider_model(
     let provider_name = provider.name.clone();
     let cli_type = provider.cli_type.clone();
     let base_url = provider.base_url.trim_end_matches('/').to_string();
+    let protocol = match provider.protocol.parse::<crate::db::models::Protocol>() {
+        Ok(protocol) => protocol,
+        Err(error) => {
+            return TestProviderResult {
+                provider_id,
+                provider_name,
+                actual_model: model_name.to_string(),
+                status_code: None,
+                elapsed_ms: 0,
+                response_text: error,
+                request_url: String::new(),
+                request_headers: String::new(),
+                request_body: String::new(),
+                response_headers: String::new(),
+                response_body: String::new(),
+            };
+        }
+    };
 
     // 2. Resolve model mapping
     let model_maps = sqlx::query_as::<_, crate::db::models::ProviderModelMap>(
@@ -225,12 +243,8 @@ pub async fn test_provider_model(
             .clone()
     };
 
-    let cli_type_enum = crate::services::proxy::cli_type_from_str(&cli_type);
-
-    // Probe template (path + body + Agent-specific headers). Unknown cli_type
-    // resolves to ClaudeCode via cli_type_from_str, so it gets an Anthropic
-    // probe — consistent with the auth scheme used in build_upstream_request.
-    let probe = crate::services::proxy::build_probe_request(cli_type_enum, &actual_model, test_text);
+    let probe =
+        crate::services::proxy::build_probe_request(&cli_type, protocol, &actual_model, test_text);
 
     // Assemble the synthetic client header map: start from the template's
     // Agent-specific headers, then let captured headers (if any) refine the UA
@@ -247,18 +261,18 @@ pub async fn test_provider_model(
             client_headers.insert(n, v);
         }
     }
-    apply_captured_header_override(&mut client_headers, cli_type_enum);
+    apply_captured_header_override(&mut client_headers, &cli_type, protocol);
 
-    let url = format!("{}{}", base_url, probe.path);
+    let url = crate::services::proxy::join_upstream_url(&base_url, &probe.path);
 
     let request = match crate::services::proxy::build_upstream_request(
         &client,
         &provider,
-        cli_type_enum,
+        protocol,
         &url,
         &client_headers,
         probe.body.clone(),
-        reqwest::Method::POST,
+        probe.method.clone(),
     ) {
         Ok(req) => req,
         Err(e) => {
@@ -321,7 +335,7 @@ pub async fn test_provider_model(
         Ok(resp) => {
             let status_code = resp.status().as_u16();
             let response_headers = headers_to_json(resp.headers());
-            if status_code >= 200 && status_code < 300 {
+            if status_code >= 200 && status_code < 300 && probe.streaming {
                 // Stream mode: wait for first chunk only
                 use futures_util::StreamExt;
                 let mut stream = resp.bytes_stream();
@@ -356,15 +370,19 @@ pub async fn test_provider_model(
                     response_body: raw_chunk,
                 }
             } else {
-                // Non-2xx: return raw response body for debugging
                 let body_text = resp.text().await.unwrap_or_default();
+                let success = status_code >= 200 && status_code < 300;
                 TestProviderResult {
                     provider_id,
                     provider_name,
                     actual_model,
                     status_code: Some(status_code),
                     elapsed_ms,
-                    response_text: body_text.clone(),
+                    response_text: if success {
+                        "请求成功".to_string()
+                    } else {
+                        body_text.clone()
+                    },
                     request_url: url,
                     request_headers,
                     request_body,
@@ -406,33 +424,15 @@ fn headers_to_json(headers: &reqwest::header::HeaderMap) -> String {
 /// template defaults when no capture exists (cold start).
 fn apply_captured_header_override(
     headers: &mut axum::http::HeaderMap,
-    cli_type: crate::services::proxy::CliType,
+    agent_id: &str,
+    protocol: crate::db::models::Protocol,
 ) {
-    let captured = match cli_type {
-        crate::services::proxy::CliType::ClaudeCode => {
-            crate::services::proxy::get_captured_claude_headers()
-        }
-        crate::services::proxy::CliType::Codex => crate::services::proxy::get_captured_codex_headers(),
-        crate::services::proxy::CliType::Gemini => {
-            crate::services::proxy::get_captured_gemini_headers()
-        }
-    };
-
-    let target_key: &str = match cli_type {
-        crate::services::proxy::CliType::ClaudeCode => "anthropic-beta",
-        _ => "user-agent",
-    };
-
-    for (k, v) in captured.headers.iter() {
-        if k.eq_ignore_ascii_case(target_key) {
-            if let (Ok(name), Ok(value)) = (
-                axum::http::HeaderName::from_bytes(k.as_bytes()),
-                axum::http::HeaderValue::from_str(v),
-            ) {
-                headers.insert(name, value);
-            }
-            break;
+    for (key, value) in crate::services::proxy::get_captured_headers(agent_id, protocol) {
+        if let (Ok(name), Ok(value)) = (
+            axum::http::HeaderName::from_bytes(key.as_bytes()),
+            axum::http::HeaderValue::from_str(&value),
+        ) {
+            headers.insert(name, value);
         }
     }
 }
-
