@@ -918,7 +918,7 @@ textarea.v2-input {
 .v2-addcard:hover { border-color: var(--v2-accent); color: var(--v2-text); background: var(--v2-surface); }
 .v2-addcard svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .v2-addcard span { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); }
-.v2-addcard-row { flex-direction: row; min-height: 0; gap: 8px; }
+.v2-addcard-row { flex-direction: row; min-height: 66px; gap: 8px; }
 .v2-addcard-row svg { width: 17px; height: 17px; }
 
 /* v2 纤细滚动条（覆盖全局粗滚动条，内部滚动区不抢眼） */

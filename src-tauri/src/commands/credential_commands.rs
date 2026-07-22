@@ -549,8 +549,11 @@ pub async fn write_credential_config(
     let current_mode = detect_cli_mode_from_url(db.inner(), &gateway_url, &cred.cli_type).await;
     let default_config = get_cli_default_config(db.inner(), &cred.cli_type).await?;
     if current_mode == CLI_MODE_PROVIDER_DIRECT {
-        crate::services::agent_config::remove_provider_direct_config(db.inner(), &cred.cli_type)
-            .await?;
+        crate::services::agent_config::remove_default_provider_direct_config(
+            db.inner(),
+            &cred.cli_type,
+        )
+        .await?;
     } else if current_mode == CLI_MODE_PROXY_ROUTE {
         let has_gateway_config = check_cli_enabled(db.inner(), &cred.cli_type, &gateway_url).await;
         if has_gateway_config {
@@ -598,7 +601,7 @@ pub async fn write_credential_config(
     get_credential(db, config, id).await
 }
 
-async fn first_default_provider(db: &SqlitePool, cli_type: &str) -> Result<Provider> {
+async fn dashboard_provider_direct_provider(db: &SqlitePool, cli_type: &str) -> Result<Provider> {
     let provider: Provider = sqlx::query_as(
         "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id LIMIT 1",
     )
@@ -617,40 +620,6 @@ async fn first_default_provider(db: &SqlitePool, cli_type: &str) -> Result<Provi
     }
 
     Ok(provider)
-}
-
-async fn preferred_default_provider(db: &SqlitePool, cli_type: &str) -> Result<Provider> {
-    let last_provider_id: Option<i64> = sqlx::query_as::<_, (Option<i64>,)>(
-        "SELECT last_provider_direct_provider_id FROM cli_settings WHERE cli_type = ?",
-    )
-    .bind(cli_type)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| e.to_string())?
-    .and_then(|row| row.0);
-
-    if let Some(id) = last_provider_id {
-        if let Some(provider) = sqlx::query_as::<_, Provider>(
-            "SELECT * FROM providers WHERE id = ? AND cli_type = ? AND profile = ?",
-        )
-        .bind(id)
-        .bind(cli_type)
-        .bind(DEFAULT_PROFILE)
-        .fetch_optional(db)
-        .await
-        .map_err(|e| e.to_string())?
-        {
-            if provider.base_url.trim().is_empty() || provider.api_key.trim().is_empty() {
-                return Err(format!(
-                    "服务商 {} 的 Base URL 或 API Key 为空",
-                    provider.name
-                ));
-            }
-            return Ok(provider);
-        }
-    }
-
-    first_default_provider(db, cli_type).await
 }
 
 async fn first_official_credential(db: &SqlitePool, cli_type: &str) -> Result<OfficialCredential> {
@@ -722,7 +691,7 @@ async fn write_dashboard_proxy_route(
         remove_direct_mode_files_async(db, cli_type).await?;
     } else if current_mode == CLI_MODE_PROVIDER_DIRECT {
         remember_current_default_provider_direct_provider(db, cli_type).await?;
-        crate::services::agent_config::remove_provider_direct_config(db, cli_type).await?;
+        crate::services::agent_config::remove_default_provider_direct_config(db, cli_type).await?;
     }
 
     let default_config = get_cli_default_config(db, cli_type).await?;
@@ -771,7 +740,7 @@ async fn write_dashboard_provider_direct(
         .await?;
     }
 
-    let provider = preferred_default_provider(db, cli_type).await?;
+    let provider = dashboard_provider_direct_provider(db, cli_type).await?;
     crate::services::agent_config::write_provider_direct_config(db, &provider).await?;
     let now = now_timestamp();
     remember_default_provider_direct_provider(db, &provider, now).await?;
@@ -799,7 +768,7 @@ async fn write_dashboard_official_direct(
 
     if current_mode == CLI_MODE_PROVIDER_DIRECT {
         remember_current_default_provider_direct_provider(db, cli_type).await?;
-        crate::services::agent_config::remove_provider_direct_config(db, cli_type).await?;
+        crate::services::agent_config::remove_default_provider_direct_config(db, cli_type).await?;
     } else if current_mode == CLI_MODE_PROXY_ROUTE
         && check_cli_enabled(db, cli_type, &gateway_url).await
     {
@@ -866,7 +835,8 @@ async fn write_dashboard_disabled(
         CLI_MODE_PROVIDER_DIRECT => {
             let default_config = get_cli_default_config(db, cli_type).await?;
             remember_current_default_provider_direct_provider(db, cli_type).await?;
-            crate::services::agent_config::remove_provider_direct_config(db, cli_type).await?;
+            crate::services::agent_config::remove_default_provider_direct_config(db, cli_type)
+                .await?;
             sync_cli_config_with_log(
                 db,
                 &log_db.0,
@@ -1003,4 +973,55 @@ pub async fn set_cli_mode(
     })?;
 
     apply_dashboard_cli_mode(db.inner(), config.inner(), log_db.inner(), &cli_type, mode).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema_definition::DatabaseSchema;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn dashboard_direct_uses_first_provider_instead_of_remembered_provider() {
+        let db = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("test database");
+        for sql in DatabaseSchema::current().to_create_all_sql() {
+            sqlx::query(&sql).execute(&db).await.expect("test schema");
+        }
+        sqlx::query(
+            "INSERT INTO cli_settings (cli_type, default_json_config, updated_at) VALUES ('claude_code', '', 0)",
+        )
+        .execute(&db)
+        .await
+        .expect("test settings");
+        let first_id = sqlx::query(
+            "INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, sort_order, created_at, updated_at) VALUES ('claude_code', 'default', 'anthropic_messages', 'first', 'https://first.example.com', 'first-key', 0, 0, 0)",
+        )
+        .execute(&db)
+        .await
+        .expect("first provider")
+        .last_insert_rowid();
+        let remembered_id = sqlx::query(
+            "INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, sort_order, created_at, updated_at) VALUES ('claude_code', 'default', 'anthropic_messages', 'remembered', 'https://remembered.example.com', 'remembered-key', 1, 0, 0)",
+        )
+        .execute(&db)
+        .await
+        .expect("remembered provider")
+        .last_insert_rowid();
+        sqlx::query(
+            "UPDATE cli_settings SET last_provider_direct_provider_id = ? WHERE cli_type = 'claude_code'",
+        )
+        .bind(remembered_id)
+        .execute(&db)
+        .await
+        .expect("remembered provider setting");
+
+        let selected = dashboard_provider_direct_provider(&db, "claude_code")
+            .await
+            .expect("dashboard direct provider");
+        assert_eq!(selected.id, first_id);
+    }
 }

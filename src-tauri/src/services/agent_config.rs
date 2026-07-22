@@ -8,7 +8,6 @@ use crate::services::routing::{gateway_token_for_profile, DEFAULT_PROFILE};
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::SqlitePool;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -860,7 +859,7 @@ async fn remembered_default_provider(
     .map_err(|error| error.to_string())
 }
 
-pub async fn remove_provider_direct_config(
+pub async fn remove_default_provider_direct_config(
     db: &SqlitePool,
     agent_id: &str,
 ) -> Result<Vec<PathBuf>, String> {
@@ -870,47 +869,110 @@ pub async fn remove_provider_direct_config(
         return Ok(Vec::new());
     }
 
-    let mut profiles: Vec<String> = sqlx::query_as::<_, (String,)>(
-        "SELECT DISTINCT profile FROM providers WHERE cli_type = ? ORDER BY profile",
-    )
-    .bind(agent_id)
-    .fetch_all(db)
-    .await
-    .map_err(|error| error.to_string())?
-    .into_iter()
-    .map(|(profile,)| profile)
-    .collect();
-    if !resolved.features.profiles.enabled {
-        profiles.retain(|profile| profile == DEFAULT_PROFILE);
+    let config_dir = get_cli_config_dir_path(db, agent_id).await;
+    let operations = resolve_profile_operations(&resolved, DEFAULT_PROFILE)?;
+    let groups = group_operations(&config_dir, &operations)?;
+    let providers = providers_for_profile(db, agent_id, DEFAULT_PROFILE).await?;
+    let mut selected = None;
+    for provider in providers {
+        let context = provider_context(&provider);
+        if operation_groups_applied(&groups, &context).await
+            || any_target_value_applied(&groups, &context).await
+        {
+            selected = Some(provider);
+            break;
+        }
+    }
+    if selected.is_none() {
+        selected = remembered_default_provider(db, agent_id).await?;
+    }
+    let Some(provider) = selected else {
+        return Ok(Vec::new());
+    };
+    safely_remove_groups(&groups, &provider_context(&provider), None).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema_definition::DatabaseSchema;
+    use sqlx::sqlite::SqlitePoolOptions;
+    use std::path::Path;
+
+    async fn test_pool(config_dir: &Path) -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("test database");
+        for sql in DatabaseSchema::current().to_create_all_sql() {
+            sqlx::query(&sql).execute(&pool).await.expect("test schema");
+        }
+        sqlx::query(
+            "INSERT INTO cli_settings (cli_type, default_json_config, config_dir, updated_at) VALUES (?, '', ?, 0)",
+        )
+        .bind("claude_code")
+        .bind(config_dir.to_string_lossy().as_ref())
+        .execute(&pool)
+        .await
+        .expect("test settings");
+        pool
     }
 
-    let config_dir = get_cli_config_dir_path(db, agent_id).await;
-    let mut touched = HashSet::new();
-    for profile in profiles {
-        let operations = resolve_profile_operations(&resolved, &profile)?;
-        let groups = group_operations(&config_dir, &operations)?;
-        let providers = providers_for_profile(db, agent_id, &profile).await?;
-        let mut selected = None;
-        for provider in providers {
-            let context = provider_context(&provider);
-            if operation_groups_applied(&groups, &context).await
-                || any_target_value_applied(&groups, &context).await
-            {
-                selected = Some(provider);
-                break;
-            }
-        }
-        if selected.is_none() && profile == DEFAULT_PROFILE {
-            selected = remembered_default_provider(db, agent_id).await?;
-        }
-        let Some(provider) = selected else {
-            continue;
-        };
-        for path in safely_remove_groups(&groups, &provider_context(&provider), None).await? {
-            touched.insert(path);
-        }
+    async fn insert_provider(db: &SqlitePool, profile: &str, name: &str) -> Provider {
+        let id = sqlx::query(
+            "INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, sort_order, created_at, updated_at) VALUES ('claude_code', ?, 'anthropic_messages', ?, ?, ?, 0, 0, 0)",
+        )
+        .bind(profile)
+        .bind(name)
+        .bind(format!("https://{}.example.com", name))
+        .bind(format!("{}-key", name))
+        .execute(db)
+        .await
+        .expect("test provider")
+        .last_insert_rowid();
+        sqlx::query_as("SELECT * FROM providers WHERE id = ?")
+            .bind(id)
+            .fetch_one(db)
+            .await
+            .expect("inserted provider")
     }
-    let mut paths: Vec<_> = touched.into_iter().collect();
-    paths.sort();
-    Ok(paths)
+
+    #[tokio::test]
+    async fn removing_default_direct_config_preserves_custom_profile() {
+        let config_dir = std::env::temp_dir().join(format!(
+            "ccg-gateway-profile-preservation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&config_dir).expect("test config directory");
+        let db = test_pool(&config_dir).await;
+        let default_provider = insert_provider(&db, DEFAULT_PROFILE, "default-provider").await;
+        let custom_provider = insert_provider(&db, "work", "custom-provider").await;
+        write_provider_direct_config(&db, &default_provider)
+            .await
+            .expect("default direct config");
+        write_provider_direct_config(&db, &custom_provider)
+            .await
+            .expect("custom profile config");
+
+        remove_default_provider_direct_config(&db, "claude_code")
+            .await
+            .expect("remove default direct config");
+
+        assert_eq!(
+            provider_direct_active_provider_id(&db, "claude_code", DEFAULT_PROFILE)
+                .await
+                .expect("default profile status"),
+            None
+        );
+        assert_eq!(
+            provider_direct_active_provider_id(&db, "claude_code", "work")
+                .await
+                .expect("custom profile status"),
+            Some(custom_provider.id)
+        );
+
+        db.close().await;
+        std::fs::remove_dir_all(config_dir).expect("remove test config directory");
+    }
 }

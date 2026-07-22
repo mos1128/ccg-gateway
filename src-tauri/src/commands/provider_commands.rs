@@ -842,11 +842,30 @@ pub async fn delete_provider(
     Ok(())
 }
 
-#[tauri::command]
-pub async fn reorder_providers(db: State<'_, SqlitePool>, ids: Vec<i64>) -> Result<()> {
+async fn reorder_providers_impl(db: &SqlitePool, ids: Vec<i64>) -> Result<()> {
     if ids.is_empty() {
         return Ok(());
     }
+
+    let scope = sqlx::query_as::<_, (String, String)>(
+        "SELECT cli_type, profile FROM providers WHERE id = ?",
+    )
+    .bind(ids[0])
+    .fetch_optional(db)
+    .await
+    .map_err(|e| e.to_string())?;
+    let was_default_provider_direct = if let Some((cli_type, profile)) = &scope {
+        profile == DEFAULT_PROFILE
+            && crate::services::agent_config::provider_direct_active_provider_id(
+                db,
+                cli_type,
+                DEFAULT_PROFILE,
+            )
+            .await?
+            .is_some()
+    } else {
+        false
+    };
 
     // 使用 CASE WHEN 批量更新（避免 N 次单独更新）
     let case_clauses: Vec<String> = ids
@@ -863,12 +882,28 @@ pub async fn reorder_providers(db: State<'_, SqlitePool>, ids: Vec<i64>) -> Resu
         id_list.join(", ")
     );
 
-    sqlx::query(&sql)
-        .execute(db.inner())
+    sqlx::query(&sql).execute(db).await.map_err(map_db_error)?;
+
+    if was_default_provider_direct {
+        let (cli_type, profile) = scope.expect("provider scope should exist");
+        let provider: Provider = sqlx::query_as(
+            "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id LIMIT 1",
+        )
+        .bind(&cli_type)
+        .bind(&profile)
+        .fetch_one(db)
         .await
-        .map_err(map_db_error)?;
+        .map_err(|e| e.to_string())?;
+        crate::services::agent_config::write_provider_direct_config(db, &provider).await?;
+        remember_default_provider_direct_provider(db, &provider, now_timestamp()).await?;
+    }
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn reorder_providers(db: State<'_, SqlitePool>, ids: Vec<i64>) -> Result<()> {
+    reorder_providers_impl(db.inner(), ids).await
 }
 
 #[tauri::command]
@@ -906,6 +941,92 @@ pub async fn reset_provider_failures(
     .await;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema_definition::DatabaseSchema;
+    use sqlx::sqlite::SqlitePoolOptions;
+    use std::path::Path;
+
+    async fn test_pool(config_dir: &Path) -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("test database");
+        for sql in DatabaseSchema::current().to_create_all_sql() {
+            sqlx::query(&sql).execute(&pool).await.expect("test schema");
+        }
+        sqlx::query(
+            "INSERT INTO cli_settings (cli_type, default_json_config, config_dir, updated_at) VALUES (?, '', ?, 0)",
+        )
+        .bind("claude_code")
+        .bind(config_dir.to_string_lossy().as_ref())
+        .execute(&pool)
+        .await
+        .expect("test settings");
+        pool
+    }
+
+    async fn insert_provider(db: &SqlitePool, name: &str, sort_order: i64) -> i64 {
+        sqlx::query(
+            "INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, sort_order, created_at, updated_at) VALUES ('claude_code', 'default', 'anthropic_messages', ?, ?, ?, ?, 0, 0)",
+        )
+        .bind(name)
+        .bind(format!("https://{}.example.com", name))
+        .bind(format!("{}-key", name))
+        .bind(sort_order)
+        .execute(db)
+        .await
+        .expect("test provider")
+        .last_insert_rowid()
+    }
+
+    #[tokio::test]
+    async fn reorder_rewrites_direct_config_with_new_first_provider() {
+        let config_dir = std::env::temp_dir().join(format!(
+            "ccg-gateway-provider-reorder-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&config_dir).expect("test config directory");
+        let db = test_pool(&config_dir).await;
+        let first_id = insert_provider(&db, "first", 0).await;
+        let second_id = insert_provider(&db, "second", 1).await;
+        let first: Provider = sqlx::query_as("SELECT * FROM providers WHERE id = ?")
+            .bind(first_id)
+            .fetch_one(&db)
+            .await
+            .expect("first provider");
+        crate::services::agent_config::write_provider_direct_config(&db, &first)
+            .await
+            .expect("initial direct config");
+
+        reorder_providers_impl(&db, vec![second_id, first_id])
+            .await
+            .expect("provider reorder");
+
+        let active_id = crate::services::agent_config::provider_direct_active_provider_id(
+            &db,
+            "claude_code",
+            DEFAULT_PROFILE,
+        )
+        .await
+        .expect("active provider");
+        assert_eq!(active_id, Some(second_id));
+        let remembered_id: Option<i64> = sqlx::query_as::<_, (Option<i64>,)>(
+            "SELECT last_provider_direct_provider_id FROM cli_settings WHERE cli_type = 'claude_code'",
+        )
+        .fetch_one(&db)
+        .await
+        .expect("remembered provider")
+        .0;
+        assert_eq!(remembered_id, Some(second_id));
+
+        db.close().await;
+        std::fs::remove_dir_all(config_dir).expect("remove test config directory");
+    }
 }
 
 #[tauri::command]

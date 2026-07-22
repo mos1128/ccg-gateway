@@ -262,7 +262,7 @@ import { useAgentStore } from '@/stores/agents'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
-import type { Provider, ProviderCreate, ProviderUpdate, CliType, CliMode, ConfigFormat, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult } from '@/types/models'
+import type { Provider, ProviderCreate, ProviderUpdate, CliType, ConfigFormat, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult } from '@/types/models'
 import { getReusableModelName, saveReusableModelName, getReusableTestText, saveReusableTestText } from '@/utils/modelDefaults'
 
 const providerStore = useProviderStore()
@@ -299,8 +299,6 @@ const activeProfile = computed({
 })
 
 type ViewMode = 'relay' | 'official'
-const currentCliMode = computed<CliMode>(() => settingsStore.settings?.cli_settings?.[activeCliType.value]?.cli_mode ?? 'disabled')
-const isProxyRouteMode = computed(() => currentCliMode.value === 'proxy_route')
 const viewMode = ref<ViewMode>('relay')
 const activeAgent = computed(() => agentStore.get(activeCliType.value))
 const activeProtocols = computed<Protocol[]>(() => activeAgent.value?.protocols ?? [])
@@ -847,7 +845,7 @@ function normalizePrice(value: unknown): number {
 
 async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
   const cliType = activeCliType.value
-  if (!supportsProfiles.value || viewMode.value !== 'relay' || !isProxyRouteMode.value) return true
+  if (!supportsProfiles.value || viewMode.value !== 'relay') return true
   if (profile === 'default') return true
   profileSwitching.value = profile
   try {
