@@ -97,8 +97,15 @@ pub struct McpFeature {
     pub enabled: bool,
     pub file: Option<String>,
     pub format: Option<ConfigFormat>,
+    pub adapter: Option<McpAdapter>,
     #[serde(default)]
     pub servers_path: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpAdapter {
+    Opencode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,6 +236,7 @@ pub struct AgentDefinition {
     pub id: String,
     pub sort_order: i64,
     pub name: String,
+    pub remark: Option<String>,
     pub icon: Option<AgentIcon>,
     pub config_dir: String,
     pub user_agent: Vec<String>,
@@ -241,6 +249,7 @@ pub struct AgentInfo {
     pub schema_version: u32,
     pub id: String,
     pub name: String,
+    pub remark: Option<String>,
     pub icon: Option<AgentIcon>,
     pub config_dir: String,
     pub user_agent: Vec<String>,

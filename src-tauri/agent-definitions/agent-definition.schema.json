@@ -10,6 +10,7 @@
     "id": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
     "sort_order": { "type": "integer", "minimum": 0 },
     "name": { "type": "string", "minLength": 1 },
+    "remark": { "type": "string", "minLength": 1 },
     "icon": { "$ref": "#/$defs/icon" },
     "config_dir": { "type": "string", "minLength": 1 },
     "user_agent": {
@@ -140,6 +141,7 @@
         "enabled": { "type": "boolean" },
         "file": { "type": "string", "minLength": 1 },
         "format": { "enum": ["json", "toml"] },
+        "adapter": { "enum": ["opencode"] },
         "servers_path": {
           "type": "array",
           "minItems": 1,

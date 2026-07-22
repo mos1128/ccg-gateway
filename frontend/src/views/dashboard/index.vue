@@ -165,6 +165,11 @@
           <span class="v2-pill v2-pill-neutral mono">schema {{ selectedAgent.schema_version }}</span>
         </div>
 
+        <div v-if="selectedAgent.remark" class="agent-info-remark">
+          <el-icon><InfoFilled /></el-icon>
+          <span>{{ selectedAgent.remark }}</span>
+        </div>
+
         <div class="agent-info-section">
           <div class="agent-info-label">支持协议</div>
           <div class="pill-row">
@@ -912,6 +917,27 @@ onMounted(async () => {
   margin-top: 2px;
   color: var(--v2-text-3);
   font-size: 11px;
+}
+.agent-info-remark {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--v2-accent);
+  border-radius: 4px;
+  background: var(--v2-surface-2);
+  color: var(--v2-text-2);
+  font-size: var(--v2-fs-sm);
+  line-height: 1.5;
+}
+.agent-info-remark .el-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--v2-accent);
+}
+.agent-info-remark span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .agent-info-section {
   display: flex;

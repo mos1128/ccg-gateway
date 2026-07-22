@@ -10,7 +10,7 @@ useThemeStore()
 <style>
 /* 仅保留基础 reset 与必要全局；设计系统(令牌/基元)见 layouts/V2Layout.vue(--v2-*) */
 :root {
-  --el-mask-color: rgba(255, 255, 255, 0.6);
+  --el-mask-color: rgba(255, 255, 255, 0.4);
   --font-ui: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Microsoft YaHei UI', 'Noto Sans CJK SC', Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Microsoft YaHei', 'Microsoft YaHei UI', monospace;
 }

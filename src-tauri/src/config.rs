@@ -79,13 +79,11 @@ pub fn get_default_cli_config_dir(cli_type: &str) -> PathBuf {
 /// 展开 ~ 为用户目录
 pub fn expand_home_path(path: &str) -> String {
     if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
-        let home = dirs::home_dir().unwrap_or_default();
-        let remaining = &path[1..];
-        let remaining = remaining
-            .strip_prefix('/')
-            .or_else(|| remaining.strip_prefix('\\'))
-            .unwrap_or(remaining);
-        home.join(remaining).to_string_lossy().to_string()
+        let mut expanded = dirs::home_dir().unwrap_or_default();
+        for component in path[1..].split(['/', '\\']).filter(|part| !part.is_empty()) {
+            expanded.push(component);
+        }
+        expanded.to_string_lossy().to_string()
     } else {
         path.to_string()
     }
@@ -146,5 +144,23 @@ fn host_for_url(host: &str) -> String {
         "::" => "[::1]".to_string(),
         h if h.contains(':') && !h.starts_with('[') => format!("[{}]", h),
         h => h.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expand_home_path_uses_platform_separators() {
+        let expected = dirs::home_dir()
+            .unwrap_or_default()
+            .join(".config")
+            .join("opencode")
+            .to_string_lossy()
+            .to_string();
+
+        assert_eq!(expand_home_path("~/.config/opencode"), expected);
+        assert_eq!(expand_home_path(r"~\.config\opencode"), expected);
     }
 }

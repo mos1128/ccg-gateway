@@ -84,6 +84,7 @@ export interface OfficialLoginFeature extends ToggleFeature {
 export interface McpFeature extends ToggleFeature {
   file?: string | null
   format?: 'json' | 'toml' | null
+  adapter?: 'opencode' | null
   servers_path?: string[]
 }
 
@@ -113,6 +114,7 @@ export interface AgentInfo {
   schema_version: number
   id: CliType
   name: string
+  remark?: string | null
   icon?: AgentIcon | null
   config_dir: string
   user_agent: string[]

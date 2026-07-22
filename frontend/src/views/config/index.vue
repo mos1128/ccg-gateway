@@ -24,21 +24,16 @@
 
           <div v-if="globalPresetEnabled" class="v2-field">
             <label class="v2-label">全局预设</label>
-            <div class="cfg-preset-card" :class="{ empty: !cliForm.default_json_config }" @click="openPresetDrawer">
+            <div class="cfg-preset-card" @click="openPresetDrawer">
               <div class="cfg-preset-body">
-                <template v-if="cliForm.default_json_config">
-                  <pre class="cfg-preset-code mono"><code>{{ getPresetPreviewText(cliForm.default_json_config) }}</code></pre>
-                  <div class="cfg-preset-overlay">
-                    <span class="overlay-text">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="5 3 19 12 5 21 5 3"/>
-                      </svg>
-                      点击编辑配置
-                    </span>
-                  </div>
-                </template>
-                <div v-else class="cfg-preset-empty-state">
-                  <span class="empty-hint">未配置预设，将使用全局默认设置</span>
+                <pre class="cfg-preset-code mono"><code>{{ getPresetPreviewText(cliForm.default_json_config) }}</code></pre>
+                <div class="cfg-preset-overlay">
+                  <span class="overlay-text">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    点击编辑配置
+                  </span>
                 </div>
               </div>
             </div>
@@ -636,8 +631,9 @@ onMounted(async () => {
 }
 .cfg-preset-code {
   margin: 0;
+  height: 90px;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 18px;
   white-space: pre;
   overflow: hidden;
 }
@@ -670,17 +666,6 @@ onMounted(async () => {
   font-size: 12px;
   font-weight: var(--v2-fw-medium);
   color: var(--v2-text);
-}
-.cfg-preset-empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 44px;
-}
-.empty-hint {
-  font-size: 12px;
-  color: var(--v2-text-3);
-  font-style: italic;
 }
 .cfg-preset-editor {
   min-height: 320px;

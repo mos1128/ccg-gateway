@@ -26,6 +26,11 @@
             <span class="v2-pill v2-pill-neutral mono">schema {{ agent.schema_version }}</span>
           </header>
 
+          <div v-if="agent.remark" class="agent-remark">
+            <el-icon><InfoFilled /></el-icon>
+            <span>{{ agent.remark }}</span>
+          </div>
+
           <div class="agent-meta">
             <div class="meta-label">User-Agent</div>
             <div class="pill-row">
@@ -98,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import { CopyDocument, Refresh } from '@element-plus/icons-vue'
+import { CopyDocument, InfoFilled, Refresh } from '@element-plus/icons-vue'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
 import V2Empty from '@/components/V2Empty.vue'
 import { useAgentStore } from '@/stores/agents'
@@ -200,6 +205,9 @@ onMounted(refresh)
 .agent-title { gap: 10px; min-width: 0; }
 .agent-title h3 { margin: 0 0 2px; font-size: var(--v2-fs-base); font-weight: var(--v2-fw-semibold); }
 .agent-id { color: var(--v2-text-3); font-size: 11px; }
+.agent-remark { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 9px 11px; border-left: 2px solid var(--v2-accent); border-radius: 4px; background: var(--v2-surface-2); color: var(--v2-text-2); font-size: var(--v2-fs-sm); line-height: 1.5; }
+.agent-remark .el-icon { flex: 0 0 auto; margin-top: 2px; color: var(--v2-accent); }
+.agent-remark span { min-width: 0; overflow-wrap: anywhere; }
 .agent-meta { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 9px 12px; padding: 14px 0; border-bottom: 1px solid var(--v2-surface-2); }
 .meta-label { color: var(--v2-text-3); font-size: var(--v2-fs-xs); padding-top: 2px; }
 .pill-row { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }

@@ -3,6 +3,7 @@ use super::*;
 struct McpTarget {
     path: std::path::PathBuf,
     format: crate::db::models::ConfigFormat,
+    adapter: Option<crate::db::models::McpAdapter>,
     servers_path: Vec<String>,
 }
 
@@ -37,8 +38,84 @@ async fn resolve_mcp_target(db: &SqlitePool, agent_id: &str) -> Result<McpTarget
     Ok(McpTarget {
         path: crate::services::cli_config::resolve_cli_config_file(db, agent_id, file).await,
         format,
+        adapter: feature.adapter,
         servers_path: feature.servers_path,
     })
+}
+
+fn apply_mcp_adapter(
+    adapter: Option<crate::db::models::McpAdapter>,
+    config_json: &str,
+) -> Result<String> {
+    let Some(adapter) = adapter else {
+        return Ok(config_json.to_string());
+    };
+    let config = serde_json::from_str(config_json)
+        .map_err(|error| format!("MCP JSON 格式错误: {}", error))?;
+    let adapted = match adapter {
+        crate::db::models::McpAdapter::Opencode => adapt_opencode_mcp(config)?,
+    };
+    serde_json::to_string(&adapted).map_err(|error| error.to_string())
+}
+
+fn adapt_opencode_mcp(config: serde_json::Value) -> Result<serde_json::Value> {
+    let server = config
+        .as_object()
+        .ok_or_else(|| "OpenCode MCP 配置必须是 JSON object".to_string())?;
+    let server_type = match server.get("type") {
+        Some(serde_json::Value::String(value)) => value.as_str(),
+        Some(_) => return Err("MCP type 必须是字符串".to_string()),
+        None => match (server.contains_key("command"), server.contains_key("url")) {
+            (true, false) => "stdio",
+            (false, true) => "http",
+            _ => return Err("MCP 配置必须通过 command 或 url 明确服务类型".to_string()),
+        },
+    };
+
+    let mut adapted = serde_json::Map::new();
+    match server_type {
+        "stdio" => {
+            let command = server
+                .get("command")
+                .and_then(serde_json::Value::as_str)
+                .filter(|command| !command.trim().is_empty())
+                .ok_or_else(|| "stdio MCP 必须提供非空 command".to_string())?;
+            let mut command = vec![serde_json::json!(command)];
+            if let Some(args) = server.get("args") {
+                let args = args
+                    .as_array()
+                    .filter(|args| args.iter().all(serde_json::Value::is_string))
+                    .ok_or_else(|| "MCP args 必须是字符串数组".to_string())?;
+                command.extend(args.iter().cloned());
+            }
+            adapted.insert("type".to_string(), serde_json::json!("local"));
+            adapted.insert("command".to_string(), serde_json::Value::Array(command));
+            if let Some(environment) = server.get("env") {
+                if !environment.is_object() {
+                    return Err("MCP env 必须是 JSON object".to_string());
+                }
+                adapted.insert("environment".to_string(), environment.clone());
+            }
+        }
+        "sse" | "http" => {
+            let url = server
+                .get("url")
+                .and_then(serde_json::Value::as_str)
+                .filter(|url| !url.trim().is_empty())
+                .ok_or_else(|| "远程 MCP 必须提供非空 url".to_string())?;
+            adapted.insert("type".to_string(), serde_json::json!("remote"));
+            adapted.insert("url".to_string(), serde_json::json!(url));
+            if let Some(headers) = server.get("headers") {
+                if !headers.is_object() {
+                    return Err("MCP headers 必须是 JSON object".to_string());
+                }
+                adapted.insert("headers".to_string(), headers.clone());
+            }
+        }
+        value => return Err(format!("OpenCode MCP 不支持 type: {}", value)),
+    }
+    adapted.insert("enabled".to_string(), serde_json::json!(true));
+    Ok(serde_json::Value::Object(adapted))
 }
 
 fn json_value_at<'a>(
@@ -147,8 +224,9 @@ async fn validate_mcp_config_for_flags(
 ) -> Result<()> {
     for flag in cli_flags.iter().filter(|flag| flag.enabled) {
         let target = resolve_mcp_target(db, &flag.cli_type).await?;
+        let config_json = apply_mcp_adapter(target.adapter, config_json)?;
         if target.format == crate::db::models::ConfigFormat::Toml {
-            parse_mcp_toml_table(config_json)?;
+            parse_mcp_toml_table(&config_json)?;
         }
     }
     Ok(())
@@ -367,6 +445,12 @@ async fn sync_mcp_to_cli_async(
     if !is_enabled && !tokio::fs::try_exists(&target.path).await.unwrap_or(false) {
         return Ok(());
     }
+    let adapted_config = if is_enabled {
+        Some(apply_mcp_adapter(target.adapter, mcp_config_json)?)
+    } else {
+        None
+    };
+    let mcp_config_json = adapted_config.as_deref().unwrap_or(mcp_config_json);
     match target.format {
         crate::db::models::ConfigFormat::Json => {
             sync_json_mcp(&target, mcp_name, mcp_config_json, is_enabled).await
@@ -523,4 +607,65 @@ async fn delete_mcp_from_cli(db: &SqlitePool, mcp_name: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::models::McpAdapter;
+
+    #[test]
+    fn identity_adapter_preserves_config() {
+        let config = r#"{"command":"npx"}"#;
+
+        assert_eq!(apply_mcp_adapter(None, config).unwrap(), config);
+    }
+
+    #[test]
+    fn opencode_adapter_converts_local_server() {
+        let adapted = apply_mcp_adapter(
+            Some(McpAdapter::Opencode),
+            r#"{"command":"npx","args":["-y","@example/mcp"],"env":{"API_KEY":"key"}}"#,
+        )
+        .unwrap();
+        let adapted: serde_json::Value = serde_json::from_str(&adapted).unwrap();
+
+        assert_eq!(
+            adapted,
+            serde_json::json!({
+                "type": "local",
+                "command": ["npx", "-y", "@example/mcp"],
+                "environment": { "API_KEY": "key" },
+                "enabled": true
+            })
+        );
+    }
+
+    #[test]
+    fn opencode_adapter_converts_remote_server() {
+        let adapted = apply_mcp_adapter(
+            Some(McpAdapter::Opencode),
+            r#"{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer token"}}"#,
+        )
+        .unwrap();
+        let adapted: serde_json::Value = serde_json::from_str(&adapted).unwrap();
+
+        assert_eq!(
+            adapted,
+            serde_json::json!({
+                "type": "remote",
+                "url": "https://example.com/mcp",
+                "headers": { "Authorization": "Bearer token" },
+                "enabled": true
+            })
+        );
+    }
+
+    #[test]
+    fn opencode_adapter_rejects_ambiguous_server() {
+        let error =
+            apply_mcp_adapter(Some(McpAdapter::Opencode), r#"{"name":"example"}"#).unwrap_err();
+
+        assert_eq!(error, "MCP 配置必须通过 command 或 url 明确服务类型");
+    }
 }

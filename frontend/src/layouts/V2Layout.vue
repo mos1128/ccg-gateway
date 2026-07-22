@@ -202,6 +202,7 @@ onMounted(async () => {
   --v2-surface: var(--el-bg-color);
   --v2-surface-2: var(--el-fill-color-light);
   --v2-surface-3: var(--el-border-color-extra-light);
+  --v2-tab-divider: #dfe3e9;
   --v2-text: var(--el-text-color-primary);
   --v2-text-2: var(--el-text-color-regular);
   --v2-text-3: var(--el-text-color-placeholder);
@@ -257,6 +258,7 @@ onMounted(async () => {
 }
 
 html.dark {
+  --v2-tab-divider: #2b2b2c;
   --v2-accent: #5aa2ff;
   --v2-accent-press: #8cc2ff;
   --v2-on-accent: #0d1b22;
@@ -837,7 +839,7 @@ textarea.v2-input {
   color: var(--v2-text-3);
 }
 /* 选项卡 */
-.v2-tabs { display: flex; border-bottom: 1px solid var(--v2-surface-3); margin-bottom: var(--v2-space-4); }
+.v2-tabs { display: flex; border-bottom: 1px solid var(--v2-tab-divider); margin-bottom: var(--v2-space-4); }
 .v2-tab { padding: 9px 4px; margin-right: 12px; font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); cursor: pointer; margin-bottom: -1px; transition: color 0.15s; display: inline-flex; align-items: center; gap: 6px; position: relative; }
 .v2-tab:hover { color: var(--v2-text); }
 .v2-tab.active { color: var(--v2-accent); font-weight: var(--v2-fw-semibold); }

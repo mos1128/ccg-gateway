@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "id": "opencode",
+  "sort_order": 40,
+  "name": "OpenCode",
+  "remark": "网关会在opencode添加自定义服务商 CCG-Gateway，模型ID为 ccg-model，路由模式请在模型映射中将 ccg-model 映射到实际上游模型。",
+  "icon": {
+    "view_box": "0 0 48 48",
+    "color": "#808080",
+    "paths": [
+      {
+        "d": "M0 0H48V48H0V0ZM12 9V39H36V9H12Z",
+        "fill_rule": "evenodd"
+      },
+      {
+        "d": "M18 15H30V33H18V15Z"
+      }
+    ]
+  },
+  "config_dir": "~/.config/opencode",
+  "user_agent": ["opencode"],
+  "protocols": ["openai_responses"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-schema",
+          "op": "set",
+          "file": "opencode.json",
+          "format": "json",
+          "path": ["$schema"],
+          "value": "https://opencode.ai/config.json"
+        },
+        {
+          "id": "set-provider-package",
+          "op": "set",
+          "file": "opencode.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "npm"],
+          "value": "@ai-sdk/openai"
+        },
+        {
+          "id": "set-provider-name",
+          "op": "set",
+          "file": "opencode.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "name"],
+          "value": "CCG-Gateway"
+        },
+        {
+          "id": "set-provider-model",
+          "op": "set",
+          "file": "opencode.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "models", "ccg", "name"],
+          "value": "ccg-model"
+        },
+        {
+          "id": "set-endpoint",
+          "op": "set",
+          "file": "opencode.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "options", "baseURL"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-token",
+          "op": "set",
+          "file": "opencode.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "options", "apiKey"],
+          "value": "{target.token}"
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "opencode.json",
+      "format": "json"
+    },
+    "profiles": { "enabled": false },
+    "official_login": { "enabled": false },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "opencode.json",
+      "format": "json",
+      "adapter": "opencode",
+      "servers_path": ["mcp"]
+    },
+    "sessions": { "enabled": true, "adapter": "opencode" },
+    "plugins": { "enabled": false },
+    "prompts": { "enabled": true, "file": "AGENTS.md" }
+  }
+}

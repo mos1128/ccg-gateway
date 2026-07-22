@@ -1,6 +1,6 @@
 use crate::db::models::{
     AdapterFeature, AgentDefinition, AgentDefinitionLoadError, AgentFeatures, AgentInfo,
-    FileFeature, McpFeature, Protocol,
+    FileFeature, McpAdapter, McpFeature, Protocol,
 };
 use crate::time::now_timestamp;
 use sqlx::SqlitePool;
@@ -283,6 +283,11 @@ fn validate_mcp(feature: &McpFeature) -> Result<(), String> {
     ) {
         return Err("enabled mcp 只支持 json 或 toml".to_string());
     }
+    if feature.adapter == Some(McpAdapter::Opencode)
+        && feature.format != Some(crate::db::models::ConfigFormat::Json)
+    {
+        return Err("mcp adapter opencode 只支持 json format".to_string());
+    }
     if feature.servers_path.is_empty()
         || feature
             .servers_path
@@ -395,6 +400,13 @@ fn validate_definition(definition: &AgentDefinition) -> Result<(), String> {
     }
     if definition.name.trim().is_empty() {
         return Err("Agent name 不能为空".to_string());
+    }
+    if definition
+        .remark
+        .as_deref()
+        .is_some_and(|remark| remark.trim().is_empty())
+    {
+        return Err("Agent remark 不能为空".to_string());
     }
     validate_icon(definition)?;
     if definition.config_dir.trim().is_empty() {
@@ -637,6 +649,7 @@ fn resolve_definition(definition: &AgentDefinition) -> AgentInfo {
         schema_version: definition.schema_version,
         id: definition.id.clone(),
         name: definition.name.clone(),
+        remark: definition.remark.clone(),
         icon: definition.icon.clone(),
         config_dir: definition.config_dir.clone(),
         user_agent: definition.user_agent.clone(),
@@ -717,6 +730,51 @@ pub async fn record_diagnostic(
 mod tests {
     use super::*;
 
+    fn built_in_definition(id: &str) -> &'static str {
+        BUILTIN_AGENT_DEFINITION_JSON
+            .iter()
+            .find_map(|(definition_id, json)| (*definition_id == id).then_some(*json))
+            .expect("built-in Agent definition")
+    }
+
+    #[test]
+    fn opencode_definition_exposes_remark() {
+        let definition =
+            parse_definition("opencode.json", built_in_definition("opencode"), "opencode")
+                .expect("valid OpenCode definition");
+
+        assert_eq!(
+            definition.remark.as_deref(),
+            Some(
+                "网关会在opencode添加自定义服务商 CCG-Gateway，模型ID为 ccg-model，路由模式请在模型映射中将 ccg-model 映射到实际上游模型。"
+            )
+        );
+        assert_eq!(definition.protocols, vec![Protocol::OpenaiResponses]);
+        assert_eq!(definition.features.mcp.adapter, Some(McpAdapter::Opencode));
+        assert!(definition
+            .features
+            .provider_config
+            .operations
+            .iter()
+            .any(|operation| {
+                operation.id == "set-provider-package"
+                    && operation.value == Some(serde_json::json!("@ai-sdk/openai"))
+            }));
+    }
+
+    #[test]
+    fn blank_remark_is_rejected() {
+        let mut definition: serde_json::Value =
+            serde_json::from_str(built_in_definition("claude_code"))
+                .expect("valid built-in definition JSON");
+        definition["remark"] = serde_json::json!("   ");
+
+        let error = parse_definition("claude_code.json", &definition.to_string(), "claude_code")
+            .expect_err("blank remark should fail validation");
+
+        assert_eq!(error.message, "Agent remark 不能为空");
+    }
+
     #[test]
     fn user_definitions_live_under_data_directory() {
         let data_dir = Path::new("custom-data");
@@ -726,5 +784,4 @@ mod tests {
             data_dir.join("agent-definitions")
         );
     }
-
 }

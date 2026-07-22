@@ -20,7 +20,7 @@
               <div class="ses-ppath mono" :title="project.full_path">{{ project.full_path }}</div>
             </div>
             <div class="ses-pmeta"><span>{{ project.session_count }} 个会话</span><span class="mono">{{ formatSize(project.total_size) }}</span></div>
-            <el-tooltip content="删除项目" placement="top" effect="light" :show-after="250">
+            <el-tooltip v-if="!sessionReadOnly" content="删除项目" placement="top" effect="light" :show-after="250">
               <button class="v2-row-act danger ses-pdel" @click.stop="handleDeleteProject(project)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
             </el-tooltip>
           </div>
@@ -70,7 +70,7 @@
               <span>{{ formatTime(session.mtime) }}</span>
               <span class="mono">{{ formatSize(session.size) }}</span>
             </div>
-            <el-tooltip content="删除会话" placement="top" effect="light" :show-after="250">
+            <el-tooltip v-if="!sessionReadOnly" content="删除会话" placement="top" effect="light" :show-after="250">
               <button class="v2-row-act danger" @click.stop="handleDeleteSession(session)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
             </el-tooltip>
           </div>
@@ -118,6 +118,8 @@ const activeCliType = computed({
   get: () => uiStore.sessionsActiveCliType,
   set: (val) => uiStore.setSessionsActiveCliType(val)
 })
+const sessionReadOnly = computed(() =>
+  agentStore.get(activeCliType.value)?.features.sessions.adapter === 'opencode')
 const currentProject = computed(() => sessionStore.currentProject)
 const sessionSearchQuery = ref('')
 const showSessionDrawer = ref(false)

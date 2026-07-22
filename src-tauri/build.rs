@@ -167,6 +167,9 @@ fn validate_definition(value: &Value, file: &Path, ids: &mut HashSet<String>) ->
         ),
     }
     required_string(value, "name", file);
+    if value.get("remark").is_some() {
+        required_string(value, "remark", file);
+    }
     required_string(value, "config_dir", file);
 
     let user_agents = value
