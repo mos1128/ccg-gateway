@@ -401,19 +401,74 @@ fn apply_gemini_usage(value: &Value, usage: &mut TokenUsage) {
 /// Parse token usage from SSE streaming data
 pub fn parse_streaming_token_usage(line: &str, protocol: Protocol, usage: &mut TokenUsage) {
     // SSE format: data: {...}
-    let data = if let Some(stripped) = line.strip_prefix("data: ") {
-        stripped
-    } else if let Some(stripped) = line.strip_prefix("data:") {
-        stripped
-    } else {
-        return;
-    };
+    let Some(data) = sse_data(line) else { return };
 
     if data.trim() == "[DONE]" {
         return;
     }
 
     parse_token_usage(data.as_bytes(), protocol, usage);
+}
+
+fn sse_data(line: &str) -> Option<&str> {
+    line.strip_prefix("data: ")
+        .or_else(|| line.strip_prefix("data:"))
+}
+
+/// Return whether an SSE data line contains a protocol-level terminal event.
+pub fn is_stream_completion_line(line: &str, protocol: Protocol) -> bool {
+    let Some(data) = sse_data(line) else {
+        return false;
+    };
+    let data = data.trim();
+
+    if data == "[DONE]" {
+        return matches!(protocol, Protocol::OpenaiChat);
+    }
+
+    let Ok(json) = serde_json::from_str::<Value>(data) else {
+        return false;
+    };
+
+    match protocol {
+        Protocol::OpenaiResponses => matches!(
+            json.get("type").and_then(Value::as_str),
+            Some("response.completed" | "response.incomplete" | "response.failed")
+        ),
+        Protocol::OpenaiChat => {
+            json.get("choices")
+                .and_then(Value::as_array)
+                .is_some_and(|choices| {
+                    choices.iter().any(|choice| {
+                        choice
+                            .get("finish_reason")
+                            .and_then(Value::as_str)
+                            .is_some_and(|reason| !reason.is_empty())
+                    })
+                })
+        }
+        Protocol::AnthropicMessages => {
+            json.get("type").and_then(Value::as_str) == Some("message_stop")
+        }
+        Protocol::GeminiGenerateContent => json
+            .get("candidates")
+            .and_then(Value::as_array)
+            .is_some_and(|candidates| {
+                candidates.iter().any(|candidate| {
+                    candidate
+                        .get("finishReason")
+                        .and_then(Value::as_str)
+                        .is_some_and(|reason| !reason.is_empty())
+                })
+            }),
+    }
+}
+
+/// Return whether an SSE body contains a protocol-level terminal event.
+pub fn stream_body_has_completion(body: &[u8], protocol: Protocol) -> bool {
+    String::from_utf8_lossy(body)
+        .lines()
+        .any(|line| is_stream_completion_line(line, protocol))
 }
 
 /// Headers to filter out when forwarding requests

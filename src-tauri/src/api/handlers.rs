@@ -17,8 +17,9 @@ use super::AppState;
 use crate::db::models::{Protocol, RequestLogInfo, RequestLogItem};
 use crate::services::proxy::{
     apply_body_model_mapping, apply_url_model_mapping, detect_gateway_profile,
-    extract_model_from_body, extract_model_from_path, is_streaming, parse_streaming_token_usage,
-    parse_token_usage, TimeoutConfig, TokenUsage,
+    extract_model_from_body, extract_model_from_path, is_stream_completion_line, is_streaming,
+    parse_streaming_token_usage, parse_token_usage, stream_body_has_completion, TimeoutConfig,
+    TokenUsage,
 };
 use crate::services::routing::select_provider;
 use crate::services::{
@@ -624,8 +625,9 @@ fn parse_streaming_usage_chunk(
     chunk: &[u8],
     protocol: Protocol,
     usage: &mut TokenUsage,
-) {
+) -> bool {
     const MAX_SSE_LINE_BUFFER: usize = 1024 * 1024;
+    let mut stream_completed = false;
 
     buffer.push_str(&String::from_utf8_lossy(chunk));
     while let Some(pos) = buffer.find('\n') {
@@ -636,6 +638,7 @@ fn parse_streaming_usage_chunk(
         if line.ends_with('\r') {
             line.pop();
         }
+        stream_completed |= is_stream_completion_line(&line, protocol);
         parse_streaming_token_usage(&line, protocol, usage);
     }
 
@@ -647,14 +650,17 @@ fn parse_streaming_usage_chunk(
         );
         buffer.clear();
     }
+
+    stream_completed
 }
 
 fn parse_streaming_usage_body(body: &[u8], protocol: Protocol) -> TokenUsage {
     let mut usage = TokenUsage::default();
     let mut buffer = String::new();
-    parse_streaming_usage_chunk(&mut buffer, body, protocol, &mut usage);
+    let _ = parse_streaming_usage_chunk(&mut buffer, body, protocol, &mut usage);
     if !buffer.is_empty() {
-        parse_streaming_token_usage(buffer.trim_end_matches('\r'), protocol, &mut usage);
+        let line = buffer.trim_end_matches('\r');
+        parse_streaming_token_usage(line, protocol, &mut usage);
     }
     usage
 }
@@ -810,6 +816,8 @@ async fn handle_streaming_request(
     let body_truncated_flag_for_stream = body_truncated_flag.clone();
     let idle_timeout_flag = Arc::new(Mutex::new(false));
     let idle_timeout_flag_for_stream = idle_timeout_flag.clone();
+    let stream_completed = Arc::new(AtomicBool::new(false));
+    let stream_completed_for_stream = stream_completed.clone();
     let first_chunk_ms = Arc::new(Mutex::new(None::<i64>));
     let first_chunk_ms_for_stream = first_chunk_ms.clone();
     let first_byte_log_state = state.clone();
@@ -863,12 +871,14 @@ async fn handle_streaming_request(
 
                     if !response_encoded {
                         let mut usage = stream_usage_for_stream.lock().await;
-                        parse_streaming_usage_chunk(
+                        if parse_streaming_usage_chunk(
                             &mut sse_buffer,
                             chunk.as_ref(),
                             protocol,
                             &mut usage,
-                        );
+                        ) {
+                            stream_completed_for_stream.store(true, Ordering::Relaxed);
+                        }
                     }
 
                     // Collect chunk for body logging.
@@ -919,12 +929,12 @@ async fn handle_streaming_request(
         }
 
         if !response_encoded && !sse_buffer.is_empty() {
+            let line = sse_buffer.trim_end_matches('\r');
+            if is_stream_completion_line(line, protocol) {
+                stream_completed_for_stream.store(true, Ordering::Relaxed);
+            }
             let mut usage = stream_usage_for_stream.lock().await;
-            parse_streaming_token_usage(
-                sse_buffer.trim_end_matches('\r'),
-                protocol,
-                &mut usage,
-            );
+            parse_streaming_token_usage(line, protocol, &mut usage);
         }
 
         tracing::debug!("[{}] Stream loop ended naturally", protocol);
@@ -945,13 +955,14 @@ async fn handle_streaming_request(
     let log_target_model = target_model.map(|s| s.to_string());
     let log_request_log_id = request_log_id;
     let log_identity = identity.clone();
+    let stream_completed_for_log = stream_completed.clone();
 
     tokio::spawn(async move {
-        let client_cancelled = stream_end_rx.recv().await.is_none();
+        let client_disconnected = stream_end_rx.recv().await.is_none();
         tracing::debug!(
-            "[{}] Received stream end notification, client_cancelled={}",
+            "[{}] Received stream end notification, client_disconnected={}",
             protocol,
-            client_cancelled
+            client_disconnected
         );
 
         // Reconstruct body from collected chunks (up to 10MB)
@@ -970,16 +981,20 @@ async fn handle_streaming_request(
             .get("content-encoding")
             .and_then(|v| v.to_str().ok());
         let response_encoded = has_body_encoding(content_encoding);
+        let mut stream_completed = stream_completed_for_log.load(Ordering::Relaxed);
         let (usage, body_str) = if response_encoded {
             match try_decompress(&full_body, content_encoding) {
-                Some(body) => (
-                    if log_identity.token_usage_enabled {
-                        parse_streaming_usage_body(&body, protocol)
-                    } else {
-                        TokenUsage::default()
-                    },
-                    streaming_body_log_text(&body, MAX_BODY_LOG, body_truncated),
-                ),
+                Some(body) => {
+                    stream_completed |= stream_body_has_completion(&body, protocol);
+                    (
+                        if log_identity.token_usage_enabled {
+                            parse_streaming_usage_body(&body, protocol)
+                        } else {
+                            TokenUsage::default()
+                        },
+                        streaming_body_log_text(&body, MAX_BODY_LOG, body_truncated),
+                    )
+                }
                 None => {
                     tracing::warn!(
                         "[{}] Failed to decompress streaming response body",
@@ -996,6 +1011,7 @@ async fn handle_streaming_request(
                 }
             }
         } else {
+            stream_completed |= stream_body_has_completion(&full_body, protocol);
             (
                 if log_identity.token_usage_enabled {
                     stream_usage.lock().await.clone()
@@ -1005,6 +1021,14 @@ async fn handle_streaming_request(
                 streaming_body_log_text(&full_body, MAX_BODY_LOG, body_truncated),
             )
         };
+
+        let client_cancelled = client_disconnected && !stream_completed;
+        tracing::debug!(
+            "[{}] Stream completion state: stream_completed={}, client_cancelled={}",
+            protocol,
+            stream_completed,
+            client_cancelled
+        );
 
         tracing::debug!(
             "[{}] Parsed tokens: input={}, cache_read={}, cache_creation={}, output={}",
