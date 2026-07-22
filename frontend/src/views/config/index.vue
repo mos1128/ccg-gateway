@@ -787,7 +787,6 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 220px;
 }
 .db-icon {
   color: var(--v2-text-3);

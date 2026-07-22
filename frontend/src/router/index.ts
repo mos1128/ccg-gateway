@@ -10,7 +10,6 @@ const router = createRouter({
       children: [
         { path: '', name: 'Dashboard', component: () => import('@/views/dashboard/index.vue') },
         { path: 'providers', name: 'Providers', meta: { label: '服务商' }, component: () => import('@/views/providers/index.vue') },
-        { path: 'agents', name: 'Agents', meta: { label: 'Agent' }, component: () => import('@/views/agents/index.vue') },
         { path: 'config', name: 'Config', meta: { label: '全局设置' }, component: () => import('@/views/config/index.vue') },
         { path: 'logs', name: 'Logs', meta: { label: '日志记录' }, component: () => import('@/views/logs/index.vue') },
         { path: 'scheduled-tasks', name: 'ScheduledTasks', meta: { label: '定时任务' }, component: () => import('@/views/scheduled-tasks/index.vue') },

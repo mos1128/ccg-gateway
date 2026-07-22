@@ -94,7 +94,6 @@ const agentStore = useAgentStore()
 const nav = [
   { label: '仪表盘', path: '/' },
   { label: '服务商', path: '/providers' },
-  { label: 'Agent', path: '/agents' },
   { label: '全局设置', path: '/config' },
   { label: '日志记录', path: '/logs' },
   { label: '定时任务', path: '/scheduled-tasks' },

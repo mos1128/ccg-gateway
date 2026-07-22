@@ -86,6 +86,23 @@
       <div class="dash-row">
         <aside class="dash-rail" :style="railStyle">
           <div class="v2-card v2-card-pad rail-card">
+            <div class="rail-head">
+              <span class="rail-title">Agent</span>
+              <el-tooltip effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
+                <template #content>
+                  <div class="profile-help">
+                    <div class="tooltip-title">模式说明</div>
+                    <div class="tooltip-item"><strong>路由：</strong><span>写入网关地址，Agent 请求会经过 CCG Gateway，并按服务商规则路由。</span></div>
+                    <div class="tooltip-item"><strong>直连：</strong><span>写入默认服务商配置，Agent 直接请求该服务商，不经过网关路由。</span></div>
+                    <div class="tooltip-item"><strong>官方：</strong><span>写入官方凭证，Agent 直接连接官方服务。</span></div>
+                    <div class="tooltip-item"><strong>停用：</strong><span>清除已写入的路由配置，Agent 不受 CCG Gateway 管理。</span></div>
+                  </div>
+                </template>
+                <button class="v2-help rail-help" type="button" aria-label="模式说明">
+                  <el-icon><QuestionFilled /></el-icon>
+                </button>
+              </el-tooltip>
+            </div>
             <div class="cli-list">
               <div v-for="cli in cliList" :key="cli.type" class="cli-row" :class="{ loading: cliLoading[cli.type] }">
                 <div class="cli-id">
@@ -93,20 +110,9 @@
                     <CliBrandIcon :type="cli.type" width="14" height="14" />
                   </span>
                   <span class="cli-name">{{ cli.label }}</span>
-                  <el-tooltip effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
-                    <template #content>
-                      <div class="profile-help">
-                        <div class="tooltip-title">模式说明</div>
-                        <div class="tooltip-item"><strong>路由：</strong><span>写入网关地址，Agent 请求会经过 CCG Gateway，并按服务商规则路由。</span></div>
-                        <div class="tooltip-item"><strong>直连：</strong><span>写入默认服务商配置，Agent 直接请求该服务商，不经过网关路由。</span></div>
-                        <div class="tooltip-item"><strong>官方：</strong><span>写入官方凭证，Agent 直接连接官方服务。</span></div>
-                        <div class="tooltip-item"><strong>停用：</strong><span>清除已写入的路由配置，Agent 不受 CCG Gateway 管理。</span></div>
-                      </div>
-                    </template>
-                    <span class="v2-help cli-help">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    </span>
-                  </el-tooltip>
+                  <button class="cli-info" type="button" :aria-label="`查看 ${cli.label} 能力`" @click="openAgentInfo(cli.type)">
+                    <el-icon><InfoFilled /></el-icon>
+                  </button>
                 </div>
                 <div class="v2-seg cli-modes">
                   <div class="v2-seg-slider" :style="{ transform: `translateX(${modeOptions.findIndex(m => getCliMode(cli.type) === m.id) * 100}%)`, width: 'calc((100% - 8px) / 4)' }"></div>
@@ -140,6 +146,47 @@
         </div>
       </div>
     </div>
+
+    <V2Drawer
+      v-model="agentInfoVisible"
+      :title="selectedAgent ? `${selectedAgent.name} 能力` : 'Agent 能力'"
+      :show-footer="false"
+      width="min(440px, 94vw)"
+    >
+      <div v-if="selectedAgent" class="agent-info">
+        <div class="agent-info-head">
+          <div class="agent-info-title">
+            <CliBrandIcon :type="selectedAgent.id" width="20" height="20" />
+            <div>
+              <div class="agent-info-name">{{ selectedAgent.name }}</div>
+              <div class="mono agent-info-id">{{ selectedAgent.id }}</div>
+            </div>
+          </div>
+          <span class="v2-pill v2-pill-neutral mono">schema {{ selectedAgent.schema_version }}</span>
+        </div>
+
+        <div class="agent-info-section">
+          <div class="agent-info-label">支持协议</div>
+          <div class="pill-row">
+            <span v-for="protocol in selectedAgent.protocols" :key="protocol" class="v2-pill v2-pill-info mono">{{ protocolLabel(protocol) }}</span>
+          </div>
+        </div>
+
+        <div class="agent-info-section">
+          <div class="agent-info-label">User-Agent</div>
+          <div class="pill-row">
+            <span v-for="pattern in selectedAgent.user_agent" :key="pattern" class="v2-pill v2-pill-neutral mono">{{ pattern }}</span>
+          </div>
+        </div>
+
+        <div class="agent-feature-list">
+          <div v-for="feature in displayFeatures(selectedAgent)" :key="feature.key" class="agent-feature-row">
+            <span>{{ feature.label }}</span>
+            <span class="v2-pill" :class="feature.enabled ? 'v2-pill-success' : 'v2-pill-neutral'">{{ feature.enabled ? '可用' : '不可用' }}</span>
+          </div>
+        </div>
+      </div>
+    </V2Drawer>
   </div>
 </template>
 
@@ -158,8 +205,10 @@ import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { formatCost, formatTokens } from '@/utils/json'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
-import type { CliType, CliMode, AdvancedStatsRow } from '@/types/models'
+import type { AgentFeatureName, AgentInfo, CliType, CliMode, AdvancedStatsRow, Protocol } from '@/types/models'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
+import V2Drawer from '@/components/V2Drawer.vue'
+import { InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
 
 use([LineChart, BarChart, TooltipComponent, GridComponent, DatasetComponent, TransformComponent, LegendComponent, CanvasRenderer, SVGRenderer])
 
@@ -183,6 +232,22 @@ useResizeObserver(chartCardRef, ([entry]) => {
 // ===== CLI 模式控制 =====
 const cliList = computed(() => agentStore.agents.map(({ id, name, icon }) => ({ type: id, label: name, color: icon?.color })))
 const cliLoading = reactive<Record<CliType, boolean>>({})
+const agentInfoVisible = ref(false)
+const selectedAgent = ref<AgentInfo | null>(null)
+const featureLabels: Record<AgentFeatureName, string> = {
+  provider_config: 'Provider 配置',
+  global_preset: '全局预设',
+  profiles: 'Profile',
+  official_login: '官方凭证',
+  model_mapping: '模型映射',
+  token_usage: 'Token 统计',
+  skills: 'Skill',
+  mcp: 'MCP',
+  sessions: 'Session',
+  plugins: 'Plugin',
+  prompts: '提示词',
+}
+const featureKeys = Object.keys(featureLabels) as AgentFeatureName[]
 const modeOptions: { id: CliMode; label: string }[] = [
   { id: 'proxy_route', label: '路由' },
   { id: 'provider_direct', label: '直连' },
@@ -190,6 +255,29 @@ const modeOptions: { id: CliMode; label: string }[] = [
   { id: 'disabled', label: '停用' }
 ]
 const modeLabels: Record<CliMode, string> = { proxy_route: '中转路由', provider_direct: '中转直连', official_direct: '官方直连', disabled: '停用' }
+
+function openAgentInfo(cli: CliType) {
+  selectedAgent.value = agentStore.get(cli) || null
+  agentInfoVisible.value = selectedAgent.value !== null
+}
+
+function displayFeatures(agent: AgentInfo) {
+  return featureKeys.map((key) => ({
+    key,
+    label: featureLabels[key],
+    enabled: agent.features[key].enabled,
+  }))
+}
+
+function protocolLabel(protocol: Protocol) {
+  const labels: Record<Protocol, string> = {
+    anthropic_messages: 'Anthropic Messages',
+    openai_chat: 'OpenAI Chat',
+    openai_responses: 'OpenAI Responses',
+    gemini_generate_content: 'Gemini GenerateContent',
+  }
+  return labels[protocol]
+}
 
 function getCliMode(cli: CliType): CliMode {
   return settingsStore.settings?.cli_settings?.[cli]?.cli_mode ?? 'disabled'
@@ -716,9 +804,25 @@ onMounted(async () => {
 .rail-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   height: 28px;
   margin-bottom: 10px;
+}
+.rail-title {
+  font-size: var(--v2-fs-sm);
+  font-weight: var(--v2-fw-semibold);
+  color: var(--v2-text);
+}
+.rail-help {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.rail-help .el-icon {
+  font-size: 15px;
 }
 .cli-list {
   display: flex;
@@ -756,8 +860,87 @@ onMounted(async () => {
   height: 13px;
 }
 .cli-name { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text); }
-.cli-help {
-  margin-left: auto;
+.cli-info {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--v2-text-3);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.cli-info:hover {
+  color: var(--v2-accent);
+  background: var(--v2-selected-bg);
+}
+.cli-info .el-icon {
+  font-size: 16px;
+}
+.agent-info {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.agent-info-head,
+.agent-info-title,
+.agent-feature-row {
+  display: flex;
+  align-items: center;
+}
+.agent-info-head,
+.agent-feature-row {
+  justify-content: space-between;
+}
+.agent-info-head {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--v2-surface-2);
+}
+.agent-info-title {
+  gap: 10px;
+  min-width: 0;
+}
+.agent-info-name {
+  font-size: var(--v2-fs-md);
+  font-weight: var(--v2-fw-semibold);
+}
+.agent-info-id {
+  margin-top: 2px;
+  color: var(--v2-text-3);
+  font-size: 11px;
+}
+.agent-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-info-label {
+  color: var(--v2-text-3);
+  font-size: var(--v2-fs-xs);
+}
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+.pill-row .v2-pill {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.agent-feature-list {
+  border-top: 1px solid var(--v2-surface-2);
+}
+.agent-feature-row {
+  min-height: 42px;
+  gap: 12px;
+  border-bottom: 1px solid var(--v2-surface-2);
+  color: var(--v2-text);
+  font-size: var(--v2-fs-sm);
 }
 .cli-modes {
   display: grid !important;
