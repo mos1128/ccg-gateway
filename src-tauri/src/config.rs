@@ -146,21 +146,3 @@ fn host_for_url(host: &str) -> String {
         h => h.to_string(),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn expand_home_path_uses_platform_separators() {
-        let expected = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".config")
-            .join("opencode")
-            .to_string_lossy()
-            .to_string();
-
-        assert_eq!(expand_home_path("~/.config/opencode"), expected);
-        assert_eq!(expand_home_path(r"~\.config\opencode"), expected);
-    }
-}

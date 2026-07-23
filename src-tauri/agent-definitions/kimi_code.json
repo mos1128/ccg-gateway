@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "id": "kimi_code",
+  "sort_order": 50,
+  "name": "Kimi Code",
+  "remark": "网关会在 kimi-code 添加自定义服务商 ccg-gateway 和模型别名 ccg-model，路由模式请在模型映射中将 ccg-model 映射到实际上游模型。",
+  "icon": {
+    "view_box": "0 0 24 24",
+    "color": "#4d4d8f",
+    "paths": [
+      {
+        "d": "M 5.2,3.7 h 13.6 a 3,3 0 0 1 3,3 v 8.6 a 3,3 0 0 1 -3,3 h -13.6 a 3,3 0 0 1 -3,-3 v -8.6 a 3,3 0 0 1 3,-3 z M 5.2,5.3 h 13.6 a 1.4,1.4 0 0 1 1.4,1.4 v 8.6 a 1.4,1.4 0 0 1 -1.4,1.4 h -13.6 a 1.4,1.4 0 0 1 -1.4,-1.4 v -8.6 a 1.4,1.4 0 0 1 1.4,-1.4 z",
+        "fill_rule": "evenodd"
+      },
+      {
+        "d": "M 9.6,8.0 h 1.4 v 2.6 h -1.4 z"
+      },
+      {
+        "d": "M 15.6,8.0 h 1.4 v 2.6 h -1.4 z"
+      }
+    ]
+  },
+  "config_dir": "~/.kimi-code",
+  "user_agent": ["kimi-code-cli"],
+  "protocols": ["openai_responses"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-default-model",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["default_model"],
+          "value": "ccg-model"
+        },
+        {
+          "id": "set-provider-type",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["providers", "ccg-gateway", "type"],
+          "value": "openai_responses"
+        },
+        {
+          "id": "set-provider-endpoint",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["providers", "ccg-gateway", "base_url"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-provider-token",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["providers", "ccg-gateway", "api_key"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-model-provider",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["models", "ccg-model", "provider"],
+          "value": "ccg-gateway"
+        },
+        {
+          "id": "set-model-name",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["models", "ccg-model", "model"],
+          "value": "ccg-model"
+        },
+        {
+          "id": "set-model-context-size",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["models", "ccg-model", "max_context_size"],
+          "value": 200000
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "config.toml",
+      "format": "toml"
+    },
+    "profiles": { "enabled": false },
+    "official_login": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "replace-kimi-oauth",
+          "op": "replace_file",
+          "file": "credentials/oauth/kimi-code.json",
+          "content_from": { "file_id": "kimi_oauth" }
+        }
+      ]
+    },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "mcp.json",
+      "format": "json",
+      "servers_path": ["mcpServers"]
+    },
+    "sessions": { "enabled": true, "adapter": "kimi_code" },
+    "plugins": { "enabled": false },
+    "prompts": { "enabled": true, "file": "AGENTS.md" }
+  }
+}

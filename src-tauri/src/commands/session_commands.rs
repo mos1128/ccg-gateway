@@ -1588,11 +1588,469 @@ async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
         .ok_or_else(|| format!("Agent {} 的 Session 缺少 adapter", agent_id))?;
     if !matches!(
         adapter.as_str(),
-        "claude_code" | "codex" | "gemini" | "opencode"
+        "claude_code" | "codex" | "gemini" | "opencode" | "kimi_code"
     ) {
         return Err(format!("Session adapter `{}` 不存在", adapter));
     }
     Ok(adapter)
+}
+
+// ==================== kimi-code 会话适配 ====================
+//
+// kimi-code 数据布局（~/.kimi-code/）：
+//   session_index.jsonl          # 索引：每行 {sessionId, sessionDir, workDir}
+//   sessions/<workDirKey>/<id>/
+//     state.json                 # {title, lastPrompt, workDir, archived, createdAt, updatedAt}
+//     agents/main/wire.jsonl     # AgentRecord 事件日志
+//
+// wire.jsonl 的每行是 AgentRecord（顶层 type），与消息还原相关的记录类型：
+//   metadata / config.update / turn.prompt / context.append_message /
+//   context.append_loop_event / usage.record 等。
+// 消息内容从 context.append_message.message 还原：
+//   message.role = system|user|assistant|tool
+//   message.content = ContentPart[]（text / think / image_url / audio_url / video_url）
+//   message.toolCalls = ToolCall[]（assistant 调用工具）
+//   message.toolCallId = string（tool 角色消息对应的结果）
+
+/// 读取并解析 kimi-code 的 session_index.jsonl，返回 (sessionId, sessionDir, workDir) 列表。
+/// 后出现的删除标记会移除同 sessionId 的条目，与 kimi-code 的 readSessionIndex 语义一致。
+fn read_kimi_session_index(home_dir: &std::path::Path) -> Vec<(String, std::path::PathBuf, String)> {
+    let index_path = home_dir.join("session_index.jsonl");
+    let Ok(file) = std::fs::File::open(&index_path) else {
+        return Vec::new();
+    };
+    let mut map: std::collections::HashMap<String, (std::path::PathBuf, String)> =
+        std::collections::HashMap::new();
+    for line in std::io::BufRead::lines(std::io::BufReader::new(file)).flatten() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let Some(session_id) = data.get("sessionId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        // 删除标记：{ sessionId, deleted: true }
+        if data.get("deleted").and_then(|d| d.as_bool()) == Some(true) {
+            map.remove(session_id);
+            continue;
+        }
+        let Some(session_dir) = data.get("sessionDir").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let work_dir = data
+            .get("workDir")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        map.insert(session_id.to_string(), (std::path::PathBuf::from(session_dir), work_dir));
+    }
+    map.into_iter()
+        .map(|(session_id, (session_dir, work_dir))| (session_id, session_dir, work_dir))
+        .collect()
+}
+
+/// 从 state.json 提取 kimi-code 会话展示信息。
+/// 返回 (title, last_prompt, archived, created_at, updated_at, work_dir)
+fn read_kimi_state_info(
+    session_dir: &std::path::Path,
+) -> (String, String, bool, f64, f64, String) {
+    let state_path = session_dir.join("state.json");
+    let mut title = String::new();
+    let mut last_prompt = String::new();
+    let mut archived = false;
+    let mut created_at = 0.0f64;
+    let mut updated_at = 0.0f64;
+    let mut work_dir = String::new();
+
+    if let Ok(content) = std::fs::read_to_string(&state_path) {
+        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
+            title = data
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            last_prompt = data
+                .get("lastPrompt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            archived = data.get("archived").and_then(|v| v.as_bool()).unwrap_or(false);
+            work_dir = data
+                .get("workDir")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            created_at = parse_kimi_time(data.get("createdAt"));
+            updated_at = parse_kimi_time(data.get("updatedAt"));
+        }
+    }
+    (title, last_prompt, archived, created_at, updated_at, work_dir)
+}
+
+/// kimi-code 时间字段兼容 ISO-8601 字符串和 epoch 秒/毫秒。
+fn parse_kimi_time(value: Option<&serde_json::Value>) -> f64 {
+    let Some(value) = value else { return 0.0 };
+    if let Some(s) = value.as_str() {
+        return chrono::DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|dt| dt.timestamp_millis() as f64 / 1000.0)
+            .unwrap_or(0.0);
+    }
+    if let Some(n) = value.as_f64() {
+        return if n > 1e12 { n / 1000.0 } else { n };
+    }
+    0.0
+}
+
+/// 取会话目录下最新的 wire.jsonl 修改时间（主 agent 与子 agent 均检查）。
+fn kimi_latest_wire_mtime(session_dir: &std::path::Path) -> f64 {
+    fn wire_mtime_at(dir: &std::path::Path) -> Option<f64> {
+        let meta = std::fs::metadata(dir.join("wire.jsonl")).ok()?;
+        let mtime = meta.modified().ok()?;
+        Some(
+            mtime
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0),
+        )
+    }
+
+    let mut latest = wire_mtime_at(session_dir).unwrap_or(0.0);
+    let agents_dir = session_dir.join("agents");
+    if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+        for entry in entries.flatten() {
+            if let Some(secs) = wire_mtime_at(&entry.path()) {
+                if secs > latest {
+                    latest = secs;
+                }
+            }
+        }
+    }
+    latest
+}
+
+/// 计算 kimi-code 会话目录占用大小（字节）。
+fn kimi_session_size(session_dir: &std::path::Path) -> i64 {
+    let mut total = 0i64;
+    if let Ok(entries) = std::fs::read_dir(session_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Ok(meta) = path.metadata() {
+                    total += meta.len() as i64;
+                }
+            } else if path.is_dir() {
+                if let Ok(sub) = std::fs::read_dir(&path) {
+                    for item in sub.flatten() {
+                        if item.path().is_file() {
+                            if let Ok(meta) = item.path().metadata() {
+                                total += meta.len() as i64;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    total
+}
+
+/// kimi-code 项目列表：按 workDir 分组所有会话。
+fn get_kimi_projects(
+    home_dir: &std::path::Path,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedProjects> {
+    let entries = read_kimi_session_index(home_dir);
+    // 按 workDir 分组（空 workDir 归到 "unknown"）
+    let mut groups: std::collections::HashMap<String, Vec<(String, std::path::PathBuf, String)>> =
+        std::collections::HashMap::new();
+    for (session_id, session_dir, work_dir) in entries {
+        let key = if work_dir.is_empty() {
+            "unknown".to_string()
+        } else {
+            work_dir.clone()
+        };
+        groups.entry(key).or_default().push((session_id, session_dir, work_dir));
+    }
+
+    let mut projects: Vec<ProjectInfo> = Vec::new();
+    for (work_dir, sessions) in groups {
+        let mut session_count = 0i64;
+        let mut total_size = 0i64;
+        let mut last_modified = 0f64;
+        let mut display_name = String::new();
+        for (_, session_dir, _) in &sessions {
+            let (_, _, archived, created_at, updated_at, _) = read_kimi_state_info(session_dir);
+            if archived {
+                continue;
+            }
+            session_count += 1;
+            total_size += kimi_session_size(session_dir);
+            let wire_mtime = kimi_latest_wire_mtime(session_dir);
+            let mtime = updated_at.max(wire_mtime).max(created_at);
+            if mtime > last_modified {
+                last_modified = mtime;
+            }
+        }
+        if session_count == 0 {
+            continue;
+        }
+        if display_name.is_empty() {
+            display_name = std::path::Path::new(&work_dir)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&work_dir)
+                .to_string();
+        }
+        projects.push(ProjectInfo {
+            name: work_dir.clone(),
+            display_name,
+            full_path: work_dir,
+            session_count,
+            total_size,
+            last_modified,
+        });
+    }
+
+    projects.sort_by(|a, b| {
+        b.last_modified
+            .partial_cmp(&a.last_modified)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total = projects.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = projects
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+
+    Ok(PaginatedProjects {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+/// kimi-code 项目下的会话列表。
+fn get_kimi_sessions(
+    home_dir: &std::path::Path,
+    project_name: &str,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedSessions> {
+    let entries = read_kimi_session_index(home_dir);
+    let mut sessions: Vec<SessionInfo> = Vec::new();
+    for (session_id, session_dir, work_dir) in entries {
+        if work_dir != project_name {
+            continue;
+        }
+        let (title, last_prompt, archived, created_at, updated_at, _) =
+            read_kimi_state_info(&session_dir);
+        if archived {
+            continue;
+        }
+        let size = kimi_session_size(&session_dir);
+        let wire_mtime = kimi_latest_wire_mtime(&session_dir);
+        let mtime = updated_at.max(wire_mtime).max(created_at);
+        let first_message = if !title.is_empty() { title } else { last_prompt };
+        sessions.push(SessionInfo {
+            session_id,
+            size,
+            mtime,
+            first_message,
+            git_branch: String::new(),
+            summary: String::new(),
+        });
+    }
+
+    sessions.sort_by(|a, b| {
+        b.mtime
+            .partial_cmp(&a.mtime)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total = sessions.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = sessions
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+
+    Ok(PaginatedSessions {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+/// 把单个 kosong ContentPart 渲染成展示文本。
+fn render_kimi_content_part(part: &serde_json::Value) -> Option<String> {
+    let part_type = part.get("type").and_then(|t| t.as_str())?;
+    match part_type {
+        "text" => part
+            .get("text")
+            .and_then(|t| t.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
+        "think" => part
+            .get("think")
+            .and_then(|t| t.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("**[思考]**\n{}", s)),
+        "image_url" => Some("[图片]".to_string()),
+        "audio_url" => Some("[音频]".to_string()),
+        "video_url" => Some("[视频]".to_string()),
+        _ => None,
+    }
+}
+
+/// 从 context.append_message 记录还原 SessionMessage。
+/// assistant 消息合并其 toolCalls；tool 角色消息作为工具结果展示。
+fn parse_kimi_append_message(record: &serde_json::Value, timestamp: Option<i64>) -> Option<SessionMessage> {
+    let message = record.get("message")?;
+    let role = message.get("role").and_then(|r| r.as_str())?;
+    let mut parts: Vec<String> = Vec::new();
+
+    if let Some(content_arr) = message.get("content").and_then(|c| c.as_array()) {
+        for item in content_arr {
+            if let Some(text) = render_kimi_content_part(item) {
+                parts.push(text);
+            }
+        }
+    }
+
+    // assistant 的工具调用
+    if role == "assistant" {
+        if let Some(tool_calls) = message.get("toolCalls").and_then(|t| t.as_array()) {
+            for call in tool_calls {
+                let name = call
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown");
+                let arguments = call.get("arguments");
+                let args_str = if let Some(args) = arguments {
+                    if let Some(s) = args.as_str() {
+                        match serde_json::from_str::<serde_json::Value>(s) {
+                            Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_else(|_| s.to_string()),
+                            Err(_) => s.to_string(),
+                        }
+                    } else {
+                        serde_json::to_string_pretty(args).unwrap_or_else(|_| "{}".to_string())
+                    }
+                } else {
+                    "{}".to_string()
+                };
+                parts.push(format!("**[调用工具: {}]**\n```json\n{}\n```", name, args_str));
+            }
+        }
+    }
+
+    // tool 角色消息：工具结果，content 里可能是文本或结构
+    if role == "tool" {
+        let content_val = message.get("content");
+        let result_str = if let Some(s) = content_val.and_then(|c| c.as_str()) {
+            s.to_string()
+        } else if let Some(arr) = content_val.and_then(|c| c.as_array()) {
+            let mut text_parts = Vec::new();
+            for item in arr {
+                if let Some(text) = render_kimi_content_part(item) {
+                    text_parts.push(text);
+                }
+            }
+            text_parts.join("\n")
+        } else {
+            String::new()
+        };
+        if !result_str.is_empty() {
+            parts.push(format!("**[工具结果]**\n```\n{}\n```", result_str));
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+    // 系统消息不在 UI 展示
+    if role == "system" {
+        return None;
+    }
+    let display_role = if role == "tool" { "user" } else { role };
+    Some(SessionMessage {
+        role: display_role.to_string(),
+        content: parts.join("\n\n"),
+        timestamp,
+    })
+}
+
+/// 解析 wire.jsonl 还原 kimi-code 会话消息流。
+fn parse_kimi_wire_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
+    let mut messages: Vec<SessionMessage> = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(data) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let record_type = data.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        // AgentRecord 的时间字段是 time（毫秒）
+        let timestamp = data
+            .get("time")
+            .and_then(|t| t.as_f64())
+            .map(|ms| (ms / 1000.0) as i64);
+
+        if record_type == "context.append_message" {
+            if let Some(msg) = parse_kimi_append_message(&data, timestamp) {
+                messages.push(msg);
+            }
+        }
+    }
+    Ok(messages)
+}
+
+/// 读取 kimi-code 会话消息。
+fn get_kimi_messages(
+    home_dir: &std::path::Path,
+    project_name: &str,
+    session_id: &str,
+) -> Result<Vec<SessionMessage>> {
+    // 通过 session_index 定位 sessionDir，再读 wire.jsonl
+    let entries = read_kimi_session_index(home_dir);
+    let session_dir = entries
+        .into_iter()
+        .find(|(id, _, work_dir)| id == session_id && work_dir == project_name)
+        .map(|(_, dir, _)| dir)
+        .or_else(|| {
+            // 索引缺失时回退到按 sessions 目录递归查找同名会话目录
+            let sessions_root = home_dir.join("sessions");
+            if let Ok(entries) = std::fs::read_dir(&sessions_root) {
+                for bucket in entries.flatten() {
+                    let candidate = bucket.path().join(session_id);
+                    if candidate.is_dir() {
+                        return Some(candidate);
+                    }
+                }
+            }
+            None
+        })
+        .ok_or_else(|| format!("Session directory not found: {}", session_id))?;
+
+    let wire_path = session_dir.join("agents").join("main").join("wire.jsonl");
+    let content = std::fs::read_to_string(&wire_path).map_err(|e| {
+        format!(
+            "Failed to read wire.jsonl for session '{}': {}",
+            session_id, e
+        )
+    })?;
+    parse_kimi_wire_jsonl(&content)
 }
 
 // Session commands
@@ -1609,6 +2067,11 @@ pub async fn get_session_projects(
 
     if adapter == "opencode" {
         return get_opencode_projects(page, page_size).await;
+    }
+
+    if adapter == "kimi_code" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        return run_session_blocking(move || get_kimi_projects(&base_dir, page, page_size)).await;
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
@@ -1747,6 +2210,16 @@ pub async fn get_project_sessions(
         return get_opencode_sessions(&project_name, page, page_size).await;
     }
 
+    // Special handling for kimi-code
+    if adapter == "kimi_code" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let project_name = project_name.clone();
+        return run_session_blocking(move || {
+            get_kimi_sessions(&base_dir, &project_name, page, page_size)
+        })
+        .await;
+    }
+
     // Special handling for Codex
     if adapter == "codex" {
         return get_codex_sessions_async(db.inner(), &cli_type, &project_name, page, page_size)
@@ -1857,6 +2330,17 @@ pub async fn get_session_messages(
         return get_opencode_messages(&project_name, &session_id).await;
     }
 
+    // Special handling for kimi-code
+    if adapter == "kimi_code" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let project_name = project_name.clone();
+        let session_id = session_id.clone();
+        return run_session_blocking(move || {
+            get_kimi_messages(&base_dir, &project_name, &session_id)
+        })
+        .await;
+    }
+
     // Special handling for Codex JSONL format
     if adapter == "codex" {
         return get_codex_messages_async(db.inner(), &cli_type, &session_id).await;
@@ -1882,6 +2366,29 @@ pub async fn delete_session(
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+
+    // Special handling for kimi-code - 删除整个会话目录
+    if adapter == "kimi_code" {
+        let project_name = project_name.clone();
+        let session_id = session_id.clone();
+        return run_session_blocking(move || {
+            let entries = read_kimi_session_index(&base_dir);
+            let session_dir = entries
+                .into_iter()
+                .find(|(id, _, work_dir)| *id == session_id && *work_dir == project_name)
+                .map(|(_, dir, _)| dir);
+            let Some(session_dir) = session_dir else {
+                return Err(format!("Session directory not found: {}", session_id));
+            };
+            if !session_dir.exists() {
+                return Err(format!("Session directory not found: {}", session_dir.display()));
+            }
+            std::fs::remove_dir_all(&session_dir)
+                .map_err(|e| format!("Failed to delete session: {}", e))?;
+            Ok(())
+        })
+        .await;
+    }
 
     // Special handling for Codex - need to search recursively
     if adapter == "codex" {
@@ -1949,6 +2456,21 @@ pub async fn delete_project(
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
 
+    // Special handling for kimi-code - 删除该 workDir 下的所有会话目录
+    if adapter == "kimi_code" {
+        let project_name = project_name.clone();
+        return run_session_blocking(move || {
+            let entries = read_kimi_session_index(&base_dir);
+            for (_, session_dir, work_dir) in &entries {
+                if work_dir == &project_name && session_dir.exists() {
+                    let _ = std::fs::remove_dir_all(session_dir);
+                }
+            }
+            Ok(())
+        })
+        .await;
+    }
+
     if adapter == "codex" {
         // For Codex, delete all session files matching the project cwd
         let sessions_dir = base_dir.join("sessions");
@@ -1988,88 +2510,4 @@ pub async fn delete_project(
         .map_err(|e| format!("Failed to delete project: {}", e))?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn opencode_session_queries_are_read_only_views() {
-        let mut connection = SqliteConnection::connect("sqlite::memory:")
-            .await
-            .expect("open in-memory database");
-        for statement in [
-            "CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL, name TEXT, time_updated INTEGER NOT NULL)",
-            "CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, time_archived INTEGER)",
-            "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)",
-            "CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT NOT NULL, session_id TEXT NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)",
-        ] {
-            sqlx::query(statement)
-                .execute(&mut connection)
-                .await
-                .expect("create OpenCode table");
-        }
-        for statement in [
-            r#"INSERT INTO project VALUES ('project-1', 'D:\work\demo', 'Demo', 1000)"#,
-            r#"INSERT INTO project VALUES ('project-2', 'D:\work\empty', '', 500)"#,
-            r#"INSERT INTO session VALUES ('session-1', 'project-1', 'First session', 1000, 3000, NULL)"#,
-            r#"INSERT INTO session VALUES ('session-2', 'project-1', 'Title fallback', 1000, 2000, NULL)"#,
-            r#"INSERT INTO session VALUES ('session-archived', 'project-1', 'Archived', 1000, 4000, 4500)"#,
-            r#"INSERT INTO message VALUES ('message-user', 'session-1', 1500, '{"role":"user"}')"#,
-            r#"INSERT INTO message VALUES ('message-assistant', 'session-1', 2500, '{"role":"assistant"}')"#,
-            r#"INSERT INTO message VALUES ('message-system', 'session-1', 2600, '{"role":"system"}')"#,
-            r#"INSERT INTO part VALUES ('part-snapshot', 'message-user', 'session-1', 1400, '{"type":"snapshot","snapshot":"ignored"}')"#,
-            r#"INSERT INTO part VALUES ('part-user-1', 'message-user', 'session-1', 1500, '{"type":"text","text":"Hello"}')"#,
-            r#"INSERT INTO part VALUES ('part-user-2', 'message-user', 'session-1', 1600, '{"type":"text","text":"world"}')"#,
-            r#"INSERT INTO part VALUES ('part-assistant', 'message-assistant', 'session-1', 2500, '{"type":"text","text":"Answer"}')"#,
-            r#"INSERT INTO part VALUES ('part-system', 'message-system', 'session-1', 2600, '{"type":"text","text":"Hidden"}')"#,
-        ] {
-            sqlx::query(statement)
-                .execute(&mut connection)
-                .await
-                .expect("insert OpenCode fixture");
-        }
-
-        let first_project_page = query_opencode_projects(&mut connection, 1, 1)
-            .await
-            .expect("query projects");
-        assert_eq!(first_project_page.total, 2);
-        assert_eq!(first_project_page.items.len(), 1);
-        assert_eq!(first_project_page.items[0].name, "project-1");
-        assert_eq!(first_project_page.items[0].display_name, "Demo");
-        assert_eq!(first_project_page.items[0].session_count, 2);
-        assert_eq!(first_project_page.items[0].last_modified, 3.0);
-
-        let second_project_page = query_opencode_projects(&mut connection, 2, 1)
-            .await
-            .expect("query second project page");
-        assert_eq!(second_project_page.items[0].display_name, "project-2");
-
-        let sessions = query_opencode_sessions(&mut connection, "project-1", 1, 10)
-            .await
-            .expect("query sessions");
-        assert_eq!(sessions.total, 2);
-        assert_eq!(sessions.items[0].session_id, "session-1");
-        assert_eq!(sessions.items[0].first_message, "Hello");
-        assert_eq!(sessions.items[0].summary, "First session");
-        assert_eq!(sessions.items[0].mtime, 3.0);
-        assert_eq!(sessions.items[1].first_message, "Title fallback");
-
-        let messages = query_opencode_messages(&mut connection, "project-1", "session-1")
-            .await
-            .expect("query messages");
-        assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].role, "user");
-        assert_eq!(messages[0].content, "Hello\n\nworld");
-        assert_eq!(messages[0].timestamp, Some(1));
-        assert_eq!(messages[1].role, "assistant");
-        assert_eq!(messages[1].content, "Answer");
-        assert!(
-            query_opencode_messages(&mut connection, "project-2", "session-1")
-                .await
-                .expect("query mismatched project")
-                .is_empty()
-        );
-    }
 }

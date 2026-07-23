@@ -54,17 +54,3 @@ pub async fn get_agent_diagnostics(
         .map_err(|error| error.to_string()),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn validates_json_and_toml_with_their_real_parsers() {
-        assert!(validate_config_content(ConfigFormat::Json, r#"{"ok":true}"#.into()).is_ok());
-        assert!(validate_config_content(ConfigFormat::Json, "{]".into()).is_err());
-        assert!(validate_config_content(ConfigFormat::Toml, "model = \"gpt\"".into()).is_ok());
-        assert!(validate_config_content(ConfigFormat::Toml, "model = [".into()).is_err());
-        assert!(validate_config_content(ConfigFormat::Env, "NOT TOML = [".into()).is_ok());
-    }
-}

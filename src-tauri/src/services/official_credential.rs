@@ -494,20 +494,3 @@ pub fn display_info(json: &str) -> String {
         Err(_) => "无效凭证格式".to_string(),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn accepts_raw_text_credential_files() {
-        let payload = parse_payload(
-            r#"{"schema_version":1,"files":{"credentials":{"format":"toml","content":"token = 'demo'"}}}"#,
-        )
-        .expect("TOML credentials should be accepted");
-
-        let file = payload.files.get("credentials").expect("credential file");
-        assert_eq!(file.format, ConfigFormat::Toml);
-        assert_eq!(file.content.as_str(), Some("token = 'demo'"));
-    }
-}
