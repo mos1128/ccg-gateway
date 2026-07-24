@@ -3,7 +3,7 @@
   "id": "zcode",
   "sort_order": 60,
   "name": "ZCode",
-  "remark": "网关会添加自定义服务商 CCG-Gateway，模型ID为 ccg-model，请在模型映射中将 ccg-model 映射到实际上游模型。",
+  "remark": "网关会添加两个自定义服务商 CCG-Gateway (OpenAI) 与 CCG-Gateway (Anthropic)，分别对应不同的会话协议，并预置了 gpt-5.6-sol 和 claude-opus-4-8 模型。\n使用时根据实际情况，在模型映射中将其映射到实际上游模型（映射可以用*作为通配符）",
   "icon": {
     "view_box": "0 0 24 24",
     "color": "#5b6cff",
@@ -15,66 +15,122 @@
   },
   "config_dir": "~/.zcode",
   "user_agent": ["zcode"],
-  "protocols": ["openai_chat"],
+  "protocols": ["openai_responses", "anthropic_messages"],
   "features": {
     "provider_config": {
       "enabled": true,
       "operations": [
         {
-          "id": "set-provider-name",
+          "id": "set-openai-name",
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "name"],
-          "value": "CCG-Gateway"
+          "path": ["provider", "ccg-openai", "name"],
+          "value": "CCG-Gateway (OpenAI)"
         },
         {
-          "id": "set-provider-kind",
+          "id": "set-openai-kind",
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "kind"],
+          "path": ["provider", "ccg-openai", "kind"],
           "value": "openai"
         },
         {
-          "id": "set-provider-source",
+          "id": "set-openai-source",
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "source"],
+          "path": ["provider", "ccg-openai", "source"],
           "value": "custom"
         },
         {
-          "id": "set-provider-endpoint",
+          "id": "set-openai-endpoint",
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "options", "baseURL"],
+          "path": ["provider", "ccg-openai", "options", "baseURL"],
           "value": "{target.endpoint}"
         },
         {
-          "id": "set-provider-token",
+          "id": "set-openai-token",
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "options", "apiKey"],
+          "path": ["provider", "ccg-openai", "options", "apiKey"],
           "value": "{target.token}"
         },
         {
-          "id": "set-provider-key-required",
+          "id": "set-openai-key-required",
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "options", "apiKeyRequired"],
+          "path": ["provider", "ccg-openai", "options", "apiKeyRequired"],
           "value": true
         },
         {
-          "id": "set-model-context",
+          "id": "set-openai-model-context",
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "models", "ccg-model", "limit", "context"],
-          "value": 200000
+          "path": ["provider", "ccg-openai", "models", "gpt-5.6-sol", "limit", "context"],
+          "value": 1000000
+        },
+        {
+          "id": "set-anthropic-name",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-anthropic", "name"],
+          "value": "CCG-Gateway (Anthropic)"
+        },
+        {
+          "id": "set-anthropic-kind",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-anthropic", "kind"],
+          "value": "anthropic"
+        },
+        {
+          "id": "set-anthropic-source",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-anthropic", "source"],
+          "value": "custom"
+        },
+        {
+          "id": "set-anthropic-endpoint",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-anthropic", "options", "baseURL"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-anthropic-token",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-anthropic", "options", "apiKey"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-anthropic-key-required",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-anthropic", "options", "apiKeyRequired"],
+          "value": true
+        },
+        {
+          "id": "set-anthropic-model-context",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-anthropic", "models", "claude-opus-4-8", "limit", "context"],
+          "value": 1000000
         }
       ]
     },
@@ -84,17 +140,7 @@
       "format": "json"
     },
     "profiles": { "enabled": false },
-    "official_login": {
-      "enabled": true,
-      "operations": [
-        {
-          "id": "replace-zcode-credentials",
-          "op": "replace_file",
-          "file": "v2/credentials.json",
-          "content_from": { "file_id": "zcode_credentials" }
-        }
-      ]
-    },
+    "official_login": { "enabled": false },
     "model_mapping": { "enabled": true },
     "token_usage": { "enabled": true },
     "skills": { "enabled": true, "directory": "skills" },
