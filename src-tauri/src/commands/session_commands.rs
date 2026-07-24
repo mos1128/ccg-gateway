@@ -1588,7 +1588,7 @@ async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
         .ok_or_else(|| format!("Agent {} 的 Session 缺少 adapter", agent_id))?;
     if !matches!(
         adapter.as_str(),
-        "claude_code" | "codex" | "gemini" | "opencode" | "kimi_code"
+        "claude_code" | "codex" | "gemini" | "opencode" | "kimi_code" | "zcode"
     ) {
         return Err(format!("Session adapter `{}` 不存在", adapter));
     }
@@ -2053,6 +2053,339 @@ fn get_kimi_messages(
     parse_kimi_wire_jsonl(&content)
 }
 
+// ==================== zcode 会话适配 ====================
+//
+// zcode 数据布局（~/.zcode/）：
+//   v2/tasks-index.sqlite               # 会话索引（tasks 表：task_id, title, workspace_path, ...）
+//   cli/rollout/model-io-<task_id>.jsonl # 每个会话的模型请求/响应日志
+//
+// rollout jsonl 每行是一条 model_io 记录：
+//   startedAt / model / request.body.input / response.text / response.toolCalls / error
+// input 是累积上下文（OpenAI responses 格式），含 developer 系统指令与 user 输入。
+// 还原消息流：逐条记录取最后一条真实 user 输入（跳过 system-reminder）+ response.text，按内容去重。
+
+fn zcode_db_path(home_dir: &std::path::Path) -> std::path::PathBuf {
+    home_dir.join("v2").join("tasks-index.sqlite")
+}
+
+fn zcode_rollout_path(home_dir: &std::path::Path, session_id: &str) -> std::path::PathBuf {
+    home_dir
+        .join("cli")
+        .join("rollout")
+        .join(format!("model-io-{}.jsonl", session_id))
+}
+
+async fn open_zcode_db(home_dir: &std::path::Path) -> Result<SqliteConnection> {
+    let path = zcode_db_path(home_dir);
+    if !path.is_file() {
+        return Err(format!(
+            "zcode session database not found: {}",
+            path.display()
+        ));
+    }
+    let options = SqliteConnectOptions::new()
+        .filename(&path)
+        .read_only(true)
+        .create_if_missing(false);
+    SqliteConnection::connect_with(&options)
+        .await
+        .map_err(|error| format!("Failed to open zcode session database: {}", error))
+}
+
+/// zcode 项目列表：按 workspace_path 分组 tasks 表。
+async fn get_zcode_projects(
+    home_dir: std::path::PathBuf,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedProjects> {
+    let mut connection = open_zcode_db(&home_dir).await?;
+    let rows = sqlx::query_as::<_, (String, String, i64, i64)>(
+        r#"
+        SELECT task_id, workspace_path, created_at, updated_at
+        FROM tasks
+        WHERE deleted = 0 AND archived = 0 AND workspace_path <> ''
+        ORDER BY updated_at DESC
+        "#,
+    )
+    .fetch_all(&mut connection)
+    .await
+    .map_err(|error| format!("Failed to query zcode tasks: {}", error))?;
+
+    let mut groups: std::collections::HashMap<String, Vec<(String, i64, i64)>> =
+        std::collections::HashMap::new();
+    for (task_id, workspace_path, created_at, updated_at) in rows {
+        groups
+            .entry(workspace_path)
+            .or_default()
+            .push((task_id, created_at, updated_at));
+    }
+
+    let mut projects: Vec<ProjectInfo> = Vec::new();
+    for (workspace_path, tasks) in &groups {
+        let mut session_count = 0i64;
+        let mut total_size = 0i64;
+        let mut last_modified = 0f64;
+        for (task_id, created_at, updated_at) in tasks {
+            session_count += 1;
+            let rollout = zcode_rollout_path(&home_dir, task_id);
+            if let Ok(meta) = std::fs::metadata(&rollout) {
+                total_size += meta.len() as i64;
+                if let Ok(mtime) = meta.modified() {
+                    let secs = mtime
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs_f64())
+                        .unwrap_or(0.0);
+                    if secs > last_modified {
+                        last_modified = secs;
+                    }
+                }
+            }
+            let db_mtime = (*updated_at as f64 / 1000.0).max(*created_at as f64 / 1000.0);
+            if db_mtime > last_modified {
+                last_modified = db_mtime;
+            }
+        }
+        let display_name = std::path::Path::new(workspace_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(workspace_path)
+            .to_string();
+        projects.push(ProjectInfo {
+            name: workspace_path.clone(),
+            display_name,
+            full_path: workspace_path.clone(),
+            session_count,
+            total_size,
+            last_modified,
+        });
+    }
+
+    projects.sort_by(|a, b| {
+        b.last_modified
+            .partial_cmp(&a.last_modified)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total = projects.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = projects
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+
+    Ok(PaginatedProjects {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+/// zcode 项目下的会话列表。
+async fn get_zcode_sessions(
+    home_dir: std::path::PathBuf,
+    project_name: String,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedSessions> {
+    let mut connection = open_zcode_db(&home_dir).await?;
+    let rows = sqlx::query_as::<_, (String, String, i64, i64)>(
+        r#"
+        SELECT task_id, title, created_at, updated_at
+        FROM tasks
+        WHERE workspace_path = ? AND deleted = 0 AND archived = 0
+        ORDER BY updated_at DESC
+        "#,
+    )
+    .bind(project_name.as_str())
+    .fetch_all(&mut connection)
+    .await
+    .map_err(|error| format!("Failed to query zcode sessions: {}", error))?;
+
+    let mut sessions: Vec<SessionInfo> = Vec::new();
+    for (task_id, title, created_at, updated_at) in rows {
+        let mut size = 0i64;
+        let mut mtime = 0f64;
+        let rollout = zcode_rollout_path(&home_dir, &task_id);
+        if let Ok(meta) = std::fs::metadata(&rollout) {
+            size = meta.len() as i64;
+            if let Ok(mt) = meta.modified() {
+                mtime = mt
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs_f64())
+                    .unwrap_or(0.0);
+            }
+        }
+        let db_mtime = (updated_at as f64 / 1000.0).max(created_at as f64 / 1000.0);
+        if db_mtime > mtime {
+            mtime = db_mtime;
+        }
+        sessions.push(SessionInfo {
+            session_id: task_id,
+            size,
+            mtime,
+            first_message: title,
+            git_branch: String::new(),
+            summary: String::new(),
+        });
+    }
+
+    sessions.sort_by(|a, b| {
+        b.mtime
+            .partial_cmp(&a.mtime)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total = sessions.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = sessions
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+
+    Ok(PaginatedSessions {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+/// 从 rollout 记录的 input 消息提取文本（content 可能是字符串或 input_text 数组）。
+fn extract_zcode_input_text(message: &serde_json::Value) -> String {
+    let Some(content) = message.get("content") else {
+        return String::new();
+    };
+    if let Some(s) = content.as_str() {
+        return s.to_string();
+    }
+    if let Some(arr) = content.as_array() {
+        let mut parts = Vec::new();
+        for item in arr {
+            let kind = item.get("type").and_then(|t| t.as_str());
+            if kind == Some("input_text") || kind == Some("text") {
+                if let Some(t) = item.get("text").and_then(|t| t.as_str()) {
+                    parts.push(t.to_string());
+                }
+            }
+        }
+        return parts.join("\n");
+    }
+    String::new()
+}
+
+fn parse_zcode_time(value: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|dt| dt.timestamp())
+}
+
+/// 解析 rollout jsonl 还原 zcode 会话消息流。
+/// 每行是一条 model_io 记录：input 是累积上下文，取最后一条真实 user 输入 + response.text，按内容去重。
+fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
+    let mut messages: Vec<SessionMessage> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(rec) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let timestamp = rec
+            .get("startedAt")
+            .and_then(|t| t.as_str())
+            .and_then(parse_zcode_time);
+
+        // 取 input 里最后一条真实 user 消息（跳过 system-reminder 注入）
+        if let Some(input) = rec
+            .get("request")
+            .and_then(|r| r.get("body"))
+            .and_then(|b| b.get("input"))
+            .and_then(|i| i.as_array())
+        {
+            for msg in input.iter().rev() {
+                if msg.get("role").and_then(|r| r.as_str()) != Some("user") {
+                    continue;
+                }
+                let text = extract_zcode_input_text(msg);
+                if text.is_empty() || text.starts_with("<system-reminder>") {
+                    continue;
+                }
+                if seen.insert(text.clone()) {
+                    messages.push(SessionMessage {
+                        role: "user".to_string(),
+                        content: text,
+                        timestamp,
+                    });
+                }
+                break;
+            }
+        }
+
+        // response.text + toolCalls
+        if let Some(resp) = rec.get("response") {
+            if let Some(text) = resp
+                .get("text")
+                .and_then(|t| t.as_str())
+                .filter(|t| !t.is_empty())
+            {
+                if seen.insert(text.to_string()) {
+                    messages.push(SessionMessage {
+                        role: "assistant".to_string(),
+                        content: text.to_string(),
+                        timestamp,
+                    });
+                }
+            }
+            if let Some(tool_calls) = resp.get("toolCalls").and_then(|t| t.as_array()) {
+                for call in tool_calls {
+                    let name = call
+                        .get("toolName")
+                        .or_else(|| call.get("name"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or("unknown");
+                    let args = call
+                        .get("input")
+                        .or_else(|| call.get("args"))
+                        .or_else(|| call.get("arguments"));
+                    let args_str = match args {
+                        Some(value) => serde_json::to_string_pretty(value)
+                            .unwrap_or_else(|_| "{}".to_string()),
+                        None => "{}".to_string(),
+                    };
+                    messages.push(SessionMessage {
+                        role: "assistant".to_string(),
+                        content: format!("**[调用工具: {}]**\n```json\n{}\n```", name, args_str),
+                        timestamp,
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(messages)
+}
+
+/// 读取 zcode 会话消息。
+fn get_zcode_messages(
+    home_dir: &std::path::Path,
+    session_id: &str,
+) -> Result<Vec<SessionMessage>> {
+    let rollout = zcode_rollout_path(home_dir, session_id);
+    let content = std::fs::read_to_string(&rollout).map_err(|e| {
+        format!(
+            "Failed to read rollout for session '{}': {}",
+            session_id, e
+        )
+    })?;
+    parse_zcode_rollout(&content)
+}
+
 // Session commands
 #[tauri::command]
 pub async fn get_session_projects(
@@ -2072,6 +2405,11 @@ pub async fn get_session_projects(
     if adapter == "kimi_code" {
         let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
         return run_session_blocking(move || get_kimi_projects(&base_dir, page, page_size)).await;
+    }
+
+    if adapter == "zcode" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        return get_zcode_projects(base_dir, page, page_size).await;
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
@@ -2220,6 +2558,12 @@ pub async fn get_project_sessions(
         .await;
     }
 
+    // Special handling for zcode
+    if adapter == "zcode" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        return get_zcode_sessions(base_dir, project_name, page, page_size).await;
+    }
+
     // Special handling for Codex
     if adapter == "codex" {
         return get_codex_sessions_async(db.inner(), &cli_type, &project_name, page, page_size)
@@ -2341,6 +2685,13 @@ pub async fn get_session_messages(
         .await;
     }
 
+    // Special handling for zcode
+    if adapter == "zcode" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let session_id = session_id.clone();
+        return run_session_blocking(move || get_zcode_messages(&base_dir, &session_id)).await;
+    }
+
     // Special handling for Codex JSONL format
     if adapter == "codex" {
         return get_codex_messages_async(db.inner(), &cli_type, &session_id).await;
@@ -2363,6 +2714,10 @@ pub async fn delete_session(
     let adapter = session_adapter(db.inner(), &cli_type).await?;
     if adapter == "opencode" {
         return Err("OpenCode 会话管理为只读，不支持删除会话".to_string());
+    }
+
+    if adapter == "zcode" {
+        return Err("ZCode 会话管理为只读，不支持删除会话".to_string());
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
@@ -2452,6 +2807,10 @@ pub async fn delete_project(
     let adapter = session_adapter(db.inner(), &cli_type).await?;
     if adapter == "opencode" {
         return Err("OpenCode 会话管理为只读，不支持删除项目".to_string());
+    }
+
+    if adapter == "zcode" {
+        return Err("ZCode 会话管理为只读，不支持删除项目".to_string());
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "id": "zcode",
+  "sort_order": 60,
+  "name": "ZCode",
+  "remark": "网关会添加自定义服务商 CCG-Gateway，模型ID为 ccg-model，请在模型映射中将 ccg-model 映射到实际上游模型。",
+  "icon": {
+    "view_box": "0 0 24 24",
+    "color": "#5b6cff",
+    "paths": [
+      {
+        "d": "M 6.5,3.5 H 17.5 V 5.7 L 9.8,16.8 H 6.5 V 19 H 17.5 V 16.8 L 14.2,5.7 H 6.5 Z"
+      }
+    ]
+  },
+  "config_dir": "~/.zcode",
+  "user_agent": ["zcode"],
+  "protocols": ["openai_chat"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-provider-name",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "name"],
+          "value": "CCG-Gateway"
+        },
+        {
+          "id": "set-provider-kind",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "kind"],
+          "value": "openai"
+        },
+        {
+          "id": "set-provider-source",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "source"],
+          "value": "custom"
+        },
+        {
+          "id": "set-provider-endpoint",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "options", "baseURL"],
+          "value": "{target.endpoint}"
+        },
+        {
+          "id": "set-provider-token",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "options", "apiKey"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-provider-key-required",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "options", "apiKeyRequired"],
+          "value": true
+        },
+        {
+          "id": "set-model-context",
+          "op": "set",
+          "file": "v2/config.json",
+          "format": "json",
+          "path": ["provider", "ccg-gateway", "models", "ccg-model", "limit", "context"],
+          "value": 200000
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "v2/config.json",
+      "format": "json"
+    },
+    "profiles": { "enabled": false },
+    "official_login": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "replace-zcode-credentials",
+          "op": "replace_file",
+          "file": "v2/credentials.json",
+          "content_from": { "file_id": "zcode_credentials" }
+        }
+      ]
+    },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "cli/config.json",
+      "format": "json",
+      "servers_path": ["mcp", "servers"]
+    },
+    "sessions": { "enabled": true, "adapter": "zcode" },
+    "plugins": { "enabled": false },
+    "prompts": { "enabled": true, "file": "AGENTS.md" }
+  }
+}
