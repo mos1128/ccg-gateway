@@ -3,7 +3,7 @@
   "id": "opencode",
   "sort_order": 40,
   "name": "OpenCode",
-  "remark": "网关会在opencode添加自定义服务商 CCG-Gateway，模型ID为 ccg-model，路由模式请在模型映射中将 ccg-model 映射到实际上游模型。",
+  "remark": "网关会添加自定义服务商 CCG-Gateway，模型ID为 ccg-model，请在模型映射中将 ccg-model 映射到实际上游模型。",
   "icon": {
     "view_box": "0 0 48 48",
     "color": "#808080",
@@ -53,7 +53,7 @@
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "models", "ccg", "name"],
+          "path": ["provider", "ccg-gateway", "models", "ccg-model", "name"],
           "value": "ccg-model"
         },
         {
