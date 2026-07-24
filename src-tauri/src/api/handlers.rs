@@ -122,7 +122,7 @@ pub async fn proxy_handler_catchall(
 ) -> Result<Response<Body>, StatusCode> {
     let start_time = Instant::now();
     let method = req.method().clone();
-    let headers = req.headers().clone();
+    let mut headers = req.headers().clone();
     let uri = req.uri().clone();
 
     // Get the full path including query string
@@ -261,8 +261,14 @@ pub async fn proxy_handler_catchall(
         .await;
     }
 
-    // Serialize client headers for logging
+    // Serialize client headers for logging before normalization, so the log
+    // records what the client actually sent (e.g. x-api-key from OpenCode).
     let client_headers_json = serialize_headers(&headers);
+
+    // Normalize x-api-key -> Authorization for Anthropic clients (e.g. OpenCode
+    // overriding the built-in anthropic provider) so upstream forwarding sees a
+    // single auth source. Profile detection already handles x-api-key directly.
+    crate::services::proxy::normalize_anthropic_auth_headers(&mut headers, protocol);
 
     // Read request body
     let body_bytes = match axum::body::to_bytes(req.into_body(), 20 * 1024 * 1024).await {

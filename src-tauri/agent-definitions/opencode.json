@@ -3,7 +3,7 @@
   "id": "opencode",
   "sort_order": 40,
   "name": "OpenCode",
-  "remark": "网关会添加自定义服务商 CCG-Gateway，模型ID为 ccg-model，请在模型映射中将 ccg-model 映射到实际上游模型。",
+  "remark": "网关会接管 OpenCode 内置的 anthropic 与 openai 服务商；选择 anthropic 与 openai 的模型即可。",
   "icon": {
     "view_box": "0 0 48 48",
     "color": "#808080",
@@ -19,7 +19,7 @@
   },
   "config_dir": "~/.config/opencode",
   "user_agent": ["opencode"],
-  "protocols": ["openai_responses"],
+  "protocols": ["openai_responses", "anthropic_messages"],
   "features": {
     "provider_config": {
       "enabled": true,
@@ -33,43 +33,35 @@
           "value": "https://opencode.ai/config.json"
         },
         {
-          "id": "set-provider-package",
+          "id": "set-anthropic-endpoint",
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "npm"],
-          "value": "@ai-sdk/openai"
+          "path": ["provider", "anthropic", "options", "baseURL"],
+          "value": "{target.endpoint}/v1"
         },
         {
-          "id": "set-provider-name",
+          "id": "set-anthropic-token",
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "name"],
-          "value": "CCG-Gateway"
+          "path": ["provider", "anthropic", "options", "apiKey"],
+          "value": "{target.token}"
         },
         {
-          "id": "set-provider-model",
+          "id": "set-openai-endpoint",
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "models", "ccg-model", "name"],
-          "value": "ccg-model"
-        },
-        {
-          "id": "set-endpoint",
-          "op": "set",
-          "file": "opencode.json",
-          "format": "json",
-          "path": ["provider", "ccg-gateway", "options", "baseURL"],
+          "path": ["provider", "openai", "options", "baseURL"],
           "value": "{target.endpoint}"
         },
         {
-          "id": "set-token",
+          "id": "set-openai-token",
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "ccg-gateway", "options", "apiKey"],
+          "path": ["provider", "openai", "options", "apiKey"],
           "value": "{target.token}"
         }
       ]

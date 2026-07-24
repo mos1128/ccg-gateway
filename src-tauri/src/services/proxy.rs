@@ -143,7 +143,7 @@ fn bearer_token(value: &str) -> &str {
 
 /// Detect provider profile from the gateway token sent by the CLI.
 pub fn detect_gateway_profile(headers: &HeaderMap) -> String {
-    let header_names = ["authorization", "x-goog-api-key"];
+    let header_names = ["authorization", "x-goog-api-key", "x-api-key"];
 
     for name in header_names {
         if let Some(value) = headers.get(name).and_then(|v| v.to_str().ok()) {
@@ -154,6 +154,34 @@ pub fn detect_gateway_profile(headers: &HeaderMap) -> String {
     }
 
     DEFAULT_PROFILE.to_string()
+}
+
+/// Normalize auth headers for Anthropic-protocol clients that send `x-api-key`.
+///
+/// Anthropic's SDK authenticates with `x-api-key`, but this gateway routes
+/// profile and upstream auth via `Authorization: Bearer`. To keep a single auth
+/// source before forwarding:
+/// - only `x-api-key`, no `Authorization`: promote `x-api-key` to `Authorization`.
+/// - both present: drop `x-api-key`.
+/// - neither: leave as-is; `set_auth_header` will add `Authorization` later.
+///
+/// Called after protocol detection so it only affects Anthropic requests.
+pub fn normalize_anthropic_auth_headers(headers: &mut HeaderMap, protocol: Protocol) {
+    if !matches!(protocol, Protocol::AnthropicMessages) {
+        return;
+    }
+    let has_authorization = headers.contains_key("authorization");
+    let Some(api_key) = headers.remove("x-api-key") else {
+        return;
+    };
+    if !has_authorization {
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(&format!(
+            "Bearer {}",
+            api_key.to_str().unwrap_or_default()
+        )) {
+            headers.insert(reqwest::header::AUTHORIZATION, value);
+        }
+    }
 }
 
 /// Check if request is streaming based on body content
