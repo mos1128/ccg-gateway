@@ -3,7 +3,7 @@
   "id": "opencode",
   "sort_order": 40,
   "name": "OpenCode",
-  "remark": "网关会接管 OpenCode 内置的 anthropic 与 openai 服务商；选择 anthropic 与 openai 的模型即可。",
+  "remark": "网关会接管 OpenCode 内置的 anthropic 与 openai 服务商；在 OpenCode 中选择 anthropic 与 openai 的模型即可。",
   "icon": {
     "view_box": "0 0 48 48",
     "color": "#808080",

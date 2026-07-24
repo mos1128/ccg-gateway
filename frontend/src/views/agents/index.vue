@@ -207,7 +207,7 @@ onMounted(refresh)
 .agent-id { color: var(--v2-text-3); font-size: 11px; }
 .agent-remark { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 9px 11px; border-left: 2px solid var(--v2-accent); border-radius: 4px; background: var(--v2-surface-2); color: var(--v2-text-2); font-size: var(--v2-fs-sm); line-height: 1.5; }
 .agent-remark .el-icon { flex: 0 0 auto; margin-top: 2px; color: var(--v2-accent); }
-.agent-remark span { min-width: 0; overflow-wrap: anywhere; }
+.agent-remark span { min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
 .agent-meta { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 9px 12px; padding: 14px 0; border-bottom: 1px solid var(--v2-surface-2); }
 .meta-label { color: var(--v2-text-3); font-size: var(--v2-fs-xs); padding-top: 2px; }
 .pill-row { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }

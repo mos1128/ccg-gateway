@@ -3,7 +3,7 @@
   "id": "kimi_code",
   "sort_order": 50,
   "name": "Kimi Code",
-  "remark": "网关会在 kimi-code 添加自定义服务商 ccg-gateway 和模型别名 ccg-model，路由模式请在模型映射中将 ccg-model 映射到实际上游模型。",
+  "remark": "网关会接管 KimiCode 内置的 anthropic 与 openai 服务商；\n注意： 需要先在 KimiCode 中通过 /provider 命令添加 anthropic 和 openai 服务商（key随意输入）并选择模型，然后再开启网关中 KimiCode 的路由模式。",
   "icon": {
     "view_box": "0 0 24 24",
     "color": "#4d4d8f",
@@ -22,66 +22,42 @@
   },
   "config_dir": "~/.kimi-code",
   "user_agent": ["kimi-code-cli"],
-  "protocols": ["openai_responses"],
+  "protocols": ["openai_chat", "anthropic_messages"],
   "features": {
     "provider_config": {
       "enabled": true,
       "operations": [
         {
-          "id": "set-default-model",
+          "id": "set-anthropic-endpoint",
           "op": "set",
           "file": "config.toml",
           "format": "toml",
-          "path": ["default_model"],
-          "value": "ccg-model"
-        },
-        {
-          "id": "set-provider-type",
-          "op": "set",
-          "file": "config.toml",
-          "format": "toml",
-          "path": ["providers", "ccg-gateway", "type"],
-          "value": "openai_responses"
-        },
-        {
-          "id": "set-provider-endpoint",
-          "op": "set",
-          "file": "config.toml",
-          "format": "toml",
-          "path": ["providers", "ccg-gateway", "base_url"],
+          "path": ["providers", "anthropic", "base_url"],
           "value": "{target.endpoint}"
         },
         {
-          "id": "set-provider-token",
+          "id": "set-anthropic-token",
           "op": "set",
           "file": "config.toml",
           "format": "toml",
-          "path": ["providers", "ccg-gateway", "api_key"],
+          "path": ["providers", "anthropic", "api_key"],
           "value": "{target.token}"
         },
         {
-          "id": "set-model-provider",
+          "id": "set-openai-endpoint",
           "op": "set",
           "file": "config.toml",
           "format": "toml",
-          "path": ["models", "ccg-model", "provider"],
-          "value": "ccg-gateway"
+          "path": ["providers", "openai", "base_url"],
+          "value": "{target.endpoint}"
         },
         {
-          "id": "set-model-name",
+          "id": "set-openai-token",
           "op": "set",
           "file": "config.toml",
           "format": "toml",
-          "path": ["models", "ccg-model", "model"],
-          "value": "ccg-model"
-        },
-        {
-          "id": "set-model-context-size",
-          "op": "set",
-          "file": "config.toml",
-          "format": "toml",
-          "path": ["models", "ccg-model", "max_context_size"],
-          "value": 200000
+          "path": ["providers", "openai", "api_key"],
+          "value": "{target.token}"
         }
       ]
     },

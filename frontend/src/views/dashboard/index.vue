@@ -938,6 +938,7 @@ onMounted(async () => {
 .agent-info-remark span {
   min-width: 0;
   overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 .agent-info-section {
   display: flex;
