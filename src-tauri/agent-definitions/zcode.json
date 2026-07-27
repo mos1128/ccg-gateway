@@ -3,7 +3,7 @@
   "id": "zcode",
   "sort_order": 60,
   "name": "ZCode",
-  "remark": "网关会添加两个自定义服务商 CCG-Gateway (OpenAI) 与 CCG-Gateway (Anthropic)，分别对应不同的会话协议，并预置了 gpt-5.6-sol 和 claude-opus-4-8 模型。\n使用时根据实际情况，在模型映射中将其映射到实际上游模型（映射可以用*作为通配符）",
+  "remark": "网关会添加两个自定义服务商，分别预置了 gpt-latest 和 claude-latest 模型。\n需要配置模型映射将其映射到实际上游模型，启动 ZCode 即走网关，无需登录。",
   "icon": {
     "view_box": "0 0 24 24",
     "color": "#5b6cff",
@@ -73,7 +73,7 @@
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-openai", "models", "gpt-5.6-sol", "limit", "context"],
+          "path": ["provider", "ccg-openai", "models", "gpt-latest", "limit", "context"],
           "value": 1000000
         },
         {
@@ -129,7 +129,7 @@
           "op": "set",
           "file": "v2/config.json",
           "format": "json",
-          "path": ["provider", "ccg-anthropic", "models", "claude-opus-4-8", "limit", "context"],
+          "path": ["provider", "ccg-anthropic", "models", "claude-latest", "limit", "context"],
           "value": 1000000
         }
       ]

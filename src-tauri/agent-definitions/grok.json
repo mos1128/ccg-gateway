@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "id": "grok",
+  "sort_order": 70,
+  "name": "Grok Build",
+  "remark": "网关会添加两个自定义服务商，分别预置了 gpt-latest 和 claude-latest 模型。\n需要配置模型映射将其映射到实际上游模型，启动 Grok 即走网关，无需登录。",
+  "icon": {
+    "view_box": "0 0 24 24",
+    "color": "#7C3AED",
+    "paths": [
+      {
+        "d": "M12 2 L15 9 L22 12 L15 15 L12 22 L9 15 L2 12 L9 9 Z"
+      }
+    ]
+  },
+  "config_dir": "~/.grok",
+  "user_agent": ["grok-shell"],
+  "protocols": ["openai_responses", "anthropic_messages"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-openai-model",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-openai", "model"],
+          "value": "gpt-latest"
+        },
+        {
+          "id": "set-openai-name",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-openai", "name"],
+          "value": "CCG-Gateway (OpenAI)"
+        },
+        {
+          "id": "set-openai-base-url",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-openai", "base_url"],
+          "value": "{target.endpoint}/v1"
+        },
+        {
+          "id": "set-openai-api-backend",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-openai", "api_backend"],
+          "value": "responses"
+        },
+        {
+          "id": "set-openai-api-key",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-openai", "api_key"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-openai-context-window",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-openai", "context_window"],
+          "value": 1000000
+        },
+        {
+          "id": "set-anthropic-model",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-anthropic", "model"],
+          "value": "claude-latest"
+        },
+        {
+          "id": "set-anthropic-name",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-anthropic", "name"],
+          "value": "CCG-Gateway (Anthropic)"
+        },
+        {
+          "id": "set-anthropic-base-url",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-anthropic", "base_url"],
+          "value": "{target.endpoint}/v1"
+        },
+        {
+          "id": "set-anthropic-api-backend",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-anthropic", "api_backend"],
+          "value": "messages"
+        },
+        {
+          "id": "set-anthropic-api-key",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-anthropic", "api_key"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-anthropic-context-window",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["model", "ccg-anthropic", "context_window"],
+          "value": 1000000
+        },
+        {
+          "id": "set-default-model",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["models", "default"],
+          "value": "ccg-openai"
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "config.toml",
+      "format": "toml"
+    },
+    "profiles": { "enabled": false },
+    "official_login": { "enabled": false },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "config.toml",
+      "format": "toml",
+      "servers_path": ["mcp_servers"]
+    },
+    "sessions": { "enabled": true, "adapter": "grok" },
+    "plugins": { "enabled": false },
+    "prompts": { "enabled": true, "file": "AGENTS.md" }
+  }
+}

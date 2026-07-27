@@ -1588,7 +1588,7 @@ async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
         .ok_or_else(|| format!("Agent {} 的 Session 缺少 adapter", agent_id))?;
     if !matches!(
         adapter.as_str(),
-        "claude_code" | "codex" | "gemini" | "opencode" | "kimi_code" | "zcode"
+        "claude_code" | "codex" | "gemini" | "opencode" | "kimi_code" | "zcode" | "grok"
     ) {
         return Err(format!("Session adapter `{}` 不存在", adapter));
     }
@@ -2386,6 +2386,464 @@ fn get_zcode_messages(
     parse_zcode_rollout(&content)
 }
 
+// ==================== grok 会话适配 ====================
+//
+// grok 数据布局（~/.grok/）：
+//   sessions/<encoded-cwd>/<session-id>/
+//     summary.json            # 索引：info(id,cwd)、generated_title、时间戳、消息计数
+//     chat_history.jsonl      # ConversationItem 流（权威对话日志，用于还原消息）
+//     updates.jsonl           # ACP 会话更新流（chunk 级，不用于还原）
+// cwd 编码：短路径 URL 百分号编码；长路径 slug-hash，原始路径存目录下 .cwd 文件
+//
+// chat_history.jsonl 每行是一个 ConversationItem（serde tag="type"）：
+//   {"type":"system","content":"..."}
+//   {"type":"user","content":[{"type":"text","text":"..."}],"synthetic_reason":null}
+//   {"type":"assistant","content":"...","tool_calls":[{"id":"..","name":"..","arguments":".."}]}
+//   {"type":"tool_result","tool_call_id":"..","content":".."}
+//   {"type":"reasoning",...} / {"type":"backend_tool_call",...}
+
+/// 百分号解码（grok 短路径 cwd 用 urlencoding::encode，标准百分号编码）。
+fn grok_percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(input.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// 解码 grok 的 encoded-cwd 目录名为原始 cwd。
+/// 短路径 URL 百分号编码（解码后以 / 或 X: 开头）；长路径 slug-hash，读 .cwd 文件。
+fn decode_grok_cwd(encoded_dir: &std::path::Path) -> Option<String> {
+    let name = encoded_dir.file_name()?.to_str()?;
+    let decoded = grok_percent_decode(name);
+    let looks_like_path =
+        decoded.starts_with('/') || (cfg!(windows) && decoded.chars().nth(1) == Some(':'));
+    if looks_like_path {
+        return Some(decoded);
+    }
+    std::fs::read_to_string(encoded_dir.join(".cwd"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or(Some(decoded))
+}
+
+fn grok_sessions_root(base_dir: &std::path::Path) -> std::path::PathBuf {
+    base_dir.join("sessions")
+}
+
+/// 读取 grok summary.json，返回 (title, cwd, git_branch)。
+fn read_grok_summary(session_dir: &std::path::Path) -> (String, Option<String>, String) {
+    let Ok(content) = std::fs::read_to_string(session_dir.join("summary.json")) else {
+        return (String::new(), None, String::new());
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return (String::new(), None, String::new());
+    };
+    let title = v
+        .get("generated_title")
+        .and_then(|t| t.as_str())
+        .filter(|s| !s.is_empty())
+        .or_else(|| v.get("session_summary").and_then(|t| t.as_str()))
+        .unwrap_or("")
+        .to_string();
+    let cwd = v
+        .get("info")
+        .and_then(|i| i.get("cwd"))
+        .and_then(|c| c.as_str())
+        .map(String::from);
+    let branch = v
+        .get("head_branch")
+        .and_then(|b| b.as_str())
+        .unwrap_or("")
+        .to_string();
+    (title, cwd, branch)
+}
+
+/// 从消息 content 字段提取文本。
+/// 支持两种形态：字符串（assistant / 老格式 ChatRequestMessage）或
+/// ContentPart 数组（ConversationItem user）。兼容 image 与 image_url 两种图片块。
+fn grok_extract_text(content: Option<&serde_json::Value>) -> Option<String> {
+    let value = content?;
+    if let Some(s) = value.as_str() {
+        return (!s.is_empty()).then(|| s.to_string());
+    }
+    if let Some(arr) = value.as_array() {
+        let mut parts = Vec::new();
+        for item in arr {
+            match item.get("type").and_then(|t| t.as_str()) {
+                Some("text") => {
+                    if let Some(t) = item
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .filter(|s| !s.is_empty())
+                    {
+                        parts.push(t.to_string());
+                    }
+                }
+                Some("image") | Some("image_url") => parts.push("[图片]".to_string()),
+                _ => {}
+            }
+        }
+        return (!parts.is_empty()).then(|| parts.join("\n"));
+    }
+    None
+}
+
+/// 从单个 tool_call 提取 (name, arguments)，兼容两种结构：
+/// - ConversationItem 扁平：{id, name, arguments}
+/// - ChatRequestMessage 嵌套：{id, type:"function", function:{name, arguments}}
+fn grok_extract_tool_call(call: &serde_json::Value) -> Option<(String, String)> {
+    if let Some(name) = call.get("name").and_then(|n| n.as_str()) {
+        let args = call
+            .get("arguments")
+            .and_then(|a| a.as_str())
+            .unwrap_or("{}");
+        return Some((name.to_string(), args.to_string()));
+    }
+    let func = call.get("function")?;
+    let name = func.get("name").and_then(|n| n.as_str())?;
+    let args = func
+        .get("arguments")
+        .and_then(|a| a.as_str())
+        .unwrap_or("{}");
+    Some((name.to_string(), args.to_string()))
+}
+
+/// 从 chat_history.jsonl 提取第一条真实用户输入作为标题回退。
+fn grok_first_user_message(session_dir: &std::path::Path) -> String {
+    use std::io::{BufRead, BufReader};
+    let Ok(file) = std::fs::File::open(session_dir.join("chat_history.jsonl")) else {
+        return String::new();
+    };
+    for line in BufReader::new(file).lines().flatten() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("type").and_then(|t| t.as_str()) != Some("user") {
+            continue;
+        }
+        if v.get("synthetic_reason").is_some() {
+            continue;
+        }
+        if let Some(text) = grok_extract_text(v.get("content")) {
+            if !text.is_empty() {
+                return text;
+            }
+        }
+    }
+    String::new()
+}
+
+/// 解析 grok chat_history.jsonl 还原会话消息流。
+/// 兼容两种格式（与 grok read_chat_history_sync 一致）：
+///   - chat_format_version >= 1：ConversationItem，判别字段 `type`
+///     {type:"user",content:[{type:"text",text}],synthetic_reason?}
+///     {type:"assistant",content:"...",tool_calls:[{id,name,arguments}]}
+///     {type:"tool_result",tool_call_id,content}
+///   - chat_format_version 0（旧 grok）：ChatRequestMessage，判别字段 `role`
+///     {role:"user",content:"..." 或 [{type:"text",text}]}
+///     {role:"assistant",content:"...",tool_calls:[{id,type:"function",function:{name,arguments}}]}
+///     {role:"tool",content:"...",tool_call_id}
+fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
+    let mut messages = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        // 判别：v1 用 type，v0 用 role
+        let item_type = v.get("type").and_then(|t| t.as_str());
+        let item_role = v.get("role").and_then(|r| r.as_str());
+        let role = match (item_type, item_role) {
+            (Some("user"), _) | (None, Some("user")) => Some("user"),
+            (Some("assistant"), _) | (None, Some("assistant")) => Some("assistant"),
+            (Some("tool_result"), _) | (None, Some("tool")) => Some("tool_result"),
+            // system / reasoning / backend_tool_call 等不展示
+            _ => continue,
+        };
+        match role {
+            Some("user") => {
+                // v1 跳过合成消息（system-reminder / compaction-meta 等运行时注入）；
+                // v0 无 synthetic_reason 字段，所有 user 视为真实输入。
+                if v.get("synthetic_reason").is_some() {
+                    continue;
+                }
+                let Some(text) = grok_extract_text(v.get("content")) else {
+                    continue;
+                };
+                if text.is_empty() {
+                    continue;
+                }
+                messages.push(SessionMessage {
+                    role: "user".to_string(),
+                    content: text,
+                    timestamp: None,
+                });
+            }
+            Some("assistant") => {
+                let mut parts = Vec::new();
+                if let Some(text) = grok_extract_text(v.get("content")) {
+                    if !text.is_empty() {
+                        parts.push(text);
+                    }
+                }
+                if let Some(tool_calls) = v.get("tool_calls").and_then(|t| t.as_array()) {
+                    for call in tool_calls {
+                        let Some((name, args_str)) = grok_extract_tool_call(call) else {
+                            continue;
+                        };
+                        let pretty = serde_json::from_str::<serde_json::Value>(&args_str)
+                            .ok()
+                            .and_then(|p| serde_json::to_string_pretty(&p).ok())
+                            .unwrap_or_else(|| args_str.clone());
+                        parts.push(format!("**[调用工具: {}]**\n```json\n{}\n```", name, pretty));
+                    }
+                }
+                if parts.is_empty() {
+                    continue;
+                }
+                messages.push(SessionMessage {
+                    role: "assistant".to_string(),
+                    content: parts.join("\n\n"),
+                    timestamp: None,
+                });
+            }
+            Some("tool_result") => {
+                // v1 tool_result.content 是字符串；v0 tool.content 可能是字符串或块数组
+                let text = v
+                    .get("content")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| grok_extract_text(v.get("content")))
+                    .unwrap_or_default();
+                if text.is_empty() {
+                    continue;
+                }
+                messages.push(SessionMessage {
+                    role: "user".to_string(),
+                    content: format!("**[工具结果]**\n```\n{}\n```", text),
+                    timestamp: None,
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(messages)
+}
+
+fn get_grok_projects(
+    base_dir: &std::path::Path,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedProjects> {
+    let sessions_root = grok_sessions_root(base_dir);
+    let mut projects = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&sessions_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string();
+            if name.is_empty() || name.starts_with('.') {
+                continue;
+            }
+            let mut session_count = 0i64;
+            let mut total_size = 0i64;
+            let mut last_modified = 0f64;
+            if let Ok(sessions) = std::fs::read_dir(&path) {
+                for session in sessions.flatten() {
+                    let sp = session.path();
+                    if !sp.is_dir() {
+                        continue;
+                    }
+                    let summary_path = sp.join("summary.json");
+                    if !summary_path.exists() {
+                        continue;
+                    }
+                    session_count += 1;
+                    if let Ok(meta) = summary_path.metadata() {
+                        total_size += meta.len() as i64;
+                        if let Ok(mt) = meta.modified() {
+                            let secs = mt
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs_f64())
+                                .unwrap_or(0.0);
+                            if secs > last_modified {
+                                last_modified = secs;
+                            }
+                        }
+                    }
+                }
+            }
+            if session_count == 0 {
+                continue;
+            }
+            let cwd = decode_grok_cwd(&path);
+            let full_path = cwd.clone().unwrap_or_else(|| name.clone());
+            let display_name = cwd
+                .as_deref()
+                .and_then(|c| std::path::Path::new(c).file_name())
+                .and_then(|n| n.to_str())
+                .map(String::from)
+                .unwrap_or_else(|| name.clone());
+            projects.push(ProjectInfo {
+                name,
+                display_name,
+                full_path,
+                session_count,
+                total_size,
+                last_modified,
+            });
+        }
+    }
+    projects.sort_by(|a, b| {
+        b.last_modified
+            .partial_cmp(&a.last_modified)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let total = projects.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = projects
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+    Ok(PaginatedProjects {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+fn get_grok_sessions(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedSessions> {
+    let project_dir = grok_sessions_root(base_dir).join(project_name);
+    let mut sessions = Vec::new();
+    if project_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&project_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let summary_path = path.join("summary.json");
+                if !summary_path.exists() {
+                    continue;
+                }
+                let session_id = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                if session_id.is_empty() {
+                    continue;
+                }
+                let mut size = 0i64;
+                let mut mtime = 0f64;
+                for fname in ["summary.json", "updates.jsonl", "chat_history.jsonl"] {
+                    let f = path.join(fname);
+                    if let Ok(meta) = f.metadata() {
+                        size += meta.len() as i64;
+                        if let Ok(mt) = meta.modified() {
+                            let secs = mt
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs_f64())
+                                .unwrap_or(0.0);
+                            if secs > mtime {
+                                mtime = secs;
+                            }
+                        }
+                    }
+                }
+                let (title, _cwd, git_branch) = read_grok_summary(&path);
+                let first_message = grok_first_user_message(&path);
+                let summary = if !title.is_empty() {
+                    title
+                } else {
+                    first_message.clone()
+                };
+                sessions.push(SessionInfo {
+                    session_id,
+                    size,
+                    mtime,
+                    first_message: first_message.chars().take(200).collect(),
+                    git_branch,
+                    summary: summary.chars().take(200).collect(),
+                });
+            }
+        }
+    }
+    sessions.sort_by(|a, b| {
+        b.mtime
+            .partial_cmp(&a.mtime)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let total = sessions.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = sessions
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+    Ok(PaginatedSessions {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+fn get_grok_messages(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    session_id: &str,
+) -> Result<Vec<SessionMessage>> {
+    let session_dir = grok_sessions_root(base_dir)
+        .join(project_name)
+        .join(session_id);
+    if !session_dir.exists() {
+        return Err(format!("Session directory not found: {}", session_id));
+    }
+    let chat_path = session_dir.join("chat_history.jsonl");
+    let content = std::fs::read_to_string(&chat_path).map_err(|e| {
+        format!(
+            "Failed to read chat_history.jsonl for session '{}': {}",
+            session_id, e
+        )
+    })?;
+    parse_grok_chat_history(&content)
+}
+
 // Session commands
 #[tauri::command]
 pub async fn get_session_projects(
@@ -2410,6 +2868,11 @@ pub async fn get_session_projects(
     if adapter == "zcode" {
         let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
         return get_zcode_projects(base_dir, page, page_size).await;
+    }
+
+    if adapter == "grok" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        return run_session_blocking(move || get_grok_projects(&base_dir, page, page_size)).await;
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
@@ -2564,6 +3027,16 @@ pub async fn get_project_sessions(
         return get_zcode_sessions(base_dir, project_name, page, page_size).await;
     }
 
+    // Special handling for grok
+    if adapter == "grok" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let project_name = project_name.clone();
+        return run_session_blocking(move || {
+            get_grok_sessions(&base_dir, &project_name, page, page_size)
+        })
+        .await;
+    }
+
     // Special handling for Codex
     if adapter == "codex" {
         return get_codex_sessions_async(db.inner(), &cli_type, &project_name, page, page_size)
@@ -2692,6 +3165,17 @@ pub async fn get_session_messages(
         return run_session_blocking(move || get_zcode_messages(&base_dir, &session_id)).await;
     }
 
+    // Special handling for grok
+    if adapter == "grok" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let project_name = project_name.clone();
+        let session_id = session_id.clone();
+        return run_session_blocking(move || {
+            get_grok_messages(&base_dir, &project_name, &session_id)
+        })
+        .await;
+    }
+
     // Special handling for Codex JSONL format
     if adapter == "codex" {
         return get_codex_messages_async(db.inner(), &cli_type, &session_id).await;
@@ -2721,6 +3205,25 @@ pub async fn delete_session(
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+
+    // Special handling for grok - 删除整个会话目录
+    if adapter == "grok" {
+        let project_name = project_name.clone();
+        let session_id = session_id.clone();
+        return run_session_blocking(move || {
+            let session_dir = base_dir
+                .join("sessions")
+                .join(&project_name)
+                .join(&session_id);
+            if !session_dir.exists() {
+                return Err(format!("Session directory not found: {}", session_id));
+            }
+            std::fs::remove_dir_all(&session_dir)
+                .map_err(|e| format!("Failed to delete session: {}", e))?;
+            Ok(())
+        })
+        .await;
+    }
 
     // Special handling for kimi-code - 删除整个会话目录
     if adapter == "kimi_code" {
@@ -2814,6 +3317,19 @@ pub async fn delete_project(
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+
+    // Special handling for grok - 删除该 cwd 分组下的所有会话
+    if adapter == "grok" {
+        let project_name = project_name.clone();
+        return run_session_blocking(move || {
+            let project_dir = base_dir.join("sessions").join(&project_name);
+            if project_dir.exists() {
+                let _ = std::fs::remove_dir_all(&project_dir);
+            }
+            Ok(())
+        })
+        .await;
+    }
 
     // Special handling for kimi-code - 删除该 workDir 下的所有会话目录
     if adapter == "kimi_code" {
