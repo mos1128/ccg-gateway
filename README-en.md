@@ -15,7 +15,7 @@
 
 ## 📖 Introduction
 
-CCG Gateway is a desktop management tool built for Claude Code, Codex, and Gemini CLI, integrating an intelligent gateway, account management, and configuration management.
+CCG Gateway is a desktop management tool for Agents including Claude Code, Codex, Gemini CLI, OpenCode, Kimi Code, and ZCode, integrating an intelligent gateway, account management, and configuration management.
 
 This project was initiated based on the author's actual needs to solve various pain points encountered during usage. Several open-source projects were referenced during development, see [Acknowledgments](#-acknowledgments) for details.
 
@@ -25,9 +25,9 @@ This project was initiated based on the author's actual needs to solve various p
 
 **Unstable Service Providers**
 
-Service providers may experience quota reset windows, rate limiting, or downtime? The gateway automatically switches to available providers and periodically re-checks — zero user perception.
+When service providers experience quota reset windows, rate limiting, or downtime, the gateway automatically switches to available providers and periodically re-checks them, with no user intervention required.
 
-More handy features: provider availability checks; model name mapping; automatic routing of missing models to available providers; custom request User-Agent.
+Also supported: provider availability checks; model name mapping; automatic routing to another provider when a model is unavailable; custom request User-Agent.
 
 **Provider Keep-Alive & Refresh Windows**
 
@@ -37,15 +37,9 @@ Scheduled tasks automatically make small calls to cover provider windows and imp
 
 When developing multiple projects in parallel with the same Agent, Profiles let different projects use different providers.
 
-**Cumbersome Relay / Direct Switching**
+**Cost & Usage Statistics**
 
-Need to switch between gateway relay routing, direct relay provider access, and official account direct access? Write the corresponding CLI config from the UI with one click, with no manual config-file edits.
-
-**Hard to Estimate Costs**
-
-The statistics dashboard covers provider/model token usage and cost statistics, making costs easy to calculate.
-
-Providers that charge by request count? The statistics dashboard also covers provider / model dual-dimension request counts.
+The statistics dashboard provides provider/model breakdowns for token usage, costs, and request counts.
 
 **Opaque Request Information**
 
@@ -96,6 +90,13 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 - Relay Routing: Agent requests are written to the gateway address, and the gateway handles provider routing, load balancing, and failover.
 - Relay Direct: Write a specified provider directly to the CLI config, so the Agent connects to that provider directly.
 - Official Direct: Write official account credentials to the CLI config, so the Agent uses the official request path.
+
+### Agent Templates
+
+- Built-in support for Claude Code, Codex, Gemini CLI, OpenCode, Kimi Code, and ZCode.
+- User templates can add new Agents or override built-in templates by using the same `id`.
+- Templates can declare request protocols, configuration write rules, official credentials, Profiles, MCP, Skills, sessions, and other capabilities.
+- User templates are stored in `~/.ccg-gateway/agent-definitions/{id}.json` by default and require an application restart after changes. See the [Agent Template Field Guide](agent-template-guide.md) for field definitions, allowed values, and complete examples.
 
 ### Relay Providers
 
@@ -208,7 +209,7 @@ CCG Gateway is configured via environment variables. All configurations have def
 |---------|------|------|
 | `CCG_GATEWAY_HOST` | `127.0.0.1` | Backend API server listening address |
 | `CCG_GATEWAY_PORT` | `7788` | Backend API server port |
-| `CCG_DATA_DIR` | `~/.ccg-gateway` | Directory for configuration and log files |
+| `CCG_DATA_DIR` | `~/.ccg-gateway` | Directory for databases, logs, and user Agent templates |
 | `CCG_LOG_FILE` | `false` | Set to `true` or `1` to enable file logging |
 | `CCG_LOG_LEVEL` | See description below | Log level configuration |
 

@@ -1,14 +1,14 @@
-# Agent 模板编写指南
+# Agent 模板字段指南
 
-Agent 模板用于描述客户端的配置目录、请求协议、配置文件和功能支持情况。内置模板位于源码的 `src-tauri/agent-definitions/{id}.json`，会编译进程序；用户模板放在 `<数据目录>/agent-definitions/{id}.json`，默认是 `~/.ccg-gateway/agent-definitions/{id}.json`。设置 `CCG_DATA_DIR` 后，数据目录以该环境变量为准。
+Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何识别一个 Agent、它使用什么请求协议、配置文件在哪里，以及 CCG 可以为它管理哪些功能。
 
-软件启动时会合并两类模板：有效用户模板的 `id` 与内置模板相同时覆盖内置模板，使用新 `id` 时新增 Agent。用户目录不存在时只使用内置模板；用户模板读取或校验失败时会显示定义错误，并继续使用同 ID 的有效内置模板。模板变更需要重启软件后生效。
+内置模板位于 `src-tauri/agent-definitions/{id}.json`。用户模板位于 `<数据目录>/agent-definitions/{id}.json`，默认数据目录是 `~/.ccg-gateway`；设置 `CCG_DATA_DIR` 后以该环境变量为准。
 
-两类模板使用相同格式，只接受 `agent-definition.schema.json` 中声明的字段，文件名必须与 `id` 一致，且不能执行命令、脚本、网络请求或 OAuth 流程。本文统一使用“功能”“服务商”“配置档案”；JSON key 和固定取值保留代码原名。
+用户模板与内置模板的 `id` 相同时，用户模板覆盖内置模板；使用新 `id` 时新增 Agent。模板只在软件启动时加载，修改后需要重启。加载失败时可在 Agent 页面查看“定义加载错误”，同 ID 的有效内置模板仍会继续使用。
 
-## 1. 最小结构
+## 1. 最小合法模板
 
-除标注为可选的顶层字段外，其余顶层字段和 `features` 下的功能都必须出现。暂不支持的功能只写 `{ "enabled": false }`。
+除 `remark` 和 `icon` 外，所有顶层 key 都必须出现。`features` 下的 11 个功能也必须全部出现；不支持的功能写成 `{ "enabled": false }`。
 
 ```json
 {
@@ -16,12 +16,6 @@ Agent 模板用于描述客户端的配置目录、请求协议、配置文件�
   "id": "example",
   "sort_order": 100,
   "name": "Example CLI",
-  "remark": "启用前请先完成必要的客户端配置。",
-  "icon": {
-    "view_box": "0 0 24 24",
-    "color": "#5865f2",
-    "paths": [{ "d": "M4 4h16v16H4z" }]
-  },
   "config_dir": "~/.example",
   "user_agent": ["example-cli"],
   "protocols": ["openai_responses"],
@@ -41,157 +35,92 @@ Agent 模板用于描述客户端的配置目录、请求协议、配置文件�
 }
 ```
 
+模板只接受 schema 中声明的 key。字段名拼错、添加未知 key、缺少必填 key 或使用错误类型都会导致模板加载失败。
+
 ## 2. 顶层 key
 
-| Key | 用途 | 可选值与注意点 |
+| Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
-| `schema_version` | 模板版本 | 当前只能是 `1`。 |
-| `id` | Agent 的稳定标识 | 只能包含小写字母、数字、`_`、`-`，并且必须与文件名一致。 |
-| `sort_order` | Agent 展示和匹配顺序 | 大于等于 `0`；相同值再按 `id` 排序。 |
-| `name` | 前端显示名称 | 非空字符串。 |
-| `remark` | 前端提示信息 | 可选；非空字符串。用于说明启用前提或使用注意事项，不参与配置写入和请求处理。 |
-| `icon` | 前端 Agent 图标 | 可选；使用 SVG `view_box`、可选六位十六进制 `color` 和一个或多个 `path` 描述，避免注入原始 SVG。 |
-| `config_dir` | 默认配置目录 | 用户在数据库中设置的自定义目录优先。 |
-| `user_agent` | 识别客户端请求 | 非空字符串数组；按不区分大小写的子串匹配。 |
-| `protocols` | Agent 支持的请求协议 | `anthropic_messages`、`openai_chat`、`openai_responses`、`gemini_generate_content`；至少一个且不能重复。 |
-| `features` | 功能配置集合 | 必须包含下文列出的全部功能。 |
+| `schema_version` | 整数；当前只能是 `1` | Agent 模板格式版本，不是 Agent 自身版本。 |
+| `id` | 非空字符串；只能包含小写字母、数字、`_`、`-` | Agent 的稳定标识。文件名必须是 `{id}.json`。与内置模板同名会覆盖内置模板。 |
+| `sort_order` | 大于等于 `0` 的整数 | Agent 的展示顺序；值相同时按 `id` 排序。多个 `user_agent` 同时匹配时，也会优先选择排在前面的 Agent。 |
+| `name` | 非空字符串 | 前端显示的 Agent 名称。 |
+| `remark` | 可选；非空字符串 | 显示在 Agent 列表和能力信息中，适合说明启用前提或特殊限制。没有实际信息时应省略。 |
+| `icon` | 可选对象 | Agent 图标，具体 key 见下文。 |
+| `config_dir` | 非空路径字符串 | Agent 的默认配置目录。用户在 CCG 中设置的自定义目录优先。 |
+| `user_agent` | 至少包含一个非空字符串的数组 | 用于识别请求来自哪个 Agent。匹配时忽略大小写，并按子串匹配。应填写从真实请求中观察到的稳定特征。 |
+| `protocols` | 至少包含一个协议值的数组；不能重复 | 声明该 Agent 可能发送的请求协议。可用值见下文。 |
+| `features` | 对象 | 功能集合，必须包含第 3 节列出的全部功能 key。 |
 
-`remark` 会显示在 Agent 列表和能力信息中。没有需要提示的内容时应省略该字段，不要填写空字符串或通用说明。
+### `protocols` 可用值
+
+| 值 | 含义 |
+| --- | --- |
+| `anthropic_messages` | Anthropic Messages API。 |
+| `openai_chat` | OpenAI Chat Completions API。 |
+| `openai_responses` | OpenAI Responses API。 |
+| `gemini_generate_content` | Gemini GenerateContent API。 |
+
+一个 Agent 可以声明多个协议，但这里只表示“允许接收哪些协议”，不会自动增加协议转换能力。新增协议仍需修改 CCG 的 Rust 代码。
+
+### `icon` 及 `paths` 的 key
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `view_box` | 必填；非空字符串 | SVG 的 `viewBox`，例如 `"0 0 24 24"`。 |
+| `color` | 可选；`#` 加 6 位十六进制颜色 | 图标默认颜色，例如 `"#10a37f"`。 |
+| `paths` | 必填；至少一个 path 对象 | SVG 路径列表。不能直接放入完整 SVG。 |
+| `paths[].d` | 必填；非空字符串 | SVG path 的 `d` 数据。 |
+| `paths[].opacity` | 可选；`0` 到 `1` 的数字 | 当前路径的不透明度。 |
+| `paths[].fill_rule` | 可选；`nonzero` 或 `evenodd` | SVG 填充规则。 |
+| `paths[].clip_rule` | 可选；`nonzero` 或 `evenodd` | SVG 裁剪规则。 |
 
 ### 路径规则
 
-`file` 和 `directory` 使用同一套规则：
+`config_dir` 是其他配置路径的基准目录。它可以写绝对路径，也可以用 `~`、`~/`、`~\` 表示当前用户主目录；建议不要使用其他形式的相对路径。
+
+各功能的 `file` 和 `directory` 按以下规则解析：
 
 - 绝对路径直接使用。
-- `~`、`~/`、`~\` 相对用户主目录展开。
-- 其他路径相对 `config_dir` 解析，允许使用 `..`。
+- `~`、`~/`、`~\` 相对当前用户主目录展开。
+- 其他路径相对最终生效的 `config_dir` 解析。
+- 相对路径允许使用 `..`，因此可以访问 `config_dir` 的上级目录。
 
-## 3. 功能 key
+## 3. `features` 下的 key
 
-所有功能都用 `enabled` 表示是否支持。设为 `true` 时，再提供该功能要求的其他 key。
+所有功能都有 `enabled`，取值只能是 `true` 或 `false`。设为 `false` 时建议只保留 `enabled`；设为 `true` 时必须提供该功能要求的其他 key。
 
-### `provider_config` - 服务商配置
-
-用于写入 CCG 路由或服务商直连配置。
-
-| Key | 用途 | 可选值与注意点 |
+| 功能 key | 定义 | `enabled: true` 时还需要 |
 | --- | --- | --- |
-| `enabled` | 是否支持服务商配置写入 | `true` / `false`；同时控制 CCG 路由和服务商直连。 |
-| `operations` | 配置文件写入规则 | `enabled: true` 时不能为空；路由和直连共用同一组规则。 |
+| `provider_config` | 写入 CCG 路由或服务商直连配置 | 非空 `operations`。 |
+| `global_preset` | 把全局预设写入默认配置文件 | `file`、`format`。 |
+| `profiles` | 为非默认配置档案写入独立配置 | `profile_file`、非空 `operations`；同时必须启用 `provider_config`。 |
+| `official_login` | 把 CCG 托管的官方凭证写入 Agent | 非空 `operations`。 |
+| `model_mapping` | 允许该 Agent 使用模型映射 | 无其他 key。 |
+| `token_usage` | 允许统计该 Agent 的 Token 用量 | 无其他 key。 |
+| `skills` | 允许管理该 Agent 的 Skills | `directory`。 |
+| `mcp` | 允许管理该 Agent 的 MCP 配置 | `file`、`format`、`servers_path`。 |
+| `sessions` | 允许读取和管理该 Agent 的会话 | `adapter`。 |
+| `plugins` | 允许管理该 Agent 的插件 | `adapter`。 |
+| `prompts` | 允许管理该 Agent 的提示词文件 | `file`。 |
 
-`operations` 的写法见第 4 节。
+### `provider_config`
 
-这里的 operations 只描述默认配置，`file`、`path` 和固定值都应写明，不能使用 Profile 模板变量。是否开启 `profiles` 不影响默认配置写入。
+`provider_config` 同时控制两种模式：
 
-运行时地址和密钥直接写成 `value` 占位符：
+- CCG 路由：写入 Gateway 地址和 Gateway Token，请求经过 CCG。
+- 服务商直连：写入服务商地址和 API Key，请求不经过 CCG。
 
-- `"value": "{target.endpoint}"`：路由模式写 Gateway 地址，直连模式写服务商地址。
-- `"value": "{target.token}"`：路由模式写 Gateway Token，直连模式写服务商 API Key。
+两种模式使用同一组 `operations`，运行时通过占位符写入不同内容。
 
-`profiles.operations` 使用相同占位符，但每个非默认配置档案会独立展开和执行。
-
-### `global_preset` - 全局预设
-
-用于给默认配置档案写入一份基础配置。
-
-| Key | 用途 | 可选值与注意点 |
+| Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
-| `enabled` | 是否支持全局预设 | `true` / `false`。 |
-| `file` | 预设写入的文件 | 开启时必填。 |
-| `format` | 文件格式 | `json` 或 `toml`。 |
+| `enabled` | `true` / `false` | 是否支持自动写入服务商配置。 |
+| `operations` | operation 对象数组 | `enabled: true` 时不能为空。这里只描述默认配置档案，不能使用 Profile 占位符。 |
 
-字段保护：`global_preset` 与 `provider_config.operations` 写入同一目标时，预设中的同路径值会被忽略，避免用户错误配置导致核心值被覆盖。
+#### 配置 operation
 
-### `profiles` - 配置档案
-
-用于在默认配置之外扩展非默认配置档案。非默认配置有自己的文件和 operations，不复用 `provider_config.operations`。
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持多个配置档案 | `true` / `false`。 |
-| `profile_file` | 非默认配置档案的文件名模式 | 开启时必填，且必须包含 `{profile}` 变量。 |
-| `operations` | 非默认配置档案的写入规则 | 开启时不能为空；写法与 `provider_config.operations` 相同，可以使用下表中的变量。 |
-| `launch.default` | 默认配置的启动命令参数 | 字符串数组，可省略；只生成供用户复制的命令，不会执行。 |
-| `launch.non_default` | 非默认配置档案的启动命令参数 | 字符串数组，可省略；只生成供用户复制的命令，不会执行。 |
-
-可用变量：
-
-| 变量 | 含义 |
-| --- | --- |
-| `{profile}` | 当前配置档案名称；可用于 `profile_file`、Profile operation 的 `file`、`path`、`value`，以及启动参数。 |
-| `{profile.relative_path}` | `profile_file` 展开后的相对路径；只用于 Profile operation 的 `file`、`path`。 |
-| `{profile.absolute_path}` | 相对有效 `config_dir` 解析后的绝对路径；只用于 `launch.non_default`。 |
-
-每个非默认配置档案执行 operations 时都会使用自己的变量值。未知变量或错误位置会报错。
-
-删除和重命名配置档案时，会先按旧上下文逆向处理 `profiles.operations` 的全部目标文件。`set` 只删除仍等于模板写入值的字段；`remove` 无法恢复原值。已有目标文件但无法匹配 Gateway 或服务商配置时，操作会直接报错。
-
-### `official_login` - 官方直连
-
-用于把已保存的官方凭证写入客户端，以支持官方直连。
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持官方直连 | `true` / `false`。 |
-| `operations` | 官方凭证写入规则 | 开启时不能为空，写法见第 5 节。 |
-
-该功能只管理凭证文件和认证字段，不执行登录命令、OAuth 或 Token 刷新。登录流程由客户端自行实现，CCG 只做凭证托管：用户先在客户端完成登录，把生成的凭证文件导入 CCG，之后由 CCG 负责把该凭证写回客户端配置。对于会自动刷新 Token 的客户端，CCG 写入的凭证可能被客户端后续刷新覆盖，属于预期行为。
-
-### `model_mapping` - 模型映射
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持模型映射 | `true` / `false`。 |
-
-### `token_usage` - Token 用量统计
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持 Token 用量统计 | `true` / `false`。 |
-
-### `skills` - 技能
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持 Skills | `true` / `false`。 |
-| `directory` | Skill 根目录 | 开启时必填；相对 `config_dir` 解析。 |
-
-### `mcp` - MCP 服务
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持 MCP | `true` / `false`。 |
-| `file` | MCP 配置文件 | 开启时必填。 |
-| `format` | 文件格式 | `json` 或 `toml`。 |
-| `adapter` | MCP 结构适配器 | 可选；目前支持 `opencode`。省略时原样写入 MCP 配置。适配发生在文件序列化之前。 |
-| `servers_path` | MCP 服务集合的字段路径 | 非空字符串数组。 |
-
-### `sessions` - 会话
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持会话读取 | `true` / `false`。 |
-| `adapter` | 会话解析实现 | 开启时必填；必须是已经编译进 CCG 的实现。 |
-
-### `plugins` - 插件
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持插件管理 | `true` / `false`。 |
-| `adapter` | 插件管理实现 | 开启时必填；必须是已经编译进 CCG 的实现。 |
-
-### `prompts` - 提示词
-
-| Key | 用途 | 可选值与注意点 |
-| --- | --- | --- |
-| `enabled` | 是否支持提示词文件管理 | `true` / `false`。 |
-| `file` | 提示词文件 | 开启时必填；只支持单一文件。 |
-
-只有 `sessions` 和 `plugins` 可以声明 `adapter`。新增协议、会话解析或插件生命周期仍需修改 Rust 代码。
-
-## 4. 服务商配置 operations
-
-一个 operation 只处理一个字段：
+一个 operation 只处理一个字段。
 
 ```json
 {
@@ -204,109 +133,398 @@ Agent 模板用于描述客户端的配置目录、请求协议、配置文件�
 }
 ```
 
-| Key | 用途 | 可选值与注意点 |
+| Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
-| `id` | operation 标识 | 在当前 `operations` 中必须非空且唯一。 |
-| `op` | 操作类型 | `set`：设置字段；`remove`：删除字段。 |
-| `file` | 目标文件 | `provider_config.operations` 必须写明确路径；`profiles.operations` 可以使用 Profile 模板变量。 |
-| `format` | 目标格式 | `json`、`jsonc`、`toml`、`env`。同一文件不能混用格式。 |
-| `path` | 字段路径 | 非空字符串数组；`env` 只能有一个元素。 |
-| `value` | 写入值 | `set` 时必填；可使用字符串、布尔值、数字、数组或对象，字符串中可使用下表占位符。 |
+| `id` | 非空字符串 | operation 的标识。在同一个 `operations` 数组中必须唯一。 |
+| `op` | `set` 或 `remove` | `set` 写入字段；`remove` 删除字段。 |
+| `file` | 非空路径字符串 | 目标配置文件。默认配置必须写明确路径；Profile operation 可以使用 Profile 占位符。 |
+| `format` | `json`、`jsonc`、`toml`、`env` | 目标文件格式。同一组 operations 中，同一个文件不能声明不同格式。 |
+| `path` | 至少包含一个非空字符串的数组 | 目标字段路径，例如 `["env", "API_KEY"]`。`env` 格式必须且只能有一个元素。 |
+| `value` | 字符串、布尔值、数字、数组或对象 | `op: "set"` 时必填，`op: "remove"` 时禁止出现。字符串中可以使用占位符。 |
 
-`remove` 不能设置 `value`，且停用时无法恢复被删除的旧值。密钥应使用 `{target.token}`，不要直接写入模板。
+`path` 按层级定位字段。例如 `["provider", "openai", "apiKey"]` 表示 JSON/TOML 中的 `provider.openai.apiKey`；对于 `env`，`["API_KEY"]` 表示环境变量 `API_KEY`。
 
-| 占位符 | 写入内容 | 可用位置 |
+#### 配置 operation 占位符
+
+| 占位符 | 运行时含义 | 可用位置 |
 | --- | --- | --- |
-| `{target.endpoint}` | 路由模式为 Gateway 地址，直连模式为服务商地址。 | operation 的 `value`。 |
-| `{target.token}` | 路由模式为 Gateway Token，直连模式为服务商 API Key。 | operation 的 `value`。 |
-| `{agent.id}` | 当前 Agent ID。 | operation 的 `value`。 |
-| `{profile}` | 当前非默认配置档案名称。 | Profile operation 的 `file`、`path`、`value`。 |
-| `{profile.relative_path}` | `profile_file` 展开后的相对路径。 | Profile operation 的 `file`、`path`。 |
+| `{target.endpoint}` | 路由模式为 Gateway 地址；直连模式为服务商地址 | `value`。 |
+| `{target.token}` | 路由模式为 Gateway Token；直连模式为服务商 API Key | `value`。 |
+| `{agent.id}` | 当前 Agent 的 `id` | `value`。 |
+| `{profile}` | 当前非默认配置档案名称 | `profiles.profile_file`，Profile operation 的 `file`、`path`、`value`，以及启动参数。 |
+| `{profile.relative_path}` | `profile_file` 展开后的相对路径 | Profile operation 的 `file`、`path`。 |
+| `{profile.absolute_path}` | `profile_file` 相对最终 `config_dir` 解析后的绝对路径 | 仅限 `profiles.launch.non_default`。 |
 
-`value` 的普通内容是固定值，`{...}` 是执行时替换的动态部分；两者属于同一个字段。数组、对象及其字符串成员也会递归替换。`provider_config.operations` 不能使用 `{profile...}`。
+占位符可以嵌在普通字符串中，例如 `"{target.endpoint}/v1"`。数组、对象及其字符串成员也会递归替换。
 
-一个 `operations` 可以修改多个文件。执行时会先解析全部目标，再逐文件原子替换；停用、删除或重命名时也会逐文件逆向处理。不提供跨文件事务，失败后可重复执行同一配置。
+特殊情况：
 
-## 5. 官方直连 operations
+- `{target.*}` 和 `{agent.*}` 只能用于 `value`，不能用于 `file` 或 `path`。
+- `provider_config.operations` 不能使用任何 Profile 占位符。
+- `{profile.relative_path}` 不能用于 `value` 或启动参数。
+- `{profile.absolute_path}` 不能用于 operation，只能用于非默认配置档案的启动参数。
+- `remove` 在停用时无法恢复原值，应只用于确认可以永久移除的字段。
+- 多文件操作按文件分别原子写入，但不提供跨文件事务。部分文件失败后可以重复执行同一配置。
 
-官方凭证操作支持两种 `op`：
+### `global_preset`
 
-- `replace_file`：用凭证中的完整内容替换目标文件；支持 `json`、`jsonc`、`toml`、`env`，省略 `format` 时兼容为 `json`。
-- `set_field`：只设置目标 JSON 的一个字段，适合还包含用户设置的文件。
-
-| Key | 用途 | 可选值与注意点 |
+| Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
-| `id` | operation 标识 | 非空字符串。 |
-| `op` | 操作类型 | `replace_file` 或 `set_field`。 |
-| `file` | 目标凭证或设置文件 | 相对 `config_dir` 解析。 |
-| `format` | 目标格式 | `replace_file` 支持 `json`、`jsonc`、`toml`、`env`；`set_field` 固定为 `json`。 |
-| `path` | 目标字段路径 | `set_field` 必填。 |
-| `content_from` | 整文件内容来源 | `replace_file` 必填，结构见下表。 |
-| `value` | 固定字段值 | `set_field` 时与 `value_from` 二选一。 |
-| `value_from` | 凭证中的字段值来源 | `set_field` 时与 `value` 二选一，结构见下表。 |
+| `enabled` | `true` / `false` | 是否允许写入全局预设。 |
+| `file` | 非空路径字符串 | 默认配置档案使用的预设文件。 |
+| `format` | `json` 或 `toml` | 预设文件格式。 |
 
-`content_from` 和这里的 `value_from` 都使用凭证来源对象。这里的 `value_from` 表示“从已导入凭证取值”，不是服务商 operation 的模板变量：
+`global_preset` 只作用于默认配置档案。它与 `provider_config.operations` 写入同一文件和字段时，该预设字段会被忽略，避免覆盖地址、密钥等核心配置。
 
-| Key | 用途 | 注意点 |
+### `profiles`
+
+| Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
-| `file_id` | 凭证数据中的逻辑文件 ID | 非空字符串。 |
-| `path` | 从该逻辑文件中取值的字段路径 | 可省略；省略时取整个 JSON。 |
+| `enabled` | `true` / `false` | 是否支持默认配置之外的配置档案。设为 `true` 时，`provider_config.enabled` 也必须是 `true`。 |
+| `profile_file` | 包含 `{profile}` 的非空路径字符串 | 非默认配置档案的文件名模式，例如 `"settings-{profile}.json"`。 |
+| `operations` | 配置 operation 数组 | 每个非默认配置档案独立执行的写入规则，不能为空，不复用 `provider_config.operations`。 |
+| `launch` | 可选对象 | 生成供用户复制的启动命令参数，CCG 不会执行命令。 |
+| `launch.default` | 字符串数组 | 默认配置档案的完整命令及参数。`launch` 出现时必填。 |
+| `launch.non_default` | 字符串数组 | 非默认配置档案的完整命令及参数。`launch` 出现时必填。 |
 
-示例：
+`launch.default` 和 `launch.non_default` 不能包含空字符串，也不能使用 `{target.*}`、`{agent.*}` 或 `{profile.relative_path}`。`{profile.absolute_path}` 只能用于 `launch.non_default`。
+
+删除或重命名配置档案时，CCG 会用旧 Profile 上下文逆向处理全部 `profiles.operations`：
+
+- `set` 只删除仍等于模板写入值的字段，用户后来修改过的值会保留。
+- `remove` 删除的旧值无法恢复。
+- 已有文件无法匹配当前 Gateway 或服务商配置时，操作会报错。
+
+### `official_login`
+
+`official_login` 只负责凭证的读取、保存和写回，不执行登录命令、OAuth 流程或 Token 刷新。用户先在 Agent 中完成登录，再把凭证导入 CCG。
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `enabled` | `true` / `false` | 是否支持托管官方凭证。 |
+| `operations` | 官方凭证 operation 数组 | `enabled: true` 时不能为空。 |
+
+#### 官方凭证 operation
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `id` | 非空字符串 | operation 标识。 |
+| `op` | `replace_file` 或 `set_field` | 替换整个文件，或只设置 JSON 中的一个字段。 |
+| `file` | 非空路径字符串 | 写回凭证或设置的目标文件。 |
+| `format` | `json`、`jsonc`、`toml`、`env` | `replace_file` 可省略，省略时按 `json`；`set_field` 必须明确写 `json`。 |
+| `path` | 字符串数组 | `set_field` 的目标字段路径，不能为空；`replace_file` 不使用。 |
+| `content_from` | 凭证来源对象 | `replace_file` 必填，表示整文件内容来自哪个逻辑凭证文件。 |
+| `value` | 任意固定 JSON 值 | `set_field` 时与 `value_from` 二选一。 |
+| `value_from` | 凭证来源对象 | `set_field` 时与 `value` 二选一，表示从凭证中取值。 |
+
+凭证来源对象包含：
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `file_id` | 非空字符串 | CCG 凭证数据中的逻辑文件 ID。相同 ID 表示同一份导入内容。 |
+| `path` | 可选字符串数组 | 从逻辑文件中取值的路径。省略时取整个文件；非 JSON 来源不能使用该 key。 |
+
+同一个 `file_id` 被多个 operation 使用时，`format` 必须一致。对于会自动刷新 Token 的 Agent，CCG 写入的凭证可能随后被 Agent 覆盖，这是正常行为。
+
+### `model_mapping` 和 `token_usage`
+
+这两个功能只有 `enabled`：
 
 ```json
-{
-  "id": "replace-auth",
-  "op": "replace_file",
-  "file": "auth.json",
-  "content_from": { "file_id": "agent_auth" }
+"model_mapping": { "enabled": true },
+"token_usage": { "enabled": true }
+```
+
+`model_mapping` 表示该 Agent 的请求可以参与模型名称映射；`token_usage` 表示 CCG 可以统计其 Token 用量。它们不需要文件路径或 adapter。
+
+### `skills`
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `enabled` | `true` / `false` | 是否支持 Skills 管理。 |
+| `directory` | 非空路径字符串 | `enabled: true` 时必填，表示 Skill 根目录。相对路径从 `config_dir` 解析。 |
+
+### `mcp`
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `enabled` | `true` / `false` | 是否支持 MCP 配置管理。 |
+| `file` | 非空路径字符串 | `enabled: true` 时必填，表示 MCP 所在配置文件。 |
+| `format` | `json` 或 `toml` | MCP 配置文件格式。 |
+| `servers_path` | 至少包含一个非空字符串的数组 | MCP 服务集合在配置文件中的字段路径，例如 `["mcpServers"]` 或 `["mcp", "servers"]`。 |
+| `adapter` | 可选；当前只能是 `opencode` | 省略时按 CCG 的标准 MCP 结构直接写入；`opencode` 会先转换为 OpenCode 的结构，并且只支持 `json` 格式。 |
+
+### `sessions`
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `enabled` | `true` / `false` | 是否支持读取和管理会话。 |
+| `adapter` | 非空字符串 | `enabled: true` 时必填。当前可用值为 `claude_code`、`codex`、`gemini`、`opencode`、`kimi_code`、`zcode`。 |
+
+Session adapter 是已经编译进 CCG 的解析实现。用户模板不能只靠填写新的字符串来增加一种会话格式。
+
+### `plugins`
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `enabled` | `true` / `false` | 是否支持插件管理。 |
+| `adapter` | 非空字符串 | `enabled: true` 时必填。当前实际实现为 `claude_code`。 |
+
+Plugin adapter 是已经编译进 CCG 的插件生命周期实现，不能由模板新增。
+
+### `prompts`
+
+| Key | 类型与可用值 | 含义与注意事项 |
+| --- | --- | --- |
+| `enabled` | `true` / `false` | 是否支持提示词文件管理。 |
+| `file` | 非空路径字符串 | `enabled: true` 时必填。当前只支持一个提示词文件。 |
+
+## 4. 现有模板中的边界情况
+
+以下片段均直接取自内置模板，分别展示容易忽略的特殊情况。
+
+### Claude Code：Profile 文件变量与上级目录
+
+```json
+"profiles": {
+  "enabled": true,
+  "profile_file": "settings-ccg-{profile}.json",
+  "operations": [
+    {
+      "id": "set-profile-endpoint",
+      "op": "set",
+      "file": "{profile.relative_path}",
+      "format": "json",
+      "path": ["env", "ANTHROPIC_BASE_URL"],
+      "value": "{target.endpoint}"
+    },
+    {
+      "id": "set-profile-token",
+      "op": "set",
+      "file": "{profile.relative_path}",
+      "format": "json",
+      "path": ["env", "ANTHROPIC_AUTH_TOKEN"],
+      "value": "{target.token}"
+    }
+  ],
+  "launch": {
+    "default": ["claude"],
+    "non_default": ["claude", "--settings", "{profile.absolute_path}"]
+  }
 }
 ```
 
-## 6. 内置模板实战参考
+```json
+"mcp": {
+  "enabled": true,
+  "file": "../.claude.json",
+  "format": "json",
+  "servers_path": ["mcpServers"]
+}
+```
 
-| Agent | 官方直连 | 配置档案 | 配置与 MCP |
-| --- | --- | --- | --- |
-| Claude Code | 不支持 | 支持 | 服务商配置在 `~/.claude/settings*.json`，MCP 在 `~/.claude.json`。 |
-| Codex | 支持 | 支持 | 默认服务商配置与 MCP 共用 `~/.codex/config.toml`。 |
-| Gemini CLI | 支持 | 不支持 | 一组操作会同时修改 `.env` 和 `settings.json`。 |
+这里同时展示了三种路径：
 
-### Claude Code：配置档案与 MCP 分文件
+- `profile_file` 定义非默认配置档案的文件名模式。
+- operation 用 `{profile.relative_path}` 指向该文件。
+- 启动参数用 `{profile.absolute_path}` 得到最终绝对路径。
 
-- `official_login.enabled` 为 `false`。
-- 默认 operations 明确写入 `settings.json`；非默认 operations 写入 `settings-ccg-{profile}.json`。
-- 两组 operations 都在文件的 `env` 中写入 `{target.endpoint}` 和 `{target.token}`；非默认档案的路由 Token 会按当前配置档案解析。
-- 非默认配置档案通过 `claude --settings {profile.absolute_path}` 启动；`{profile.absolute_path}` 是该 JSON 文件的绝对路径。
-- MCP 的 `file` 是 `../.claude.json`，从 `~/.claude` 解析后指向 `~/.claude.json`；`servers_path` 是 `mcpServers`。
+Claude Code 的 `config_dir` 是 `~/.claude`，因此 MCP 的 `../.claude.json` 最终指向 `~/.claude.json`。这说明 `file` 不必位于 `config_dir` 内部。
 
-完整配置见 [`claude_code.json`](../src-tauri/agent-definitions/claude_code.json)。
+### Codex：TOML 嵌套字段与不同类型的固定值
 
-### Codex：配置档案、官方直连与 MCP 共用配置
+```json
+{
+  "id": "set-provider-name",
+  "op": "set",
+  "file": "config.toml",
+  "format": "toml",
+  "path": ["model_providers", "ccg-gateway", "name"],
+  "value": "ccg-gateway"
+}
+```
 
-- 默认 operations 明确写入 `config.toml` 和 `model_providers.ccg-gateway`；非默认 operations 写入 `{profile}.config.toml` 和 `model_providers.ccg-gateway-{profile}`。
-- 非默认配置档案通过 `codex --profile {profile}` 启动。
-- 官方直连把逻辑文件 `codex_auth` 完整写入 `auth.json`。
-- MCP 与默认配置档案共用 `config.toml`，`servers_path` 是 `mcp_servers`；非默认配置档案仍使用各自的 `{profile}.config.toml`。
+```json
+{
+  "id": "disable-openai-auth",
+  "op": "set",
+  "file": "config.toml",
+  "format": "toml",
+  "path": ["model_providers", "ccg-gateway", "requires_openai_auth"],
+  "value": false
+}
+```
 
-完整配置见 [`codex.json`](../src-tauri/agent-definitions/codex.json)。
+```json
+{
+  "id": "set-token",
+  "op": "set",
+  "file": "config.toml",
+  "format": "toml",
+  "path": ["model_providers", "ccg-gateway", "experimental_bearer_token"],
+  "value": "{target.token}"
+}
+```
 
-### Gemini CLI：无配置档案，多文件操作
+同一个 `operations` 可以同时写固定字符串、布尔值和运行时占位符。`path` 的每个元素对应一层 TOML 结构，不应把 `model_providers.ccg-gateway` 合并成一个字符串。
 
-- `profiles.enabled` 为 `false`，始终使用默认配置。
-- CCG 路由和服务商直连都在 `.env` 写入 `GEMINI_API_KEY`、`GOOGLE_GEMINI_BASE_URL`，同时在 `settings.json` 写入认证类型 `gemini-api-key`。
-- 官方直连替换 `oauth_creds.json`、`google_accounts.json`，同时把 `settings.json` 的认证类型改为 `oauth-personal`。
+Codex 的官方凭证直接替换整个文件：
 
-这个模板说明一组 `operations` 可以包含不同文件和不同格式；每个文件内部的格式保持一致即可。
+```json
+"official_login": {
+  "enabled": true,
+  "operations": [
+    {
+      "id": "replace-codex-auth",
+      "op": "replace_file",
+      "file": "auth.json",
+      "content_from": { "file_id": "codex_auth" }
+    }
+  ]
+}
+```
 
-完整配置见 [`gemini.json`](../src-tauri/agent-definitions/gemini.json)。
+`format` 被省略，因此按 `json` 处理；`content_from` 没有 `path`，表示写入整个逻辑文件 `codex_auth`。
 
-## 7. 使用或提交前检查
+### Gemini CLI：一组配置写入多个格式的文件
 
-1. 文件名与 `id` 一致，UA 和协议来自客户端真实请求。
-2. 所有相对路径都从 `config_dir` 展开检查过。
-3. 开启的功能提供了必填 key，关闭的功能没有遗留无效配置。
-4. `provider_config.operations` 包含完整写入规则，地址和密钥使用 `{target.endpoint}`、`{target.token}`。
-5. `profiles.profile_file` 和 `profiles.operations` 使用正确的 Profile 变量，不会覆盖默认配置或其他客户端文件。
-6. 多文件操作已验证重复执行、切换模式和停用后的结果。
+```json
+"provider_config": {
+  "enabled": true,
+  "operations": [
+    {
+      "id": "set-token",
+      "op": "set",
+      "file": ".env",
+      "format": "env",
+      "path": ["GEMINI_API_KEY"],
+      "value": "{target.token}"
+    },
+    {
+      "id": "set-endpoint",
+      "op": "set",
+      "file": ".env",
+      "format": "env",
+      "path": ["GOOGLE_GEMINI_BASE_URL"],
+      "value": "{target.endpoint}"
+    },
+    {
+      "id": "set-auth-type",
+      "op": "set",
+      "file": "settings.json",
+      "format": "json",
+      "path": ["security", "auth", "selectedType"],
+      "value": "gemini-api-key"
+    }
+  ]
+}
+```
 
-更完整的边界、生命周期和验证要求见 `docs/agent-integration-final-design.md`。
+一组 operations 可以同时修改 `.env` 和 JSON。限制是同一个目标文件不能混用格式，而不是整个数组只能使用一种格式。`env` 的 `path` 必须只有一个元素。
+
+Gemini CLI 的官方登录同时使用整文件替换和单字段设置：
+
+```json
+"official_login": {
+  "enabled": true,
+  "operations": [
+    {
+      "id": "replace-gemini-oauth",
+      "op": "replace_file",
+      "file": "oauth_creds.json",
+      "content_from": { "file_id": "gemini_oauth" }
+    },
+    {
+      "id": "replace-gemini-accounts",
+      "op": "replace_file",
+      "file": "google_accounts.json",
+      "content_from": { "file_id": "gemini_accounts" }
+    },
+    {
+      "id": "set-auth-type",
+      "op": "set_field",
+      "file": "settings.json",
+      "format": "json",
+      "path": ["security", "auth", "selectedType"],
+      "value": "oauth-personal"
+    }
+  ]
+}
+```
+
+凭证文件适合 `replace_file`；同时包含用户设置的 `settings.json` 只修改认证类型，因此使用 `set_field`。
+
+### OpenCode：一个 Agent 支持多协议及 MCP 结构适配
+
+```json
+"protocols": ["openai_responses", "anthropic_messages"]
+```
+
+```json
+{
+  "id": "set-anthropic-endpoint",
+  "op": "set",
+  "file": "opencode.json",
+  "format": "json",
+  "path": ["provider", "anthropic", "options", "baseURL"],
+  "value": "{target.endpoint}/v1"
+}
+```
+
+```json
+"mcp": {
+  "enabled": true,
+  "file": "opencode.json",
+  "format": "json",
+  "adapter": "opencode",
+  "servers_path": ["mcp"]
+}
+```
+
+`protocols` 可以包含多个值。`{target.endpoint}` 可以作为字符串的一部分使用，因此 Anthropic 地址会额外带上 `/v1`。OpenCode 的 MCP 结构与标准结构不同，所以声明 `adapter: "opencode"`；该 adapter 只能配合 `json`。
+
+### ZCode：深层路径、布尔值、数字和嵌套 `servers_path`
+
+```json
+{
+  "id": "set-openai-key-required",
+  "op": "set",
+  "file": "v2/config.json",
+  "format": "json",
+  "path": ["provider", "ccg-openai", "options", "apiKeyRequired"],
+  "value": true
+}
+```
+
+```json
+{
+  "id": "set-openai-model-context",
+  "op": "set",
+  "file": "v2/config.json",
+  "format": "json",
+  "path": ["provider", "ccg-openai", "models", "gpt-5.6-sol", "limit", "context"],
+  "value": 1000000
+}
+```
+
+```json
+"mcp": {
+  "enabled": true,
+  "file": "cli/config.json",
+  "format": "json",
+  "servers_path": ["mcp", "servers"]
+}
+```
+
+`value` 会保留 JSON 类型，布尔值和数字不要写成字符串。`path` 和 `servers_path` 都可以有任意合理深度；`servers_path: ["mcp", "servers"]` 表示 MCP 集合位于 `mcp.servers`。
+
+## 5. 使用前检查
+
+1. 文件名与 `id` 完全一致，`id` 没有大写字母。
+2. `user_agent` 和 `protocols` 来自 Agent 的真实请求，不是根据名称猜测。
+3. `features` 下 11 个功能 key 全部存在，开启的功能包含其必填 key。
+4. 每个相对路径都从最终生效的 `config_dir` 展开检查过。
+5. 同一文件只使用一种 `format`，`env` operation 的 `path` 只有一个元素。
+6. 地址和密钥使用 `{target.endpoint}`、`{target.token}`，模板中不包含真实密钥。
+7. Profile 占位符只出现在允许的位置，不会覆盖默认配置或其他文件。
+8. 修改模板后重启软件，并在 Agent 页面确认没有“定义加载错误”。
