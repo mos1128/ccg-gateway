@@ -485,7 +485,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dirs 6.0.0",
- "edikt-core 0.2.1",
+ "edikt-core",
  "edikt-jsonc",
  "flate2",
  "futures-util",
@@ -1051,17 +1051,6 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "edikt-core"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0355580edb9592b8ca31ce4c9bc5933d9de5e63bba605e30fe2fccfa185ff13"
-dependencies = [
- "logos",
- "regex",
- "thiserror 2.0.19",
-]
-
-[[package]]
-name = "edikt-core"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a36c2f3053bc99470e1cfc1a1348ac6cec0cfe98bd3adb52e7e64e1a040e7b4f"
@@ -1077,7 +1066,7 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0025871a7f6df0555fd5b29a23143d77d3e18524b381d811b33430da474d808"
 dependencies = [
- "edikt-core 0.3.1",
+ "edikt-core",
  "edikt-syntax",
  "logos",
  "rowan",

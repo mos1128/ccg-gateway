@@ -51,7 +51,7 @@ brotli = "8"
 quick-xml = "0.37"
 zip = "2"
 atomic-write-file = "0.3"
-edikt-core = "0.2"
+edikt-core = "0.3"
 edikt-jsonc = "0.2"
 
 [features]
