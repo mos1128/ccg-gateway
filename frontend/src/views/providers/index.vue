@@ -211,6 +211,7 @@
       :form="form"
       :base-url-placeholder="baseUrlPlaceholder"
       :protocols="activeProtocols"
+      :remark="activeAgent?.remark"
       @confirm="handleSave"
       @add-model-map="addModelMap"
       @remove-model-map="removeModelMap"

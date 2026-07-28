@@ -1,5 +1,10 @@
 <template>
   <V2Drawer v-model="visible" :title="title" @confirm="emit('confirm')">
+    <div v-if="remark" class="dr-agent-remark">
+      <el-icon><InfoFilled /></el-icon>
+      <span>{{ remark }}</span>
+    </div>
+
     <div class="v2-tabs">
       <div v-for="t in tabs" :key="t.id" class="v2-tab" :class="{ active: tab === t.id }" @click="tab = t.id">{{ t.label }}</div>
     </div>
@@ -142,6 +147,7 @@
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
 import AppSelect from '@/components/AppSelect.vue'
+import { InfoFilled } from '@element-plus/icons-vue'
 import { PROTOCOL_LABELS } from '@/types/models'
 import type { Protocol } from '@/types/models'
 
@@ -167,6 +173,7 @@ const props = defineProps<{
   form: ProviderEditForm
   baseUrlPlaceholder: string
   protocols: Protocol[]
+  remark?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -204,6 +211,29 @@ watch(() => props.modelValue, (open) => {
 </script>
 
 <style scoped>
+.dr-agent-remark {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: var(--v2-space-4);
+  padding: 10px 12px;
+  border-left: 2px solid var(--v2-accent);
+  border-radius: 4px;
+  background: var(--v2-surface-2);
+  color: var(--v2-text-2);
+  font-size: var(--v2-fs-sm);
+  line-height: 1.5;
+}
+.dr-agent-remark .el-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--v2-accent);
+}
+.dr-agent-remark span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
 .dr-sec-title { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-semibold); color: var(--v2-text); }
 .dr-map { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 9px; align-items: center; }
 .dr-map-single { grid-template-columns: 1fr auto; }
