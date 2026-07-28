@@ -1,6 +1,7 @@
 use crate::config::get_data_dir;
 use crate::db::models::SkillRepo;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 type Result<T> = std::result::Result<T, String>;
@@ -199,6 +200,12 @@ pub fn upsert_skill_repo(repo: SkillRepo) -> Result<()> {
     let mut storage = load_skill_storage()?;
 
     if let Some(existing) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
+        if !repo_sources_equal(&existing.source, &repo.source) {
+            return Err(format!(
+                "仓库名称 '{}' 已被来源 '{}' 使用",
+                repo.name, existing.source
+            ));
+        }
         existing.source = repo.source;
     } else {
         storage.repos.push(StoredSkillRepo::new(repo));
@@ -240,6 +247,15 @@ pub fn upsert_installed_skill_manifest_entry(entry: InstalledSkillManifestEntry)
         .clone()
         .ok_or_else(|| "Skill missing repo info".to_string())?;
     let mut storage = load_skill_storage()?;
+
+    if let Some(repo_entry) = storage.repos.iter().find(|item| item.name == repo.name) {
+        if !repo_sources_equal(&repo_entry.source, &repo.source) {
+            return Err(format!(
+                "仓库名称 '{}' 已被来源 '{}' 使用",
+                repo.name, repo_entry.source
+            ));
+        }
+    }
 
     for repo_entry in &mut storage.repos {
         repo_entry
@@ -290,16 +306,68 @@ pub fn list_installed_skill_directories() -> Result<Vec<String>> {
     Ok(directories)
 }
 
-/// 生成缓存目录名，从 URL 中提取仓库名
-pub fn get_cached_repo_dir(source: &str) -> PathBuf {
-    let repo_name = source
+fn normalize_repo_source(source: &str) -> String {
+    let normalized = source
         .trim()
+        .trim_end_matches(['/', '\\'])
         .strip_suffix(".git")
-        .unwrap_or(source)
+        .unwrap_or(source.trim().trim_end_matches(['/', '\\']))
+        .replace('\\', "/");
+
+    if is_local_repo_source(source) {
+        #[cfg(windows)]
+        return normalized.to_lowercase();
+        #[cfg(not(windows))]
+        return normalized;
+    }
+
+    let lower = normalized.to_lowercase();
+    for prefix in [
+        "https://github.com/",
+        "http://github.com/",
+        "ssh://git@github.com/",
+        "git@github.com:",
+    ] {
+        if let Some(path) = lower.strip_prefix(prefix) {
+            return path.to_string();
+        }
+    }
+    normalized
+}
+
+pub fn repo_sources_equal(left: &str, right: &str) -> bool {
+    normalize_repo_source(left) == normalize_repo_source(right)
+}
+
+pub fn repo_source_key(source: &str) -> String {
+    let digest = Sha256::digest(normalize_repo_source(source).as_bytes());
+    digest[..6]
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
+}
+
+fn cached_repo_directory_name(source: &str) -> String {
+    let repo_name = normalize_repo_source(source)
         .split('/')
-        .last()
-        .unwrap_or("repo");
-    get_skill_cache_dir().join(repo_name)
+        .next_back()
+        .filter(|name| !name.is_empty())
+        .unwrap_or("repo")
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    format!("{}-{}", repo_name, repo_source_key(source))
+}
+
+/// 生成缓存目录名，使用完整来源的哈希避免同名仓库互相覆盖
+pub fn get_cached_repo_dir(source: &str) -> PathBuf {
+    get_skill_cache_dir().join(cached_repo_directory_name(source))
 }
 
 /// 删除缓存的仓库目录
@@ -320,10 +388,39 @@ pub fn ensure_repo_exists(repo: &SkillRepo) -> Result<()> {
     let mut storage = load_skill_storage()?;
 
     if let Some(existing) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
+        if !repo_sources_equal(&existing.source, &repo.source) {
+            return Err(format!(
+                "仓库名称 '{}' 已被来源 '{}' 使用",
+                repo.name, existing.source
+            ));
+        }
         existing.source = repo.source.clone();
     } else {
         storage.repos.push(StoredSkillRepo::new(repo.clone()));
     }
 
     save_skill_storage(storage)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn github_source_forms_share_the_same_identity() {
+        assert!(repo_sources_equal(
+            "https://github.com/anthropics/skills.git",
+            "anthropics/skills"
+        ));
+    }
+
+    #[test]
+    fn same_named_repositories_use_different_cache_directories() {
+        let firecrawl = cached_repo_directory_name("https://github.com/firecrawl/skills");
+        let anthropics = cached_repo_directory_name("https://github.com/anthropics/skills");
+
+        assert_ne!(firecrawl, anthropics);
+        assert!(firecrawl.starts_with("skills-"));
+        assert!(anthropics.starts_with("skills-"));
+    }
 }

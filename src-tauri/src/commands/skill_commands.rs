@@ -158,6 +158,26 @@ fn skill_install_directory_name(skill_item: &DiscoverableSkill) -> String {
     skill_install_directory_name_from_parts(&skill_item.directory, &skill_item.repo.name)
 }
 
+fn installed_entry_matches_skill(
+    entry: &InstalledSkillManifestEntry,
+    repo: &SkillRepo,
+    source_directory: &str,
+) -> bool {
+    entry.repo.as_ref().is_some_and(|installed_repo| {
+        let installed_source_directory = entry.source_directory.as_deref().unwrap_or_else(|| {
+            if skill::is_local_repo_source(&installed_repo.source)
+                && entry.directory == installed_repo.name
+            {
+                "."
+            } else {
+                &entry.directory
+            }
+        });
+        skill::repo_sources_equal(&installed_repo.source, &repo.source)
+            && installed_source_directory == source_directory
+    })
+}
+
 async fn read_installed_skill_metadata_async(directory: &str) -> (Option<String>, Option<String>) {
     let skill_md_path = get_ssot_dir().join(directory).join("SKILL.md");
     let content = match tokio::fs::read_to_string(skill_md_path).await {
@@ -434,6 +454,60 @@ fn extract_repo_name(source: &str) -> String {
         .to_string()
 }
 
+fn sanitize_repo_name_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn extract_qualified_repo_name(source: &str) -> String {
+    let normalized = source
+        .trim()
+        .trim_end_matches(['/', '\\'])
+        .strip_suffix(".git")
+        .unwrap_or(source.trim().trim_end_matches(['/', '\\']))
+        .replace('\\', "/");
+    let mut segments = normalized.split('/').filter(|segment| !segment.is_empty());
+    let repo = segments.next_back().unwrap_or("repo");
+    let owner = segments
+        .next_back()
+        .and_then(|segment| segment.rsplit(':').next())
+        .filter(|segment| !segment.is_empty());
+
+    match owner {
+        Some(owner) => format!(
+            "{}-{}",
+            sanitize_repo_name_component(owner),
+            sanitize_repo_name_component(repo)
+        ),
+        None => sanitize_repo_name_component(repo),
+    }
+}
+
+fn unique_repo_name(source: &str, existing_repos: &[SkillRepo]) -> String {
+    let base_name = extract_repo_name(source);
+    if existing_repos.iter().all(|repo| repo.name != base_name) {
+        return base_name;
+    }
+
+    let qualified_name = extract_qualified_repo_name(source);
+    if existing_repos
+        .iter()
+        .all(|repo| repo.name != qualified_name)
+    {
+        return qualified_name;
+    }
+
+    format!("{}-{}", qualified_name, skill::repo_source_key(source))
+}
+
 /// 执行 git clone（浅克隆，自动使用主分支）
 async fn git_clone_repo(source: &str) -> Result<std::path::PathBuf> {
     let cache_dir = skill::get_cached_repo_dir(source);
@@ -485,6 +559,17 @@ async fn delete_cached_repo_dir_async(source: &str) -> Result<()> {
 #[tauri::command]
 pub async fn add_skill_repo(input: SkillRepoCreate) -> Result<SkillRepo> {
     let url = input.url.trim();
+    let existing_repos = load_skill_repos_async().await?;
+    if let Some(existing) = existing_repos
+        .iter()
+        .find(|repo| skill::repo_sources_equal(&repo.source, url))
+    {
+        return Ok(existing.clone());
+    }
+    let repo = SkillRepo {
+        name: unique_repo_name(url, &existing_repos),
+        source: url.to_string(),
+    };
 
     // 1. 本地目录：直接存储
     let path = std::path::Path::new(url);
@@ -494,10 +579,6 @@ pub async fn add_skill_repo(input: SkillRepoCreate) -> Result<SkillRepo> {
             .map(|metadata| metadata.is_dir())
             .unwrap_or(false)
     {
-        let repo = SkillRepo {
-            name: extract_repo_name(url),
-            source: url.to_string(),
-        };
         upsert_skill_repo_async(repo.clone()).await?;
         return Ok(repo);
     }
@@ -505,10 +586,6 @@ pub async fn add_skill_repo(input: SkillRepoCreate) -> Result<SkillRepo> {
     // 2. 远程仓库：尝试 git clone 验证
     git_clone_repo(url).await?;
 
-    let repo = SkillRepo {
-        name: extract_repo_name(url),
-        source: url.to_string(),
-    };
     upsert_skill_repo_async(repo.clone()).await?;
     Ok(repo)
 }
@@ -595,6 +672,7 @@ fn scan_cached_repo_skills(
     favorite_keys: &std::collections::HashSet<String>,
 ) -> Result<Vec<DiscoverableSkill>> {
     let mut skills = Vec::new();
+    let installed_entries = skill::load_installed_skill_manifest()?;
 
     for entry in walkdir::WalkDir::new(cache_dir)
         .max_depth(5)
@@ -632,7 +710,11 @@ fn scan_cached_repo_skills(
             };
             let install_dir = skill_install_directory_name_from_parts(&directory_str, &repo.name);
             let key = format!("{}:{}", repo.name, &directory_str);
-            let is_installed = get_ssot_dir().join(&install_dir).exists();
+            let is_installed = get_ssot_dir().join(&install_dir).exists()
+                && installed_entries.iter().any(|entry| {
+                    entry.directory == install_dir
+                        && installed_entry_matches_skill(entry, repo, &directory_str)
+                });
             skills.push(DiscoverableSkill {
                 key: key.clone(),
                 name: skill_name.unwrap_or_else(|| directory_name.clone()),
@@ -705,6 +787,15 @@ async fn install_skill_inner(
     ensure_repo_exists_async(skill_item.repo.clone()).await?;
 
     let skill_exists = tokio::fs::metadata(&skill_path).await.is_ok();
+    let existing_matches = existing.as_ref().is_some_and(|entry| {
+        installed_entry_matches_skill(entry, &skill_item.repo, &skill_item.directory)
+    });
+    if (existing.is_some() || skill_exists) && !existing_matches {
+        return Err(format!(
+            "Skill 安装目录 '{}' 已被其他来源占用，请先卸载现有 Skill",
+            directory_name
+        ));
+    }
     if (existing.is_some() || skill_exists) && !reinstall {
         return Err(format!("Skill '{}' is already installed", directory_name));
     }
@@ -970,6 +1061,7 @@ pub async fn get_skill_favorites(db: State<'_, SqlitePool>) -> Result<Vec<SkillF
     .map_err(|e| e.to_string())?;
 
     let ssot_dir = get_ssot_dir();
+    let installed_entries = load_installed_skill_manifest_async().await?;
     let mut items = Vec::with_capacity(favorites.len());
     for favorite in favorites {
         let repo = SkillRepo {
@@ -978,9 +1070,13 @@ pub async fn get_skill_favorites(db: State<'_, SqlitePool>) -> Result<Vec<SkillF
         };
         let installed_directory =
             skill_install_directory_name_from_parts(&favorite.directory, &repo.name);
-        let is_installed = tokio::fs::metadata(ssot_dir.join(installed_directory))
+        let is_installed = tokio::fs::metadata(ssot_dir.join(&installed_directory))
             .await
-            .is_ok();
+            .is_ok()
+            && installed_entries.iter().any(|entry| {
+                entry.directory == installed_directory
+                    && installed_entry_matches_skill(entry, &repo, &favorite.directory)
+            });
         items.push(SkillFavoriteItem {
             key: favorite.skill_key,
             name: favorite.name,
@@ -1205,13 +1301,20 @@ pub async fn reinstall_favorite_skill(
     // 计算安装目录
     let directory =
         skill_install_directory_name_from_parts(&favorite.directory, &favorite.repo_name);
+    let repo = SkillRepo {
+        name: favorite.repo_name,
+        source: favorite.repo_source,
+    };
 
-    // 检查是否已安装
+    // 检查该目录中安装的是当前收藏对应的 Skill
     let ssot_dir = get_ssot_dir();
-    if tokio::fs::metadata(ssot_dir.join(&directory))
-        .await
-        .is_err()
-    {
+    let installed_entries = load_installed_skill_manifest_async().await?;
+    let is_installed = tokio::fs::metadata(ssot_dir.join(&directory)).await.is_ok()
+        && installed_entries.iter().any(|entry| {
+            entry.directory == directory
+                && installed_entry_matches_skill(entry, &repo, &favorite.directory)
+        });
+    if !is_installed {
         return Err(format!(
             "Skill '{}' is not installed, cannot reinstall",
             directory
@@ -1219,4 +1322,55 @@ pub async fn reinstall_favorite_skill(
     }
 
     reinstall_skill_impl(db.inner(), directory).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo(name: &str, source: &str) -> SkillRepo {
+        SkillRepo {
+            name: name.to_string(),
+            source: source.to_string(),
+        }
+    }
+
+    #[test]
+    fn same_named_repository_gets_qualified_name() {
+        let existing = vec![repo("skills", "anthropics/skills")];
+
+        assert_eq!(
+            unique_repo_name("https://github.com/firecrawl/skills", &existing),
+            "firecrawl-skills"
+        );
+    }
+
+    #[test]
+    fn installed_skill_identity_includes_repository_and_source_directory() {
+        let entry = InstalledSkillManifestEntry {
+            directory: "pdf".to_string(),
+            name: "pdf".to_string(),
+            description: None,
+            repo: Some(repo("skills", "anthropics/skills")),
+            readme_url: None,
+            installed_at: 0,
+            source_directory: Some("skills/pdf".to_string()),
+        };
+
+        assert!(installed_entry_matches_skill(
+            &entry,
+            &repo("skills", "https://github.com/anthropics/skills.git"),
+            "skills/pdf"
+        ));
+        assert!(!installed_entry_matches_skill(
+            &entry,
+            &repo("firecrawl-skills", "firecrawl/skills"),
+            "skills/pdf"
+        ));
+        assert!(!installed_entry_matches_skill(
+            &entry,
+            &repo("skills", "anthropics/skills"),
+            "other/pdf"
+        ));
+    }
 }
