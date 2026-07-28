@@ -134,7 +134,17 @@
       "format": "toml"
     },
     "profiles": { "enabled": false },
-    "official_login": { "enabled": false },
+    "official_login": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "replace-grok-auth",
+          "op": "replace_file",
+          "file": "auth.json",
+          "content_from": { "file_id": "grok_auth" }
+        }
+      ]
+    },
     "model_mapping": { "enabled": true },
     "token_usage": { "enabled": true },
     "skills": { "enabled": true, "directory": "skills" },
