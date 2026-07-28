@@ -61,6 +61,7 @@
       "required": ["d"],
       "properties": {
         "d": { "type": "string", "minLength": 1 },
+        "fill": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "fill_rule": { "enum": ["nonzero", "evenodd"] },
         "clip_rule": { "enum": ["nonzero", "evenodd"] }

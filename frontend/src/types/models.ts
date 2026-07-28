@@ -50,6 +50,7 @@ export interface GlobalPresetFeature extends ToggleFeature {
 
 export interface AgentIconPath {
   d: string
+  fill?: string
   opacity?: number
   fill_rule?: 'nonzero' | 'evenodd'
   clip_rule?: 'nonzero' | 'evenodd'

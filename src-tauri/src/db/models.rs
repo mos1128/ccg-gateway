@@ -200,6 +200,7 @@ pub struct OfficialLoginFeature {
 #[serde(deny_unknown_fields)]
 pub struct AgentIconPath {
     pub d: String,
+    pub fill: Option<String>,
     pub opacity: Option<f64>,
     pub fill_rule: Option<String>,
     pub clip_rule: Option<String>,

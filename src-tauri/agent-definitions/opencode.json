@@ -5,15 +5,21 @@
   "name": "OpenCode",
   "remark": "网关会接管 OpenCode 内置的 anthropic 与 openai 服务商；在 OpenCode 中选择 anthropic 与 openai 的模型即可。",
   "icon": {
-    "view_box": "0 0 48 48",
+    "view_box": "0 0 512 512",
     "color": "#808080",
     "paths": [
       {
-        "d": "M0 0H48V48H0V0ZM12 9V39H36V9H12Z",
-        "fill_rule": "evenodd"
+        "d": "M0 0H512V512H0Z",
+        "fill": "#131010"
       },
       {
-        "d": "M18 15H30V33H18V15Z"
+        "d": "M320 224V352H192V224H320Z",
+        "fill": "#5A5858"
+      },
+      {
+        "d": "M384 416H128V96H384V416ZM320 160H192V352H320V160Z",
+        "fill": "#FFFFFF",
+        "fill_rule": "evenodd"
       }
     ]
   },

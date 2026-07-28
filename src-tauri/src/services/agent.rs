@@ -226,14 +226,22 @@ fn validate_icon(definition: &AgentDefinition) -> Result<(), String> {
     {
         return Err("Agent icon 必须提供 view_box 和非空 paths".to_string());
     }
-    if icon.color.as_ref().is_some_and(|color| {
+    let invalid_color = |color: &str| {
         color.len() != 7
             || !color.starts_with('#')
             || !color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
-    }) {
+    };
+    if icon
+        .color
+        .as_ref()
+        .is_some_and(|color| invalid_color(color))
+    {
         return Err("Agent icon color 必须是六位十六进制颜色".to_string());
     }
     for path in &icon.paths {
+        if path.fill.as_ref().is_some_and(|fill| invalid_color(fill)) {
+            return Err("Agent icon path fill 必须是六位十六进制颜色".to_string());
+        }
         if path
             .opacity
             .is_some_and(|opacity| !(0.0..=1.0).contains(&opacity))

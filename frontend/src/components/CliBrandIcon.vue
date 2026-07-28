@@ -12,6 +12,7 @@
       v-for="(path, index) in templateIcon.paths"
       :key="index"
       :d="path.d"
+      :fill="path.fill"
       :opacity="path.opacity"
       :fill-rule="path.fill_rule"
       :clip-rule="path.clip_rule"

@@ -71,6 +71,7 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | `color` | 可选；`#` 加 6 位十六进制颜色 | 图标默认颜色，例如 `"#10a37f"`。 |
 | `paths` | 必填；至少一个 path 对象 | SVG 路径列表。不能直接放入完整 SVG。 |
 | `paths[].d` | 必填；非空字符串 | SVG path 的 `d` 数据。 |
+| `paths[].fill` | 可选；`#` 加 6 位十六进制颜色 | 当前路径的填充色；不设置时继承图标默认颜色。 |
 | `paths[].opacity` | 可选；`0` 到 `1` 的数字 | 当前路径的不透明度。 |
 | `paths[].fill_rule` | 可选；`nonzero` 或 `evenodd` | SVG 填充规则。 |
 | `paths[].clip_rule` | 可选；`nonzero` 或 `evenodd` | SVG 裁剪规则。 |
