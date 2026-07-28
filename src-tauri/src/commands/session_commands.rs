@@ -1614,7 +1614,9 @@ async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
 
 /// 读取并解析 kimi-code 的 session_index.jsonl，返回 (sessionId, sessionDir, workDir) 列表。
 /// 后出现的删除标记会移除同 sessionId 的条目，与 kimi-code 的 readSessionIndex 语义一致。
-fn read_kimi_session_index(home_dir: &std::path::Path) -> Vec<(String, std::path::PathBuf, String)> {
+fn read_kimi_session_index(
+    home_dir: &std::path::Path,
+) -> Vec<(String, std::path::PathBuf, String)> {
     let index_path = home_dir.join("session_index.jsonl");
     let Ok(file) = std::fs::File::open(&index_path) else {
         return Vec::new();
@@ -1644,7 +1646,10 @@ fn read_kimi_session_index(home_dir: &std::path::Path) -> Vec<(String, std::path
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        map.insert(session_id.to_string(), (std::path::PathBuf::from(session_dir), work_dir));
+        map.insert(
+            session_id.to_string(),
+            (std::path::PathBuf::from(session_dir), work_dir),
+        );
     }
     map.into_iter()
         .map(|(session_id, (session_dir, work_dir))| (session_id, session_dir, work_dir))
@@ -1653,9 +1658,7 @@ fn read_kimi_session_index(home_dir: &std::path::Path) -> Vec<(String, std::path
 
 /// 从 state.json 提取 kimi-code 会话展示信息。
 /// 返回 (title, last_prompt, archived, created_at, updated_at, work_dir)
-fn read_kimi_state_info(
-    session_dir: &std::path::Path,
-) -> (String, String, bool, f64, f64, String) {
+fn read_kimi_state_info(session_dir: &std::path::Path) -> (String, String, bool, f64, f64, String) {
     let state_path = session_dir.join("state.json");
     let mut title = String::new();
     let mut last_prompt = String::new();
@@ -1676,7 +1679,10 @@ fn read_kimi_state_info(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            archived = data.get("archived").and_then(|v| v.as_bool()).unwrap_or(false);
+            archived = data
+                .get("archived")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             work_dir = data
                 .get("workDir")
                 .and_then(|v| v.as_str())
@@ -1686,7 +1692,14 @@ fn read_kimi_state_info(
             updated_at = parse_kimi_time(data.get("updatedAt"));
         }
     }
-    (title, last_prompt, archived, created_at, updated_at, work_dir)
+    (
+        title,
+        last_prompt,
+        archived,
+        created_at,
+        updated_at,
+        work_dir,
+    )
 }
 
 /// kimi-code 时间字段兼容 ISO-8601 字符串和 epoch 秒/毫秒。
@@ -1773,7 +1786,10 @@ fn get_kimi_projects(
         } else {
             work_dir.clone()
         };
-        groups.entry(key).or_default().push((session_id, session_dir, work_dir));
+        groups
+            .entry(key)
+            .or_default()
+            .push((session_id, session_dir, work_dir));
     }
 
     let mut projects: Vec<ProjectInfo> = Vec::new();
@@ -1858,7 +1874,11 @@ fn get_kimi_sessions(
         let size = kimi_session_size(&session_dir);
         let wire_mtime = kimi_latest_wire_mtime(&session_dir);
         let mtime = updated_at.max(wire_mtime).max(created_at);
-        let first_message = if !title.is_empty() { title } else { last_prompt };
+        let first_message = if !title.is_empty() {
+            title
+        } else {
+            last_prompt
+        };
         sessions.push(SessionInfo {
             session_id,
             size,
@@ -1914,7 +1934,10 @@ fn render_kimi_content_part(part: &serde_json::Value) -> Option<String> {
 
 /// 从 context.append_message 记录还原 SessionMessage。
 /// assistant 消息合并其 toolCalls；tool 角色消息作为工具结果展示。
-fn parse_kimi_append_message(record: &serde_json::Value, timestamp: Option<i64>) -> Option<SessionMessage> {
+fn parse_kimi_append_message(
+    record: &serde_json::Value,
+    timestamp: Option<i64>,
+) -> Option<SessionMessage> {
     let message = record.get("message")?;
     let role = message.get("role").and_then(|r| r.as_str())?;
     let mut parts: Vec<String> = Vec::new();
@@ -1939,7 +1962,9 @@ fn parse_kimi_append_message(record: &serde_json::Value, timestamp: Option<i64>)
                 let args_str = if let Some(args) = arguments {
                     if let Some(s) = args.as_str() {
                         match serde_json::from_str::<serde_json::Value>(s) {
-                            Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_else(|_| s.to_string()),
+                            Ok(v) => {
+                                serde_json::to_string_pretty(&v).unwrap_or_else(|_| s.to_string())
+                            }
                             Err(_) => s.to_string(),
                         }
                     } else {
@@ -1948,7 +1973,10 @@ fn parse_kimi_append_message(record: &serde_json::Value, timestamp: Option<i64>)
                 } else {
                     "{}".to_string()
                 };
-                parts.push(format!("**[调用工具: {}]**\n```json\n{}\n```", name, args_str));
+                parts.push(format!(
+                    "**[调用工具: {}]**\n```json\n{}\n```",
+                    name, args_str
+                ));
             }
         }
     }
@@ -2354,8 +2382,9 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
                         .or_else(|| call.get("args"))
                         .or_else(|| call.get("arguments"));
                     let args_str = match args {
-                        Some(value) => serde_json::to_string_pretty(value)
-                            .unwrap_or_else(|_| "{}".to_string()),
+                        Some(value) => {
+                            serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string())
+                        }
                         None => "{}".to_string(),
                     };
                     messages.push(SessionMessage {
@@ -2372,17 +2401,10 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
 }
 
 /// 读取 zcode 会话消息。
-fn get_zcode_messages(
-    home_dir: &std::path::Path,
-    session_id: &str,
-) -> Result<Vec<SessionMessage>> {
+fn get_zcode_messages(home_dir: &std::path::Path, session_id: &str) -> Result<Vec<SessionMessage>> {
     let rollout = zcode_rollout_path(home_dir, session_id);
-    let content = std::fs::read_to_string(&rollout).map_err(|e| {
-        format!(
-            "Failed to read rollout for session '{}': {}",
-            session_id, e
-        )
-    })?;
+    let content = std::fs::read_to_string(&rollout)
+        .map_err(|e| format!("Failed to read rollout for session '{}': {}", session_id, e))?;
     parse_zcode_rollout(&content)
 }
 
@@ -2616,7 +2638,10 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
                             .ok()
                             .and_then(|p| serde_json::to_string_pretty(&p).ok())
                             .unwrap_or_else(|| args_str.clone());
-                        parts.push(format!("**[调用工具: {}]**\n```json\n{}\n```", name, pretty));
+                        parts.push(format!(
+                            "**[调用工具: {}]**\n```json\n{}\n```",
+                            name, pretty
+                        ));
                     }
                 }
                 if parts.is_empty() {
@@ -3239,7 +3264,10 @@ pub async fn delete_session(
                 return Err(format!("Session directory not found: {}", session_id));
             };
             if !session_dir.exists() {
-                return Err(format!("Session directory not found: {}", session_dir.display()));
+                return Err(format!(
+                    "Session directory not found: {}",
+                    session_dir.display()
+                ));
             }
             std::fs::remove_dir_all(&session_dir)
                 .map_err(|e| format!("Failed to delete session: {}", e))?;
