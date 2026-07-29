@@ -88,20 +88,29 @@
           <div class="v2-card v2-card-pad rail-card">
             <div class="rail-head">
               <span class="rail-title">Agent</span>
-              <el-tooltip effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
-                <template #content>
-                  <div class="profile-help">
-                    <div class="tooltip-title">模式说明</div>
-                    <div class="tooltip-item"><strong>路由：</strong><span>写入网关地址，Agent 请求会经过 CCG Gateway，并按服务商规则路由。</span></div>
-                    <div class="tooltip-item"><strong>直连：</strong><span>写入默认服务商配置，Agent 直接请求该服务商，不经过网关路由。</span></div>
-                    <div class="tooltip-item"><strong>官方：</strong><span>写入官方凭证，Agent 直接连接官方服务。</span></div>
-                    <div class="tooltip-item"><strong>停用：</strong><span>清除已写入的路由配置，Agent 不受 CCG Gateway 管理。</span></div>
-                  </div>
-                </template>
-                <button class="v2-help rail-help" type="button" aria-label="模式说明">
-                  <el-icon><QuestionFilled /></el-icon>
-                </button>
-              </el-tooltip>
+              <div class="rail-actions">
+                <el-tooltip content="管理 Agent 显示" effect="light" placement="top" :show-after="150">
+                  <button class="v2-help rail-help" type="button" aria-label="管理 Agent 显示" @click="agentVisibilityVisible = true">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>
+                    </svg>
+                  </button>
+                </el-tooltip>
+                <el-tooltip effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
+                  <template #content>
+                    <div class="profile-help">
+                      <div class="tooltip-title">模式说明</div>
+                      <div class="tooltip-item"><strong>路由：</strong><span>写入网关地址，Agent 请求会经过 CCG Gateway，并按服务商规则路由。</span></div>
+                      <div class="tooltip-item"><strong>直连：</strong><span>写入默认服务商配置，Agent 直接请求该服务商，不经过网关路由。</span></div>
+                      <div class="tooltip-item"><strong>官方：</strong><span>写入官方凭证，Agent 直接连接官方服务。</span></div>
+                      <div class="tooltip-item"><strong>停用：</strong><span>清除已写入的路由配置，Agent 不受 CCG Gateway 管理。</span></div>
+                    </div>
+                  </template>
+                  <button class="v2-help rail-help" type="button" aria-label="模式说明">
+                    <el-icon><QuestionFilled /></el-icon>
+                  </button>
+                </el-tooltip>
+              </div>
             </div>
             <div class="cli-list">
               <div v-for="cli in cliList" :key="cli.type" class="cli-row" :class="{ loading: cliLoading[cli.type] }">
@@ -187,6 +196,31 @@
         </div>
       </div>
     </V2Drawer>
+
+    <V2Drawer
+      v-model="agentVisibilityVisible"
+      title="Agent 显示"
+      :show-footer="false"
+      width="min(420px, 94vw)"
+    >
+      <p class="agent-visibility-hint">关闭后会从常用页面隐藏，不会修改 Agent 的路由或凭证配置。</p>
+      <div class="agent-visibility-list">
+        <div v-for="agent in agentStore.agents" :key="agent.id" class="agent-visibility-row">
+          <div class="agent-visibility-main">
+            <CliBrandIcon :type="agent.id" width="18" height="18" />
+            <div>
+              <div class="agent-visibility-name">{{ agent.name }}</div>
+              <div class="mono agent-visibility-id">{{ agent.id }}</div>
+            </div>
+          </div>
+          <el-switch
+            :model-value="agentStore.isVisible(agent.id)"
+            :aria-label="`${agent.name} 显示开关`"
+            @change="setAgentVisible(agent.id, $event)"
+          />
+        </div>
+      </div>
+    </V2Drawer>
   </div>
 </template>
 
@@ -230,9 +264,10 @@ useResizeObserver(chartCardRef, ([entry]) => {
 })
 
 // ===== CLI 模式控制 =====
-const cliList = computed(() => agentStore.agents.map(({ id, name, icon }) => ({ type: id, label: name, color: icon?.color })))
+const cliList = computed(() => agentStore.visibleAgents.map(({ id, name, icon }) => ({ type: id, label: name, color: icon?.color })))
 const cliLoading = reactive<Record<CliType, boolean>>({})
 const agentInfoVisible = ref(false)
+const agentVisibilityVisible = ref(false)
 const selectedAgent = ref<AgentInfo | null>(null)
 const featureLabels: Record<AgentFeatureName, string> = {
   provider_config: 'Provider 配置',
@@ -259,6 +294,12 @@ const modeLabels: Record<CliMode, string> = { proxy_route: '中转路由', provi
 function openAgentInfo(cli: CliType) {
   selectedAgent.value = agentStore.get(cli) || null
   agentInfoVisible.value = selectedAgent.value !== null
+}
+
+function setAgentVisible(agentId: string, visible: string | number | boolean) {
+  if (!agentStore.setVisible(agentId, visible === true)) {
+    notify('至少保留一个 Agent 显示', 'warning')
+  }
 }
 
 function displayFeatures(agent: AgentInfo) {
@@ -814,6 +855,11 @@ onMounted(async () => {
   font-weight: var(--v2-fw-semibold);
   color: var(--v2-text);
 }
+.rail-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
 .rail-help {
   width: 22px;
   height: 22px;
@@ -885,6 +931,40 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+.agent-visibility-hint {
+  margin: 0 0 14px;
+  color: var(--v2-text-3);
+  font-size: var(--v2-fs-xs);
+  line-height: 1.6;
+}
+.agent-visibility-list {
+  border-top: 1px solid var(--v2-surface-2);
+}
+.agent-visibility-row,
+.agent-visibility-main {
+  display: flex;
+  align-items: center;
+}
+.agent-visibility-row {
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  border-bottom: 1px solid var(--v2-surface-2);
+}
+.agent-visibility-main {
+  min-width: 0;
+  gap: 10px;
+}
+.agent-visibility-name {
+  color: var(--v2-text);
+  font-size: var(--v2-fs-sm);
+  font-weight: var(--v2-fw-medium);
+}
+.agent-visibility-id {
+  margin-top: 2px;
+  color: var(--v2-text-3);
+  font-size: 11px;
 }
 .agent-info-head,
 .agent-info-title,

@@ -272,7 +272,7 @@ const uiStore = useUiStore()
 const settingsStore = useSettingsStore()
 const agentStore = useAgentStore()
 
-const cliTabs = computed(() => agentStore.agents
+const cliTabs = computed(() => agentStore.visibleAgents
   .filter((agent) => agent.features.provider_config.enabled)
   .map((agent) => ({ id: agent.id, label: agent.name })))
 

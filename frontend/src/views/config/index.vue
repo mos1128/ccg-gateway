@@ -582,8 +582,8 @@ onMounted(async () => {
     agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
     settingsStore.fetchSettings(),
   ])
-  if (!agentStore.get(activeCliTab.value) && agentStore.agents.length) {
-    activeCliTab.value = agentStore.agents[0].id
+  if (!agentStore.isVisible(activeCliTab.value) && agentStore.visibleAgents.length) {
+    activeCliTab.value = agentStore.visibleAgents[0].id
   }
   loadWebdavSettings()
 })

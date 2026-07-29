@@ -110,7 +110,7 @@ import type { ProjectInfo, SessionInfo } from '@/api/sessions'
 const sessionStore = useSessionStore()
 const uiStore = useUiStore()
 const agentStore = useAgentStore()
-const sessionTabs = computed(() => agentStore.agents
+const sessionTabs = computed(() => agentStore.visibleAgents
   .filter((agent) => agent.features.sessions.enabled)
   .map((agent) => ({ id: agent.id, label: agent.name })))
 

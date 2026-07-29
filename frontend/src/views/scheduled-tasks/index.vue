@@ -224,7 +224,7 @@ interface FormState {
 }
 
 const cliSelectOptions = computed<AppSelectOption[]>(() =>
-  agentStore.agents.map(agent => ({ label: agent.name, value: agent.id })),
+  agentStore.visibleAgents.map(agent => ({ label: agent.name, value: agent.id })),
 )
 function profileDisplayLabel(profile: ProviderProfileItem) {
   if (profile.is_default) return profile.label
@@ -262,7 +262,7 @@ const selectableProviders = computed(() => providerOptions.value.filter(p => p.e
 const isAllProvidersSelected = computed(() => selectableProviders.value.length > 0 && form.value.provider_ids.length === selectableProviders.value.length)
 
 function defaultForm(): FormState {
-  const cliType = agentStore.agents[0]?.id || 'claude_code'
+  const cliType = agentStore.visibleAgents[0]?.id || 'claude_code'
   return {
     name: '', cli_type: cliType, profile: 'default', target_mode: 'all', provider_ids: [],
     model_name: getReusableModelName(cliType), schedule_type: 'interval', interval_minutes: 60,
@@ -546,7 +546,7 @@ function handleScheduledTaskChange() {
 onMounted(async () => {
   try {
     if (!agentStore.agents.length) await agentStore.fetchAgents()
-    if (!agentStore.get(form.value.cli_type)) form.value = defaultForm()
+    if (!agentStore.isVisible(form.value.cli_type)) form.value = defaultForm()
     if (supportsProfiles.value) await fetchProfiles()
     await fetchTasks()
     hasLoadedTasks = true

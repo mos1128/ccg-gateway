@@ -27,7 +27,7 @@ const emit = defineEmits<{ toggle: [cliType: CliType, enabled: boolean] }>()
 const agentStore = useAgentStore()
 const tabs = computed(() => (props.feature
   ? agentStore.agentsFor(props.feature)
-  : agentStore.agents
+  : agentStore.visibleAgents
 ).map((agent) => ({ id: agent.id, label: agent.name, color: agent.icon?.color })))
 </script>
 
