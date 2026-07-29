@@ -5,9 +5,9 @@
       <span>{{ remark }}</span>
     </div>
 
-    <div class="v2-tabs">
+    <V2Tabs>
       <div v-for="t in tabs" :key="t.id" class="v2-tab" :class="{ active: tab === t.id }" @click="tab = t.id">{{ t.label }}</div>
-    </div>
+    </V2Tabs>
 
     <div v-show="tab === 'basic'">
       <div v-if="protocols.length > 1" class="v2-field">
@@ -146,6 +146,7 @@
 
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
+import V2Tabs from '@/components/V2Tabs.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { PROTOCOL_LABELS } from '@/types/models'

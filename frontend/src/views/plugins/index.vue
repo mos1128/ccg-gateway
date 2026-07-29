@@ -1,10 +1,10 @@
 <template>
   <div class="pg-page">
-    <div class="v2-tabs pg-tabs">
+    <V2Tabs class="pg-tabs">
       <div class="v2-tab" :class="{ active: activeTab === 'plugins' }" @click="activeTab = 'plugins'">插件</div>
       <div class="v2-tab" :class="{ active: activeTab === 'marketplaces' }" @click="activeTab = 'marketplaces'">市场</div>
       <div class="v2-tab" :class="{ active: activeTab === 'favorites' }" @click="activeTab = 'favorites'">收藏</div>
-    </div>
+    </V2Tabs>
 
     <!-- 插件 -->
     <template v-if="activeTab === 'plugins'">
@@ -143,6 +143,7 @@ import { ElNotification } from 'element-plus'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Empty from '@/components/V2Empty.vue'
 import V2CliChips from '@/components/V2CliChips.vue'
+import V2Tabs from '@/components/V2Tabs.vue'
 import PluginIcon from '@/components/PluginIcon.vue'
 import { confirm } from '@/utils/confirm'
 import { pluginsApi } from '@/api/plugins'

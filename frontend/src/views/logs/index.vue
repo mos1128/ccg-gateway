@@ -1,10 +1,10 @@
 <template>
   <div class="logs-page">
     <div class="logs-bar">
-      <div class="v2-tabs logs-tabs">
+      <V2Tabs class="logs-tabs">
         <div class="v2-tab" :class="{ active: activeTab === 'request' }" @click="activeTab = 'request'">请求日志</div>
         <div class="v2-tab" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">系统日志</div>
-      </div>
+      </V2Tabs>
     </div>
 
     <!-- 请求日志 -->
@@ -194,6 +194,7 @@
 
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
+import V2Tabs from '@/components/V2Tabs.vue'
 import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
 import { confirm } from '@/utils/confirm'

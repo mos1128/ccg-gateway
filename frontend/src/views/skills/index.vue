@@ -1,10 +1,10 @@
 <template>
   <div class="sk-page">
-    <div class="v2-tabs sk-tabs">
+    <V2Tabs class="sk-tabs">
       <div class="v2-tab" :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">技能</div>
       <div class="v2-tab" :class="{ active: activeTab === 'repos' }" @click="activeTab = 'repos'">仓库</div>
       <div class="v2-tab" :class="{ active: activeTab === 'favorites' }" @click="activeTab = 'favorites'">收藏</div>
-    </div>
+    </V2Tabs>
 
     <!-- 技能 -->
     <template v-if="activeTab === 'skills'">
@@ -137,6 +137,7 @@
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2CliChips from '@/components/V2CliChips.vue'
 import V2Empty from '@/components/V2Empty.vue'
+import V2Tabs from '@/components/V2Tabs.vue'
 import SkillIcon from '@/components/SkillIcon.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'

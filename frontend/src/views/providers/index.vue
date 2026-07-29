@@ -17,11 +17,11 @@
       </defs>
     </svg>
 
-    <div class="v2-tabs prov-clitabs">
+    <V2Tabs class="prov-clitabs">
       <div v-for="c in cliTabs" :key="c.id" class="v2-tab" :class="{ active: activeCliType === c.id }" @click="activeCliType = c.id">
         <span class="tab-label-text">{{ c.label }}</span>
       </div>
-    </div>
+    </V2Tabs>
 
     <div class="v2-card prov-shell">
     <div class="prov-toolbar">
@@ -252,6 +252,7 @@ import ProviderDrawer from './components/ProviderDrawer.vue'
 import CredentialDrawer from './components/CredentialDrawer.vue'
 import ModelDetectionModal from './components/ModelDetectionModal.vue'
 import V2Empty from '@/components/V2Empty.vue'
+import V2Tabs from '@/components/V2Tabs.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
