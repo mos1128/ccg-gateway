@@ -114,7 +114,7 @@
             </div>
           </template>
           <span class="v2-help" @click.stop="copyCurrentProfileLaunchCommand">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <el-icon><InfoFilled /></el-icon>
           </span>
         </el-tooltip>
       </div>
@@ -150,7 +150,7 @@
           <div class="pt-cols m-route">
             <div>启用</div>
             <div>服务商</div>
-            <div class="pt-col-endpoint">服务地址</div>
+            <div class="pt-col-protocol">端点类型</div>
             <div>状态</div>
             <el-tooltip content="连续失败次数 / 熔断阈值" placement="top" effect="light" :show-after="250">
               <div>容错</div>
@@ -264,6 +264,7 @@ import { useAgentStore } from '@/stores/agents'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
+import { InfoFilled } from '@element-plus/icons-vue'
 import type { Provider, ProviderCreate, ProviderUpdate, CliType, ConfigFormat, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult } from '@/types/models'
 import { getReusableModelName, saveReusableModelName, getReusableTestText, saveReusableTestText } from '@/utils/modelDefaults'
 
@@ -1277,7 +1278,6 @@ onUnmounted(() => {
 .pt-cols > div { text-align: center; min-width: 0; }
 .pt-cols.m-route > div:nth-child(2),
 .pt-cols.m-cred > div:nth-child(2) { text-align: left; }
-.pt-cols .pt-col-endpoint { text-align: left; }
 .pt-row { position: relative; padding: 0 18px; border-bottom: 1px solid var(--v2-surface-2); transition: background 0.15s; }
 .pt-row:last-child { border-bottom: none; }
 .pt-row::before {
@@ -1313,7 +1313,6 @@ onUnmounted(() => {
 
 .pt-cell { font: inherit; color: var(--v2-text); min-width: 0; }
 .pt-cell.muted { color: var(--v2-text-3); }
-.pt-endpoint { color: var(--v2-text-2); }
 .pt-fail { font: inherit; color: var(--v2-text); }
 .pt-fail.danger { color: var(--v2-danger); }
 .pt-switch { display: flex; align-items: center; justify-content: center; }

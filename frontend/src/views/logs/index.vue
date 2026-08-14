@@ -45,8 +45,8 @@
                   </el-tooltip>
                 </th>
                 <th>
-                  <el-tooltip content="缓存读取 / 缓存创建" placement="top" effect="light" :show-after="250">
-                    <span>Cache (R/C)</span>
+                  <el-tooltip content="缓存读取 /（输入 + 缓存读取 + 缓存写入）" placement="top" effect="light" :show-after="250">
+                    <span>缓存命中率</span>
                   </el-tooltip>
                 </th>
                 <th>费用</th><th>模型映射</th><th class="logs-sticky-col">操作</th>
@@ -81,12 +81,18 @@
                     <span class="tok-val">{{ formatTokens(row.output_tokens) }}</span>
                   </span>
                 </td>
-                <td class="mono">
-                  <span class="tok-group">
-                    <span class="tok-val" :class="{ zero: !row.cache_read_input_tokens }">{{ formatTokens(row.cache_read_input_tokens) }}</span>
-                    <span class="tok-sep">/</span>
-                    <span class="tok-val" :class="{ zero: !row.cache_creation_input_tokens }">{{ formatTokens(row.cache_creation_input_tokens) }}</span>
-                  </span>
+                <td class="mono logs-cache-cell">
+                  <span class="logs-cache-rate">{{ formatCacheHitRate(row) }}</span>
+                  <el-tooltip placement="top" effect="light" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
+                    <template #content>
+                      <div class="profile-help logs-cache-tooltip">
+                        <div class="tooltip-title">缓存明细</div>
+                        <div class="tooltip-item"><strong>缓存读取：</strong><span>{{ formatTokens(row.cache_read_input_tokens) }}</span></div>
+                        <div class="tooltip-item"><strong>缓存写入：</strong><span>{{ formatTokens(row.cache_creation_input_tokens) }}</span></div>
+                      </div>
+                    </template>
+                    <span class="logs-cache-info" tabindex="0" aria-label="查看缓存明细"><el-icon><InfoFilled /></el-icon></span>
+                  </el-tooltip>
                 </td>
                 <td class="mono">${{ formatCost(row.total_cost) }}</td>
                 <td class="mono logs-map">
@@ -207,6 +213,7 @@ import { useUiStore } from '@/stores/ui'
 import { useAgentStore } from '@/stores/agents'
 import { getErrorMessage } from '@/utils/error'
 import { formatCost, formatJson as formatJsonUtil, formatTokens } from '@/utils/json'
+import { InfoFilled } from '@element-plus/icons-vue'
 import { PROTOCOL_LABELS } from '@/types/models'
 import type { Protocol, RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
 
@@ -492,6 +499,11 @@ function formatLatencyPair(row: RequestLogListItem): string {
   return `${formatDuration(row.first_byte_ms)}/${formatDuration(elapsed)}`
 }
 
+function formatCacheHitRate(row: RequestLogListItem): string {
+  const totalInput = row.input_tokens + row.cache_read_input_tokens + row.cache_creation_input_tokens
+  return totalInput > 0 ? `${((row.cache_read_input_tokens / totalInput) * 100).toFixed(1)}%` : '-'
+}
+
 function buildDetailBlocks(detail: RequestLogDetail): DetailBlock[] {
   return [
     createDetailBlock('client_headers', 'client', '请求头', detail.client_headers),
@@ -710,5 +722,11 @@ onUnmounted(() => {
 .tok-group { display: inline-flex; align-items: center; gap: 3px; font-family: inherit; }
 .tok-val { font-size: var(--v2-fs-sm); color: var(--v2-text); }
 .tok-sep { color: var(--v2-text-3); margin: 0 1px; font-size: var(--v2-fs-sm); }
+.logs-cache-cell { white-space: nowrap; }
+.logs-cache-rate { color: var(--v2-text); }
+.logs-cache-info { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 5px; color: var(--v2-text-3); cursor: help; vertical-align: -2px; }
+.logs-cache-info:hover, .logs-cache-info:focus { color: var(--v2-text-2); outline: none; }
+.logs-cache-info .el-icon { font-size: 14px; }
+.logs-cache-tooltip { width: 180px; }
 
 </style>

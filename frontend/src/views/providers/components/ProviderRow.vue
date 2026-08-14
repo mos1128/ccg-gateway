@@ -10,7 +10,11 @@
       <div class="pt-name" :class="{ off: !provider.enabled }">
         <OverflowText :text="provider.name" />
       </div>
-      <div class="pt-cell pt-endpoint pt-col-endpoint mono"><OverflowText :text="provider.base_url" /></div>
+      <div class="pt-cell pt-col-protocol">
+        <el-tooltip :content="protocolLabel" placement="top" effect="light" :show-after="250">
+          <span class="v2-pill v2-pill-neutral pt-protocol">{{ protocolLabel }}</span>
+        </el-tooltip>
+      </div>
       <div>
         <el-tooltip :content="statusTitle" placement="top" effect="light" :disabled="!provider.is_blacklisted" :show-after="250">
           <span class="v2-pill dot pt-status" :class="[health.cls, { 'pt-status-clickable': provider.is_blacklisted }]" @click="onStatusClick">{{ health.text }}</span>
@@ -38,6 +42,7 @@
 
 <script setup lang="ts">
 import OverflowText from './OverflowText.vue'
+import { PROTOCOL_LABELS } from '@/types/models'
 import type { Provider } from '@/types/models'
 
 const props = defineProps<{
@@ -55,6 +60,7 @@ const emit = defineEmits<{
 }>()
 
 const failDanger = computed(() => props.provider.consecutive_failures >= props.provider.failure_threshold)
+const protocolLabel = computed(() => PROTOCOL_LABELS[props.provider.protocol] || props.provider.protocol)
 const mappingText = computed(() => {
   if (props.provider.model_maps?.length) return props.provider.model_maps.map((m) => m.target_model).join('、')
   if (props.provider.model_blacklist?.length) return `${props.provider.model_blacklist.length} 个黑名单`
@@ -80,3 +86,7 @@ function onToggleChange(value: string | number | boolean) {
   emit('toggle', { provider: props.provider, enabled: value === true })
 }
 </script>
+
+<style scoped>
+.pt-protocol { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>

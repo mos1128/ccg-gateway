@@ -64,7 +64,7 @@
                   </div>
                 </template>
                 <span class="v2-help">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  <el-icon><InfoFilled /></el-icon>
                 </span>
               </el-tooltip>
             </div>
@@ -228,7 +228,8 @@ watch(() => props.modelValue, (open) => {
 .dr-agent-remark .el-icon {
   flex: 0 0 auto;
   margin-top: 2px;
-  color: var(--v2-accent);
+  color: var(--v2-text-3);
+  font-size: 14px;
 }
 .dr-agent-remark span {
   min-width: 0;

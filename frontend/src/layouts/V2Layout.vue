@@ -1033,10 +1033,15 @@ html.dark .v2-kpi {
   align-items: center;
   justify-content: center;
   cursor: help;
-  color: var(--v2-text);
+  color: var(--v2-text-3);
 }
 .v2-help:hover {
-  color: var(--v2-text);
+  color: var(--v2-text-2);
+}
+.v2-help .el-icon {
+  width: 14px;
+  height: 14px;
+  font-size: 14px;
 }
 .v2-profile-pop.el-popper {
   border-radius: 10px;

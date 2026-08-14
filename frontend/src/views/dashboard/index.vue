@@ -74,7 +74,7 @@
               <svg v-if="k.icon === 'token'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
               <svg v-else-if="k.icon === 'cache'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
               <svg v-else-if="k.icon === 'request'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-              <svg v-else-if="k.icon === 'success'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+              <svg v-else-if="k.icon === 'cache-rate'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
               <svg v-else-if="k.icon === 'cost'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
             </span>
           </div>
@@ -107,7 +107,7 @@
                     </div>
                   </template>
                   <button class="v2-help rail-help" type="button" aria-label="模式说明">
-                    <el-icon><QuestionFilled /></el-icon>
+                    <el-icon><InfoFilled /></el-icon>
                   </button>
                 </el-tooltip>
               </div>
@@ -242,7 +242,7 @@ import { getErrorMessage } from '@/utils/error'
 import type { AgentFeatureName, AgentInfo, CliType, CliMode, AdvancedStatsRow, Protocol } from '@/types/models'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
 import V2Drawer from '@/components/V2Drawer.vue'
-import { InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { InfoFilled } from '@element-plus/icons-vue'
 
 use([LineChart, BarChart, TooltipComponent, GridComponent, DatasetComponent, TransformComponent, LegendComponent, CanvasRenderer, SVGRenderer])
 
@@ -433,18 +433,12 @@ const kpis = computed(() => {
   const selectedMap = legendSelectedMap.value[dimMode.value] || {}
   const s = advancedStats.value.filter((x) => selectedMap[x[groupKey]] !== false)
   const reqs = s.reduce((a, x) => a + x.total_requests, 0)
-  const succ = s.reduce((a, x) => a + x.total_success, 0)
-  const cache = s.reduce((a, x) => a + (x.total_cache_read_tokens || 0) + (x.total_cache_creation_tokens || 0), 0)
+  const cacheRead = s.reduce((a, x) => a + (x.total_cache_read_tokens || 0), 0)
+  const cacheCreation = s.reduce((a, x) => a + (x.total_cache_creation_tokens || 0), 0)
+  const cache = cacheRead + cacheCreation
+  const cacheInput = s.reduce((a, x) => a + (x.total_input_tokens || 0), 0) + cache
   const billable = s.reduce((a, x) => a + x.total_tokens, 0) - cache
   const cost = s.reduce((a, x) => a + (x.total_cost || 0), 0)
-  const rate = reqs > 0 ? (succ / reqs) * 100 : 0
-
-  let successColor = 'var(--v2-success)'
-  if (rate < 50) {
-    successColor = 'var(--v2-danger)'
-  } else if (rate <= 80) {
-    successColor = 'var(--v2-warning)'
-  }
 
   return [
     {
@@ -462,18 +456,18 @@ const kpis = computed(() => {
       icon: 'cache'
     },
     {
-      label: '请求总数',
+      label: '缓存命中率',
+      value: cacheInput > 0 ? `${((cacheRead / cacheInput) * 100).toFixed(1)}%` : '0%',
+      color: 'var(--v2-success)',
+      borderColor: 'var(--v2-success)',
+      icon: 'cache-rate'
+    },
+    {
+      label: '请求次数',
       value: reqs.toLocaleString(),
       color: '',
       borderColor: 'var(--v2-chart-cyan)',
       icon: 'request'
-    },
-    {
-      label: '全局成功率',
-      value: reqs > 0 ? rate.toFixed(1) + '%' : '0%',
-      color: successColor,
-      borderColor: successColor,
-      icon: 'success'
     },
     {
       label: '费用',
@@ -868,7 +862,7 @@ onMounted(async () => {
   background: transparent;
 }
 .rail-help .el-icon {
-  font-size: 15px;
+  font-size: 14px;
 }
 .cli-list {
   display: flex;
@@ -920,11 +914,11 @@ onMounted(async () => {
   transition: color 0.15s, background 0.15s;
 }
 .cli-info:hover {
-  color: var(--v2-accent);
-  background: var(--v2-selected-bg);
+  color: var(--v2-text-2);
+  background: var(--v2-surface-2);
 }
 .cli-info .el-icon {
-  font-size: 16px;
+  font-size: 14px;
 }
 .agent-info {
   display: flex;
