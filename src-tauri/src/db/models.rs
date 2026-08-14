@@ -121,6 +121,7 @@ pub enum ConfigFormat {
     Json,
     Jsonc,
     Toml,
+    Yaml,
     Env,
 }
 
@@ -208,9 +209,16 @@ pub struct AgentIconPath {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct AgentIconGradientStop {
+    pub offset: f64,
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentIcon {
     pub view_box: String,
-    pub color: Option<String>,
+    pub linear_gradient: Option<Vec<AgentIconGradientStop>>,
     pub paths: Vec<AgentIconPath>,
 }
 

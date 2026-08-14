@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "pi",
+  "sort_order": 80,
+  "name": "Pi",
+  "remark": "网关会接管 Pi 内置的 anthropic 与 openai 服务商；在 Pi 中选择 anthropic 与 openai 的模型即可。\nMCP 配置写入 agent/mcp.json，需先运行 pi install npm:pi-mcp-adapter 安装适配器。",
+  "icon": {
+    "view_box": "140 140 520 520",
+    "paths": [
+      {
+        "fill": "#09090b",
+        "d": "M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z",
+        "fill_rule": "evenodd"
+      },
+      {
+        "fill": "#09090b",
+        "d": "M517.36 400H634.72V634.72H517.36Z"
+      }
+    ]
+  },
+  "config_dir": "~/.pi",
+  "user_agent": ["pi/"],
+  "protocols": ["openai_responses", "anthropic_messages", "openai_chat"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-openai-endpoint",
+          "op": "set",
+          "file": "agent/models.json",
+          "format": "json",
+          "path": ["providers", "openai", "baseUrl"],
+          "value": "{target.endpoint}/v1"
+        },
+        {
+          "id": "set-openai-token",
+          "op": "set",
+          "file": "agent/models.json",
+          "format": "json",
+          "path": ["providers", "openai", "apiKey"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-openai-api",
+          "op": "set",
+          "file": "agent/models.json",
+          "format": "json",
+          "path": ["providers", "openai", "api"],
+          "value": "openai-responses"
+        },
+        {
+          "id": "set-openai-auth-header",
+          "op": "set",
+          "file": "agent/models.json",
+          "format": "json",
+          "path": ["providers", "openai", "authHeader"],
+          "value": true
+        },
+        {
+          "id": "set-anthropic-endpoint",
+          "op": "set",
+          "file": "agent/models.json",
+          "format": "json",
+          "path": ["providers", "anthropic", "baseUrl"],
+          "value": "{target.endpoint}/v1"
+        },
+        {
+          "id": "set-anthropic-token",
+          "op": "set",
+          "file": "agent/models.json",
+          "format": "json",
+          "path": ["providers", "anthropic", "apiKey"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-anthropic-api",
+          "op": "set",
+          "file": "agent/models.json",
+          "format": "json",
+          "path": ["providers", "anthropic", "api"],
+          "value": "anthropic-messages"
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "agent/models.json",
+      "format": "json"
+    },
+    "profiles": { "enabled": false },
+    "official_login": { "enabled": false },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "agent/skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "agent/mcp.json",
+      "format": "json",
+      "servers_path": ["mcpServers"]
+    },
+    "sessions": { "enabled": true, "adapter": "pi" },
+    "plugins": { "enabled": false },
+    "prompts": { "enabled": true, "file": "agent/AGENTS.md" }
+  }
+}

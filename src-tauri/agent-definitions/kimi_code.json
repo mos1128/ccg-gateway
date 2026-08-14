@@ -6,7 +6,6 @@
   "remark": "网关会接管 KimiCode 内置的 anthropic 与 openai 服务商。\n注意：需要先在 KimiCode 中通过 /provider 命令添加 anthropic 和 openai 服务商（key随意输入）并选择模型，然后再开启网关中 KimiCode 的路由模式。",
   "icon": {
     "view_box": "0 0 54 38",
-    "color": "#4FA8FF",
     "paths": [
       {
         "d": "M0 0H54V38H0Z",

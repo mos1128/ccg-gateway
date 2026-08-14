@@ -25,6 +25,9 @@ pub fn validate_config_content(format: ConfigFormat, content: String) -> Result<
         ConfigFormat::Toml => toml::from_str::<toml::Value>(&content)
             .map(|_| ())
             .map_err(|error| format!("TOML 格式错误: {error}")),
+        ConfigFormat::Yaml => serde_yaml::from_str::<serde_json::Value>(&content)
+            .map(|_| ())
+            .map_err(|error| format!("YAML 格式错误: {error}")),
         ConfigFormat::Jsonc | ConfigFormat::Env => Ok(()),
     }
 }

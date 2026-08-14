@@ -115,7 +115,7 @@
             <div class="cli-list">
               <div v-for="cli in cliList" :key="cli.type" class="cli-row" :class="{ loading: cliLoading[cli.type] }">
                 <div class="cli-id">
-                  <span class="cli-brand-icon" :style="{ '--agent-color': cli.color || 'var(--v2-text-2)' }">
+                  <span class="cli-brand-icon">
                     <CliBrandIcon :type="cli.type" width="14" height="14" />
                   </span>
                   <span class="cli-name">{{ cli.label }}</span>
@@ -264,7 +264,7 @@ useResizeObserver(chartCardRef, ([entry]) => {
 })
 
 // ===== CLI 模式控制 =====
-const cliList = computed(() => agentStore.visibleAgents.map(({ id, name, icon }) => ({ type: id, label: name, color: icon?.color })))
+const cliList = computed(() => agentStore.visibleAgents.map(({ id, name }) => ({ type: id, label: name })))
 const cliLoading = reactive<Record<CliType, boolean>>({})
 const agentInfoVisible = ref(false)
 const agentVisibilityVisible = ref(false)
@@ -898,8 +898,7 @@ onMounted(async () => {
   height: 20px;
   border-radius: 4px;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--agent-color) 12%, transparent);
-  color: var(--agent-color);
+  background: var(--v2-surface-2);
 }
 .cli-icon {
   width: 13px;

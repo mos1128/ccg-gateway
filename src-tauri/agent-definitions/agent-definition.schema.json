@@ -61,10 +61,24 @@
       "required": ["d"],
       "properties": {
         "d": { "type": "string", "minLength": 1 },
-        "fill": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "fill": {
+          "anyOf": [
+            { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+            { "const": "linear_gradient" }
+          ]
+        },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "fill_rule": { "enum": ["nonzero", "evenodd"] },
         "clip_rule": { "enum": ["nonzero", "evenodd"] }
+      },
+      "additionalProperties": false
+    },
+    "iconGradientStop": {
+      "type": "object",
+      "required": ["offset", "color"],
+      "properties": {
+        "offset": { "type": "number", "minimum": 0, "maximum": 1 },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
       },
       "additionalProperties": false
     },
@@ -73,7 +87,11 @@
       "required": ["view_box", "paths"],
       "properties": {
         "view_box": { "type": "string", "minLength": 1 },
-        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "linear_gradient": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/iconGradientStop" }
+        },
         "paths": {
           "type": "array",
           "minItems": 1,
@@ -167,7 +185,7 @@
         "id": { "type": "string", "minLength": 1 },
         "op": { "enum": ["set", "remove"] },
         "file": { "type": "string", "minLength": 1 },
-        "format": { "enum": ["json", "jsonc", "toml", "env"] },
+        "format": { "enum": ["json", "jsonc", "toml", "yaml", "env"] },
         "path": {
           "type": "array",
           "minItems": 1,
@@ -213,7 +231,7 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "file": { "type": "string", "minLength": 1 },
-        "format": { "enum": ["json", "toml"] }
+        "format": { "enum": ["json", "toml", "yaml"] }
       },
       "additionalProperties": false
     },
@@ -233,7 +251,7 @@
         "id": { "type": "string", "minLength": 1 },
         "op": { "enum": ["replace_file", "set_field"] },
         "file": { "type": "string", "minLength": 1 },
-        "format": { "enum": ["json", "jsonc", "toml", "env"] },
+        "format": { "enum": ["json", "jsonc", "toml", "yaml", "env"] },
         "path": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "content_from": { "$ref": "#/$defs/credentialSource" },
         "value": {},

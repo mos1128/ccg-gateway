@@ -53,6 +53,10 @@ pub fn validate_config_format(cli_type: &str, content: &str) -> std::result::Res
                 .parse::<toml_edit::DocumentMut>()
                 .map_err(|e| format!("TOML 格式错误: {}", e))?;
         }
+        Some(crate::db::models::ConfigFormat::Yaml) => {
+            serde_yaml::from_str::<serde_json::Value>(content)
+                .map_err(|e| format!("YAML 格式错误: {}", e))?;
+        }
         _ => return Err(format!("Agent {} 未声明可用的全局预设格式", cli_type)),
     }
     Ok(())

@@ -15,7 +15,7 @@
 
 ## 📖 项目简介
 
-CCG Gateway 是一款面向 Claude Code、Codex、Gemini CLI、OpenCode、Kimi Code、ZCode、Grok Build 等 Agent 的桌面端管理工具，集智能网关、账号管理、配置管理于一体。
+CCG Gateway 是一款面向 Claude Code、Codex、Gemini CLI、OpenCode、Kimi Code、ZCode、Grok Build、Pi、Oh My Pi 等 Agent 的桌面端管理工具，集智能网关、账号管理、配置管理于一体。
 
 本项目根据作者实际需求立项，解决使用过程中遇到的各种痛点，开发过程中参考了部分开源项目，详见 [致谢](#-致谢)。
 
@@ -94,7 +94,7 @@ MCP、预设提示词、Skill、plugin 等工具仅需一次配置，即可快�
 
 ### Agent 模板
 
-- 内置支持 Claude Code、Codex、Gemini CLI、OpenCode、Kimi Code、ZCode 和 Grok Build。
+- 内置支持 Claude Code、Codex、Gemini CLI、OpenCode、Kimi Code、ZCode、Grok Build、Pi 和 Oh My Pi。
 - 用户模板可以新增 Agent，也可以使用相同 `id` 覆盖内置模板。
 - 模板可声明请求协议、配置写入规则、官方凭证、Profile、MCP、Skill、会话等功能。
 - 用户模板默认放在 `~/.ccg-gateway/agent-definitions/{id}.json`，修改后需要重启软件。字段定义、可用值和完整示例见 [Agent 模板字段指南](agent-template-guide.md)。

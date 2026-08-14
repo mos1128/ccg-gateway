@@ -154,9 +154,13 @@ fn validate_global_preset(definition: &AgentDefinition) -> Result<(), String> {
     }
     if !matches!(
         feature.format,
-        Some(crate::db::models::ConfigFormat::Json | crate::db::models::ConfigFormat::Toml)
+        Some(
+            crate::db::models::ConfigFormat::Json
+                | crate::db::models::ConfigFormat::Toml
+                | crate::db::models::ConfigFormat::Yaml
+        )
     ) {
-        return Err("enabled global_preset 只支持 json 或 toml".to_string());
+        return Err("enabled global_preset 只支持 json、toml 或 yaml".to_string());
     }
     Ok(())
 }
@@ -231,16 +235,32 @@ fn validate_icon(definition: &AgentDefinition) -> Result<(), String> {
             || !color.starts_with('#')
             || !color[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
     };
-    if icon
-        .color
-        .as_ref()
-        .is_some_and(|color| invalid_color(color))
-    {
-        return Err("Agent icon color 必须是六位十六进制颜色".to_string());
+    if let Some(stops) = &icon.linear_gradient {
+        if stops.len() < 2 {
+            return Err("Agent icon linear_gradient 至少需要两个 stop".to_string());
+        }
+        if stops
+            .iter()
+            .any(|stop| !(0.0..=1.0).contains(&stop.offset) || invalid_color(&stop.color))
+        {
+            return Err(
+                "Agent icon gradient stop 必须使用 0 到 1 的 offset 和六位十六进制颜色".to_string(),
+            );
+        }
     }
     for path in &icon.paths {
-        if path.fill.as_ref().is_some_and(|fill| invalid_color(fill)) {
-            return Err("Agent icon path fill 必须是六位十六进制颜色".to_string());
+        if let Some(fill) = &path.fill {
+            if fill == "linear_gradient" {
+                if icon.linear_gradient.is_none() {
+                    return Err(
+                        "Agent icon path 使用 linear_gradient 时必须提供渐变 stop".to_string()
+                    );
+                }
+            } else if invalid_color(fill) {
+                return Err(
+                    "Agent icon path fill 必须是六位十六进制颜色或 linear_gradient".to_string(),
+                );
+            }
         }
         if path
             .opacity

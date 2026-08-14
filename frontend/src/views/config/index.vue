@@ -208,7 +208,7 @@
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                   <polyline points="14 2 14 8 20 8"/>
                 </svg>
-                <span class="v2-file-editor-name">{{ isJsonFormat ? 'settings.json' : 'config.toml' }}</span>
+                <span class="v2-file-editor-name">{{ presetFileLabel }}</span>
               </div>
               <button v-if="isJsonFormat" class="v2-file-editor-action" type="button" @click="formatPresetJson">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
@@ -313,12 +313,24 @@ const activeCliLabel = computed(() => agentStore.get(activeCliTab.value)?.name |
 const globalPresetFeature = computed(() => agentStore.get(activeCliTab.value)?.features.global_preset)
 const globalPresetEnabled = computed(() => globalPresetFeature.value?.enabled === true)
 const isJsonFormat = computed(() => globalPresetFeature.value?.format === 'json')
+const presetFileLabel = computed(() => {
+  switch (globalPresetFeature.value?.format) {
+    case 'json':
+      return 'settings.json'
+    case 'yaml':
+      return 'models.yml'
+    case 'toml':
+      return 'config.toml'
+    default:
+      return 'config'
+  }
+})
 
 function getPresetPreviewText(config: string): string {
   if (!config) return ''
   const trimmed = config.trim()
   if (!trimmed) return ''
-  
+
   let formatted = trimmed
   if (isJsonFormat.value) {
     try {
@@ -327,7 +339,7 @@ function getPresetPreviewText(config: string): string {
       // fallback
     }
   }
-  
+
   const lines = formatted.split('\n')
   if (lines.length > 5) {
     return lines.slice(0, 4).join('\n') + '\n...'
@@ -350,11 +362,15 @@ async function validatePresetConfig(): Promise<boolean> {
     presetValidationError.value = validateJson(config)
     return !presetValidationError.value
   }
-  if (globalPresetFeature.value?.format === 'toml') {
+  const format = globalPresetFeature.value?.format
+  if (format === 'toml' || format === 'yaml') {
     try {
-      await agentsApi.validateConfigContent('toml', config)
+      await agentsApi.validateConfigContent(format, config)
     } catch (error) {
-      presetValidationError.value = getErrorMessage(error, 'TOML 格式错误')
+      presetValidationError.value = getErrorMessage(
+        error,
+        format === 'yaml' ? 'YAML 格式错误' : 'TOML 格式错误',
+      )
       return false
     }
   }

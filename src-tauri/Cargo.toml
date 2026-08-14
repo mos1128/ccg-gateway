@@ -36,6 +36,7 @@ uuid = { version = "1", features = ["v4"] }
 dirs = "6"
 toml = "0.8"
 toml_edit = "0.22"
+serde_yaml = "0.9"
 regex = "1"
 walkdir = "2"
 urlencoding = "2"

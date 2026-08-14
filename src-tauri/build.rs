@@ -227,10 +227,10 @@ fn validate_definition(value: &Value, file: &Path, ids: &mut HashSet<String>) ->
                 required_string(feature, "file", file);
                 if !matches!(
                     feature.get("format").and_then(Value::as_str),
-                    Some("json" | "toml")
+                    Some("json" | "toml" | "yaml")
                 ) {
                     panic!(
-                        "{}: enabled global_preset needs a JSON or TOML target",
+                        "{}: enabled global_preset needs a JSON, TOML or YAML target",
                         file.display()
                     );
                 }

@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "id": "omp",
+  "sort_order": 85,
+  "name": "Oh My Pi",
+  "remark": "网关会接管 OMP 内置的 anthropic 与 openai 服务商；在 OMP 中选择 anthropic 与 openai 的模型即可。",
+  "icon": {
+    "view_box": "0 0 64 64",
+    "linear_gradient": [
+      { "offset": 0, "color": "#ed4abf" },
+      { "offset": 0.5, "color": "#9b4dff" },
+      { "offset": 1, "color": "#5ad8e6" }
+    ],
+    "paths": [
+      {
+        "d": "M12 0H52A12 12 0 0 1 64 12V52A12 12 0 0 1 52 64H12A12 12 0 0 1 0 52V12A12 12 0 0 1 12 0Z",
+        "fill": "#0f0a14"
+      },
+      {
+        "d": "M14 16H50V24H40V56H32V24H26V46H18V24H14Z",
+        "fill": "linear_gradient"
+      }
+    ]
+  },
+  "config_dir": "~/.omp",
+  "user_agent": ["omp/"],
+  "protocols": ["openai_responses", "anthropic_messages", "openai_chat"],
+  "features": {
+    "provider_config": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-openai-endpoint",
+          "op": "set",
+          "file": "agent/models.yml",
+          "format": "yaml",
+          "path": ["providers", "openai", "baseUrl"],
+          "value": "{target.endpoint}/v1"
+        },
+        {
+          "id": "set-openai-token",
+          "op": "set",
+          "file": "agent/models.yml",
+          "format": "yaml",
+          "path": ["providers", "openai", "apiKey"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-openai-api",
+          "op": "set",
+          "file": "agent/models.yml",
+          "format": "yaml",
+          "path": ["providers", "openai", "api"],
+          "value": "openai-responses"
+        },
+        {
+          "id": "set-openai-auth-header",
+          "op": "set",
+          "file": "agent/models.yml",
+          "format": "yaml",
+          "path": ["providers", "openai", "authHeader"],
+          "value": true
+        },
+        {
+          "id": "set-anthropic-endpoint",
+          "op": "set",
+          "file": "agent/models.yml",
+          "format": "yaml",
+          "path": ["providers", "anthropic", "baseUrl"],
+          "value": "{target.endpoint}/v1"
+        },
+        {
+          "id": "set-anthropic-token",
+          "op": "set",
+          "file": "agent/models.yml",
+          "format": "yaml",
+          "path": ["providers", "anthropic", "apiKey"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-anthropic-api",
+          "op": "set",
+          "file": "agent/models.yml",
+          "format": "yaml",
+          "path": ["providers", "anthropic", "api"],
+          "value": "anthropic-messages"
+        }
+      ]
+    },
+    "global_preset": {
+      "enabled": true,
+      "file": "agent/models.yml",
+      "format": "yaml"
+    },
+    "profiles": {
+      "enabled": true,
+      "profile_file": "profiles/{profile}/agent/models.yml",
+      "operations": [
+        {
+          "id": "set-profile-openai-endpoint",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "yaml",
+          "path": ["providers", "openai", "baseUrl"],
+          "value": "{target.endpoint}/v1"
+        },
+        {
+          "id": "set-profile-openai-token",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "yaml",
+          "path": ["providers", "openai", "apiKey"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-profile-openai-api",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "yaml",
+          "path": ["providers", "openai", "api"],
+          "value": "openai-responses"
+        },
+        {
+          "id": "set-profile-openai-auth-header",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "yaml",
+          "path": ["providers", "openai", "authHeader"],
+          "value": true
+        },
+        {
+          "id": "set-profile-anthropic-endpoint",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "yaml",
+          "path": ["providers", "anthropic", "baseUrl"],
+          "value": "{target.endpoint}/v1"
+        },
+        {
+          "id": "set-profile-anthropic-token",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "yaml",
+          "path": ["providers", "anthropic", "apiKey"],
+          "value": "{target.token}"
+        },
+        {
+          "id": "set-profile-anthropic-api",
+          "op": "set",
+          "file": "{profile.relative_path}",
+          "format": "yaml",
+          "path": ["providers", "anthropic", "api"],
+          "value": "anthropic-messages"
+        }
+      ],
+      "launch": {
+        "default": ["omp"],
+        "non_default": ["omp", "--profile", "{profile}"]
+      }
+    },
+    "official_login": { "enabled": false },
+    "model_mapping": { "enabled": true },
+    "token_usage": { "enabled": true },
+    "skills": { "enabled": true, "directory": "agent/skills" },
+    "mcp": {
+      "enabled": true,
+      "file": "agent/mcp.json",
+      "format": "json",
+      "servers_path": ["mcpServers"]
+    },
+    "sessions": { "enabled": true, "adapter": "omp" },
+    "plugins": { "enabled": false },
+    "prompts": { "enabled": true, "file": "agent/AGENTS.md" }
+  }
+}

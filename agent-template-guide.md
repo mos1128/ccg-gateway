@@ -68,10 +68,12 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
 | `view_box` | 必填；非空字符串 | SVG 的 `viewBox`，例如 `"0 0 24 24"`。 |
-| `color` | 可选；`#` 加 6 位十六进制颜色 | 图标默认颜色，例如 `"#10a37f"`。 |
+| `linear_gradient` | 可选；至少两个 stop 对象 | 从左上到右下的线性渐变，供 `paths[].fill` 引用。 |
+| `linear_gradient[].offset` | 必填；`0` 到 `1` 的数字 | 渐变色标位置。 |
+| `linear_gradient[].color` | 必填；`#` 加 6 位十六进制颜色 | 渐变色标颜色。 |
 | `paths` | 必填；至少一个 path 对象 | SVG 路径列表。不能直接放入完整 SVG。 |
 | `paths[].d` | 必填；非空字符串 | SVG path 的 `d` 数据。 |
-| `paths[].fill` | 可选；`#` 加 6 位十六进制颜色 | 当前路径的填充色；不设置时继承图标默认颜色。 |
+| `paths[].fill` | 可选；`#` 加 6 位十六进制颜色或 `linear_gradient` | 当前路径的填充色；不设置时使用界面默认图标色。`linear_gradient` 需要同时声明渐变 stop。 |
 | `paths[].opacity` | 可选；`0` 到 `1` 的数字 | 当前路径的不透明度。 |
 | `paths[].fill_rule` | 可选；`nonzero` 或 `evenodd` | SVG 填充规则。 |
 | `paths[].clip_rule` | 可选；`nonzero` 或 `evenodd` | SVG 裁剪规则。 |
@@ -139,7 +141,7 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | `id` | 非空字符串 | operation 的标识。在同一个 `operations` 数组中必须唯一。 |
 | `op` | `set` 或 `remove` | `set` 写入字段；`remove` 删除字段。 |
 | `file` | 非空路径字符串 | 目标配置文件。默认配置必须写明确路径；Profile operation 可以使用 Profile 占位符。 |
-| `format` | `json`、`jsonc`、`toml`、`env` | 目标文件格式。同一组 operations 中，同一个文件不能声明不同格式。 |
+| `format` | `json`、`jsonc`、`toml`、`yaml`、`env` | 目标文件格式。同一组 operations 中，同一个文件不能声明不同格式。 |
 | `path` | 至少包含一个非空字符串的数组 | 目标字段路径，例如 `["env", "API_KEY"]`。`env` 格式必须且只能有一个元素。 |
 | `value` | 字符串、布尔值、数字、数组或对象 | `op: "set"` 时必填，`op: "remove"` 时禁止出现。字符串中可以使用占位符。 |
 
@@ -173,7 +175,7 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | --- | --- | --- |
 | `enabled` | `true` / `false` | 是否允许写入全局预设。 |
 | `file` | 非空路径字符串 | 默认配置档案使用的预设文件。 |
-| `format` | `json` 或 `toml` | 预设文件格式。 |
+| `format` | `json`、`toml` 或 `yaml` | 预设文件格式。 |
 
 `global_preset` 只作用于默认配置档案。它与 `provider_config.operations` 写入同一文件和字段时，该预设字段会被忽略，避免覆盖地址、密钥等核心配置。
 
@@ -212,7 +214,7 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | `id` | 非空字符串 | operation 标识。 |
 | `op` | `replace_file` 或 `set_field` | 替换整个文件，或只设置 JSON 中的一个字段。 |
 | `file` | 非空路径字符串 | 写回凭证或设置的目标文件。 |
-| `format` | `json`、`jsonc`、`toml`、`env` | `replace_file` 可省略，省略时按 `json`；`set_field` 必须明确写 `json`。 |
+| `format` | `json`、`jsonc`、`toml`、`yaml`、`env` | `replace_file` 可省略，省略时按 `json`；`set_field` 必须明确写 `json`。 |
 | `path` | 字符串数组 | `set_field` 的目标字段路径，不能为空；`replace_file` 不使用。 |
 | `content_from` | 凭证来源对象 | `replace_file` 必填，表示整文件内容来自哪个逻辑凭证文件。 |
 | `value` | 任意固定 JSON 值 | `set_field` 时与 `value_from` 二选一。 |

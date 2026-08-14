@@ -4,6 +4,7 @@ mod jsonc;
 mod preset;
 mod toml;
 mod writer;
+mod yaml;
 
 use crate::db::models::{ConfigFormat, ConfigOperation, ConfigOperationKind};
 use serde_json::Value;
@@ -142,6 +143,7 @@ pub fn patch_content(
         ConfigFormat::Json => json::patch(content, &operations),
         ConfigFormat::Jsonc => jsonc::patch(content, &operations),
         ConfigFormat::Toml => toml::patch(content, &operations),
+        ConfigFormat::Yaml => yaml::patch(content, &operations),
         ConfigFormat::Env => env::patch(content, &operations),
     }
 }
@@ -166,6 +168,12 @@ pub fn operations_applied(
                 ::toml::from_str(content).map_err(|error| error.to_string())?;
             let next: ::toml::Value =
                 ::toml::from_str(&patched).map_err(|error| error.to_string())?;
+            Ok(current == next)
+        }
+        ConfigFormat::Yaml => {
+            let current: Value =
+                serde_yaml::from_str(content).map_err(|error| error.to_string())?;
+            let next: Value = serde_yaml::from_str(&patched).map_err(|error| error.to_string())?;
             Ok(current == next)
         }
         ConfigFormat::Env => Ok(content == patched),

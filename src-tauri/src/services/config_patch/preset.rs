@@ -118,6 +118,12 @@ pub(super) fn apply(
             merge_json(&mut current, &preset);
             serde_json::to_string_pretty(&current).map_err(|error| error.to_string())
         }
+        ConfigFormat::Yaml => {
+            let mut current = super::yaml::parse_object(content, "目标配置")?;
+            let preset = super::yaml::parse_object(preset_content, "全局预设")?;
+            merge_json(&mut current, &preset);
+            super::yaml::to_string(&current)
+        }
         ConfigFormat::Toml => {
             let mut current = parse_toml(content, "目标配置")?;
             let preset = parse_toml(preset_content, "全局预设")?;
@@ -125,7 +131,7 @@ pub(super) fn apply(
             Ok(current.to_string())
         }
         ConfigFormat::Jsonc | ConfigFormat::Env => {
-            Err("global_preset 只支持 JSON 或 TOML".to_string())
+            Err("global_preset 只支持 JSON、TOML 或 YAML".to_string())
         }
     }
 }
@@ -145,6 +151,12 @@ pub(super) fn remove(
             remove_matching_json(&mut current, &preset);
             serde_json::to_string_pretty(&current).map_err(|error| error.to_string())
         }
+        ConfigFormat::Yaml => {
+            let mut current = super::yaml::parse_object(content, "目标配置")?;
+            let preset = super::yaml::parse_object(preset_content, "全局预设")?;
+            remove_matching_json(&mut current, &preset);
+            super::yaml::to_string(&current)
+        }
         ConfigFormat::Toml => {
             let mut current = parse_toml(content, "目标配置")?;
             let preset = parse_toml(preset_content, "全局预设")?;
@@ -152,7 +164,7 @@ pub(super) fn remove(
             Ok(current.to_string())
         }
         ConfigFormat::Jsonc | ConfigFormat::Env => {
-            Err("global_preset 只支持 JSON 或 TOML".to_string())
+            Err("global_preset 只支持 JSON、TOML 或 YAML".to_string())
         }
     }
 }

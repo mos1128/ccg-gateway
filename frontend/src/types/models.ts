@@ -28,7 +28,7 @@ export interface ProfileFeature extends ToggleFeature {
   launch?: ProfileLaunch | null
 }
 
-export type ConfigFormat = 'json' | 'jsonc' | 'toml' | 'env'
+export type ConfigFormat = 'json' | 'jsonc' | 'toml' | 'yaml' | 'env'
 
 export interface ProviderConfigOperation {
   id: string
@@ -50,15 +50,20 @@ export interface GlobalPresetFeature extends ToggleFeature {
 
 export interface AgentIconPath {
   d: string
-  fill?: string
+  fill?: string | null
   opacity?: number
   fill_rule?: 'nonzero' | 'evenodd'
   clip_rule?: 'nonzero' | 'evenodd'
 }
 
+export interface AgentIconGradientStop {
+  offset: number
+  color: string
+}
+
 export interface AgentIcon {
   view_box: string
-  color?: string | null
+  linear_gradient?: AgentIconGradientStop[] | null
   paths: AgentIconPath[]
 }
 

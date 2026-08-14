@@ -6,7 +6,6 @@
       type="button"
       class="v2-chip"
       :class="{ on: flags[c.id] }"
-      :style="{ '--v2-chip-agent': c.color || 'var(--v2-text-2)' }"
       @click="emit('toggle', c.id, !flags[c.id])"
     >
       <span class="v2-chip-icon-wrapper">
@@ -28,7 +27,7 @@ const agentStore = useAgentStore()
 const tabs = computed(() => (props.feature
   ? agentStore.agentsFor(props.feature)
   : agentStore.visibleAgents
-).map((agent) => ({ id: agent.id, label: agent.name, color: agent.icon?.color })))
+).map((agent) => ({ id: agent.id, label: agent.name })))
 </script>
 
 <style scoped>
@@ -36,16 +35,8 @@ const tabs = computed(() => (props.feature
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  filter: grayscale(1) opacity(0.5);
-  transition: filter 0.15s, opacity 0.15s;
-}
-.v2-chip.on .v2-chip-icon-wrapper {
-  filter: none;
 }
 .v2-chip.on {
-  background: color-mix(in srgb, var(--v2-chip-agent) 10%, var(--v2-surface));
-  border-color: transparent;
   color: var(--v2-text);
-  box-shadow: none;
 }
 </style>

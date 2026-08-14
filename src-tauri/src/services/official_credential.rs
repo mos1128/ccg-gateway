@@ -150,7 +150,7 @@ fn prepared_replacement(
     let value = source_value(payload, operation)?;
     match operation_format(operation) {
         ConfigFormat::Json => Ok(PreparedFile::Json(value)),
-        ConfigFormat::Jsonc | ConfigFormat::Toml | ConfigFormat::Env => value
+        ConfigFormat::Jsonc | ConfigFormat::Toml | ConfigFormat::Yaml | ConfigFormat::Env => value
             .as_str()
             .map(|content| PreparedFile::Text(content.to_string()))
             .ok_or_else(|| format!("operation `{}` 的凭证内容必须是文本", operation.id)),

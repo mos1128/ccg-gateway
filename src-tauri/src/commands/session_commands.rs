@@ -1588,7 +1588,15 @@ async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
         .ok_or_else(|| format!("Agent {} 的 Session 缺少 adapter", agent_id))?;
     if !matches!(
         adapter.as_str(),
-        "claude_code" | "codex" | "gemini" | "opencode" | "kimi_code" | "zcode" | "grok"
+        "claude_code"
+            | "codex"
+            | "gemini"
+            | "opencode"
+            | "kimi_code"
+            | "zcode"
+            | "grok"
+            | "pi"
+            | "omp"
     ) {
         return Err(format!("Session adapter `{}` 不存在", adapter));
     }
@@ -2869,6 +2877,575 @@ fn get_grok_messages(
     parse_grok_chat_history(&content)
 }
 
+// ==================== Pi / OMP (pi_family) 会话适配 ====================
+//
+// 布局：
+//   <config_dir>/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl
+//
+// 会话文件首行 header:
+//   {"type":"session","version":3,"id":"...","timestamp":"...","cwd":"..."}
+// 消息条目:
+//   {"type":"message","id":"...","parentId":"...","timestamp":"...","message":{role,content,...}}
+// 名称条目:
+//   {"type":"session_info","name":"..."}
+//
+// 树结构：按 leaf 回溯 parentId 取活跃分支；leaf 取文件中最后出现的带 id 的条目。
+
+fn pi_family_sessions_root(base_dir: &std::path::Path) -> std::path::PathBuf {
+    base_dir.join("agent").join("sessions")
+}
+
+fn pi_family_file_mtime(path: &std::path::Path) -> f64 {
+    path.metadata()
+        .ok()
+        .and_then(|meta| meta.modified().ok())
+        .and_then(|mtime| mtime.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+fn pi_family_extract_text(content: &serde_json::Value) -> Option<String> {
+    if let Some(text) = content.as_str() {
+        return (!text.is_empty()).then(|| text.to_string());
+    }
+    let arr = content.as_array()?;
+    let mut parts = Vec::new();
+    for item in arr {
+        match item.get("type").and_then(|value| value.as_str()) {
+            Some("text") => {
+                if let Some(text) = item
+                    .get("text")
+                    .and_then(|value| value.as_str())
+                    .filter(|text| !text.is_empty())
+                {
+                    parts.push(text.to_string());
+                }
+            }
+            Some("image") | Some("image_url") => parts.push("[图片]".to_string()),
+            Some("thinking") => {
+                if let Some(thinking) = item
+                    .get("thinking")
+                    .and_then(|value| value.as_str())
+                    .filter(|text| !text.is_empty())
+                {
+                    parts.push(format!("**[思考]**\n{}", thinking));
+                }
+            }
+            Some("toolCall") | Some("tool_use") => {
+                let name = item
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("tool");
+                let args = item
+                    .get("arguments")
+                    .cloned()
+                    .or_else(|| item.get("input").cloned())
+                    .unwrap_or_else(|| serde_json::json!({}));
+                let pretty =
+                    serde_json::to_string_pretty(&args).unwrap_or_else(|_| args.to_string());
+                parts.push(format!(
+                    "**[调用工具: {}]**\n```json\n{}\n```",
+                    name, pretty
+                ));
+            }
+            _ => {}
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join("\n\n"))
+}
+
+fn pi_family_format_message(message: &serde_json::Value) -> Option<(String, String, Option<i64>)> {
+    let role = message.get("role").and_then(|value| value.as_str())?;
+    let timestamp = message
+        .get("timestamp")
+        .and_then(|value| value.as_i64())
+        .or_else(|| {
+            message
+                .get("timestamp")
+                .and_then(|value| value.as_f64())
+                .map(|value| value as i64)
+        });
+    match role {
+        "user" => {
+            let text = pi_family_extract_text(message.get("content")?)?;
+            Some(("user".to_string(), text, timestamp))
+        }
+        "assistant" => {
+            let text = message
+                .get("content")
+                .and_then(pi_family_extract_text)
+                .unwrap_or_default();
+            if text.is_empty() {
+                return None;
+            }
+            Some(("assistant".to_string(), text, timestamp))
+        }
+        "toolResult" | "tool_result" | "tool" => {
+            let text = message
+                .get("content")
+                .and_then(pi_family_extract_text)
+                .unwrap_or_default();
+            if text.is_empty() {
+                return None;
+            }
+            let tool_name = message
+                .get("toolName")
+                .or_else(|| message.get("name"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("tool");
+            Some((
+                "user".to_string(),
+                format!("**[工具结果: {}]**\n```\n{}\n```", tool_name, text),
+                timestamp,
+            ))
+        }
+        "bashExecution" => {
+            let command = message
+                .get("command")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let output = message
+                .get("output")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if command.is_empty() && output.is_empty() {
+                return None;
+            }
+            Some((
+                "user".to_string(),
+                format!("**[Bash]**\n```\n{}\n```\n{}", command, output),
+                timestamp,
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn pi_family_decode_project_name(name: &str) -> String {
+    if name.starts_with("--") && name.ends_with("--") && name.len() > 4 {
+        let inner = &name[2..name.len() - 2];
+        if cfg!(windows) && inner.len() >= 2 && inner.as_bytes()[1] == b'-' {
+            let drive = inner.chars().next().unwrap_or('C');
+            let rest = inner[2..].replace('-', "\\");
+            return format!("{}:\\{}", drive, rest);
+        }
+        return format!("/{}", inner.replace('-', "/"));
+    }
+    if let Some(rest) = name.strip_prefix("-tmp-") {
+        return format!("$TMP/{}", rest.replace('-', "/"));
+    }
+    if let Some(rest) = name.strip_prefix("-tmp") {
+        if rest.is_empty() {
+            return "$TMP".to_string();
+        }
+        if let Some(rest) = rest.strip_prefix('-') {
+            return format!("$TMP/{}", rest.replace('-', "/"));
+        }
+    }
+    if let Some(rest) = name.strip_prefix('-') {
+        if rest.is_empty() {
+            return "~".to_string();
+        }
+        return format!("~/{}", rest.replace('-', "/"));
+    }
+    name.to_string()
+}
+
+fn pi_family_read_session_header(
+    path: &std::path::Path,
+) -> Option<(String, String, String, String, i64)> {
+    use std::io::{BufRead, BufReader};
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut session_id = String::new();
+    let mut cwd = String::new();
+    let mut name = String::new();
+    let mut first_message = String::new();
+    let mut message_count = 0i64;
+    let mut saw_header = false;
+    loop {
+        line.clear();
+        let bytes = reader.read_line(&mut line).ok()?;
+        if bytes == 0 {
+            break;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            continue;
+        };
+        match value.get("type").and_then(|item| item.as_str()) {
+            Some("session") if !saw_header => {
+                saw_header = true;
+                session_id = value
+                    .get("id")
+                    .and_then(|item| item.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                cwd = value
+                    .get("cwd")
+                    .and_then(|item| item.as_str())
+                    .unwrap_or("")
+                    .to_string();
+            }
+            Some("session_info") => {
+                if let Some(session_name) = value
+                    .get("name")
+                    .and_then(|item| item.as_str())
+                    .map(str::trim)
+                    .filter(|item| !item.is_empty())
+                {
+                    name = session_name.to_string();
+                }
+            }
+            Some("message") => {
+                message_count += 1;
+                if first_message.is_empty() {
+                    if let Some(message) = value.get("message") {
+                        if message.get("role").and_then(|item| item.as_str()) == Some("user") {
+                            if let Some(text) = message
+                                .get("content")
+                                .and_then(pi_family_extract_text)
+                                .filter(|text| !text.is_empty())
+                            {
+                                first_message = text;
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        if saw_header && message_count > 0 && !first_message.is_empty() && !name.is_empty() {
+            // keep scanning for latest name, but first_message is enough for listing
+        }
+    }
+    if !saw_header {
+        return None;
+    }
+    if session_id.is_empty() {
+        session_id = path
+            .file_stem()
+            .and_then(|item| item.to_str())
+            .unwrap_or("")
+            .to_string();
+    }
+    Some((session_id, cwd, name, first_message, message_count))
+}
+
+fn get_pi_family_projects(
+    base_dir: &std::path::Path,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedProjects> {
+    let sessions_root = pi_family_sessions_root(base_dir);
+    let mut projects = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&sessions_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|item| item.to_str())
+                .unwrap_or("")
+                .to_string();
+            if name.is_empty() || name.starts_with('.') {
+                continue;
+            }
+            let mut session_count = 0i64;
+            let mut total_size = 0i64;
+            let mut last_modified = 0f64;
+            let mut cwd_hint = String::new();
+            if let Ok(sessions) = std::fs::read_dir(&path) {
+                for session in sessions.flatten() {
+                    let session_path = session.path();
+                    if !session_path.is_file() {
+                        continue;
+                    }
+                    if session_path.extension().and_then(|item| item.to_str()) != Some("jsonl") {
+                        continue;
+                    }
+                    session_count += 1;
+                    if let Ok(meta) = session_path.metadata() {
+                        total_size += meta.len() as i64;
+                        let mtime = pi_family_file_mtime(&session_path);
+                        if mtime > last_modified {
+                            last_modified = mtime;
+                        }
+                    }
+                    if cwd_hint.is_empty() {
+                        if let Some((_, cwd, _, _, _)) =
+                            pi_family_read_session_header(&session_path)
+                        {
+                            if !cwd.is_empty() {
+                                cwd_hint = cwd;
+                            }
+                        }
+                    }
+                }
+            }
+            if session_count == 0 {
+                continue;
+            }
+            let full_path = if !cwd_hint.is_empty() {
+                cwd_hint
+            } else {
+                pi_family_decode_project_name(&name)
+            };
+            let display_name = std::path::Path::new(&full_path)
+                .file_name()
+                .and_then(|item| item.to_str())
+                .map(String::from)
+                .filter(|item| !item.is_empty())
+                .unwrap_or_else(|| name.clone());
+            projects.push(ProjectInfo {
+                name,
+                display_name,
+                full_path,
+                session_count,
+                total_size,
+                last_modified,
+            });
+        }
+    }
+    projects.sort_by(|a, b| {
+        b.last_modified
+            .partial_cmp(&a.last_modified)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let total = projects.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = projects
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+    Ok(PaginatedProjects {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+fn get_pi_family_sessions(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedSessions> {
+    let project_dir = pi_family_sessions_root(base_dir).join(project_name);
+    let mut sessions = Vec::new();
+    if project_dir.exists() {
+        if let Ok(entries) = std::fs::read_dir(&project_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                if path.extension().and_then(|item| item.to_str()) != Some("jsonl") {
+                    continue;
+                }
+                let file_stem = path
+                    .file_stem()
+                    .and_then(|item| item.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                if file_stem.is_empty() {
+                    continue;
+                }
+                let Some((session_id, _cwd, name, first_message, _count)) =
+                    pi_family_read_session_header(&path)
+                else {
+                    continue;
+                };
+                let size = path.metadata().map(|meta| meta.len() as i64).unwrap_or(0);
+                let mtime = pi_family_file_mtime(&path);
+                let summary = if !name.is_empty() {
+                    name
+                } else {
+                    first_message.clone()
+                };
+                sessions.push(SessionInfo {
+                    session_id: if session_id.is_empty() {
+                        file_stem
+                    } else {
+                        // Prefer filename stem for stable file lookup; header id may be uuid only.
+                        file_stem
+                    },
+                    size,
+                    mtime,
+                    first_message: first_message.chars().take(200).collect(),
+                    git_branch: String::new(),
+                    summary: summary.chars().take(200).collect(),
+                });
+            }
+        }
+    }
+    sessions.sort_by(|a, b| {
+        b.mtime
+            .partial_cmp(&a.mtime)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let total = sessions.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items: Vec<_> = sessions
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+    Ok(PaginatedSessions {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+fn pi_family_resolve_session_file(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    session_id: &str,
+) -> Option<std::path::PathBuf> {
+    let project_dir = pi_family_sessions_root(base_dir).join(project_name);
+    if !project_dir.exists() {
+        return None;
+    }
+    let direct = project_dir.join(format!("{}.jsonl", session_id));
+    if direct.exists() {
+        return Some(direct);
+    }
+    // Allow matching by header uuid when UI only has uuid, or by stem prefix/suffix.
+    if let Ok(entries) = std::fs::read_dir(&project_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|item| item.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let stem = path
+                .file_stem()
+                .and_then(|item| item.to_str())
+                .unwrap_or("");
+            if stem == session_id || stem.ends_with(&format!("_{}", session_id)) {
+                return Some(path);
+            }
+            if let Some((header_id, _, _, _, _)) = pi_family_read_session_header(&path) {
+                if header_id == session_id {
+                    return Some(path);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn parse_pi_family_session_messages(content: &str) -> Result<Vec<SessionMessage>> {
+    use std::collections::HashMap;
+    let mut entries: HashMap<String, serde_json::Value> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    let mut parents: HashMap<String, Option<String>> = HashMap::new();
+    let mut last_id: Option<String> = None;
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(entry_type) = value.get("type").and_then(|item| item.as_str()) else {
+            continue;
+        };
+        let Some(id) = value.get("id").and_then(|item| item.as_str()) else {
+            continue;
+        };
+        let parent_id = value
+            .get("parentId")
+            .and_then(|item| item.as_str())
+            .map(String::from);
+        parents.insert(id.to_string(), parent_id);
+        last_id = Some(id.to_string());
+        if entry_type == "message" {
+            if let Some(message) = value.get("message").cloned() {
+                entries.insert(id.to_string(), message);
+                order.push(id.to_string());
+            }
+        }
+    }
+
+    // Reconstruct active branch from last leaf.
+    let mut active: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Some(mut current) = last_id {
+        loop {
+            active.insert(current.clone());
+            match parents.get(&current).cloned().flatten() {
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+    } else {
+        for id in &order {
+            active.insert(id.clone());
+        }
+    }
+
+    let mut messages = Vec::new();
+    for id in order {
+        if !active.contains(&id) {
+            continue;
+        }
+        let Some(message) = entries.get(&id) else {
+            continue;
+        };
+        if let Some((role, content, timestamp)) = pi_family_format_message(message) {
+            messages.push(SessionMessage {
+                role,
+                content,
+                timestamp,
+            });
+        }
+    }
+    Ok(messages)
+}
+
+fn get_pi_family_messages(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    session_id: &str,
+) -> Result<Vec<SessionMessage>> {
+    let path = pi_family_resolve_session_file(base_dir, project_name, session_id)
+        .ok_or_else(|| format!("Session file not found: {}", session_id))?;
+    let content = std::fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read session '{}': {}", path.display(), error))?;
+    parse_pi_family_session_messages(&content)
+}
+
+fn delete_pi_family_session(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    session_id: &str,
+) -> Result<()> {
+    let path = pi_family_resolve_session_file(base_dir, project_name, session_id)
+        .ok_or_else(|| format!("Session file not found: {}", session_id))?;
+    std::fs::remove_file(&path).map_err(|error| format!("Failed to delete session: {}", error))?;
+    Ok(())
+}
+
+fn delete_pi_family_project(base_dir: &std::path::Path, project_name: &str) -> Result<()> {
+    let project_dir = pi_family_sessions_root(base_dir).join(project_name);
+    if project_dir.exists() {
+        std::fs::remove_dir_all(&project_dir)
+            .map_err(|error| format!("Failed to delete project: {}", error))?;
+    }
+    Ok(())
+}
+
 // Session commands
 #[tauri::command]
 pub async fn get_session_projects(
@@ -2898,6 +3475,12 @@ pub async fn get_session_projects(
     if adapter == "grok" {
         let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
         return run_session_blocking(move || get_grok_projects(&base_dir, page, page_size)).await;
+    }
+
+    if adapter == "pi" || adapter == "omp" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        return run_session_blocking(move || get_pi_family_projects(&base_dir, page, page_size))
+            .await;
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
@@ -3062,6 +3645,15 @@ pub async fn get_project_sessions(
         .await;
     }
 
+    if adapter == "pi" || adapter == "omp" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let project_name = project_name.clone();
+        return run_session_blocking(move || {
+            get_pi_family_sessions(&base_dir, &project_name, page, page_size)
+        })
+        .await;
+    }
+
     // Special handling for Codex
     if adapter == "codex" {
         return get_codex_sessions_async(db.inner(), &cli_type, &project_name, page, page_size)
@@ -3201,6 +3793,16 @@ pub async fn get_session_messages(
         .await;
     }
 
+    if adapter == "pi" || adapter == "omp" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let project_name = project_name.clone();
+        let session_id = session_id.clone();
+        return run_session_blocking(move || {
+            get_pi_family_messages(&base_dir, &project_name, &session_id)
+        })
+        .await;
+    }
+
     // Special handling for Codex JSONL format
     if adapter == "codex" {
         return get_codex_messages_async(db.inner(), &cli_type, &session_id).await;
@@ -3246,6 +3848,15 @@ pub async fn delete_session(
             std::fs::remove_dir_all(&session_dir)
                 .map_err(|e| format!("Failed to delete session: {}", e))?;
             Ok(())
+        })
+        .await;
+    }
+
+    if adapter == "pi" || adapter == "omp" {
+        let project_name = project_name.clone();
+        let session_id = session_id.clone();
+        return run_session_blocking(move || {
+            delete_pi_family_session(&base_dir, &project_name, &session_id)
         })
         .await;
     }
@@ -3357,6 +3968,12 @@ pub async fn delete_project(
             Ok(())
         })
         .await;
+    }
+
+    if adapter == "pi" || adapter == "omp" {
+        let project_name = project_name.clone();
+        return run_session_blocking(move || delete_pi_family_project(&base_dir, &project_name))
+            .await;
     }
 
     // Special handling for kimi-code - 删除该 workDir 下的所有会话目录

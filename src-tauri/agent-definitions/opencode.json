@@ -6,7 +6,6 @@
   "remark": "网关会接管 OpenCode 内置的 anthropic 与 openai 服务商；在 OpenCode 中选择 anthropic 与 openai 的模型即可。",
   "icon": {
     "view_box": "0 0 512 512",
-    "color": "#808080",
     "paths": [
       {
         "d": "M0 0H512V512H0Z",
