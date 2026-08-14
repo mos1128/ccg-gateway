@@ -3,7 +3,7 @@
   "id": "pi",
   "sort_order": 80,
   "name": "Pi",
-  "remark": "网关会接管 Pi 内置的 anthropic 与 openai 服务商；在 Pi 中选择 anthropic 与 openai 的模型即可。\nMCP 配置写入 agent/mcp.json，需先运行 pi install npm:pi-mcp-adapter 安装适配器。",
+  "remark": "网关会接管 Pi 内置的 anthropic 与 openai 服务商；在 Pi 中选择 anthropic 与 openai 的模型即可。\n使用 MCP 需先运行 pi install npm:pi-mcp-adapter 安装适配器。",
   "icon": {
     "view_box": "140 140 520 520",
     "paths": [
@@ -31,7 +31,7 @@
           "file": "agent/models.json",
           "format": "json",
           "path": ["providers", "openai", "baseUrl"],
-          "value": "{target.endpoint}/v1"
+          "value": "{target.endpoint}"
         },
         {
           "id": "set-openai-token",
@@ -63,7 +63,7 @@
           "file": "agent/models.json",
           "format": "json",
           "path": ["providers", "anthropic", "baseUrl"],
-          "value": "{target.endpoint}/v1"
+          "value": "{target.endpoint}"
         },
         {
           "id": "set-anthropic-token",

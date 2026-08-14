@@ -42,7 +42,7 @@
           "file": "settings.yaml",
           "format": "yaml",
           "path": ["llm-pi-ai", "providers", "openai", "baseURL"],
-          "value": "{target.endpoint}/v1"
+          "value": "{target.endpoint}"
         },
         {
           "id": "set-openai-key-reference",
@@ -66,7 +66,7 @@
           "file": "settings.yaml",
           "format": "yaml",
           "path": ["llm-pi-ai", "providers", "anthropic", "baseURL"],
-          "value": "{target.endpoint}/v1"
+          "value": "{target.endpoint}"
         },
         {
           "id": "set-anthropic-key-reference",
