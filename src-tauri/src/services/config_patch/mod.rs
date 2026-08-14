@@ -216,9 +216,17 @@ pub async fn write_atomic_json(path: &Path, value: &Value) -> Result<(), String>
 }
 
 pub async fn write_atomic_text(path: &Path, content: &str) -> Result<(), String> {
+    write_atomic_text_with_privacy(path, content, false).await
+}
+
+pub async fn write_atomic_text_with_privacy(
+    path: &Path,
+    content: &str,
+    private: bool,
+) -> Result<(), String> {
     let path = path.to_path_buf();
     let bytes = content.as_bytes().to_vec();
-    tokio::task::spawn_blocking(move || writer::write_atomic(&path, &bytes))
+    tokio::task::spawn_blocking(move || writer::write_atomic_with_privacy(&path, &bytes, private))
         .await
         .map_err(|error| format!("配置写入任务失败: {}", error))?
 }
@@ -233,6 +241,7 @@ fn inverse_operation(operation: &ConfigOperation) -> Option<ConfigOperation> {
         op,
         file: operation.file.clone(),
         format: operation.format,
+        private: operation.private,
         path: operation.path.clone(),
         value: None,
     })
@@ -301,6 +310,7 @@ pub fn sanitize_preset(
                 op: kind,
                 file: operation.file.clone(),
                 format: operation.format,
+                private: operation.private,
                 path: operation.path.clone(),
                 value: None,
             })

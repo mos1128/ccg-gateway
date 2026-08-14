@@ -35,6 +35,7 @@ export interface ProviderConfigOperation {
   op: 'set' | 'remove'
   file: string
   format: ConfigFormat
+  private?: boolean
   path: string[]
   value?: unknown
 }
@@ -89,8 +90,8 @@ export interface OfficialLoginFeature extends ToggleFeature {
 
 export interface McpFeature extends ToggleFeature {
   file?: string | null
-  format?: 'json' | 'toml' | null
-  adapter?: 'opencode' | null
+  format?: 'json' | 'toml' | 'yaml' | null
+  adapter?: 'opencode' | 'dsh' | null
   servers_path?: string[]
 }
 

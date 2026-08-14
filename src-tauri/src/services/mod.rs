@@ -3,6 +3,7 @@ pub mod agent_config;
 pub mod cli_config;
 pub mod config_patch;
 pub mod cost;
+pub mod dsh_mcp;
 pub mod official_credential;
 pub mod plugin;
 pub mod protocol;

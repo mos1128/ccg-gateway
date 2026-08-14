@@ -28,6 +28,7 @@ fn non_empty_array(value: &Value, key: &str) -> bool {
 fn validate_config_operations(operations: &[Value], label: &str, file: &Path) {
     let mut ids = HashSet::new();
     let mut file_formats = HashMap::new();
+    let mut file_privacy = HashMap::new();
     for operation in operations {
         let id = required_string(operation, "id", file);
         if !ids.insert(id) {
@@ -44,6 +45,20 @@ fn validate_config_operations(operations: &[Value], label: &str, file: &Path) {
             if existing != format {
                 panic!(
                     "{}: {} file `{}` uses conflicting formats",
+                    file.display(),
+                    label,
+                    target
+                );
+            }
+        }
+        let private = operation
+            .get("private")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if let Some(existing) = file_privacy.insert(target, private) {
+            if existing != private {
+                panic!(
+                    "{}: {} file `{}` uses conflicting private values",
                     file.display(),
                     label,
                     target
@@ -329,12 +344,19 @@ fn validate_definition(value: &Value, file: &Path, ids: &mut HashSet<String>) ->
                 }
             }
             "mcp" => {
-                if feature.get("file").and_then(Value::as_str).is_none()
-                    || feature.get("format").and_then(Value::as_str).is_none()
-                    || !non_empty_array(feature, "servers_path")
-                {
+                let has_file = feature.get("file").and_then(Value::as_str).is_some();
+                let format = feature.get("format").and_then(Value::as_str);
+                let adapter = feature.get("adapter").and_then(Value::as_str);
+                let valid_target = if adapter == Some("dsh") {
+                    format == Some("yaml") && !non_empty_array(feature, "servers_path")
+                } else {
+                    matches!(format, Some("json" | "toml"))
+                        && non_empty_array(feature, "servers_path")
+                        && (adapter != Some("opencode") || format == Some("json"))
+                };
+                if !has_file || !valid_target {
                     panic!(
-                        "{}: enabled mcp needs file, format and servers_path",
+                        "{}: enabled mcp has an invalid file, format, adapter or servers_path",
                         file.display()
                     );
                 }

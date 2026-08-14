@@ -15,7 +15,7 @@
 
 ## 📖 Introduction
 
-CCG Gateway is a desktop management tool for Agents including Claude Code, Codex, Gemini CLI, OpenCode, Kimi Code, ZCode, Grok Build, Pi, and Oh My Pi, integrating an intelligent gateway, account management, and configuration management.
+CCG Gateway is a desktop management tool for Agents including Claude Code, Codex, Gemini CLI, OpenCode, Kimi Code, ZCode, Grok Build, Pi, Oh My Pi, and DeepSeek Harness, integrating an intelligent gateway, account management, and configuration management.
 
 This project was initiated based on the author's actual needs to solve various pain points encountered during usage. Several open-source projects were referenced during development, see [Acknowledgments](#-acknowledgments) for details.
 
@@ -93,7 +93,7 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 
 ### Agent Templates
 
-- Built-in support for Claude Code, Codex, Gemini CLI, OpenCode, Kimi Code, ZCode, Grok Build, Pi, and Oh My Pi.
+- Built-in support for Claude Code, Codex, Gemini CLI, OpenCode, Kimi Code, ZCode, Grok Build, Pi, Oh My Pi, and DeepSeek Harness.
 - User templates can add new Agents or override built-in templates by using the same `id`.
 - Templates can declare request protocols, configuration write rules, official credentials, Profiles, MCP, Skills, sessions, and other capabilities.
 - User templates are stored in `~/.ccg-gateway/agent-definitions/{id}.json` by default and require an application restart after changes. See the [Agent Template Field Guide](agent-template-guide.md) for field definitions, allowed values, and complete examples.

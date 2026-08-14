@@ -23,17 +23,26 @@ async fn resolve_mcp_target(db: &SqlitePool, agent_id: &str) -> Result<McpTarget
     let format = feature
         .format
         .ok_or_else(|| format!("Agent {} 的 MCP 缺少 format", agent_id))?;
-    if !matches!(
-        format,
-        crate::db::models::ConfigFormat::Json | crate::db::models::ConfigFormat::Toml
-    ) {
-        return Err(format!(
-            "Agent {} 的 MCP format 只支持 json 或 toml",
-            agent_id
-        ));
-    }
-    if feature.servers_path.is_empty() {
-        return Err(format!("Agent {} 的 MCP 缺少 servers_path", agent_id));
+    match feature.adapter {
+        Some(crate::db::models::McpAdapter::Dsh) => {
+            if format != crate::db::models::ConfigFormat::Yaml {
+                return Err(format!("Agent {} 的 DSH MCP 只支持 yaml", agent_id));
+            }
+        }
+        _ => {
+            if !matches!(
+                format,
+                crate::db::models::ConfigFormat::Json | crate::db::models::ConfigFormat::Toml
+            ) {
+                return Err(format!(
+                    "Agent {} 的 MCP format 只支持 json 或 toml",
+                    agent_id
+                ));
+            }
+            if feature.servers_path.is_empty() {
+                return Err(format!("Agent {} 的 MCP 缺少 servers_path", agent_id));
+            }
+        }
     }
     Ok(McpTarget {
         path: crate::services::cli_config::resolve_cli_config_file(db, agent_id, file).await,
@@ -45,6 +54,7 @@ async fn resolve_mcp_target(db: &SqlitePool, agent_id: &str) -> Result<McpTarget
 
 fn apply_mcp_adapter(
     adapter: Option<crate::db::models::McpAdapter>,
+    mcp_name: &str,
     config_json: &str,
 ) -> Result<String> {
     let Some(adapter) = adapter else {
@@ -54,6 +64,7 @@ fn apply_mcp_adapter(
         .map_err(|error| format!("MCP JSON 格式错误: {}", error))?;
     let adapted = match adapter {
         crate::db::models::McpAdapter::Opencode => adapt_opencode_mcp(config)?,
+        crate::db::models::McpAdapter::Dsh => crate::services::dsh_mcp::adapt(mcp_name, config)?,
     };
     serde_json::to_string(&adapted).map_err(|error| error.to_string())
 }
@@ -213,18 +224,24 @@ async fn mcp_enabled_in_file_async(db: &SqlitePool, agent_id: &str, mcp_name: &s
                     .map(|servers| servers.contains_key(mcp_name))
             })
             .unwrap_or(false),
+        crate::db::models::ConfigFormat::Yaml
+            if target.adapter == Some(crate::db::models::McpAdapter::Dsh) =>
+        {
+            crate::services::dsh_mcp::contains(&content, mcp_name)
+        }
         _ => false,
     }
 }
 
 async fn validate_mcp_config_for_flags(
     db: &SqlitePool,
+    mcp_name: &str,
     config_json: &str,
     cli_flags: &[McpCliFlag],
 ) -> Result<()> {
     for flag in cli_flags.iter().filter(|flag| flag.enabled) {
         let target = resolve_mcp_target(db, &flag.cli_type).await?;
-        let config_json = apply_mcp_adapter(target.adapter, config_json)?;
+        let config_json = apply_mcp_adapter(target.adapter, mcp_name, config_json)?;
         if target.format == crate::db::models::ConfigFormat::Toml {
             parse_mcp_toml_table(&config_json)?;
         }
@@ -298,7 +315,7 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
             .map_err(|e| format!("JSON 格式错误: {}", e))?;
     }
     let cli_flags = input.cli_flags.unwrap_or_default();
-    validate_mcp_config_for_flags(db.inner(), config_trimmed, &cli_flags).await?;
+    validate_mcp_config_for_flags(db.inner(), &input.name, config_trimmed, &cli_flags).await?;
 
     let result =
         sqlx::query("INSERT INTO mcp_configs (name, config_json, updated_at) VALUES (?, ?, ?)")
@@ -362,7 +379,7 @@ pub async fn update_mcp(
         .unwrap_or_else(|| current.config_json.clone());
     let cli_flags = input.cli_flags.unwrap_or(current_cli_flags);
 
-    validate_mcp_config_for_flags(db.inner(), &new_config, &cli_flags).await?;
+    validate_mcp_config_for_flags(db.inner(), &new_name, &new_config, &cli_flags).await?;
 
     if new_name != current.name || new_config != current.config_json {
         sqlx::query(
@@ -446,7 +463,11 @@ async fn sync_mcp_to_cli_async(
         return Ok(());
     }
     let adapted_config = if is_enabled {
-        Some(apply_mcp_adapter(target.adapter, mcp_config_json)?)
+        Some(apply_mcp_adapter(
+            target.adapter,
+            mcp_name,
+            mcp_config_json,
+        )?)
     } else {
         None
     };
@@ -458,7 +479,12 @@ async fn sync_mcp_to_cli_async(
         crate::db::models::ConfigFormat::Toml => {
             sync_toml_mcp(&target, mcp_name, mcp_config_json, is_enabled).await
         }
-        _ => Err("MCP format 只支持 json 或 toml".to_string()),
+        crate::db::models::ConfigFormat::Yaml
+            if target.adapter == Some(crate::db::models::McpAdapter::Dsh) =>
+        {
+            crate::services::dsh_mcp::sync(&target.path, mcp_name, adapted_config.as_deref()).await
+        }
+        _ => Err("MCP format 与 adapter 不匹配".to_string()),
     }
 }
 

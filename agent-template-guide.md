@@ -102,7 +102,7 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | `model_mapping` | 允许该 Agent 使用模型映射 | 无其他 key。 |
 | `token_usage` | 允许统计该 Agent 的 Token 用量 | 无其他 key。 |
 | `skills` | 允许管理该 Agent 的 Skills | `directory`。 |
-| `mcp` | 允许管理该 Agent 的 MCP 配置 | `file`、`format`、`servers_path`。 |
+| `mcp` | 允许管理该 Agent 的 MCP 配置 | `file`、`format`；除 `dsh` adapter 外还需要 `servers_path`。 |
 | `sessions` | 允许读取和管理该 Agent 的会话 | `adapter`。 |
 | `plugins` | 允许管理该 Agent 的插件 | `adapter`。 |
 | `prompts` | 允许管理该 Agent 的提示词文件 | `file`。 |
@@ -142,6 +142,7 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | `op` | `set` 或 `remove` | `set` 写入字段；`remove` 删除字段。 |
 | `file` | 非空路径字符串 | 目标配置文件。默认配置必须写明确路径；Profile operation 可以使用 Profile 占位符。 |
 | `format` | `json`、`jsonc`、`toml`、`yaml`、`env` | 目标文件格式。同一组 operations 中，同一个文件不能声明不同格式。 |
+| `private` | 可选布尔值，默认 `false` | 设为 `true` 时，在 Unix 上以 `0700` 创建缺失的父目录，并将目标文件权限设为 `0600`；同一文件的 operations 必须使用相同值。 |
 | `path` | 至少包含一个非空字符串的数组 | 目标字段路径，例如 `["env", "API_KEY"]`。`env` 格式必须且只能有一个元素。 |
 | `value` | 字符串、布尔值、数字、数组或对象 | `op: "set"` 时必填，`op: "remove"` 时禁止出现。字符串中可以使用占位符。 |
 
@@ -253,9 +254,9 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | --- | --- | --- |
 | `enabled` | `true` / `false` | 是否支持 MCP 配置管理。 |
 | `file` | 非空路径字符串 | `enabled: true` 时必填，表示 MCP 所在配置文件。 |
-| `format` | `json` 或 `toml` | MCP 配置文件格式。 |
-| `servers_path` | 至少包含一个非空字符串的数组 | MCP 服务集合在配置文件中的字段路径，例如 `["mcpServers"]` 或 `["mcp", "servers"]`。 |
-| `adapter` | 可选；当前只能是 `opencode` | 省略时按 CCG 的标准 MCP 结构直接写入；`opencode` 会先转换为 OpenCode 的结构，并且只支持 `json` 格式。 |
+| `format` | `json`、`toml` 或 `yaml` | MCP 配置文件格式；`yaml` 仅供 `dsh` adapter 使用。 |
+| `servers_path` | 非空字符串数组 | MCP 服务集合在配置文件中的字段路径，例如 `["mcpServers"]` 或 `["mcp", "servers"]`；`dsh` adapter 不使用且不能配置该字段。 |
+| `adapter` | 可选；`opencode` 或 `dsh` | 省略时按 CCG 的标准 MCP 结构直接写入。`opencode` 只支持 `json`；`dsh` 只支持 `yaml`，会把服务转换为 `@deepseek-ai/dsh-mcp-client` Cordis 条目。 |
 
 ### `sessions`
 
@@ -485,6 +486,21 @@ Gemini CLI 的官方登录同时使用整文件替换和单字段设置：
 ```
 
 `protocols` 可以包含多个值。`{target.endpoint}` 可以作为字符串的一部分使用，因此 Anthropic 地址会额外带上 `/v1`。OpenCode 的 MCP 结构与标准结构不同，所以声明 `adapter: "opencode"`；该 adapter 只能配合 `json`。
+
+### DeepSeek Harness：用户级配置、凭据和 Cordis MCP patch
+
+```json
+"mcp": {
+  "enabled": true,
+  "file": "cordis.patch.yml",
+  "format": "yaml",
+  "adapter": "dsh"
+}
+```
+
+`dsh` adapter 不使用 `servers_path`。它将 CCG 的 stdio 或 Streamable HTTP MCP 配置转换为独立的 `@deepseek-ai/dsh-mcp-client` 条目，并只更新 `cordis.patch.yml` 中由 CCG 标记的管理块；块外的用户 patch 保持原文。DSH 的 `serverName` 要求 MCP 名称匹配 `[A-Za-z0-9_-]{1,32}`，且不支持旧式 SSE transport。DSH 凭据写入 `.credentials.yaml` 时应为对应 operation 配置 `"private": true`。
+
+DeepSeek Harness 模板同时配置三个模型路由：原生 `deepseek-official` 使用 OpenAI Chat，内置 `llm-pi-ai` 的 `openai` 与 `anthropic` 路由分别固定为 OpenAI Responses 和 Anthropic Messages。后两者复用 DSH 已安装的模型 catalog，不需要声明静态模型列表或额外安装 SDK。三个路由共用 `.credentials.yaml` 中的 `CCG_GATEWAY_API_KEY`；不要覆盖 `DEEPSEEK_API_KEY`，因为 DSH 的官方网页搜索也会读取它。
 
 ### ZCode：深层路径、布尔值、数字和嵌套 `servers_path`
 

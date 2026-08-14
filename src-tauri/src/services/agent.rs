@@ -43,6 +43,7 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
     ) -> Result<(), String> {
         let mut operation_ids = HashSet::new();
         let mut file_formats = HashMap::new();
+        let mut file_privacy = HashMap::new();
         for operation in operations {
             if operation.id.trim().is_empty() || !operation_ids.insert(operation.id.as_str()) {
                 return Err(format!(
@@ -67,6 +68,15 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
                 if existing != operation.format {
                     return Err(format!(
                         "{} 文件 `{}` 不能同时使用不同 format",
+                        label, operation.file
+                    ));
+                }
+            }
+            if let Some(existing) = file_privacy.insert(operation.file.as_str(), operation.private)
+            {
+                if existing != operation.private {
+                    return Err(format!(
+                        "{} 文件 `{}` 不能同时使用不同 private 值",
                         label, operation.file
                     ));
                 }
@@ -305,24 +315,36 @@ fn validate_mcp(feature: &McpFeature) -> Result<(), String> {
     {
         return Err("enabled mcp 必须提供 file".to_string());
     }
-    if !matches!(
-        feature.format,
-        Some(crate::db::models::ConfigFormat::Json | crate::db::models::ConfigFormat::Toml)
-    ) {
-        return Err("enabled mcp 只支持 json 或 toml".to_string());
-    }
-    if feature.adapter == Some(McpAdapter::Opencode)
-        && feature.format != Some(crate::db::models::ConfigFormat::Json)
-    {
-        return Err("mcp adapter opencode 只支持 json format".to_string());
-    }
-    if feature.servers_path.is_empty()
-        || feature
-            .servers_path
-            .iter()
-            .any(|part| part.trim().is_empty())
-    {
-        return Err("enabled mcp 必须提供非空 servers_path".to_string());
+    match feature.adapter {
+        Some(McpAdapter::Dsh) => {
+            if feature.format != Some(crate::db::models::ConfigFormat::Yaml) {
+                return Err("mcp adapter dsh 只支持 yaml format".to_string());
+            }
+            if !feature.servers_path.is_empty() {
+                return Err("mcp adapter dsh 不使用 servers_path".to_string());
+            }
+        }
+        adapter => {
+            if !matches!(
+                feature.format,
+                Some(crate::db::models::ConfigFormat::Json | crate::db::models::ConfigFormat::Toml)
+            ) {
+                return Err("enabled mcp 只支持 json 或 toml".to_string());
+            }
+            if adapter == Some(McpAdapter::Opencode)
+                && feature.format != Some(crate::db::models::ConfigFormat::Json)
+            {
+                return Err("mcp adapter opencode 只支持 json format".to_string());
+            }
+            if feature.servers_path.is_empty()
+                || feature
+                    .servers_path
+                    .iter()
+                    .any(|part| part.trim().is_empty())
+            {
+                return Err("enabled mcp 必须提供非空 servers_path".to_string());
+            }
+        }
     }
     Ok(())
 }

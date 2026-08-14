@@ -159,14 +159,40 @@
       "properties": {
         "enabled": { "type": "boolean" },
         "file": { "type": "string", "minLength": 1 },
-        "format": { "enum": ["json", "toml"] },
-        "adapter": { "enum": ["opencode"] },
+        "format": { "enum": ["json", "toml", "yaml"] },
+        "adapter": { "enum": ["opencode", "dsh"] },
         "servers_path": {
           "type": "array",
-          "minItems": 1,
           "items": { "type": "string", "minLength": 1 }
         }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "adapter": { "const": "dsh" } },
+            "required": ["adapter"]
+          },
+          "then": {
+            "properties": {
+              "format": { "const": "yaml" },
+              "servers_path": { "maxItems": 0 }
+            }
+          },
+          "else": {
+            "properties": {
+              "format": { "enum": ["json", "toml"] },
+              "servers_path": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "adapter": { "const": "opencode" } },
+            "required": ["adapter"]
+          },
+          "then": { "properties": { "format": { "const": "json" } } }
+        }
+      ],
       "additionalProperties": false
     },
     "fileFeature": {
@@ -186,6 +212,7 @@
         "op": { "enum": ["set", "remove"] },
         "file": { "type": "string", "minLength": 1 },
         "format": { "enum": ["json", "jsonc", "toml", "yaml", "env"] },
+        "private": { "type": "boolean" },
         "path": {
           "type": "array",
           "minItems": 1,

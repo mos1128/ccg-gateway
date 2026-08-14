@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 struct OperationGroup {
     path: PathBuf,
     format: ConfigFormat,
+    private: bool,
     operations: Vec<ConfigOperation>,
 }
 
@@ -122,6 +123,7 @@ fn resolve_operations(
                 op: operation.op,
                 file: replace_profile_placeholders(&operation.file, &context)?,
                 format: operation.format,
+                private: operation.private,
                 path: operation
                     .path
                     .iter()
@@ -190,11 +192,18 @@ fn group_operations(
                     operation.file
                 ));
             }
+            if group.private != operation.private {
+                return Err(format!(
+                    "Provider 配置文件 `{}` 不能同时使用不同 private 值",
+                    operation.file
+                ));
+            }
             group.operations.push(operation.clone());
         } else {
             groups.push(OperationGroup {
                 path,
                 format: operation.format,
+                private: operation.private,
                 operations: vec![operation.clone()],
             });
         }
@@ -218,6 +227,7 @@ fn ensure_group(
         groups.push(OperationGroup {
             path: path.to_path_buf(),
             format,
+            private: false,
             operations: Vec::new(),
         });
     }
@@ -478,12 +488,12 @@ async fn apply_enabled_groups(
             content =
                 config_patch::patch_content(group.format, &content, &group.operations, context)?;
         }
-        prepared.push((group.path.clone(), content));
+        prepared.push((group.path.clone(), content, group.private));
     }
 
     let mut paths = Vec::with_capacity(prepared.len());
-    for (path, content) in prepared {
-        config_patch::write_atomic_text(&path, &content).await?;
+    for (path, content, private) in prepared {
+        config_patch::write_atomic_text_with_privacy(&path, &content, private).await?;
         paths.push(path);
     }
     Ok(paths)
@@ -531,12 +541,12 @@ async fn safely_remove_groups(
                 context,
             )?;
         }
-        prepared.push((group.path.clone(), content));
+        prepared.push((group.path.clone(), content, group.private));
     }
 
     let mut paths = Vec::with_capacity(prepared.len());
-    for (path, content) in prepared {
-        config_patch::write_atomic_text(&path, &content).await?;
+    for (path, content, private) in prepared {
+        config_patch::write_atomic_text_with_privacy(&path, &content, private).await?;
         paths.push(path);
     }
     Ok(paths)
@@ -611,6 +621,7 @@ pub async fn sync_global_preset(
     let groups = vec![OperationGroup {
         path: preset.path.clone(),
         format: preset.format,
+        private: false,
         operations: Vec::new(),
     }];
     let context = gateway_context(agent_id, DEFAULT_PROFILE, "");

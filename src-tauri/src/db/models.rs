@@ -106,6 +106,7 @@ pub struct McpFeature {
 #[serde(rename_all = "snake_case")]
 pub enum McpAdapter {
     Opencode,
+    Dsh,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +140,8 @@ pub struct ConfigOperation {
     pub op: ConfigOperationKind,
     pub file: String,
     pub format: ConfigFormat,
+    #[serde(default)]
+    pub private: bool,
     #[serde(default)]
     pub path: Vec<String>,
     pub value: Option<serde_json::Value>,
