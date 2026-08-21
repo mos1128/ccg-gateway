@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="dash-body">
+    <div class="dash-body" :style="{ '--refresh-duration': refreshDuration }">
       <!-- 顶部全局工具栏 -->
       <div class="dash-toolbar">
         <div class="toolbar-left">
@@ -67,18 +67,35 @@
 
       <!-- 顶部：KPI 全宽 -->
       <div class="v2-kpi-grid">
-        <div v-for="k in kpis" :key="k.label" class="v2-kpi" :style="{ '--kpi-accent': k.borderColor || 'var(--v2-surface-3)' }">
-          <div class="kpi-header">
-            <span class="v2-kpi-label">{{ k.label }}</span>
-            <span class="kpi-icon-badge" :style="{ color: k.borderColor || 'var(--v2-text)' }">
-              <svg v-if="k.icon === 'token'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
-              <svg v-else-if="k.icon === 'cache'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-              <svg v-else-if="k.icon === 'request'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-              <svg v-else-if="k.icon === 'cache-rate'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-              <svg v-else-if="k.icon === 'cost'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-            </span>
-          </div>
-          <div class="v2-kpi-value mono" :style="k.color ? { color: k.color } : undefined">{{ k.value }}</div>
+        <div
+          v-for="k in kpis"
+          :key="k.id"
+          class="v2-kpi"
+          :class="{ 'kpi-flippable': k.flippable }"
+          :style="{ '--kpi-accent': k.borderColor || 'var(--v2-surface-3)' }"
+        >
+          <Transition name="kpi-flip" mode="out-in">
+            <div :key="`${k.id}-${k.flippable ? Number(kpiFlipped) : 0}`" class="kpi-content">
+              <div class="kpi-header">
+                <span class="v2-kpi-label">{{ k.label }}</span>
+                <span class="kpi-icon-badge" :style="{ color: k.borderColor || 'var(--v2-text)' }">
+                  <svg v-if="k.icon === 'token'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+                  <svg v-else-if="k.icon === 'cache'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                  <svg v-else-if="k.icon === 'request'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                  <svg v-else-if="k.icon === 'cache-rate'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                  <svg v-else-if="k.icon === 'cost'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                </span>
+              </div>
+              <div class="v2-kpi-value mono" :style="k.color ? { color: k.color } : undefined">{{ k.value }}</div>
+            </div>
+          </Transition>
+          <span
+            v-if="k.flippable"
+            :key="`${k.id}-${refreshKey}`"
+            class="kpi-refresh-progress"
+            :class="{ paused: isPaused, loading: statsLoading && !isPaused }"
+            aria-hidden="true"
+          />
         </div>
       </div>
 
@@ -236,6 +253,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useThemeStore } from '@/stores/theme'
 import { useAgentStore } from '@/stores/agents'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
+import type { AutoRefreshTrigger } from '@/composables/useAutoRefresh'
 import { formatCost, formatTokens } from '@/utils/json'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
@@ -250,6 +268,7 @@ const settingsStore = useSettingsStore()
 const themeStore = useThemeStore()
 const agentStore = useAgentStore()
 const REFRESH_MS = 5000
+const refreshDuration = `${REFRESH_MS}ms`
 const CHART_FONT = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Microsoft YaHei UI', Arial, sans-serif"
 const chartInitOptions = { renderer: 'svg' } as const
 const chartCardRef = ref<HTMLElement | null>(null)
@@ -413,18 +432,19 @@ const shortcuts = [
 ]
 
 function handleRangeChange() {
-  fetchStats()
+  void refreshStatsNow()
 }
 
 // ===== KPI =====
 const statsLoading = ref(false)
 const refreshKey = ref(0)
 const isPaused = ref(false)
+const kpiFlipped = ref(false)
 
 function togglePause() {
   isPaused.value = !isPaused.value
   if (!isPaused.value) {
-    fetchStats()
+    void refreshStatsNow()
   }
 }
 
@@ -433,48 +453,59 @@ const kpis = computed(() => {
   const selectedMap = legendSelectedMap.value[dimMode.value] || {}
   const s = advancedStats.value.filter((x) => selectedMap[x[groupKey]] !== false)
   const reqs = s.reduce((a, x) => a + x.total_requests, 0)
+  const input = s.reduce((a, x) => a + (x.total_input_tokens || 0), 0)
+  const output = s.reduce((a, x) => a + (x.total_output_tokens || 0), 0)
   const cacheRead = s.reduce((a, x) => a + (x.total_cache_read_tokens || 0), 0)
   const cacheCreation = s.reduce((a, x) => a + (x.total_cache_creation_tokens || 0), 0)
   const cache = cacheRead + cacheCreation
-  const cacheInput = s.reduce((a, x) => a + (x.total_input_tokens || 0), 0) + cache
-  const billable = s.reduce((a, x) => a + x.total_tokens, 0) - cache
+  const cacheInput = input + cache
   const cost = s.reduce((a, x) => a + (x.total_cost || 0), 0)
 
   return [
     {
-      label: '计费 Token',
-      value: formatTokens(billable),
+      id: 'billable',
+      label: kpiFlipped.value ? '计费 Token · 输出' : '计费 Token · 输入',
+      value: formatTokens(kpiFlipped.value ? output : input),
       color: '',
       borderColor: 'var(--v2-accent)',
-      icon: 'token'
+      icon: 'token',
+      flippable: true
     },
     {
-      label: '缓存 Token',
-      value: formatTokens(cache),
+      id: 'cache',
+      label: kpiFlipped.value ? '缓存 Token · 创建' : '缓存 Token · 读取',
+      value: formatTokens(kpiFlipped.value ? cacheCreation : cacheRead),
       color: '',
       borderColor: 'var(--v2-chart-purple)',
-      icon: 'cache'
+      icon: 'cache',
+      flippable: true
     },
     {
+      id: 'cache-rate',
       label: '缓存命中率',
       value: cacheInput > 0 ? `${((cacheRead / cacheInput) * 100).toFixed(1)}%` : '0%',
       color: 'var(--v2-success)',
       borderColor: 'var(--v2-success)',
-      icon: 'cache-rate'
+      icon: 'cache-rate',
+      flippable: false
     },
     {
+      id: 'requests',
       label: '请求次数',
       value: reqs.toLocaleString(),
       color: '',
       borderColor: 'var(--v2-chart-cyan)',
-      icon: 'request'
+      icon: 'request',
+      flippable: false
     },
     {
+      id: 'cost',
       label: '费用',
       value: formatCost(cost),
       color: 'var(--v2-warning)',
       borderColor: 'var(--v2-warning)',
-      icon: 'cost'
+      icon: 'cost',
+      flippable: false
     }
   ]
 })
@@ -797,7 +828,12 @@ const chartOption = computed(() => {
   }
 })
 
-useAutoRefresh(fetchStats, {
+async function refreshStatsAutomatically(trigger: AutoRefreshTrigger) {
+  await fetchStats()
+  if (trigger === 'interval' && !isPaused.value) kpiFlipped.value = !kpiFlipped.value
+}
+
+const { refresh: refreshStatsNow } = useAutoRefresh(refreshStatsAutomatically, {
   intervalMs: REFRESH_MS,
   immediate: true,
   paused: isPaused,
@@ -1084,6 +1120,63 @@ html.dark .v2-kpi {
   background: var(--kpi-accent, var(--v2-surface-3));
 }
 
+.v2-kpi.kpi-flippable::before {
+  opacity: 0.18;
+}
+
+.kpi-refresh-progress {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--kpi-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: kpi-refresh-fill var(--refresh-duration) linear forwards;
+  pointer-events: none;
+}
+
+.kpi-refresh-progress.paused {
+  animation: none;
+  transform: scaleX(1);
+}
+
+.kpi-refresh-progress.loading {
+  opacity: 0;
+  animation: none;
+}
+
+@keyframes kpi-refresh-fill {
+  to { transform: scaleX(1); }
+}
+
+.kpi-content {
+  display: flex;
+  flex: 1;
+  min-height: 60px;
+  flex-direction: column;
+  justify-content: space-between;
+  transform-origin: center;
+  backface-visibility: hidden;
+}
+
+.kpi-flip-enter-active,
+.kpi-flip-leave-active {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.16s ease;
+}
+
+.kpi-flip-enter-from {
+  opacity: 0;
+  transform: perspective(480px) rotateX(82deg) translateY(4px);
+}
+
+.kpi-flip-leave-to {
+  opacity: 0;
+  transform: perspective(480px) rotateX(-82deg) translateY(-4px);
+}
+
 .kpi-header {
   display: flex;
   justify-content: space-between;
@@ -1164,7 +1257,7 @@ html.dark .v2-kpi {
 .ring-progress {
   transform: rotate(-90deg);
   transform-origin: center;
-  animation: ring-countdown 4.6s linear forwards;
+  animation: ring-countdown var(--refresh-duration) linear forwards;
 }
 @keyframes ring-countdown {
   from { stroke-dashoffset: 41; }
@@ -1177,6 +1270,13 @@ html.dark .v2-kpi {
 @keyframes ring-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-flip-enter-active,
+  .kpi-flip-leave-active {
+    transition-duration: 0.01ms;
+  }
 }
 .ring-paused {
   transition: all 0.3s ease;
