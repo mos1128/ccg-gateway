@@ -7,8 +7,8 @@ use crate::db::models::{
     McpUpdate, OfficialCredential, OfficialCredentialCreate, OfficialCredentialResponse,
     OfficialCredentialUpdate, PaginatedLogs, PaginatedProjects, PaginatedSessions,
     PluginFavoriteItem, PluginItem, ProjectInfo, PromptCliFlag, PromptCreate, PromptPreset,
-    PromptResponse, PromptUpdate, Provider, ProviderStatsResponse, ProviderStatsRow,
-    RequestLogDetail, RequestLogItem, ScheduledTaskCreate, ScheduledTaskResponse, ScheduledTaskRun,
+    PromptResponse, PromptUpdate, Provider, ProviderStatsResponse, RequestLogDetail,
+    RequestLogItem, ScheduledTaskCreate, ScheduledTaskResponse, ScheduledTaskRun,
     ScheduledTaskRunItem, ScheduledTaskRunListResponse, ScheduledTaskUpdate, SessionInfo,
     SessionMessage, SkillCliFlag, SkillFavorite, SkillFavoriteItem, SkillRepo, SkillRepoCreate,
     SystemLogItem, SystemLogListResponse, SystemStatus, TimeoutSettings, TimeoutSettingsUpdate,
@@ -29,7 +29,9 @@ pub mod cli_helpers;
 pub mod credential_commands;
 pub mod log_commands;
 pub mod mcp_commands;
+pub mod model_sync_commands;
 pub mod plugin_commands;
+pub mod pricing_commands;
 pub mod prompt_commands;
 pub mod provider_commands;
 pub mod scheduled_task_commands;

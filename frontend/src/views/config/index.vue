@@ -148,51 +148,50 @@
       </template>
     </V2Drawer>
 
-    <V2Drawer v-model="webdavListVisible" title="管理 WebDAV 备份" :show-footer="false">
-      <div v-loading="loadingWebdavList">
-        <div class="webdav-table-wrapper">
-          <table class="v2-table webdav-table">
+    <V2Drawer v-model="webdavListVisible" title="管理 WebDAV 备份" width="60%" :show-footer="false">
+      <div class="webdav-toolbar">
+        <span class="webdav-status">{{ webdavStatusText }}</span>
+        <button class="v2-btn v2-btn-sm v2-btn-outline" :disabled="loadingWebdavList" @click="loadWebdavBackups">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+          {{ loadingWebdavList ? '刷新中' : '刷新' }}
+        </button>
+      </div>
+
+      <div v-loading="loadingWebdavList" class="webdav-table-card">
+        <div class="webdav-table-scroll">
+          <table class="v2-table">
             <thead>
               <tr>
-                <th>备份文件</th>
-                <th>大小</th>
-                <th>操作</th>
+                <th class="webdav-col-name">备份文件</th>
+                <th class="webdav-col-time">修改时间</th>
+                <th class="webdav-col-size">大小</th>
+                <th class="webdav-col-act">操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="backup in webdavBackups" :key="backup.filename">
-                <td class="mono">
+                <td class="webdav-col-name">
                   <div class="webdav-file-cell">
                     <svg class="db-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
                       <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
                       <path d="M3 12A9 3 0 0 0 21 12"></path>
                     </svg>
-                    <span class="filename-text">{{ backup.filename }}</span>
+                    <span class="filename-text mono" :title="backup.filename">{{ backup.filename }}</span>
                   </div>
                 </td>
-                <td class="mono">{{ formatSize(backup.size) }}</td>
-                <td>
+                <td class="webdav-col-time mono">{{ formatWebdavTime(backup.modified) }}</td>
+                <td class="webdav-col-size mono">{{ formatSize(backup.size) }}</td>
+                <td class="webdav-col-act">
                   <div class="webdav-row-actions">
                     <a class="webdav-link" @click="handleImportWebdav(backup.filename)">恢复</a>
                     <a class="webdav-link danger" @click="handleDeleteWebdav(backup.filename)">删除</a>
                   </div>
                 </td>
               </tr>
-              <tr v-if="webdavBackups.length === 0">
-                <td colspan="3" class="v2-hint" style="text-align:center;padding:40px">
-                  <div class="empty-state-content">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--v2-text-3); margin-bottom: 8px;">
-                      <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-                      <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
-                      <path d="M3 12A9 3 0 0 0 21 12"></path>
-                    </svg>
-                    <div>暂无备份文件</div>
-                  </div>
-                </td>
-              </tr>
             </tbody>
           </table>
+          <div v-if="!loadingWebdavList && !webdavBackups.length" class="webdav-empty">暂无备份文件，请先执行「导出到 WebDAV」</div>
         </div>
       </div>
     </V2Drawer>
@@ -488,6 +487,10 @@ const loadingWebdavList = ref(false)
 const webdavListVisible = ref(false)
 const webdavSettingsVisible = ref(false)
 const webdavBackups = ref<WebdavBackup[]>([])
+const webdavStatusText = computed(() => {
+  if (loadingWebdavList.value) return '读取中'
+  return webdavBackups.value.length ? `共 ${webdavBackups.value.length} 个备份文件` : '暂无备份文件'
+})
 
 watch(webdavSettingsVisible, (open) => {
   if (open) {
@@ -559,10 +562,15 @@ async function handleExportWebdav() {
 }
 async function handleShowWebdavList() {
   webdavListVisible.value = true
+  await loadWebdavBackups()
+}
+async function loadWebdavBackups() {
   loadingWebdavList.value = true
   try {
     const { data } = await backupApi.listWebdavBackups()
     webdavBackups.value = data.backups
+  } catch (error: any) {
+    notify(getErrorMessage(error, '读取备份列表失败'), 'error')
   } finally {
     loadingWebdavList.value = false
   }
@@ -582,7 +590,7 @@ async function handleDeleteWebdav(filename: string) {
     await confirm(`确定要删除远程备份 ${filename} 吗？`, '警告')
     await backupApi.deleteWebdavBackup(filename)
     notify('已删除')
-    await handleShowWebdavList()
+    await loadWebdavBackups()
   } catch (error: any) {
     if (error !== 'cancel') notify(getErrorMessage(error, '删除失败'), 'error')
   }
@@ -591,6 +599,12 @@ function formatSize(bytes: number) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
+// WebDAV 返回的是服务器原始的 getlastmodified（RFC 1123），个别服务器可能不给
+function formatWebdavTime(value: string) {
+  if (!value) return '—'
+  const time = new Date(value)
+  return Number.isNaN(time.getTime()) ? value : time.toLocaleString()
 }
 
 onMounted(async () => {
@@ -772,31 +786,49 @@ onMounted(async () => {
   to { transform: rotate(360deg); }
 }
 
-.webdav-table-wrapper {
-  overflow: auto;
+.webdav-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
 }
-.webdav-table-wrapper thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  text-align: center;
+.webdav-status {
+  font-size: var(--v2-fs-sm);
+  color: var(--v2-text-2);
 }
-.webdav-table-wrapper tbody td {
-  text-align: center;
+.webdav-table-card {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--v2-surface-3);
+  border-radius: var(--v2-r);
 }
+.webdav-table-scroll { flex: 1; overflow: auto; }
+.webdav-table-scroll .v2-table { table-layout: fixed; }
+.webdav-table-scroll thead th { position: sticky; top: 0; z-index: 1; }
+.webdav-table-scroll .v2-table th,
+.webdav-table-scroll .v2-table td { padding: 12px 14px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.webdav-table-scroll .v2-table .webdav-col-name { text-align: left; }
+.webdav-table-scroll .v2-table .webdav-col-time { width: 172px; }
+.webdav-table-scroll .v2-table .webdav-col-size { width: 96px; }
+.webdav-table-scroll .v2-table .webdav-col-act { width: 108px; }
+.webdav-empty { padding: 28px 0; text-align: center; font-size: var(--v2-fs-sm); color: var(--v2-text-3); }
 .webdav-file-cell {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 .db-icon {
   color: var(--v2-text-3);
   flex-shrink: 0;
 }
 .filename-text {
-  display: block;
+  min-width: 0;
   color: var(--v2-text);
-  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -813,13 +845,6 @@ onMounted(async () => {
 }
 .webdav-link.danger {
   color: var(--v2-danger);
-}
-.empty-state-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--v2-text-3);
 }
 
 .write-mode-help-content {

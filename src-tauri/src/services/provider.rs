@@ -19,36 +19,52 @@ pub async fn get_stream_first_byte_timeout(db: &SqlitePool) -> u64 {
     .unwrap_or(DEFAULT_STREAM_FIRST_BYTE_TIMEOUT)
 }
 
-/// Record a successful request for a provider
-/// Resets consecutive_failures to 0
-/// Returns (had_previous_failures) to indicate if the provider was recovering
+/// Record a successful request for a provider.
+/// Resets consecutive_failures to 0, but never lifts an active blacklist:
+/// in-flight requests that started before the breaker opened must not
+/// shorten the cooldown.
+/// Returns true when the provider actually recovered (had failures and
+/// was not currently blacklisted).
 pub async fn record_success(db: &SqlitePool, provider_id: i64) -> Result<bool, sqlx::Error> {
     let now = now_timestamp();
+    let mut tx = db.begin().await?;
 
-    // Check if provider had previous failures
-    let had_failures: Option<(i64,)> =
-        sqlx::query_as("SELECT consecutive_failures FROM providers WHERE id = ?")
-            .bind(provider_id)
-            .fetch_optional(db)
-            .await?;
+    let state: Option<(i64, Option<i64>)> = sqlx::query_as(
+        "SELECT consecutive_failures, blacklisted_until FROM providers WHERE id = ?",
+    )
+    .bind(provider_id)
+    .fetch_optional(&mut *tx)
+    .await?;
 
-    let had_previous_failures = had_failures.map(|(cf,)| cf > 0).unwrap_or(false);
+    let Some((failures, blacklisted_until)) = state else {
+        tx.commit().await?;
+        return Ok(false);
+    };
 
-    sqlx::query(
+    if blacklisted_until.is_some_and(|until| until > now) {
+        tx.commit().await?;
+        return Ok(false);
+    }
+
+    let result = sqlx::query(
         r#"
         UPDATE providers
         SET consecutive_failures = 0,
             blacklisted_until = NULL,
             updated_at = ?
         WHERE id = ?
+          AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
         "#,
     )
     .bind(now)
     .bind(provider_id)
-    .execute(db)
+    .bind(now)
+    .execute(&mut *tx)
     .await?;
 
-    Ok(had_previous_failures)
+    tx.commit().await?;
+
+    Ok(result.rows_affected() > 0 && failures > 0)
 }
 
 /// Record a failed request for a provider

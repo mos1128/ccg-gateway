@@ -21,7 +21,9 @@
         </el-tooltip>
       </div>
       <div class="pt-fail mono" :class="{ danger: failDanger }">{{ provider.consecutive_failures }}/{{ provider.failure_threshold }}</div>
-      <div class="pt-cell mono pt-col-map" :class="{ muted: !mappingText }"><OverflowText :text="mappingText || '—'" /></div>
+      <div class="pt-cell pt-col-map" :class="{ muted: !mappingText }">
+        <OverflowText :text="mappingText || '—'" />
+      </div>
       <div class="pt-acts">
         <el-tooltip content="复制" placement="top" effect="light" :show-after="250">
           <button class="pt-act" @click="emit('copy', provider)"><svg width="16" height="16"><use href="#v2i-copy"/></svg></button>
@@ -66,7 +68,6 @@ const mappingText = computed(() => {
   if (props.provider.model_blacklist?.length) return `${props.provider.model_blacklist.length} 个黑名单`
   return ''
 })
-
 const health = computed(() => {
   if (props.provider.is_blacklisted) return { cls: 'v2-pill-danger', text: '熔断' }
   if (!props.provider.enabled) return { cls: 'v2-pill-neutral', text: '停用' }

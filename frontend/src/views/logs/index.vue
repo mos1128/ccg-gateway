@@ -81,20 +81,34 @@
                     <span class="tok-val">{{ formatTokens(row.output_tokens) }}</span>
                   </span>
                 </td>
-                <td class="mono logs-cache-cell">
-                  <span class="logs-cache-rate">{{ formatCacheHitRate(row) }}</span>
+                <td class="mono">{{ formatCacheHitRate(row) }}</td>
+                <td class="mono logs-cost-cell">
+                  <span>${{ formatCost(row.total_cost) }}</span>
                   <el-tooltip placement="top" effect="light" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
                     <template #content>
-                      <div class="profile-help logs-cache-tooltip">
-                        <div class="tooltip-title">缓存明细</div>
-                        <div class="tooltip-item"><strong>缓存读取：</strong><span>{{ formatTokens(row.cache_read_input_tokens) }}</span></div>
-                        <div class="tooltip-item"><strong>缓存写入：</strong><span>{{ formatTokens(row.cache_creation_input_tokens) }}</span></div>
+                      <div class="profile-help logs-cost-tooltip">
+                        <div class="tooltip-title">费用计算</div>
+                        <div class="logs-cost-line">
+                          <span class="logs-cost-label">使用模型</span>
+                          <span class="logs-cost-expr logs-cost-model" :title="costModel(row)">{{ costModel(row) }}</span>
+                        </div>
+                        <div v-for="line in costLines(row)" :key="line.label" class="logs-cost-line">
+                          <span class="logs-cost-label">{{ line.label }}</span>
+                          <span class="logs-cost-expr">{{ line.tokens }} × ${{ line.price }}/M</span>
+                          <span class="logs-cost-amount">${{ line.amount }}</span>
+                        </div>
+                        <div class="logs-cost-line logs-cost-total">
+                          <span class="logs-cost-label">合计</span>
+                          <span class="logs-cost-expr">{{ row.cost?.matched ? `× ${formatPrice(row.cost.multiplier)}` : '模型未命中，费用按 0 计' }}</span>
+                          <span class="logs-cost-amount">${{ formatCost(row.total_cost) }}</span>
+                        </div>
+                        <div v-if="row.cost?.source" class="logs-cost-note">价格来源：{{ formatCostSource(row.cost.source) }}</div>
+                        <div v-if="costNote(row)" class="logs-cost-note">{{ costNote(row) }}</div>
                       </div>
                     </template>
-                    <span class="logs-cache-info" tabindex="0" aria-label="查看缓存明细"><el-icon><InfoFilled /></el-icon></span>
+                    <span class="logs-cost-info" tabindex="0" aria-label="查看费用计算"><el-icon><InfoFilled /></el-icon></span>
                   </el-tooltip>
                 </td>
-                <td class="mono">${{ formatCost(row.total_cost) }}</td>
                 <td class="mono logs-map">
                   <template v-if="row.source_model || row.target_model">
                     <span class="logs-model-badge">{{ row.source_model || '-' }}</span>
@@ -162,7 +176,9 @@
           <span class="v2-pill v2-pill-info mono">{{ formatProtocolLabel(requestDetail.protocol) }}</span>
           <span class="v2-pill v2-pill-neutral">{{ requestDetail.provider_name || '未选择服务商' }}</span>
         </div>
-        <div v-if="requestDetail.error_message" class="logs-detail-err">{{ requestDetail.error_message }}</div>
+        <div v-if="requestDetail.error_message" class="logs-detail-err" :class="errorMessageClass(requestDetail)">
+          <span class="logs-err-prefix">{{ errorMessagePrefix(requestDetail) }}</span>{{ requestDetail.error_message }}
+        </div>
         <div class="logs-detail-list">
           <section v-for="section in detailSections" :key="section.group" class="logs-sec" :class="{ open: expandedDetailGroups[section.group] }">
             <div class="logs-sec-toggle" role="button" tabindex="0" :aria-expanded="expandedDetailGroups[section.group]" @click="toggleDetailGroup(section.group)" @keydown.enter.prevent="toggleDetailGroup(section.group)" @keydown.space.prevent="toggleDetailGroup(section.group)">
@@ -237,6 +253,12 @@ interface DetailSection {
   badgeClass: string
   summary: string
   blocks: DetailBlock[]
+}
+interface CostLine {
+  label: string
+  tokens: string
+  price: string
+  amount: string
 }
 
 const DETAIL_FORMAT_CHARS = 128 * 1024
@@ -504,6 +526,126 @@ function formatCacheHitRate(row: RequestLogListItem): string {
   return totalInput > 0 ? `${((row.cache_read_input_tokens / totalInput) * 100).toFixed(1)}%` : '-'
 }
 
+/** 单价去掉多余的 0，$3.00 显示成 $3，$0.014 保留原样。 */
+function formatPrice(price: number): string {
+  return Number(price.toFixed(4)).toString()
+}
+
+/** 费用浮窗按 token 类型逐行展示计算过程，四项始终列出。 */
+function costLines(row: RequestLogListItem): CostLine[] {
+  const multiplier = row.cost.multiplier > 0 ? row.cost.multiplier : 1
+  const items: Array<[string, number, number]> = [
+    ['输入', row.input_tokens, row.cost.input_price_per_m],
+    ['输出', row.output_tokens, row.cost.output_price_per_m],
+    ['缓存命中', row.cache_read_input_tokens, row.cost.cache_read_price_per_m],
+    ['缓存创建', row.cache_creation_input_tokens, row.cost.cache_creation_price_per_m]
+  ]
+  return items.map(([label, tokens, billedPrice]) => {
+    const catalogPrice = billedPrice / multiplier
+    return {
+      label,
+      tokens: formatTokens(tokens),
+      price: formatPrice(catalogPrice),
+      amount: formatCost((tokens * catalogPrice) / 1000000)
+    }
+  })
+}
+
+function costModel(row: RequestLogListItem): string {
+  return row.model_id || row.source_model || '—'
+}
+
+/** models.dev 厂商渠道 id 的展示名，未收录的 id 原样显示。 */
+const PROVIDER_SOURCE_LABELS: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  google: 'Google',
+  xai: 'xAI',
+  deepseek: 'DeepSeek',
+  moonshotai: '月之暗面',
+  'moonshotai-cn': '月之暗面',
+  zai: '智谱',
+  zhipuai: '智谱',
+  minimax: 'MiniMax',
+  'minimax-cn': 'MiniMax',
+  mistral: 'Mistral',
+  cohere: 'Cohere',
+  meta: 'Meta',
+  llama: 'Meta',
+  perplexity: 'Perplexity',
+  upstage: 'Upstage',
+  inception: 'Inception',
+  'stepfun-ai': '阶跃星辰',
+  stepfun: '阶跃星辰',
+  sensenova: '商汤',
+  longcat: 'LongCat',
+  xiaomi: '小米',
+  volcengine: '火山引擎',
+  alibaba: '阿里云百炼',
+  'alibaba-cn': '阿里云百炼',
+}
+
+function formatCostSource(source: string | null | undefined): string {
+  if (!source) return ''
+  const label = PROVIDER_SOURCE_LABELS[source]
+  return label && label !== source ? `${label}（${source}）` : source
+}
+
+function costNote(row: RequestLogListItem): string {
+  const threshold = row.cost.tier_threshold_tokens
+  return threshold ? `命中长上下文档 >${formatTokens(threshold)}` : ''
+}
+
+/** 网关自己生成的错误消息都是固定的中文短语（请求超时、流中断等）；
+ * 上游透传的错误内容来自上游响应体，文本不定。靠前缀区分两者。 */
+const GATEWAY_ERROR_PREFIXES = [
+  '上游请求失败',
+  '首字节超时',
+  '请求超时',
+  '响应体读取超时',
+  '读取响应体失败',
+  '读取上游响应体失败',
+  '读取上游错误响应失败',
+  '读取上游错误响应超时',
+  '上游流错误',
+  '上游流协议错误',
+  '上游流中断',
+  '上游流在有效事件前结束',
+  '上游流在完成事件前结束',
+  '上游返回了空流',
+  '上游返回了无效的 JSON 响应',
+  '上游响应错误',
+  '客户端在完成前断开了连接',
+]
+
+/** 网关生成的错误体（透传给客户端时）带这些 error.type。 */
+const GATEWAY_ERROR_TYPES = ['upstream_error', 'upstream_http_error', 'upstream_stream_error', 'upstream_timeout', 'upstream_unavailable', 'upstream_body_error']
+
+function errorMessagePrefix(detail: RequestLogDetail): string {
+  const msg = detail.error_message || ''
+
+  if (GATEWAY_ERROR_PREFIXES.some((prefix) => msg.startsWith(prefix))) {
+    return '网关捕获：'
+  }
+
+  // provider_body 里带网关错误类型的 JSON，说明是网关生成的错误体
+  try {
+    const parsed = JSON.parse(detail.provider_body || '')
+    if (parsed?.error?.type && GATEWAY_ERROR_TYPES.includes(parsed.error.type)) {
+      return '网关捕获：'
+    }
+  } catch {
+    // 非 JSON，继续
+  }
+
+  return '上游错误：'
+}
+
+function errorMessageClass(detail: RequestLogDetail): string {
+  const prefix = errorMessagePrefix(detail)
+  return prefix.startsWith('网关') ? 'logs-detail-err-gateway' : 'logs-detail-err-upstream'
+}
+
 function buildDetailBlocks(detail: RequestLogDetail): DetailBlock[] {
   return [
     createDetailBlock('client_headers', 'client', '请求头', detail.client_headers),
@@ -667,7 +809,10 @@ onUnmounted(() => {
 
 .logs-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .logs-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.logs-detail-err { padding: 10px 12px; border-radius: var(--v2-r-sm); background: var(--v2-danger-bg); color: var(--v2-danger); font-size: var(--v2-fs-sm); }
+.logs-detail-err { padding: 10px 12px; border-radius: var(--v2-r-sm); font-size: var(--v2-fs-sm); line-height: 1.5; }
+.logs-detail-err-gateway { background: var(--v2-danger-bg); color: var(--v2-danger); }
+.logs-detail-err-upstream { background: var(--v2-warning-bg); color: var(--v2-warning); }
+.logs-err-prefix { font-weight: var(--v2-fw-medium); margin-right: 4px; }
 .logs-detail-list { display: flex; flex-direction: column; gap: 10px; }
 .logs-sec { min-width: 0; border: 1px solid var(--v2-surface-3); border-radius: var(--v2-r-sm); background: var(--v2-surface); overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
 .logs-sec.open { border-color: color-mix(in srgb, var(--v2-accent) 28%, var(--v2-surface-3)); box-shadow: 0 8px 22px rgba(25, 36, 64, 0.06); }
@@ -722,11 +867,19 @@ onUnmounted(() => {
 .tok-group { display: inline-flex; align-items: center; gap: 3px; font-family: inherit; }
 .tok-val { font-size: var(--v2-fs-sm); color: var(--v2-text); }
 .tok-sep { color: var(--v2-text-3); margin: 0 1px; font-size: var(--v2-fs-sm); }
-.logs-cache-cell { white-space: nowrap; }
-.logs-cache-rate { color: var(--v2-text); }
-.logs-cache-info { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 5px; color: var(--v2-text-3); cursor: help; vertical-align: -2px; }
-.logs-cache-info:hover, .logs-cache-info:focus { color: var(--v2-text-2); outline: none; }
-.logs-cache-info .el-icon { font-size: 14px; }
-.logs-cache-tooltip { width: 180px; }
+.logs-cost-cell { white-space: nowrap; }
+.logs-cost-info { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 5px; color: var(--v2-text-3); cursor: help; vertical-align: -2px; }
+.logs-cost-info:hover, .logs-cost-info:focus { color: var(--v2-text-2); outline: none; }
+.logs-cost-info .el-icon { font-size: 14px; }
+.logs-cost-tooltip { width: 300px; }
+.logs-cost-line { display: flex; align-items: baseline; gap: 6px; font-family: var(--font-mono); font-size: var(--v2-fs-xs); }
+.logs-cost-line + .logs-cost-line { margin-top: 3px; }
+.logs-cost-label { width: 56px; flex: none; color: var(--v2-text-2); font-family: var(--font-ui); }
+.logs-cost-expr { flex: 1; color: var(--v2-text-3); min-width: 0; }
+.logs-cost-model { color: var(--v2-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.logs-cost-amount { flex: none; color: var(--v2-text); }
+.logs-cost-total { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--v2-surface-3); }
+.logs-cost-total .logs-cost-amount { font-weight: var(--v2-fw-medium); }
+.logs-cost-note { margin-top: 6px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); line-height: 1.5; }
 
 </style>

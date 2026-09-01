@@ -167,6 +167,60 @@ export interface ModelBlacklist {
   model_pattern: string
 }
 
+export interface ProviderModel {
+  id: number
+  provider_id: number
+  model_name: string
+  source: 'auto' | 'manual' | string
+  enabled: boolean | number
+  first_seen_at: number
+  last_seen_at: number
+}
+
+export interface ProviderModelSyncState {
+  provider_id: number
+  last_attempt_at: number | null
+  last_success_at: number | null
+  last_error: string | null
+  model_count: number
+  updated_at: number
+}
+
+export interface ProviderModelsResponse {
+  provider_id: number
+  models: ProviderModel[]
+  sync_state: ProviderModelSyncState | null
+}
+
+export interface PriceSyncState {
+  id: number
+  last_attempt_at: number | null
+  last_success_at: number | null
+  last_error: string | null
+  model_count: number
+  updated_at: number
+}
+
+export interface ModelPriceTier {
+  threshold_tokens: number
+  input_price_per_m: number
+  output_price_per_m: number
+  cache_read_price_per_m: number
+  cache_creation_price_per_m: number
+}
+
+export interface ModelPriceCatalogEntry {
+  model_key: string
+  model_name: string
+  source_provider: string | null
+  input_price_per_m: number
+  output_price_per_m: number
+  cache_read_price_per_m: number
+  cache_creation_price_per_m: number
+  tiers: string | null
+  fetched_at: number
+}
+
 export interface Provider {
   id: number
   cli_type: CliType
@@ -177,15 +231,14 @@ export interface Provider {
   api_key: string
   enabled: boolean
   failure_threshold: number
+  /** 单个服务商在一轮里连续尝试的上限，达到后切下一个服务商。 */
+  retry_limit: number
   blacklist_minutes: number
   consecutive_failures: number
   blacklisted_until: number | null
   sort_order: number
   custom_useragent: string | null
-  input_price_per_m: number
-  output_price_per_m: number
-  cache_read_price_per_m: number
-  cache_creation_price_per_m: number
+  price_multiplier: number
   model_maps: ModelMap[]
   model_blacklist: ModelBlacklist[]
   is_blacklisted: boolean
@@ -201,12 +254,10 @@ export interface ProviderCreate {
   api_key: string
   enabled?: boolean
   failure_threshold?: number
+  retry_limit?: number
   blacklist_minutes?: number
   custom_useragent?: string
-  input_price_per_m?: number
-  output_price_per_m?: number
-  cache_read_price_per_m?: number
-  cache_creation_price_per_m?: number
+  price_multiplier?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
 }
@@ -219,12 +270,10 @@ export interface ProviderUpdate {
   api_key?: string
   enabled?: boolean
   failure_threshold?: number
+  retry_limit?: number
   blacklist_minutes?: number
   custom_useragent?: string
-  input_price_per_m?: number
-  output_price_per_m?: number
-  cache_read_price_per_m?: number
-  cache_creation_price_per_m?: number
+  price_multiplier?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
 }
@@ -580,6 +629,20 @@ export interface AdvancedStatsRow {
 }
 
 // Log types
+/** 实际用于计费的单价，后端读取日志时算出来，不落库。价格都已乘过服务商倍率。 */
+export interface CostBreakdown {
+  matched: boolean
+  multiplier: number
+  input_price_per_m: number
+  output_price_per_m: number
+  cache_read_price_per_m: number
+  cache_creation_price_per_m: number
+  /** 命中的分层档阈值，走基准价时为 null。 */
+  tier_threshold_tokens: number | null
+  /** 价格来源（models.dev 的厂商渠道 id），未命中目录时为 null。 */
+  source: string | null
+}
+
 export interface RequestLogListItem {
   id: number
   created_at: number
@@ -598,6 +661,7 @@ export interface RequestLogListItem {
   cache_creation_input_tokens: number
   output_tokens: number
   total_cost: number
+  cost: CostBreakdown
   client_method: string
   client_path: string
   source_model: string | null

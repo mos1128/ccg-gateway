@@ -5,7 +5,8 @@ use axum::{
 };
 use bytes::Bytes;
 use flate2::read::{DeflateDecoder, GzDecoder, ZlibDecoder};
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
+use serde_json::Value;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use crate::services::proxy::{
     parse_streaming_token_usage, parse_token_usage, stream_body_has_completion, TimeoutConfig,
     TokenUsage,
 };
-use crate::services::routing::select_provider;
+use crate::services::routing::get_available_providers;
 use crate::services::{
     agent as agent_service, protocol as protocol_service, provider as provider_service,
     stats as stats_service,
@@ -39,7 +40,7 @@ const RESPONSE_FILTERED_HEADERS: &[&str] = &[
     "content-length",
 ];
 const CLIENT_CLOSED_REQUEST_STATUS: u16 = 499;
-const CLIENT_CLOSED_REQUEST_MESSAGE: &str = "Client closed request before completion";
+const CLIENT_CLOSED_REQUEST_MESSAGE: &str = "客户端在完成前断开了连接";
 
 #[derive(Clone)]
 struct RequestIdentity {
@@ -296,8 +297,10 @@ pub async fn proxy_handler_catchall(
         _ => extract_model_from_body(&body_bytes),
     };
 
-    // Select provider based on CLI type and model
-    let provider_with_maps = match select_provider(
+    // Load all candidates once. Each attempt below rebuilds the request so a
+    // failed upstream can be replaced before anything is committed to the
+    // client.
+    let providers = match get_available_providers(
         &state.db,
         &agent.id,
         &provider_profile,
@@ -306,8 +309,8 @@ pub async fn proxy_handler_catchall(
     )
     .await
     {
-        Ok(Some(p)) => p,
-        Ok(None) => {
+        Ok(providers) if !providers.is_empty() => providers,
+        Ok(_) => {
             tracing::warn!(
                 agent_id = agent.id,
                 protocol = %protocol,
@@ -328,7 +331,7 @@ pub async fn proxy_handler_catchall(
                 .status(StatusCode::SERVICE_UNAVAILABLE)
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    r#"{"error": "No available provider configured"}"#,
+                    r#"{"error": "没有可用的服务商"}"#,
                 ))
                 .unwrap());
         }
@@ -337,10 +340,6 @@ pub async fn proxy_handler_catchall(
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
-
-    let provider = &provider_with_maps.provider;
-    let provider_id = provider.id;
-    let provider_name = provider.name.clone();
 
     // Get timeout settings
     let timeouts = match sqlx::query_as::<_, (i64, i64, i64)>(
@@ -353,152 +352,290 @@ pub async fn proxy_handler_catchall(
         Err(_) => TimeoutConfig::default(),
     };
 
-    // Check if streaming
-    // (streaming flag already determined above)
-
-    // Apply model mapping and extract model info
     let model_mapping_enabled = agent.features.model_mapping.enabled;
-    let (final_body, final_path, source_model, target_model) = match protocol {
-        Protocol::GeminiGenerateContent if model_mapping_enabled => {
-            let mapping = apply_url_model_mapping(
-                &provider_with_maps,
-                &full_path,
-                &provider_with_maps.model_maps,
+    // Rotating failover: every failed attempt counts once toward the channel
+    // breaker. A channel gets up to its `retry_limit` consecutive attempts
+    // before the next channel takes over; once every channel has spent its
+    // round budget, the rotation starts over until one channel succeeds or
+    // all channels are blacklisted. The last upstream error is what the
+    // client sees when every channel is exhausted.
+    let mut last_failure: Option<Response<Body>> = None;
+    // Channels whose own answer rules out any retry (bad credentials, unknown
+    // model): rotating back to them would only repeat the same error.
+    let mut skipped: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+    'rotation: loop {
+    for provider_with_maps in &providers {
+        let provider = &provider_with_maps.provider;
+        let provider_id = provider.id;
+        let provider_name = provider.name.clone();
+        if skipped.contains(&provider_id) {
+            continue;
+        }
+        // Re-check live state: the snapshot is from request start, so a
+        // channel disabled or blacklisted mid-request must be skipped.
+        if provider_unavailable(&state.db, provider_id).await {
+            continue;
+        }
+        // At least 1 so a stored 0 cannot silence the channel entirely.
+        let retry_limit = provider.retry_limit.clamp(1, 20) as usize;
+
+        for attempt in 0..retry_limit {
+            if provider_unavailable(&state.db, provider_id).await {
+                break;
+            }
+
+            // Backoff delay after first failure (200ms, 400ms, 800ms, capped at 2s)
+            if attempt > 0 {
+                let delay_ms = (200u64 * (1 << (attempt - 1))).min(2000);
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+            }
+            let (final_body, final_path, source_model, target_model) = match protocol {
+                Protocol::GeminiGenerateContent if model_mapping_enabled => {
+                    let mapping = apply_url_model_mapping(
+                        &provider_with_maps,
+                        &full_path,
+                        &provider_with_maps.model_maps,
+                    );
+                    (
+                        body_bytes.clone(),
+                        mapping.path,
+                        mapping.source_model,
+                        mapping.target_model,
+                    )
+                }
+                Protocol::GeminiGenerateContent => (
+                    body_bytes.clone(),
+                    full_path.clone(),
+                    extract_model_from_path(&full_path),
+                    None,
+                ),
+                _ if model_mapping_enabled => {
+                    let mapping =
+                        apply_body_model_mapping(&provider_with_maps, &body_bytes, &full_path);
+                    (
+                        mapping.body,
+                        mapping.path,
+                        mapping.source_model,
+                        mapping.target_model,
+                    )
+                }
+                _ => (
+                    body_bytes.clone(),
+                    full_path.clone(),
+                    extract_model_from_body(&body_bytes),
+                    None,
+                ),
+            };
+            let model_id = target_model.clone().or(source_model.clone());
+            let upstream_url =
+                crate::services::proxy::join_upstream_url(&provider.base_url, &final_path);
+            let request = match crate::services::proxy::build_upstream_request(
+                &state.http_client,
+                provider,
+                protocol,
+                &upstream_url,
+                &headers,
+                final_body,
+                reqwest::Method::from_bytes(method.as_str().as_bytes())
+                    .unwrap_or(reqwest::Method::GET),
+            ) {
+                Ok(req) => req,
+                Err(e) => {
+                    tracing::error!(provider_id, error = %e, "Failed to build request");
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            };
+            // Streaming requests no longer force identity encoding to allow
+            // full pass-through. Compressed streams skip prefix inspection.
+
+            let log_info = RequestLogInfo {
+                client_headers: Some(client_headers_json.clone()),
+                client_body: Some(client_body_str.clone()),
+                forward_url: Some(upstream_url.clone()),
+                forward_headers: Some(serialize_reqwest_headers(request.headers())),
+                forward_body: Some(
+                    request
+                        .body()
+                        .and_then(|body| body.as_bytes())
+                        .map(truncate_body)
+                        .unwrap_or_default(),
+                ),
+                ..Default::default()
+            };
+            let identity = RequestIdentity {
+                agent_id: agent.id.clone(),
+                profile: provider_profile.clone(),
+                protocol,
+                provider_id,
+                token_usage_enabled: agent.features.token_usage.enabled,
+            };
+            let request_log_id = start_request_log(
+                &state,
+                &identity,
+                &provider_name,
+                model_id.as_deref(),
+                method.as_ref(),
+                &raw_full_path,
+                Some(&upstream_url),
+                source_model.as_deref(),
+                target_model.as_deref(),
+            )
+            .await;
+
+            let result = if streaming {
+                handle_streaming_request(
+                    request,
+                    &state.http_client,
+                    &state,
+                    provider_id,
+                    &provider_name,
+                    identity,
+                    model_id.as_deref(),
+                    method.as_ref(),
+                    &raw_full_path,
+                    start_time,
+                    timeouts.clone(),
+                    source_model.as_deref(),
+                    target_model.as_deref(),
+                    log_info,
+                    request_log_id,
+                )
+                .await
+            } else {
+                handle_non_streaming_request(
+                    request,
+                    &state.http_client,
+                    &state,
+                    provider_id,
+                    &provider_name,
+                    identity,
+                    model_id.as_deref(),
+                    method.as_ref(),
+                    &raw_full_path,
+                    start_time,
+                    timeouts.clone(),
+                    source_model.as_deref(),
+                    target_model.as_deref(),
+                    log_info,
+                    request_log_id,
+                )
+                .await
+            };
+
+            let response = match result {
+                Ok(response) => response,
+                Err(status) => json_error_response(
+                    status,
+                    "upstream_error",
+                    "上游请求失败，未收到响应",
+                ),
+            };
+
+            let status_code = response.status().as_u16();
+            if !is_channel_failure(status_code) {
+                return Ok(response);
+            }
+
+            // 401/403/404 don't retry same provider, move to next immediately
+            if matches!(status_code, 401 | 403 | 404) {
+                tracing::warn!(
+                    provider_id,
+                    provider = %provider_name,
+                    status = %status_code,
+                    "Provider authentication/not-found error, skipping retries"
+                );
+                if let Some(previous) = last_failure.replace(response) {
+                    drain_response_body(previous).await;
+                }
+                skipped.insert(provider_id);
+                // The failed attempt still counts toward the breaker.
+                record_provider_failure(&state, provider_id).await;
+                break;
+            }
+
+            tracing::warn!(
+                provider_id,
+                provider = %provider_name,
+                status = %status_code,
+                attempt = attempt + 1,
+                "Provider attempt failed"
             );
-            (
-                body_bytes.clone(),
-                mapping.path,
-                mapping.source_model,
-                mapping.target_model,
-            )
+            if let Some(previous) = last_failure.replace(response) {
+                drain_response_body(previous).await;
+            }
+
+            // Every failed attempt counts once toward the channel breaker;
+            // reaching the threshold blacklists it for the cooldown.
+            record_provider_failure(&state, provider_id).await;
+
+            if provider_unavailable(&state.db, provider_id).await {
+                break;
+            }
         }
-        Protocol::GeminiGenerateContent => (
-            body_bytes.clone(),
-            full_path.clone(),
-            extract_model_from_path(&full_path),
-            None,
-        ),
-        _ if model_mapping_enabled => {
-            let mapping = apply_body_model_mapping(&provider_with_maps, &body_bytes, &full_path);
-            (
-                mapping.body,
-                mapping.path,
-                mapping.source_model,
-                mapping.target_model,
-            )
-        }
-        _ => (
-            body_bytes.clone(),
-            full_path.clone(),
-            extract_model_from_body(&body_bytes),
-            None,
-        ),
-    };
-
-    // Use target model if mapped, otherwise use source model
-    let model_id = target_model.clone().or(source_model.clone());
-
-    // Build upstream URL: base_url + original_path
-    // e.g., base_url="https://api.example.com/v1", path="/responses" -> "https://api.example.com/v1/responses"
-    let upstream_url = crate::services::proxy::join_upstream_url(&provider.base_url, &final_path);
-
-    // Build the upstream request via the shared constructor (single source of
-    // truth for hop-by-hop filtering, auth injection, and UA override).
-    let request = match crate::services::proxy::build_upstream_request(
-        &state.http_client,
-        provider,
-        protocol,
-        &upstream_url,
-        &headers,
-        final_body,
-        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET),
-    ) {
-        Ok(req) => req,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to build request");
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    // Log the actual request that will be sent
-    let actual_forward_headers = serialize_reqwest_headers(request.headers());
-    let actual_forward_body = request
-        .body()
-        .and_then(|b| b.as_bytes())
-        .map(|bytes| truncate_body(bytes))
-        .unwrap_or_default();
-
-    // Build log info with actual request data
-    let log_info = RequestLogInfo {
-        client_headers: Some(client_headers_json),
-        client_body: Some(client_body_str),
-        forward_url: Some(upstream_url.clone()),
-        forward_headers: Some(actual_forward_headers),
-        forward_body: Some(actual_forward_body),
-        ..Default::default()
-    };
-
-    let identity = RequestIdentity {
-        agent_id: agent.id.clone(),
-        profile: provider_profile.clone(),
-        protocol,
-        provider_id,
-        token_usage_enabled: agent.features.token_usage.enabled,
-    };
-
-    let request_log_id = start_request_log(
-        &state,
-        &identity,
-        &provider_name,
-        model_id.as_deref(),
-        method.as_ref(),
-        &raw_full_path,
-        Some(&upstream_url),
-        source_model.as_deref(),
-        target_model.as_deref(),
-    )
-    .await;
-
-    // Execute request
-    if streaming {
-        handle_streaming_request(
-            request,
-            &state.http_client,
-            &state,
-            provider_id,
-            &provider_name,
-            identity,
-            model_id.as_deref(),
-            method.as_ref(),
-            &raw_full_path,
-            start_time,
-            timeouts,
-            source_model.as_deref(),
-            target_model.as_deref(),
-            log_info,
-            request_log_id,
-        )
-        .await
-    } else {
-        handle_non_streaming_request(
-            request,
-            &state.http_client,
-            &state,
-            provider_id,
-            &provider_name,
-            identity,
-            model_id.as_deref(),
-            method.as_ref(),
-            &raw_full_path,
-            start_time,
-            timeouts,
-            source_model.as_deref(),
-            target_model.as_deref(),
-            log_info,
-            request_log_id,
-        )
-        .await
     }
+
+    // The round is over. Keep rotating while at least one channel is neither
+    // blacklisted nor ruled out by its own answer; otherwise give up and let
+    // the last upstream error reach the client.
+    let mut any_available = false;
+    for provider_with_maps in &providers {
+        if skipped.contains(&provider_with_maps.provider.id) {
+            continue;
+        }
+        if !provider_unavailable(&state.db, provider_with_maps.provider.id).await {
+            any_available = true;
+            break;
+        }
+    }
+    if !any_available {
+        break;
+    }
+    }
+
+    Ok(last_failure.unwrap_or_else(|| {
+        json_error_response(
+            StatusCode::BAD_GATEWAY,
+            "upstream_unavailable",
+            "所有服务商均未能成功响应",
+        )
+    }))
+}
+
+/// The upstream rejected the request itself. Another channel would reject it
+/// the same way, so the error goes straight back to the client and must not
+/// count against the channel.
+fn is_client_request_error(status: u16) -> bool {
+    matches!(status, 400 | 413 | 422)
+}
+
+fn is_channel_failure(status: u16) -> bool {
+    status >= 400 && !is_client_request_error(status)
+}
+
+/// Whether this channel should no longer receive retries. Disabled, deleted,
+/// or currently blacklisted channels are skipped so the next channel can take
+/// over without waiting for the original snapshot to exhaust. A read error is
+/// treated as unavailable so a failing request always makes progress.
+async fn provider_unavailable(db: &sqlx::SqlitePool, provider_id: i64) -> bool {
+    let now = crate::time::now_timestamp();
+    sqlx::query_as::<_, (i64,)>(
+        r#"
+        SELECT COUNT(*) FROM providers
+        WHERE id = ?
+          AND enabled = 1
+          AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
+        "#,
+    )
+    .bind(provider_id)
+    .bind(now)
+    .fetch_one(db)
+    .await
+    .map_or(true, |(count,)| count == 0)
+}
+
+async fn drain_response_body(response: Response<Body>) {
+    let _ = axum::body::to_bytes(response.into_body(), 2 * 1024 * 1024).await;
 }
 
 fn json_error_response(status: StatusCode, error_type: &str, message: &str) -> Response<Body> {
@@ -513,6 +650,444 @@ fn json_error_response(status: StatusCode, error_type: &str, message: &str) -> R
         .header("content-type", "application/json")
         .body(Body::from(body.to_string()))
         .expect("valid JSON error response")
+}
+
+/// Pass through upstream error response with original body and headers.
+/// Used when we want to preserve the upstream's exact error format for Agent compatibility.
+fn build_passthrough_error_response(
+    status: StatusCode,
+    body: &[u8],
+    upstream_headers: &reqwest::header::HeaderMap,
+) -> Response<Body> {
+    let mut builder = Response::builder().status(status);
+
+    // Copy relevant headers from upstream (content-type, etc.)
+    for (name, value) in upstream_headers.iter() {
+        let name_str = name.as_str();
+        if name_str.eq_ignore_ascii_case("content-type")
+            || name_str.eq_ignore_ascii_case("content-language")
+        {
+            if let Ok(header_name) = axum::http::HeaderName::from_bytes(name.as_str().as_bytes()) {
+                if let Ok(header_value) = axum::http::HeaderValue::from_bytes(value.as_bytes()) {
+                    builder = builder.header(header_name, header_value);
+                }
+            }
+        }
+    }
+
+    builder
+        .body(Body::from(body.to_vec()))
+        .unwrap_or_else(|_| {
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::empty())
+                .unwrap()
+        })
+}
+
+enum StreamStartFailure {
+    Timeout,
+    Empty,
+    Body(String),
+    Protocol(String),
+}
+
+impl StreamStartFailure {
+    fn status(&self) -> StatusCode {
+        match self {
+            Self::Timeout => StatusCode::GATEWAY_TIMEOUT,
+            Self::Empty | Self::Body(_) | Self::Protocol(_) => StatusCode::BAD_GATEWAY,
+        }
+    }
+
+    fn log_message(&self) -> String {
+        match self {
+            Self::Timeout => "首字节超时".to_string(),
+            Self::Empty => "上游返回了空流".to_string(),
+            Self::Body(error) => format!("上游流错误: {}", error),
+            Self::Protocol(error) => format!("上游流协议错误: {}", error),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamResponseKind {
+    Sse,
+    Json,
+}
+
+struct StreamPrefix {
+    chunks: Vec<Bytes>,
+    kind: StreamResponseKind,
+}
+
+enum StreamPrefixState {
+    NeedMore,
+    Ready(StreamResponseKind),
+    Error(String),
+}
+
+fn inspect_stream_prefix(
+    protocol: Protocol,
+    prefix: &mut Vec<u8>,
+    end_of_stream: bool,
+    hinted_kind: Option<StreamResponseKind>,
+) -> StreamPrefixState {
+    while let Some((event_len, delimiter_len)) = find_sse_boundary(prefix) {
+        let event: Vec<u8> = prefix.drain(..event_len + delimiter_len).collect();
+        let event = &event[..event_len];
+        if event.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        if let Some(error) = stream_event_error(protocol, event) {
+            return StreamPrefixState::Error(error);
+        }
+        if stream_event_has_data(event) || looks_like_sse(event) {
+            return StreamPrefixState::Ready(StreamResponseKind::Sse);
+        }
+    }
+
+    let trimmed = prefix
+        .iter()
+        .copied()
+        .skip_while(u8::is_ascii_whitespace)
+        .collect::<Vec<_>>();
+    if trimmed.is_empty() {
+        return StreamPrefixState::NeedMore;
+    }
+
+    // Some upstreams return a JSON error despite accepting a streaming request.
+    // Detect complete JSON without waiting for an SSE delimiter.
+    if !looks_like_sse(&trimmed) {
+        if let Ok(value) = serde_json::from_slice::<Value>(&trimmed) {
+            if let Some(error) = json_stream_error(protocol, None, &value) {
+                return StreamPrefixState::Error(error);
+            }
+            return StreamPrefixState::Ready(StreamResponseKind::Json);
+        }
+    }
+
+    if looks_like_sse(&trimmed) {
+        if let Some(error) = stream_event_error(protocol, &trimmed) {
+            return StreamPrefixState::Error(error);
+        }
+        return StreamPrefixState::Ready(StreamResponseKind::Sse);
+    }
+
+    if end_of_stream {
+        if hinted_kind == Some(StreamResponseKind::Json) {
+            return StreamPrefixState::Error(
+                "上游返回了无效的 JSON 响应".to_string(),
+            );
+        }
+        if hinted_kind == Some(StreamResponseKind::Sse) && stream_event_has_data(&trimmed) {
+            return StreamPrefixState::Ready(StreamResponseKind::Sse);
+        }
+    }
+
+    StreamPrefixState::NeedMore
+}
+
+fn stream_kind_from_content_type(content_type: Option<&str>) -> Option<StreamResponseKind> {
+    let content_type = content_type?.to_ascii_lowercase();
+    if content_type.contains("text/event-stream") {
+        Some(StreamResponseKind::Sse)
+    } else if content_type.contains("json") {
+        Some(StreamResponseKind::Json)
+    } else {
+        None
+    }
+}
+
+fn find_sse_boundary(bytes: &[u8]) -> Option<(usize, usize)> {
+    for index in 0..bytes.len().saturating_sub(1) {
+        if bytes[index] == b'\n' && bytes[index + 1] == b'\n' {
+            return Some((index, 2));
+        }
+        if index + 3 < bytes.len() && &bytes[index..index + 4] == b"\r\n\r\n" {
+            return Some((index, 4));
+        }
+    }
+    None
+}
+
+fn looks_like_sse(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(bytes);
+    text.lines().any(|line| {
+        let line = line.trim_start();
+        line.starts_with("data:")
+            || line.starts_with("event:")
+            || line.starts_with("id:")
+            || line.starts_with("retry:")
+            || line.starts_with(':')
+    })
+}
+
+fn stream_event_has_data(event: &[u8]) -> bool {
+    String::from_utf8_lossy(event).lines().any(|line| {
+        line.trim_start()
+            .strip_prefix("data:")
+            .is_some_and(|data| !data.trim().is_empty())
+    })
+}
+
+fn stream_event_error(protocol: Protocol, event: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(event);
+    let event_name = text.lines().find_map(|line| {
+        line.trim_start()
+            .strip_prefix("event:")
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+    });
+    let data = text
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("data:"))
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if let Ok(value) = serde_json::from_str::<Value>(&data) {
+        if let Some(error) = json_stream_error(protocol, event_name, &value) {
+            return Some(error);
+        }
+    }
+    if event_name.is_some_and(is_error_event_name) {
+        Some(if data.is_empty() {
+            event_name.unwrap_or("error").to_string()
+        } else {
+            truncate_stream_error(&data)
+        })
+    } else {
+        None
+    }
+}
+
+fn json_stream_error(
+    protocol: Protocol,
+    event_name: Option<&str>,
+    value: &Value,
+) -> Option<String> {
+    let explicit_event_error = event_name.is_some_and(is_error_event_name);
+    let value_type = value
+        .get("type")
+        .and_then(Value::as_str)
+        .map(str::to_ascii_lowercase);
+    let value_status = value
+        .get("status")
+        .and_then(Value::as_str)
+        .map(str::to_ascii_lowercase);
+    let response_status = value
+        .get("response")
+        .and_then(|response| response.get("status"))
+        .and_then(Value::as_str)
+        .map(str::to_ascii_lowercase);
+    let structured_error = value.get("error").is_some_and(|error| !error.is_null())
+        || value_type.as_deref().is_some_and(|kind| {
+            kind == "error"
+                || kind.ends_with(".error")
+                || kind.ends_with(".failed")
+                || kind == "failed"
+        })
+        || (matches!(protocol, Protocol::OpenaiResponses)
+            && (value_status.as_deref() == Some("failed")
+                || response_status.as_deref() == Some("failed")));
+    if !explicit_event_error && !structured_error {
+        return None;
+    }
+
+    let message = value
+        .get("error")
+        .and_then(|error| {
+            error
+                .get("message")
+                .and_then(Value::as_str)
+                .or_else(|| error.as_str())
+        })
+        .or_else(|| {
+            value
+                .get("response")
+                .and_then(|response| response.get("error"))
+                .and_then(|error| {
+                    error
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .or_else(|| error.as_str())
+                })
+        })
+        .or_else(|| value.get("message").and_then(Value::as_str))
+        .or_else(|| {
+            value
+                .get("response")
+                .and_then(|response| response.get("message"))
+                .and_then(Value::as_str)
+        })
+        .or_else(|| value.get("detail").and_then(Value::as_str))
+        .or_else(|| event_name.filter(|name| !name.is_empty()))
+        .unwrap_or("upstream returned a streaming error");
+    Some(truncate_stream_error(message))
+}
+
+fn is_error_event_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name == "error" || name.contains("error") || name.ends_with(".failed")
+}
+
+fn truncate_stream_error(value: &str) -> String {
+    value.chars().take(2048).collect()
+}
+
+fn response_body_error(protocol: Protocol, body: &[u8]) -> Option<String> {
+    let value = serde_json::from_slice::<Value>(body).ok()?;
+    json_stream_error(protocol, None, &value)
+}
+
+fn upstream_error_message(protocol: Protocol, body: &[u8]) -> String {
+    if let Some(message) = response_body_error(protocol, body) {
+        return message;
+    }
+    if let Ok(value) = serde_json::from_slice::<Value>(body) {
+        for key in ["message", "detail", "error", "description"] {
+            if let Some(message) = value.get(key).and_then(Value::as_str) {
+                if !message.trim().is_empty() {
+                    return truncate_stream_error(message);
+                }
+            }
+        }
+    }
+    let text = String::from_utf8_lossy(body);
+    let text = text.trim();
+    if text.is_empty() {
+        "上游返回了 HTTP 错误".to_string()
+    } else {
+        truncate_stream_error(text)
+    }
+}
+
+fn stream_error_event(protocol: Protocol) -> Bytes {
+    stream_error_event_with_message(protocol, "上游流中断，未完成")
+}
+
+fn stream_error_event_with_message(protocol: Protocol, message: &str) -> Bytes {
+    let payload = serde_json::json!({
+        "type": "error",
+        "error": {
+            "type": "upstream_stream_error",
+            "message": message,
+        }
+    });
+    let body = match protocol {
+        Protocol::AnthropicMessages | Protocol::OpenaiResponses => {
+            format!("event: error\ndata: {}\n\n", payload)
+        }
+        Protocol::OpenaiChat | Protocol::GeminiGenerateContent => {
+            format!("data: {}\n\n", payload)
+        }
+    };
+    Bytes::from(body)
+}
+
+/// Drain complete SSE events from a rolling buffer. Incomplete events stay in
+/// the buffer so an error split across network chunks is still recognized.
+fn drain_sse_events(buffer: &mut Vec<u8>, protocol: Protocol) -> (Bytes, Option<String>) {
+    const MAX_PENDING_EVENT_BYTES: usize = 2 * 1024 * 1024;
+    let mut output = Vec::new();
+    let mut error_message = None;
+
+    while let Some((event_len, delimiter_len)) = find_sse_boundary(buffer) {
+        let event_end = event_len + delimiter_len;
+        let event: Vec<u8> = buffer.drain(..event_end).collect();
+        if let Some(message) = stream_event_error(protocol, &event[..event_len]) {
+            error_message = Some(message.clone());
+            output.extend_from_slice(&stream_error_event_with_message(protocol, &message));
+            buffer.clear();
+            break;
+        }
+        output.extend_from_slice(&event);
+    }
+
+    // A malformed or unusually large event must not hold the stream forever.
+    if error_message.is_none() && buffer.len() > MAX_PENDING_EVENT_BYTES {
+        output.extend_from_slice(buffer);
+        buffer.clear();
+    }
+
+    (Bytes::from(output), error_message)
+}
+
+async fn record_provider_failure(state: &Arc<AppState>, provider_id: i64) {
+    if let Ok((was_blacklisted, provider_name)) =
+        provider_service::record_failure(&state.db, provider_id).await
+    {
+        if was_blacklisted {
+            let _ = stats_service::record_system_log(
+                &state.log_db,
+                "provider_blacklisted",
+                &format!("服务商 {} 因连续失败已被加入黑名单", provider_name),
+            )
+            .await;
+        }
+    }
+}
+
+async fn read_stream_prefix<S>(
+    byte_stream: &mut S,
+    protocol: Protocol,
+    response_encoded: bool,
+    content_type: Option<&str>,
+    timeout: std::time::Duration,
+) -> Result<StreamPrefix, StreamStartFailure>
+where
+    S: Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
+{
+    const MAX_PREFIX_BYTES: usize = 1024 * 1024;
+    let deadline = Instant::now() + timeout;
+    let mut chunks = Vec::new();
+    let mut prefix = Vec::new();
+    let hinted_kind = stream_kind_from_content_type(content_type);
+
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(StreamStartFailure::Timeout);
+        }
+        let chunk = match tokio::time::timeout(remaining, byte_stream.next()).await {
+            Ok(Some(Ok(chunk))) => chunk,
+            Ok(Some(Err(error))) => {
+                return Err(StreamStartFailure::Body(error.to_string()));
+            }
+            Ok(None) => {
+                return match inspect_stream_prefix(protocol, &mut prefix, true, hinted_kind) {
+                    StreamPrefixState::Ready(kind) => Ok(StreamPrefix { chunks, kind }),
+                    StreamPrefixState::Error(error) => Err(StreamStartFailure::Protocol(error)),
+                    StreamPrefixState::NeedMore if prefix.is_empty() => {
+                        Err(StreamStartFailure::Empty)
+                    }
+                    StreamPrefixState::NeedMore => Err(StreamStartFailure::Protocol(
+                        "上游流在有效事件前结束".to_string(),
+                    )),
+                };
+            }
+            Err(_) => return Err(StreamStartFailure::Timeout),
+        };
+        if chunk.is_empty() {
+            continue;
+        }
+
+        prefix.extend_from_slice(&chunk);
+        chunks.push(chunk);
+        if response_encoded || prefix.len() >= MAX_PREFIX_BYTES {
+            return Ok(StreamPrefix {
+                chunks,
+                kind: hinted_kind.unwrap_or(StreamResponseKind::Sse),
+            });
+        }
+
+        match inspect_stream_prefix(protocol, &mut prefix, false, hinted_kind) {
+            StreamPrefixState::Ready(kind) => return Ok(StreamPrefix { chunks, kind }),
+            StreamPrefixState::Error(error) => return Err(StreamStartFailure::Protocol(error)),
+            StreamPrefixState::NeedMore => {}
+        }
+    }
 }
 
 fn serialize_headers(headers: &axum::http::HeaderMap) -> String {
@@ -706,19 +1281,7 @@ async fn handle_streaming_request(
             Ok(Ok(resp)) => resp,
             Ok(Err(e)) => {
                 tracing::error!(error = %e, "Upstream request failed");
-                if let Ok((was_blacklisted, prov_name)) =
-                    provider_service::record_failure(&state.db, provider_id).await
-                {
-                    if was_blacklisted {
-                        let _ = stats_service::record_system_log(
-                            &state.log_db,
-                            "provider_blacklisted",
-                            &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                        )
-                        .await;
-                    }
-                }
-                log_info.error_message = Some(format!("Upstream error: {}", e));
+                log_info.error_message = Some(format!("上游请求失败: {}", e));
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -740,30 +1303,15 @@ async fn handle_streaming_request(
                 if let Some(guard) = &cancel_guard {
                     guard.disarm();
                 }
-                return Ok(Response::builder()
-                    .status(StatusCode::BAD_GATEWAY)
-                    .header("content-type", "application/json")
-                    .body(Body::from(format!(
-                        r#"{{"error": "Upstream error: {}"}}"#,
-                        e
-                    )))
-                    .unwrap());
+                return Ok(json_error_response(
+                    StatusCode::BAD_GATEWAY,
+                    "upstream_error",
+                    &format!("上游请求失败: {}", e),
+                ));
             }
             Err(_) => {
                 tracing::error!("First byte timeout");
-                if let Ok((was_blacklisted, prov_name)) =
-                    provider_service::record_failure(&state.db, provider_id).await
-                {
-                    if was_blacklisted {
-                        let _ = stats_service::record_system_log(
-                            &state.log_db,
-                            "provider_blacklisted",
-                            &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                        )
-                        .await;
-                    }
-                }
-                log_info.error_message = Some("First byte timeout".to_string());
+                log_info.error_message = Some("首字节超时".to_string());
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -785,23 +1333,136 @@ async fn handle_streaming_request(
                 if let Some(guard) = &cancel_guard {
                     guard.disarm();
                 }
-                return Ok(Response::builder()
-                    .status(StatusCode::GATEWAY_TIMEOUT)
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"error": "First byte timeout"}"#))
-                    .unwrap());
+                return Ok(json_error_response(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    "upstream_timeout",
+                    "首字节超时",
+                ));
             }
         };
 
-    let first_byte_fallback_ms = start_time.elapsed().as_millis() as i64;
-    if let Some(guard) = &cancel_guard {
-        guard.set_first_byte_ms(first_byte_fallback_ms);
-    }
     let status = response.status();
     let resp_headers = response.headers().clone();
 
     // Store provider response info
     log_info.provider_headers = Some(serialize_reqwest_headers(&resp_headers));
+
+    if !status.is_success() {
+        let error_body =
+            match tokio::time::timeout(timeouts.first_byte_timeout, response.bytes()).await {
+                Ok(Ok(body)) => maybe_decompress(
+                    &body,
+                    resp_headers
+                        .get("content-encoding")
+                        .and_then(|value| value.to_str().ok()),
+                ),
+                Ok(Err(error)) => format!("读取上游错误响应失败: {}", error).into_bytes(),
+                Err(_) => "读取上游错误响应超时".as_bytes().to_vec(),
+            };
+        let message = upstream_error_message(protocol, &error_body);
+        tracing::warn!(
+            provider_id,
+            provider = provider_name,
+            status = %status,
+            error = %message,
+            "Upstream returned an HTTP error before streaming started"
+        );
+        log_info.provider_body = Some(truncate_body(&error_body));
+        log_info.error_message = Some(message.clone());
+        let elapsed = start_time.elapsed().as_millis() as i64;
+        record_request_stats(
+            state,
+            &identity,
+            provider_name,
+            model_id,
+            Some(status.as_u16()),
+            elapsed,
+            elapsed,
+            TokenUsage::default(),
+            client_method,
+            client_path,
+            source_model,
+            target_model,
+            Some(log_info),
+            request_log_id,
+        )
+        .await;
+        if let Some(guard) = &cancel_guard {
+            guard.disarm();
+        }
+        // Pass through real HTTP errors with original status and body
+        return Ok(build_passthrough_error_response(status, &error_body, &resp_headers));
+    }
+
+    let response_encoded = has_body_encoding(
+        resp_headers
+            .get("content-encoding")
+            .and_then(|value| value.to_str().ok()),
+    );
+    let content_type = resp_headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok());
+    let mut byte_stream = response.bytes_stream();
+    let prefetched = if status.is_success() {
+        match read_stream_prefix(
+            &mut byte_stream,
+            protocol,
+            response_encoded,
+            content_type,
+            timeouts.first_byte_timeout,
+        )
+        .await
+        {
+            Ok(chunks) => chunks,
+            Err(failure) => {
+                let failure_status = failure.status();
+                let message = failure.log_message();
+                tracing::warn!(provider_id, provider = provider_name, error = %message, "Upstream stream failed before the client response started");
+                log_info.error_message = Some(message.clone());
+                let elapsed = start_time.elapsed().as_millis() as i64;
+                record_request_stats(
+                    state,
+                    &identity,
+                    provider_name,
+                    model_id,
+                    Some(failure_status.as_u16()),
+                    elapsed,
+                    elapsed,
+                    TokenUsage::default(),
+                    client_method,
+                    client_path,
+                    source_model,
+                    target_model,
+                    Some(log_info),
+                    request_log_id,
+                )
+                .await;
+                if let Some(guard) = &cancel_guard {
+                    guard.disarm();
+                }
+                // Stream prefix error: gateway-generated JSON with 502/504
+                return Ok(json_error_response(
+                    failure_status,
+                    "upstream_stream_error",
+                    &message,
+                ));
+            }
+        }
+    } else {
+        StreamPrefix {
+            chunks: Vec::new(),
+            kind: stream_kind_from_content_type(content_type).unwrap_or(StreamResponseKind::Sse),
+        }
+    };
+    let StreamPrefix {
+        chunks: prefetched_chunks,
+        kind: stream_kind,
+    } = prefetched;
+
+    let first_byte_fallback_ms = start_time.elapsed().as_millis() as i64;
+    if let Some(guard) = &cancel_guard {
+        guard.set_first_byte_ms(first_byte_fallback_ms);
+    }
 
     // Build response headers
     let mut builder =
@@ -822,31 +1483,34 @@ async fn handle_streaming_request(
     let body_truncated_flag_for_stream = body_truncated_flag.clone();
     let idle_timeout_flag = Arc::new(Mutex::new(false));
     let idle_timeout_flag_for_stream = idle_timeout_flag.clone();
+    let stream_failure = Arc::new(Mutex::new(None::<String>));
+    let stream_failure_for_stream = stream_failure.clone();
     let stream_completed = Arc::new(AtomicBool::new(false));
     let stream_completed_for_stream = stream_completed.clone();
     let first_chunk_ms = Arc::new(Mutex::new(None::<i64>));
     let first_chunk_ms_for_stream = first_chunk_ms.clone();
     let first_byte_log_state = state.clone();
     let first_byte_log_id = request_log_id;
-    let response_encoded = has_body_encoding(
-        resp_headers
-            .get("content-encoding")
-            .and_then(|v| v.to_str().ok()),
-    );
-
     // 创建channel用于通知stream结束
     let (stream_end_tx, mut stream_end_rx) = mpsc::channel::<()>(1);
 
     let stream = async_stream::stream! {
-        let mut byte_stream = response.bytes_stream();
         let idle_timeout = timeouts.idle_timeout;
         let mut chunk_count = 0usize;
         let mut total_bytes = 0usize;
         let mut collected_bytes = 0usize;
         let mut sse_buffer = String::new();
+        let mut pending_sse = Vec::new();
+        let mut upstream_error_event = false;
+        let mut prefetched_chunks = prefetched_chunks.into_iter();
 
         loop {
-            match tokio::time::timeout(idle_timeout, byte_stream.next()).await {
+            let next = if let Some(chunk) = prefetched_chunks.next() {
+                Ok(Some(Ok(chunk)))
+            } else {
+                tokio::time::timeout(idle_timeout, byte_stream.next()).await
+            };
+            match next {
                 Ok(Some(Ok(chunk))) => {
                     chunk_count += 1;
                     if chunk_count == 1 {
@@ -875,7 +1539,7 @@ async fn handle_streaming_request(
                     let chunk_size = chunk.len();
                     total_bytes += chunk_size;
 
-                    if !response_encoded {
+                    if !response_encoded && stream_kind == StreamResponseKind::Sse {
                         let mut usage = stream_usage_for_stream.lock().await;
                         if parse_streaming_usage_chunk(
                             &mut sse_buffer,
@@ -887,15 +1551,28 @@ async fn handle_streaming_request(
                         }
                     }
 
-                    // Collect chunk for body logging.
+                    let (output_chunk, error_message) =
+                        if !response_encoded && stream_kind == StreamResponseKind::Sse {
+                            pending_sse.extend_from_slice(&chunk);
+                            drain_sse_events(&mut pending_sse, protocol)
+                        } else {
+                            (chunk.clone(), None)
+                        };
+                    if let Some(message) = error_message {
+                        upstream_error_event = true;
+                        *stream_failure_for_stream.lock().await =
+                            Some(format!("上游流错误: {}", message));
+                    }
+
+                    // Collect the normalized chunk for body logging.
                     if collected_bytes < MAX_BODY_LOG {
                         let mut chunks = collected_chunks_for_stream.lock().await;
-                        let to_collect = chunk.len().min(MAX_BODY_LOG - collected_bytes);
+                        let to_collect = output_chunk.len().min(MAX_BODY_LOG - collected_bytes);
                         if to_collect > 0 {
-                            chunks.push(chunk.slice(..to_collect));
+                            chunks.push(output_chunk.slice(..to_collect));
                             collected_bytes += to_collect;
                         }
-                        if to_collect < chunk.len() {
+                        if to_collect < output_chunk.len() {
                             *body_truncated_flag_for_stream.lock().await = true;
                         }
                     } else {
@@ -907,13 +1584,22 @@ async fn handle_streaming_request(
                         protocol, chunk_count, chunk_size, total_bytes
                     );
 
-                    yield Ok::<Bytes, std::io::Error>(chunk);
+                    if !output_chunk.is_empty() {
+                        yield Ok::<Bytes, std::io::Error>(output_chunk);
+                    }
+                    if upstream_error_event {
+                        break;
+                    }
                 }
                 Ok(Some(Err(e))) => {
                     tracing::error!(
                         "[{}] Stream error after {} chunks, {} bytes: {}",
                         protocol, chunk_count, total_bytes, e
                     );
+                    if !stream_completed_for_stream.load(Ordering::Relaxed) {
+                        *stream_failure_for_stream.lock().await =
+                            Some(format!("上游流错误: {}", e));
+                    }
                     break;
                 }
                 Ok(None) => {
@@ -921,6 +1607,9 @@ async fn handle_streaming_request(
                         "[{}] Stream completed normally: {} chunks, {} bytes",
                         protocol, chunk_count, total_bytes
                     );
+                    if stream_kind == StreamResponseKind::Json {
+                        stream_completed_for_stream.store(true, Ordering::Relaxed);
+                    }
                     break;
                 }
                 Err(_) => {
@@ -928,19 +1617,76 @@ async fn handle_streaming_request(
                         "[{}] Stream idle timeout after {} chunks, {} bytes",
                         protocol, chunk_count, total_bytes
                     );
-                    *idle_timeout_flag_for_stream.lock().await = true;
+                    if !stream_completed_for_stream.load(Ordering::Relaxed) {
+                        *idle_timeout_flag_for_stream.lock().await = true;
+                        *stream_failure_for_stream.lock().await =
+                            Some("流空闲超时".to_string());
+                    }
                     break;
                 }
             }
         }
 
-        if !response_encoded && !sse_buffer.is_empty() {
+        if stream_kind == StreamResponseKind::Sse
+            && !response_encoded
+            && !pending_sse.is_empty()
+            && !upstream_error_event
+        {
+            let pending = if let Some(message) = stream_event_error(protocol, &pending_sse) {
+                upstream_error_event = true;
+                *stream_failure_for_stream.lock().await =
+                    Some(format!("上游流错误: {}", message));
+                stream_error_event_with_message(protocol, &message)
+            } else {
+                Bytes::from(std::mem::take(&mut pending_sse))
+            };
+            if collected_bytes < MAX_BODY_LOG {
+                let mut chunks = collected_chunks_for_stream.lock().await;
+                let to_collect = pending.len().min(MAX_BODY_LOG - collected_bytes);
+                if to_collect > 0 {
+                    chunks.push(pending.slice(..to_collect));
+                }
+                if to_collect < pending.len() {
+                    *body_truncated_flag_for_stream.lock().await = true;
+                }
+            } else {
+                *body_truncated_flag_for_stream.lock().await = true;
+            }
+            yield Ok::<Bytes, std::io::Error>(pending);
+        }
+
+        if !response_encoded && stream_kind == StreamResponseKind::Sse && !sse_buffer.is_empty() {
             let line = sse_buffer.trim_end_matches('\r');
             if is_stream_completion_line(line, protocol) {
                 stream_completed_for_stream.store(true, Ordering::Relaxed);
             }
             let mut usage = stream_usage_for_stream.lock().await;
             parse_streaming_token_usage(line, protocol, &mut usage);
+        }
+
+        if stream_kind == StreamResponseKind::Sse
+            && !response_encoded
+            && !upstream_error_event
+            && !stream_completed_for_stream.load(Ordering::Relaxed)
+        {
+            let mut failure = stream_failure_for_stream.lock().await;
+            if failure.is_none() {
+                *failure = Some("上游流在完成事件前结束".to_string());
+            }
+            drop(failure);
+
+            let event = stream_error_event(protocol);
+            if collected_bytes < MAX_BODY_LOG {
+                let mut chunks = collected_chunks_for_stream.lock().await;
+                let to_collect = event.len().min(MAX_BODY_LOG - collected_bytes);
+                if to_collect > 0 {
+                    chunks.push(event.slice(..to_collect));
+                }
+                if to_collect < event.len() {
+                    *body_truncated_flag_for_stream.lock().await = true;
+                }
+            }
+            yield Ok::<Bytes, std::io::Error>(event);
         }
 
         tracing::debug!("[{}] Stream loop ended naturally", protocol);
@@ -962,6 +1708,7 @@ async fn handle_streaming_request(
     let log_request_log_id = request_log_id;
     let log_identity = identity.clone();
     let stream_completed_for_log = stream_completed.clone();
+    let log_stream_kind = stream_kind;
 
     tokio::spawn(async move {
         let client_disconnected = stream_end_rx.recv().await.is_none();
@@ -992,12 +1739,19 @@ async fn handle_streaming_request(
             match try_decompress(&full_body, content_encoding) {
                 Some(body) => {
                     stream_completed |= stream_body_has_completion(&body, protocol);
-                    (
-                        if log_identity.token_usage_enabled {
-                            parse_streaming_usage_body(&body, protocol)
+                    let usage = if log_identity.token_usage_enabled {
+                        if log_stream_kind == StreamResponseKind::Json {
+                            let mut usage = TokenUsage::default();
+                            parse_token_usage(&body, protocol, &mut usage);
+                            usage
                         } else {
-                            TokenUsage::default()
-                        },
+                            parse_streaming_usage_body(&body, protocol)
+                        }
+                    } else {
+                        TokenUsage::default()
+                    };
+                    (
+                        usage,
                         streaming_body_log_text(&body, MAX_BODY_LOG, body_truncated),
                     )
                 }
@@ -1016,6 +1770,15 @@ async fn handle_streaming_request(
                     )
                 }
             }
+        } else if log_stream_kind == StreamResponseKind::Json {
+            let mut usage = TokenUsage::default();
+            if log_identity.token_usage_enabled {
+                parse_token_usage(&full_body, protocol, &mut usage);
+            }
+            (
+                usage,
+                streaming_body_log_text(&full_body, MAX_BODY_LOG, body_truncated),
+            )
         } else {
             stream_completed |= stream_body_has_completion(&full_body, protocol);
             (
@@ -1050,16 +1813,19 @@ async fn handle_streaming_request(
 
         // Check idle timeout flag
         let is_idle_timeout = *idle_timeout_flag.lock().await;
+        let stream_failure = stream_failure.lock().await.clone();
         if client_cancelled {
             final_log_info.error_message = Some(CLIENT_CLOSED_REQUEST_MESSAGE.to_string());
+        } else if let Some(message) = stream_failure.as_ref() {
+            final_log_info.error_message = Some(message.clone());
         } else if is_idle_timeout {
-            final_log_info.error_message = Some("Stream idle timeout".to_string());
+            final_log_info.error_message = Some("流空闲超时".to_string());
         }
 
         // Record stats
         let elapsed = start_time.elapsed().as_millis() as i64;
         let first_byte_ms = (*first_chunk_ms.lock().await).unwrap_or(first_byte_fallback_ms);
-        if !client_cancelled && log_is_success {
+        if !client_cancelled && stream_failure.is_none() && log_is_success {
             if let Ok(had_failures) =
                 provider_service::record_success(&log_state.db, log_provider_id).await
             {
@@ -1094,6 +1860,8 @@ async fn handle_streaming_request(
             log_model_id.as_deref(),
             Some(if client_cancelled {
                 CLIENT_CLOSED_REQUEST_STATUS
+            } else if stream_failure.is_some() {
+                StatusCode::BAD_GATEWAY.as_u16()
             } else {
                 log_status.as_u16()
             }),
@@ -1144,19 +1912,7 @@ async fn handle_non_streaming_request(
             Ok(Ok(resp)) => resp,
             Ok(Err(e)) => {
                 tracing::error!(error = %e, "Upstream request failed");
-                if let Ok((was_blacklisted, prov_name)) =
-                    provider_service::record_failure(&state.db, provider_id).await
-                {
-                    if was_blacklisted {
-                        let _ = stats_service::record_system_log(
-                            &state.log_db,
-                            "provider_blacklisted",
-                            &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                        )
-                        .await;
-                    }
-                }
-                log_info.error_message = Some(format!("Upstream error: {}", e));
+                log_info.error_message = Some(format!("上游请求失败: {}", e));
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -1178,30 +1934,15 @@ async fn handle_non_streaming_request(
                 if let Some(guard) = &cancel_guard {
                     guard.disarm();
                 }
-                return Ok(Response::builder()
-                    .status(StatusCode::BAD_GATEWAY)
-                    .header("content-type", "application/json")
-                    .body(Body::from(format!(
-                        r#"{{"error": "Upstream error: {}"}}"#,
-                        e
-                    )))
-                    .unwrap());
+                return Ok(json_error_response(
+                    StatusCode::BAD_GATEWAY,
+                    "upstream_error",
+                    &format!("上游请求失败: {}", e),
+                ));
             }
             Err(_) => {
                 tracing::error!("Request timeout");
-                if let Ok((was_blacklisted, prov_name)) =
-                    provider_service::record_failure(&state.db, provider_id).await
-                {
-                    if was_blacklisted {
-                        let _ = stats_service::record_system_log(
-                            &state.log_db,
-                            "provider_blacklisted",
-                            &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                        )
-                        .await;
-                    }
-                }
-                log_info.error_message = Some("Request timeout".to_string());
+                log_info.error_message = Some("请求超时".to_string());
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -1223,11 +1964,11 @@ async fn handle_non_streaming_request(
                 if let Some(guard) = &cancel_guard {
                     guard.disarm();
                 }
-                return Ok(Response::builder()
-                    .status(StatusCode::GATEWAY_TIMEOUT)
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"error": "Request timeout"}"#))
-                    .unwrap());
+                return Ok(json_error_response(
+                    StatusCode::GATEWAY_TIMEOUT,
+                    "upstream_timeout",
+                    "Request timeout",
+                ));
             }
         };
 
@@ -1243,23 +1984,12 @@ async fn handle_non_streaming_request(
     log_info.provider_headers = Some(serialize_reqwest_headers(&resp_headers));
 
     // Read response body
-    let body_bytes = match response.bytes().await {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to read response body");
-            if let Ok((was_blacklisted, prov_name)) =
-                provider_service::record_failure(&state.db, provider_id).await
-            {
-                if was_blacklisted {
-                    let _ = stats_service::record_system_log(
-                        &state.log_db,
-                        "provider_blacklisted",
-                        &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                    )
-                    .await;
-                }
-            }
-            log_info.error_message = Some(format!("Failed to read response body: {}", e));
+    let body_bytes = match tokio::time::timeout(timeouts.non_stream_timeout, response.bytes()).await
+    {
+        Err(_) => {
+            let message = "响应体读取超时".to_string();
+            tracing::error!(provider_id, provider = provider_name, error = %message, "Timed out while reading upstream response body");
+            log_info.error_message = Some(message);
             let elapsed = start_time.elapsed().as_millis() as i64;
             record_request_stats(
                 state,
@@ -1281,8 +2011,45 @@ async fn handle_non_streaming_request(
             if let Some(guard) = &cancel_guard {
                 guard.disarm();
             }
-            return Err(StatusCode::BAD_GATEWAY);
+            return Ok(json_error_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                "upstream_timeout",
+                "响应体读取超时",
+            ));
         }
+        Ok(result) => match result {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to read response body");
+                log_info.error_message = Some(format!("读取响应体失败: {}", e));
+                let elapsed = start_time.elapsed().as_millis() as i64;
+                record_request_stats(
+                    state,
+                    &identity,
+                    provider_name,
+                    model_id,
+                    Some(status.as_u16()),
+                    elapsed,
+                    first_byte_ms,
+                    TokenUsage::default(),
+                    client_method,
+                    client_path,
+                    source_model,
+                    target_model,
+                    Some(log_info),
+                    request_log_id,
+                )
+                .await;
+                if let Some(guard) = &cancel_guard {
+                    guard.disarm();
+                }
+                return Ok(json_error_response(
+                    StatusCode::BAD_GATEWAY,
+                    "upstream_body_error",
+                    "读取上游响应体失败",
+                ));
+            }
+        },
     };
 
     // Decompress if needed for logging and token parsing
@@ -1294,32 +2061,92 @@ async fn handle_non_streaming_request(
     // Store response body for logging (use decompressed version)
     log_info.provider_body = Some(truncate_body(&decompressed_body));
 
+    if !is_success {
+        let message = upstream_error_message(protocol, &decompressed_body);
+        tracing::warn!(
+            provider_id,
+            provider = provider_name,
+            status = %status,
+            error = %message,
+            "Upstream returned an HTTP error"
+        );
+        log_info.error_message = Some(message.clone());
+        let elapsed = start_time.elapsed().as_millis() as i64;
+        record_request_stats(
+            state,
+            &identity,
+            provider_name,
+            model_id,
+            Some(status.as_u16()),
+            elapsed,
+            first_byte_ms,
+            TokenUsage::default(),
+            client_method,
+            client_path,
+            source_model,
+            target_model,
+            Some(log_info),
+            request_log_id,
+        )
+        .await;
+        if let Some(guard) = &cancel_guard {
+            guard.disarm();
+        }
+        // Pass through real HTTP errors with original status and body
+        return Ok(build_passthrough_error_response(status, &decompressed_body, &resp_headers));
+    }
+
+    if is_success {
+        if let Some(message) = response_body_error(protocol, &decompressed_body) {
+            let message = format!("上游响应错误: {}", message);
+            tracing::warn!(
+                provider_id,
+                provider = provider_name,
+                error = %message,
+                "Upstream returned a structured error with a successful HTTP status"
+            );
+            log_info.error_message = Some(message.clone());
+            let elapsed = start_time.elapsed().as_millis() as i64;
+            record_request_stats(
+                state,
+                &identity,
+                provider_name,
+                model_id,
+                Some(StatusCode::BAD_GATEWAY.as_u16()),
+                elapsed,
+                first_byte_ms,
+                TokenUsage::default(),
+                client_method,
+                client_path,
+                source_model,
+                target_model,
+                Some(log_info),
+                request_log_id,
+            )
+            .await;
+            if let Some(guard) = &cancel_guard {
+                guard.disarm();
+            }
+            // 200 with error body: rewrite status to 502 for failover, but pass through original body
+            return Ok(build_passthrough_error_response(StatusCode::BAD_GATEWAY, &decompressed_body, &resp_headers));
+        }
+    }
+
     // Parse token usage (use decompressed body)
     let mut usage = TokenUsage::default();
     if identity.token_usage_enabled {
         parse_token_usage(&decompressed_body, protocol, &mut usage);
     }
 
-    // Record success/failure
-    if is_success {
-        if let Ok(had_failures) = provider_service::record_success(&state.db, provider_id).await {
-            if had_failures {
-                let _ = stats_service::record_system_log(
-                    &state.log_db,
-                    "provider_recovered",
-                    &format!("服务商 {} 已恢复正常", provider_name),
-                )
-                .await;
-            }
-        }
-    } else if let Ok((was_blacklisted, prov_name)) =
-        provider_service::record_failure(&state.db, provider_id).await
-    {
-        if was_blacklisted {
+    // Record success. Failure paths have all returned above with an error
+    // response, so only the success path reaches here; the failover loop in
+    // the caller records failures once per provider per request.
+    if let Ok(had_failures) = provider_service::record_success(&state.db, provider_id).await {
+        if had_failures {
             let _ = stats_service::record_system_log(
                 &state.log_db,
-                "provider_blacklisted",
-                &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
+                "provider_recovered",
+                &format!("服务商 {} 已恢复正常", provider_name),
             )
             .await;
         }
@@ -1371,24 +2198,22 @@ fn filter_log_detail(log_info: &mut RequestLogInfo, mode: &str, is_success: bool
 
 async fn emit_request_log_event(state: &Arc<AppState>, event: &str, log_id: i64) {
     let log_item = sqlx::query_as::<_, RequestLogItem>(
-        "SELECT id, created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(log_id)
     .fetch_one(&state.log_db)
     .await;
 
     if let Ok(mut item) = log_item {
-        let pricing =
-            crate::services::cost::provider_pricing(&state.db, &item.cli_type, &item.provider_name)
-                .await
-                .unwrap_or_default();
-        item.total_cost = crate::services::cost::calculate_token_cost(
-            pricing,
+        let (total_cost, breakdown) = crate::services::cost::cost_from_snapshot(
+            &item.price,
             item.input_tokens,
             item.cache_read_input_tokens,
             item.cache_creation_input_tokens,
             item.output_tokens,
         );
+        item.total_cost = total_cost;
+        item.cost = breakdown;
         if let Err(e) = state.app_handle.emit(event, item) {
             tracing::error!(error = %e, event, "Failed to emit request log event");
         }
@@ -1472,6 +2297,32 @@ async fn record_request_stats(
         .map(|code| (200..300).contains(&code))
         .unwrap_or(false);
 
+    // 单价在这里定下来就不再变：日志和按天统计共用同一份快照，之后改倍率或目录价
+    // 都只影响新请求，历史费用保持原样。
+    let pricing = crate::services::cost::provider_pricing_for_model(
+        &state.db,
+        Some(identity.provider_id),
+        &identity.agent_id,
+        provider_name,
+        model_id.or(source_model),
+    )
+    .await
+    .unwrap_or_default();
+    let price = crate::services::cost::resolve_price_snapshot(
+        &pricing,
+        usage.input_tokens,
+        usage.cache_read_input_tokens,
+        usage.cache_creation_input_tokens,
+        1,
+    );
+    let (total_cost, _) = crate::services::cost::cost_from_snapshot(
+        &price,
+        usage.input_tokens,
+        usage.cache_read_input_tokens,
+        usage.cache_creation_input_tokens,
+        usage.output_tokens,
+    );
+
     if let Err(e) = stats_service::record_request(
         &state.stats_db,
         provider_name,
@@ -1484,6 +2335,7 @@ async fn record_request_stats(
         usage.cache_read_input_tokens,
         usage.cache_creation_input_tokens,
         usage.output_tokens,
+        total_cost,
     )
     .await
     {
@@ -1523,6 +2375,7 @@ async fn record_request_stats(
             source_model,
             target_model,
             filtered_log_info,
+            &price,
         )
         .await
         {
@@ -1551,6 +2404,7 @@ async fn record_request_stats(
             source_model,
             target_model,
             filtered_log_info,
+            &price,
         )
         .await
         {

@@ -50,44 +50,18 @@ pub async fn delete_provider_profile(
         .await
 }
 
-fn normalize_price_per_m(value: Option<f64>, field: &str) -> Result<f64> {
-    let value = value.unwrap_or(0.0);
-    if !value.is_finite() || value < 0.0 {
-        return Err(format!("{} 必须是大于等于 0 的数字", field));
-    }
-    Ok(value)
+/// A multiplier of 1 is the official catalog price and the only safe fallback:
+/// any non-positive value would silently zero out every cost for the channel.
+fn normalize_price_multiplier(value: Option<f64>) -> f64 {
+    value
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(1.0)
 }
 
-fn normalize_provider_prices(input: &ProviderCreate) -> Result<(f64, f64, f64, f64)> {
-    Ok((
-        normalize_price_per_m(input.input_price_per_m, "输入单价")?,
-        normalize_price_per_m(input.output_price_per_m, "输出单价")?,
-        normalize_price_per_m(input.cache_read_price_per_m, "缓存读取单价")?,
-        normalize_price_per_m(input.cache_creation_price_per_m, "缓存创建单价")?,
-    ))
-}
-
-fn normalize_provider_update_prices(
-    input: &ProviderUpdate,
-) -> Result<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)> {
-    Ok((
-        input
-            .input_price_per_m
-            .map(|value| normalize_price_per_m(Some(value), "输入单价"))
-            .transpose()?,
-        input
-            .output_price_per_m
-            .map(|value| normalize_price_per_m(Some(value), "输出单价"))
-            .transpose()?,
-        input
-            .cache_read_price_per_m
-            .map(|value| normalize_price_per_m(Some(value), "缓存读取单价"))
-            .transpose()?,
-        input
-            .cache_creation_price_per_m
-            .map(|value| normalize_price_per_m(Some(value), "缓存创建单价"))
-            .transpose()?,
-    ))
+fn normalize_provider_update_multiplier(input: &ProviderUpdate) -> Option<f64> {
+    input
+        .price_multiplier
+        .map(|value| normalize_price_multiplier(Some(value)))
 }
 
 fn validate_provider_protocol(agent_id: &str, protocol: Option<&str>) -> Result<String> {
@@ -113,15 +87,15 @@ struct ProviderInsert<'a> {
     protocol: &'a str,
     input: &'a ProviderCreate,
     custom_useragent: Option<&'a str>,
-    prices: (f64, f64, f64, f64),
+    price_multiplier: f64,
     now: i64,
 }
 
 async fn insert_provider_record(pool: &SqlitePool, values: ProviderInsert<'_>) -> Result<i64> {
     let result = sqlx::query(
         r#"
-        INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, enabled, failure_threshold, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, enabled, failure_threshold, retry_limit, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, price_multiplier)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?)
         "#,
     )
     .bind(values.cli_type)
@@ -132,16 +106,15 @@ async fn insert_provider_record(pool: &SqlitePool, values: ProviderInsert<'_>) -
     .bind(&values.input.api_key)
     .bind(values.input.enabled.unwrap_or(true) as i64)
     .bind(values.input.failure_threshold.unwrap_or(5))
+    // 至少为 1：0 会让服务商在一轮里一次都不被尝试。
+    .bind(values.input.retry_limit.unwrap_or(3).clamp(1, 20))
     .bind(values.input.blacklist_minutes.unwrap_or(10))
     .bind(values.cli_type)
     .bind(values.profile)
     .bind(values.custom_useragent)
     .bind(values.now)
     .bind(values.now)
-    .bind(values.prices.0)
-    .bind(values.prices.1)
-    .bind(values.prices.2)
-    .bind(values.prices.3)
+    .bind(values.price_multiplier)
     .execute(pool)
     .await
     .map_err(map_db_error)?;
@@ -434,8 +407,7 @@ pub async fn create_provider(
     input: ProviderCreate,
 ) -> Result<ProviderResponse> {
     let now = now_timestamp();
-    let (input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m) =
-        normalize_provider_prices(&input)?;
+    let price_multiplier = normalize_price_multiplier(input.price_multiplier);
     let cli_type = validate_cli_type(
         input
             .cli_type
@@ -465,12 +437,7 @@ pub async fn create_provider(
             protocol: &protocol,
             input: &input,
             custom_useragent: custom_ua.as_deref(),
-            prices: (
-                input_price_per_m,
-                output_price_per_m,
-                cache_read_price_per_m,
-                cache_creation_price_per_m,
-            ),
+            price_multiplier,
             now,
         },
     )
@@ -525,8 +492,7 @@ pub async fn update_provider(
     input: ProviderUpdate,
 ) -> Result<ProviderResponse> {
     let now = now_timestamp();
-    let (input_price_per_m, output_price_per_m, cache_read_price_per_m, cache_creation_price_per_m) =
-        normalize_provider_update_prices(&input)?;
+    let price_multiplier = normalize_provider_update_multiplier(&input);
 
     let provider_before: Provider = sqlx::query_as("SELECT * FROM providers WHERE id = ?")
         .bind(id)
@@ -565,18 +531,29 @@ pub async fn update_provider(
     let profile_changed = normalized_profile
         .as_ref()
         .is_some_and(|profile| profile != &provider_before.profile);
-    let provider_config_changed = profile_changed
-        || normalized_protocol
-            .as_ref()
-            .is_some_and(|protocol| protocol != &provider_before.protocol)
-        || input.base_url.as_ref().is_some_and(|base_url| {
-            base_url.trim().trim_end_matches('/')
-                != provider_before.base_url.trim().trim_end_matches('/')
-        })
-        || input
-            .api_key
-            .as_ref()
-            .is_some_and(|api_key| api_key.trim() != provider_before.api_key.trim());
+    let protocol_changed = normalized_protocol
+        .as_ref()
+        .is_some_and(|protocol| protocol != &provider_before.protocol);
+    let base_url_changed = input.base_url.as_ref().is_some_and(|base_url| {
+        base_url.trim().trim_end_matches('/')
+            != provider_before.base_url.trim().trim_end_matches('/')
+    });
+    let api_key_changed = input
+        .api_key
+        .as_ref()
+        .is_some_and(|api_key| api_key.trim() != provider_before.api_key.trim());
+    let custom_useragent_changed = input.custom_useragent.as_ref().is_some_and(|useragent| {
+        useragent.trim()
+            != provider_before
+                .custom_useragent
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+    });
+    let provider_config_changed =
+        profile_changed || protocol_changed || base_url_changed || api_key_changed;
+    let model_sync_config_changed =
+        protocol_changed || base_url_changed || api_key_changed || custom_useragent_changed;
     if was_direct_active && provider_config_changed {
         let base_url = input
             .base_url
@@ -620,6 +597,10 @@ pub async fn update_provider(
         updates.push("failure_threshold = ?".to_string());
         has_updates = true;
     }
+    if input.retry_limit.is_some() {
+        updates.push("retry_limit = ?".to_string());
+        has_updates = true;
+    }
     if input.blacklist_minutes.is_some() {
         updates.push("blacklist_minutes = ?".to_string());
         has_updates = true;
@@ -628,20 +609,8 @@ pub async fn update_provider(
         updates.push("custom_useragent = ?".to_string());
         has_updates = true;
     }
-    if input_price_per_m.is_some() {
-        updates.push("input_price_per_m = ?".to_string());
-        has_updates = true;
-    }
-    if output_price_per_m.is_some() {
-        updates.push("output_price_per_m = ?".to_string());
-        has_updates = true;
-    }
-    if cache_read_price_per_m.is_some() {
-        updates.push("cache_read_price_per_m = ?".to_string());
-        has_updates = true;
-    }
-    if cache_creation_price_per_m.is_some() {
-        updates.push("cache_creation_price_per_m = ?".to_string());
+    if price_multiplier.is_some() {
+        updates.push("price_multiplier = ?".to_string());
         has_updates = true;
     }
 
@@ -670,6 +639,9 @@ pub async fn update_provider(
         if let Some(failure_threshold) = input.failure_threshold {
             q = q.bind(failure_threshold);
         }
+        if let Some(retry_limit) = input.retry_limit {
+            q = q.bind(retry_limit.clamp(1, 20));
+        }
         if let Some(blacklist_minutes) = input.blacklist_minutes {
             q = q.bind(blacklist_minutes);
         }
@@ -682,20 +654,17 @@ pub async fn update_provider(
                 q = q.bind(ua);
             }
         }
-        if let Some(value) = input_price_per_m {
-            q = q.bind(value);
-        }
-        if let Some(value) = output_price_per_m {
-            q = q.bind(value);
-        }
-        if let Some(value) = cache_read_price_per_m {
-            q = q.bind(value);
-        }
-        if let Some(value) = cache_creation_price_per_m {
+        if let Some(value) = price_multiplier {
             q = q.bind(value);
         }
 
         q.bind(id).execute(db.inner()).await.map_err(map_db_error)?;
+
+        // The old model snapshot no longer describes the saved endpoint, so it
+        // stops counting as synced until the user syncs against the new one.
+        if model_sync_config_changed {
+            crate::services::model_sync::invalidate_sync_state(db.inner(), id).await?;
+        }
     }
 
     // Update model maps if provided
@@ -812,6 +781,18 @@ pub async fn delete_provider(
         .map_err(map_db_error)?;
 
     sqlx::query("DELETE FROM provider_model_blacklist WHERE provider_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    sqlx::query("DELETE FROM provider_models WHERE provider_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    sqlx::query("DELETE FROM provider_model_sync_state WHERE provider_id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await

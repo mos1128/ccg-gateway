@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from './tauri-bridge'
-import type { Provider, ProviderCreate, ProviderProfileItem, ProviderUpdate, TestProviderResult } from '@/types/models'
+import type { ModelPriceCatalogEntry, PriceSyncState, Provider, ProviderCreate, ProviderModelsResponse, ProviderProfileItem, ProviderUpdate, TestProviderResult } from '@/types/models'
 
 export const providersApi = {
   listProfiles: async (cliType: string): Promise<{ data: ProviderProfileItem[] }> => {
@@ -53,6 +53,34 @@ export const providersApi = {
   unblacklist: async (id: number) => {
     await invoke('reset_provider_failures', { id })
     return { data: null }
+  },
+  getModels: async (providerId: number): Promise<{ data: ProviderModelsResponse }> => {
+    const data = await invoke<ProviderModelsResponse>('get_provider_models', { providerId })
+    return { data }
+  },
+  syncModels: async (providerId: number): Promise<{ data: ProviderModelsResponse }> => {
+    const data = await invoke<ProviderModelsResponse>('sync_provider_models', { providerId })
+    return { data }
+  },
+  addManualModel: async (providerId: number, modelName: string): Promise<{ data: ProviderModelsResponse }> => {
+    const data = await invoke<ProviderModelsResponse>('add_provider_manual_model', { providerId, modelName })
+    return { data }
+  },
+  deleteModel: async (providerId: number, modelId: number): Promise<{ data: ProviderModelsResponse }> => {
+    const data = await invoke<ProviderModelsResponse>('delete_provider_model', { providerId, modelId })
+    return { data }
+  },
+  getPriceCatalog: async (query?: string, limit?: number): Promise<{ data: ModelPriceCatalogEntry[] }> => {
+    const data = await invoke<ModelPriceCatalogEntry[]>('get_model_price_catalog', { query, limit })
+    return { data }
+  },
+  getPriceSyncStatus: async (): Promise<{ data: PriceSyncState }> => {
+    const data = await invoke<PriceSyncState>('get_price_sync_status')
+    return { data }
+  },
+  syncPrices: async (): Promise<{ data: PriceSyncState }> => {
+    const data = await invoke<PriceSyncState>('sync_model_prices')
+    return { data }
   },
   startTestModels: async (modelName: string, providerIds: number[], testText: string) => {
     await invoke('test_provider_models', {

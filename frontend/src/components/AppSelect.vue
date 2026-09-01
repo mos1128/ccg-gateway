@@ -6,6 +6,10 @@
     :size="size"
     :placeholder="placeholder"
     :empty-values="[undefined, null]"
+    :filterable="filterable || allowCreate"
+    :allow-create="allowCreate"
+    :default-first-option="allowCreate"
+    :reserve-keyword="false"
     :style="{ width }"
     class="app-select-el"
   >
@@ -35,12 +39,16 @@ withDefaults(defineProps<{
   placeholder?: string
   disabled?: boolean
   size?: 'default' | 'small'
+  filterable?: boolean
+  allowCreate?: boolean
 }>(), {
   modelValue: '',
   width: '160px',
   placeholder: '请选择',
   disabled: false,
-  size: 'default'
+  size: 'default',
+  filterable: false,
+  allowCreate: false
 })
 
 const emit = defineEmits<{

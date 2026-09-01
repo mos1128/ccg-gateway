@@ -131,66 +131,7 @@ async fn load_provider_maps(
     Ok((maps_by_provider, blacklist_by_provider))
 }
 
-/// Select an available provider for the given CLI type
-/// Returns None if all providers are blacklisted or none are configured
-pub async fn select_provider(
-    db: &SqlitePool,
-    cli_type: &str,
-    profile: &str,
-    protocol: Protocol,
-    model: Option<&str>,
-) -> Result<Option<ProviderWithMaps>, sqlx::Error> {
-    let now = now_timestamp();
-    let profile = normalize_profile(Some(profile)).unwrap_or_else(|| DEFAULT_PROFILE.to_string());
-
-    // Query enabled providers ordered by sort_order, excluding blacklisted ones
-    let providers = sqlx::query_as::<_, Provider>(
-        r#"
-        SELECT * FROM providers
-        WHERE cli_type = ?
-          AND profile = ?
-          AND protocol = ?
-          AND enabled = 1
-          AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
-        ORDER BY sort_order, id
-        "#,
-    )
-    .bind(cli_type)
-    .bind(&profile)
-    .bind(protocol.as_str())
-    .bind(now)
-    .fetch_all(db)
-    .await?;
-
-    let provider_ids: Vec<i64> = providers.iter().map(|provider| provider.id).collect();
-    let (mut maps_by_provider, mut blacklist_by_provider) =
-        load_provider_maps(db, &provider_ids).await?;
-
-    // Return the first available provider that doesn't blacklist the model
-    for provider in providers {
-        let model_maps = maps_by_provider.remove(&provider.id).unwrap_or_default();
-        let model_blacklist = blacklist_by_provider
-            .remove(&provider.id)
-            .unwrap_or_default();
-
-        // Check if model is blacklisted
-        if let Some(m) = model {
-            if is_model_blacklisted(m, &model_blacklist) {
-                continue;
-            }
-        }
-
-        return Ok(Some(ProviderWithMaps {
-            provider,
-            model_maps,
-            model_blacklist,
-        }));
-    }
-
-    Ok(None)
-}
-
-/// Get all available providers for a CLI type (for fallback scenarios)
+/// Get all providers eligible for a request, in failover order.
 pub async fn get_available_providers(
     db: &SqlitePool,
     cli_type: &str,

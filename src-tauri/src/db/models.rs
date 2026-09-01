@@ -329,15 +329,14 @@ pub struct Provider {
     pub api_key: String,
     pub enabled: i64,
     pub failure_threshold: i64,
+    /// 单个服务商在一轮里连续尝试的上限，达到后切下一个服务商。
+    pub retry_limit: i64,
     pub blacklist_minutes: i64,
     pub consecutive_failures: i64,
     pub blacklisted_until: Option<i64>,
     pub sort_order: i64,
     pub custom_useragent: Option<String>,
-    pub input_price_per_m: f64,
-    pub output_price_per_m: f64,
-    pub cache_read_price_per_m: f64,
-    pub cache_creation_price_per_m: f64,
+    pub price_multiplier: f64,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -356,6 +355,58 @@ pub struct ProviderModelBlacklist {
     pub id: i64,
     pub provider_id: i64,
     pub model_pattern: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ProviderModel {
+    pub id: i64,
+    pub provider_id: i64,
+    pub model_name: String,
+    pub source: String,
+    pub enabled: i64,
+    pub first_seen_at: i64,
+    pub last_seen_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ProviderModelSyncState {
+    pub provider_id: i64,
+    pub last_attempt_at: Option<i64>,
+    pub last_success_at: Option<i64>,
+    pub last_error: Option<String>,
+    pub model_count: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderModelsResponse {
+    pub provider_id: i64,
+    pub models: Vec<ProviderModel>,
+    pub sync_state: Option<ProviderModelSyncState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ModelPriceCatalogEntry {
+    pub model_key: String,
+    pub model_name: String,
+    pub source_provider: Option<String>,
+    pub input_price_per_m: f64,
+    pub output_price_per_m: f64,
+    pub cache_read_price_per_m: f64,
+    pub cache_creation_price_per_m: f64,
+    /// 长上下文分层价的 JSON 数组，无分层时为 NULL，由前端解析展示。
+    pub tiers: Option<String>,
+    pub fetched_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct PriceSyncState {
+    pub id: i64,
+    pub last_attempt_at: Option<i64>,
+    pub last_success_at: Option<i64>,
+    pub last_error: Option<String>,
+    pub model_count: i64,
+    pub updated_at: i64,
 }
 
 // Input DTOs
@@ -381,12 +432,10 @@ pub struct ProviderCreate {
     pub api_key: String,
     pub enabled: Option<bool>,
     pub failure_threshold: Option<i64>,
+    pub retry_limit: Option<i64>,
     pub blacklist_minutes: Option<i64>,
     pub custom_useragent: Option<String>,
-    pub input_price_per_m: Option<f64>,
-    pub output_price_per_m: Option<f64>,
-    pub cache_read_price_per_m: Option<f64>,
-    pub cache_creation_price_per_m: Option<f64>,
+    pub price_multiplier: Option<f64>,
     pub model_maps: Option<Vec<ModelMapInput>>,
     pub model_blacklist: Option<Vec<ModelBlacklistInput>>,
 }
@@ -400,12 +449,10 @@ pub struct ProviderUpdate {
     pub api_key: Option<String>,
     pub enabled: Option<bool>,
     pub failure_threshold: Option<i64>,
+    pub retry_limit: Option<i64>,
     pub blacklist_minutes: Option<i64>,
     pub custom_useragent: Option<String>,
-    pub input_price_per_m: Option<f64>,
-    pub output_price_per_m: Option<f64>,
-    pub cache_read_price_per_m: Option<f64>,
-    pub cache_creation_price_per_m: Option<f64>,
+    pub price_multiplier: Option<f64>,
     pub model_maps: Option<Vec<ModelMapInput>>,
     pub model_blacklist: Option<Vec<ModelBlacklistInput>>,
 }
@@ -436,15 +483,13 @@ pub struct ProviderResponse {
     pub api_key: String,
     pub enabled: bool,
     pub failure_threshold: i64,
+    pub retry_limit: i64,
     pub blacklist_minutes: i64,
     pub consecutive_failures: i64,
     pub blacklisted_until: Option<i64>,
     pub sort_order: i64,
     pub custom_useragent: Option<String>,
-    pub input_price_per_m: f64,
-    pub output_price_per_m: f64,
-    pub cache_read_price_per_m: f64,
-    pub cache_creation_price_per_m: f64,
+    pub price_multiplier: f64,
     pub is_blacklisted: bool,
     pub is_direct_active: bool,
     pub model_maps: Vec<ModelMapResponse>,
@@ -472,15 +517,13 @@ impl From<Provider> for ProviderResponse {
             api_key: p.api_key,
             enabled: p.enabled != 0,
             failure_threshold: p.failure_threshold,
+            retry_limit: p.retry_limit,
             blacklist_minutes: p.blacklist_minutes,
             consecutive_failures: failures,
             blacklisted_until: p.blacklisted_until,
             sort_order: p.sort_order,
             custom_useragent: p.custom_useragent,
-            input_price_per_m: p.input_price_per_m,
-            output_price_per_m: p.output_price_per_m,
-            cache_read_price_per_m: p.cache_read_price_per_m,
-            cache_creation_price_per_m: p.cache_creation_price_per_m,
+            price_multiplier: p.price_multiplier,
             is_blacklisted,
             is_direct_active: false,
             model_maps: vec![],
@@ -1027,6 +1070,13 @@ pub struct RequestLogItem {
     pub cache_creation_input_tokens: i64,
     pub output_tokens: i64,
     pub total_cost: f64,
+    /// 请求完成时固化的计费单价，费用由它算出来，不随目录价或倍率变化。
+    #[sqlx(flatten)]
+    #[serde(skip)]
+    pub price: crate::services::cost::PriceSnapshot,
+    /// 计费单价明细，读取时算出来，不落库。
+    #[sqlx(skip)]
+    pub cost: crate::services::cost::CostBreakdown,
     pub client_method: String,
     pub client_path: String,
     pub source_model: Option<String>,
@@ -1053,6 +1103,13 @@ pub struct RequestLogDetail {
     pub cache_creation_input_tokens: i64,
     pub output_tokens: i64,
     pub total_cost: f64,
+    /// 请求完成时固化的计费单价，费用由它算出来，不随目录价或倍率变化。
+    #[sqlx(flatten)]
+    #[serde(skip)]
+    pub price: crate::services::cost::PriceSnapshot,
+    /// 计费单价明细，读取时算出来，不落库。
+    #[sqlx(skip)]
+    pub cost: crate::services::cost::CostBreakdown,
     pub client_method: String,
     pub client_path: String,
     pub client_headers: Option<String>,
@@ -1105,20 +1162,6 @@ pub struct SystemLogListResponse {
 // ==================== Usage Stats 相关实体 ====================
 
 // Provider Stats (从 request_logs 聚合)
-#[derive(Debug, Serialize, FromRow)]
-pub struct ProviderStatsRow {
-    pub cli_type: String,
-    pub provider_name: String,
-    pub total_requests: i64,
-    pub total_success: i64,
-    pub total_input_tokens: i64,
-    pub total_output_tokens: i64,
-    pub total_tokens: i64,
-    pub total_cache_read_tokens: i64,
-    pub total_cache_creation_tokens: i64,
-    pub total_elapsed_ms: i64,
-}
-
 #[derive(Debug, Serialize)]
 pub struct ProviderStatsResponse {
     pub provider_name: String,

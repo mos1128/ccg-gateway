@@ -49,6 +49,46 @@
       <div class="dr-group-card">
         <div class="dr-group-header">
           <div>
+            <div class="dr-group-title">可用模型</div>
+            <div class="dr-group-hint">{{ modelSyncHint }}</div>
+          </div>
+          <button class="v2-btn v2-btn-sm v2-btn-outline" :disabled="!canSyncModels || modelSyncLoading" @click="emit('sync-models')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            {{ modelSyncLoading ? '同步中' : '同步' }}
+          </button>
+        </div>
+        <div class="dr-group-body">
+          <div v-if="providerModels.length" class="dr-model-list">
+            <div v-for="model in providerModels" :key="model.id" class="dr-model-row">
+              <el-tooltip :content="model.source === 'manual' ? '手动添加，同步时保留' : '自动同步'" placement="top" effect="light" :show-after="250">
+                <span class="dr-model-dot" :class="{ manual: model.source === 'manual' }"></span>
+              </el-tooltip>
+              <span class="dr-model-name mono">{{ model.model_name }}</span>
+              <button class="v2-x dr-model-x" @click="emit('remove-model', model.id)"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            </div>
+          </div>
+          <div v-if="providerModels.length" class="dr-model-legend">
+            <span class="dr-model-dot manual"></span>手动（同步时保留）
+            <span class="dr-model-dot"></span>自动同步
+          </div>
+          <div v-else class="dr-empty">
+            <span>{{ canSyncModels ? '暂无可用模型，点击同步或手动添加' : '暂无可用模型，可先手动添加' }}</span>
+          </div>
+          <div class="dr-map dr-map-single dr-model-add">
+            <input
+              v-model="manualModel"
+              class="v2-input"
+              placeholder="手动输入模型名称，回车添加"
+              @keydown.enter.prevent="submitManualModel"
+            >
+            <button class="v2-btn v2-btn-sm v2-btn-outline" :disabled="!manualModel.trim()" @click="submitManualModel">添加</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="dr-group-card">
+        <div class="dr-group-header">
+          <div>
             <div class="dr-group-title-wrapper">
               <span class="dr-group-title">模型映射</span>
               <el-tooltip effect="light" placement="top" :show-after="150" popper-class="v2-profile-pop v2-scope">
@@ -68,7 +108,7 @@
                 </span>
               </el-tooltip>
             </div>
-            <div class="dr-group-hint">将 Agent 请求的源模型名映射为服务商模型</div>
+            <div class="dr-group-hint">将 Agent 请求的源模型名映射为服务商模型，候选模型来自上方「可用模型」</div>
           </div>
           <button class="v2-btn v2-btn-sm v2-btn-outline" @click="emit('add-model-map')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -79,7 +119,15 @@
           <div v-for="(map, index) in form.model_maps" :key="'m' + index" class="dr-map">
             <input v-model="map.source_model" class="v2-input" placeholder="Agent 源模型">
             <span class="dr-arrow">→</span>
-            <input v-model="map.target_model" class="v2-input" placeholder="服务商模型">
+            <AppSelect
+              :model-value="map.target_model"
+              :options="modelOptions"
+              width="100%"
+              placeholder="选择或输入服务商模型"
+              filterable
+              allow-create
+              @change="value => map.target_model = String(value)"
+            />
             <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
               <button class="v2-x" @click="emit('remove-model-map', index)"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             </el-tooltip>
@@ -116,8 +164,32 @@
     </div>
 
     <div v-show="tab === 'advanced'">
-      <div class="dr-sec-title dr-price-title" style="margin-top: 0;">容错配置</div>
+      <div class="dr-sec-title dr-price-title" style="margin-top: 0;">
+        <span>容错配置</span>
+        <el-tooltip effect="light" placement="top" :show-after="150" popper-class="v2-profile-pop v2-scope">
+          <template #content>
+            <div class="profile-help">
+              <div class="tooltip-title">重试与熔断规则</div>
+              <div class="tooltip-item" style="margin-bottom: 4px;">请求失败后先在当前服务商重试，连续失败「连续重试次数」次后切换下一个服务商</div>
+              <div class="tooltip-item" style="margin-bottom: 4px;">所有服务商轮完一圈后从头再轮，直到某次成功或所有服务商熔断</div>
+              <div class="tooltip-item" style="margin-bottom: 4px;"><strong>每次失败的尝试都会累计到该服务商的失败计数</strong></div>
+              <div class="tooltip-item" style="margin-bottom: 4px;">密钥错误、模型不存在等问题不重试该服务商，直接切换</div>
+              <div class="tooltip-item" style="border-top: 1px solid var(--v2-surface-2); padding-top: 8px; margin-top: 8px;">
+                连续失败累计达到「失败阈值」后，服务商熔断「熔断时长」分钟，期间请求自动由其他服务商接管
+              </div>
+            </div>
+          </template>
+          <span class="v2-help"><el-icon><InfoFilled /></el-icon></span>
+        </el-tooltip>
+      </div>
       <div class="v2-grid-2">
+        <div class="v2-field">
+          <label class="v2-label">连续重试次数</label>
+          <div class="v2-input-wrapper">
+            <input v-model.number="form.retry_limit" type="number" min="1" max="20" class="v2-input">
+            <span class="v2-input-unit">次</span>
+          </div>
+        </div>
         <div class="v2-field">
           <label class="v2-label">失败阈值</label>
           <div class="v2-input-wrapper">
@@ -134,11 +206,13 @@
         </div>
       </div>
       <div class="dr-sec-title dr-price-title">计费配置</div>
-      <div class="v2-grid-2">
-        <div class="v2-field"><label class="v2-label">输入价格 / M</label><input v-model.number="form.input_price_per_m" type="number" min="0" step="0.000001" class="v2-input"></div>
-        <div class="v2-field"><label class="v2-label">输出价格 / M</label><input v-model.number="form.output_price_per_m" type="number" min="0" step="0.000001" class="v2-input"></div>
-        <div class="v2-field"><label class="v2-label">缓存读取价格 / M</label><input v-model.number="form.cache_read_price_per_m" type="number" min="0" step="0.000001" class="v2-input"></div>
-        <div class="v2-field"><label class="v2-label">缓存创建价格 / M</label><input v-model.number="form.cache_creation_price_per_m" type="number" min="0" step="0.000001" class="v2-input"></div>
+      <div class="v2-field dr-multiplier-field">
+        <label class="v2-label">模型倍率</label>
+        <div class="v2-input-wrapper">
+          <input v-model.number="form.price_multiplier" type="number" min="0.01" step="0.01" class="v2-input">
+          <span class="v2-input-unit">×</span>
+        </div>
+        <div class="v2-hint">实际价格 = 全局价目表价格 × 倍率，留空按官方价（1×）计；价目表在列表页「价格」中同步</div>
       </div>
     </div>
   </V2Drawer>
@@ -147,10 +221,10 @@
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
-import AppSelect from '@/components/AppSelect.vue'
+import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { PROTOCOL_LABELS } from '@/types/models'
-import type { Protocol } from '@/types/models'
+import type { Protocol, ProviderModelsResponse } from '@/types/models'
 
 interface ProviderEditForm {
   protocol: Protocol | ''
@@ -158,12 +232,10 @@ interface ProviderEditForm {
   base_url: string
   api_key: string
   failure_threshold: number
+  retry_limit: number
   blacklist_minutes: number
   custom_useragent: string
-  input_price_per_m: number
-  output_price_per_m: number
-  cache_read_price_per_m: number
-  cache_creation_price_per_m: number
+  price_multiplier: number
   model_maps: Array<{ source_model: string; target_model: string; enabled: boolean }>
   model_blacklist: Array<{ model_pattern: string }>
 }
@@ -175,6 +247,9 @@ const props = defineProps<{
   baseUrlPlaceholder: string
   protocols: Protocol[]
   remark?: string | null
+  modelSync?: ProviderModelsResponse
+  modelSyncLoading?: boolean
+  canSyncModels?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -184,6 +259,9 @@ const emit = defineEmits<{
   'remove-model-map': [index: number]
   'add-model-blacklist': []
   'remove-model-blacklist': [index: number]
+  'sync-models': []
+  'add-model': [modelName: string]
+  'remove-model': [modelId: number]
 }>()
 
 const tabs = [
@@ -193,10 +271,30 @@ const tabs = [
 ]
 const tab = ref('basic')
 const showApiKey = ref(false)
+const manualModel = ref('')
 const protocolOptions = computed(() => props.protocols.map((protocol) => ({
   value: protocol,
   label: PROTOCOL_LABELS[protocol],
 })))
+
+const providerModels = computed(() => props.modelSync?.models ?? [])
+const modelOptions = computed<AppSelectOption[]>(() => providerModels.value
+  .filter((model) => model.enabled === true || model.enabled === 1)
+  .map((model) => ({ value: model.model_name, label: model.model_name })))
+const modelSyncHint = computed(() => {
+  if (!props.canSyncModels) return '可先手动添加，保存服务商后能从接口同步'
+  const state = props.modelSync?.sync_state
+  if (state?.last_error) return `上次同步失败：${state.last_error}`
+  if (state?.last_success_at) return `上次同步：${new Date(state.last_success_at * 1000).toLocaleString()}`
+  return '从服务商接口拉取可用模型，也可手动添加'
+})
+
+function submitManualModel() {
+  const modelName = manualModel.value.trim()
+  if (!modelName) return
+  emit('add-model', modelName)
+  manualModel.value = ''
+}
 
 const visible = computed({
   get: () => props.modelValue,
@@ -207,6 +305,7 @@ watch(() => props.modelValue, (open) => {
   if (open) {
     tab.value = 'basic'
     showApiKey.value = false
+    manualModel.value = ''
   }
 })
 </script>
@@ -240,6 +339,17 @@ watch(() => props.modelValue, (open) => {
 .dr-map { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 9px; align-items: center; }
 .dr-map-single { grid-template-columns: 1fr auto; }
 .dr-arrow { color: var(--v2-text-3); font-size: var(--v2-fs-sm); }
+
+.dr-model-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 232px; overflow-y: auto; }
+.dr-model-row { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: var(--v2-r-sm); background: var(--v2-bg-base); max-width: 100%; }
+.dr-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--v2-fs-sm); color: var(--v2-text); }
+.dr-model-dot { width: 6px; height: 6px; border-radius: var(--v2-r-full, 999px); background: var(--v2-text-3); flex-shrink: 0; cursor: help; }
+.dr-model-dot.manual { background: var(--v2-accent); }
+.dr-model-legend { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: var(--v2-fs-xs); color: var(--v2-text-3); }
+.dr-model-legend .dr-model-dot { cursor: default; }
+.dr-model-legend > span:not(:first-child) { margin-left: 12px; }
+.dr-model-x { width: 20px; height: 20px; border: none; background: transparent; flex-shrink: 0; }
+.dr-model-add { padding-top: 4px; }
 
 .dr-group-card {
   border: 1px solid rgba(0, 0, 0, 0.045);
@@ -293,6 +403,7 @@ html.dark .dr-group-card {
 }
 .dr-price-title { margin: 22px 0 12px; display: flex; align-items: baseline; gap: 8px; }
 .dr-price-title .v2-hint { margin-top: 0; }
+.dr-multiplier-field { max-width: 240px; }
 
 .v2-input-wrapper {
   position: relative;

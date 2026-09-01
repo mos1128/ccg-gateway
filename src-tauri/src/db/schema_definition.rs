@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 32,
+            version: 37,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -106,7 +106,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 16,
+            version: 18,
             tables: Self::define_log_tables(),
             indexes: Self::define_log_indexes(),
         }
@@ -187,6 +187,13 @@ impl DatabaseSchema {
                         nullable: false,
                         default_value: Some("5".to_string()),
                     },
+                    // 单个服务商在一轮里连续尝试的上限，达到后切下一个服务商。
+                    ColumnDefinition {
+                        name: "retry_limit".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("3".to_string()),
+                    },
                     ColumnDefinition {
                         name: "blacklist_minutes".to_string(),
                         data_type: "INTEGER".to_string(),
@@ -230,28 +237,10 @@ impl DatabaseSchema {
                         default_value: None,
                     },
                     ColumnDefinition {
-                        name: "input_price_per_m".to_string(),
+                        name: "price_multiplier".to_string(),
                         data_type: "REAL".to_string(),
                         nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "output_price_per_m".to_string(),
-                        data_type: "REAL".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "cache_read_price_per_m".to_string(),
-                        data_type: "REAL".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "cache_creation_price_per_m".to_string(),
-                        data_type: "REAL".to_string(),
-                        nullable: false,
-                        default_value: Some("0".to_string()),
+                        default_value: Some("1".to_string()),
                     },
                 ],
                 primary_key: vec!["id".to_string()],
@@ -380,6 +369,223 @@ impl DatabaseSchema {
                     "provider_id".to_string(),
                     "model_pattern".to_string(),
                 ]],
+            },
+        );
+
+        // model_price_catalog 表：外部价格源的最后一次成功快照。
+        tables.insert(
+            "model_price_catalog".to_string(),
+            TableDefinition {
+                name: "model_price_catalog".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "model_key".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "model_name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "source_provider".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "input_price_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "output_price_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "cache_read_price_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "cache_creation_price_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    // 长上下文分层价，JSON 数组，无分层时为 NULL。
+                    ColumnDefinition {
+                        name: "tiers".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "fetched_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["model_key".to_string()],
+                unique_constraints: vec![],
+            },
+        );
+
+        // price_sync_state 表：价格目录同步状态，失败时保留旧快照。
+        tables.insert(
+            "price_sync_state".to_string(),
+            TableDefinition {
+                name: "price_sync_state".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("1".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "last_attempt_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "last_success_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "last_error".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "model_count".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "updated_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![],
+            },
+        );
+
+        // provider_models 表：服务商模型快照，手动模型和自动模型分开保留。
+        tables.insert(
+            "provider_models".to_string(),
+            TableDefinition {
+                name: "provider_models".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "provider_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "model_name".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "source".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'auto'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "enabled".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("1".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "first_seen_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "last_seen_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![vec!["provider_id".to_string(), "model_name".to_string()]],
+            },
+        );
+
+        // provider_model_sync_state 表：每个服务商的模型同步状态。
+        tables.insert(
+            "provider_model_sync_state".to_string(),
+            TableDefinition {
+                name: "provider_model_sync_state".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "provider_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "last_attempt_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "last_success_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "last_error".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "model_count".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "updated_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["provider_id".to_string()],
+                unique_constraints: vec![],
             },
         );
 
@@ -1106,6 +1312,52 @@ impl DatabaseSchema {
                     },
                     ColumnDefinition {
                         name: "target_model".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    // 计费单价快照：请求完成时写入，之后不再随目录价或倍率变化。
+                    // 四项单价是选完分层档后的目录价（未乘倍率），目录里没有该模型时为 NULL。
+                    ColumnDefinition {
+                        name: "price_input_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "price_output_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "price_cache_read_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "price_cache_creation_per_m".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    // 请求完成时的服务商倍率。NULL 表示这条日志还没有快照（进行中或旧数据）。
+                    ColumnDefinition {
+                        name: "price_multiplier".to_string(),
+                        data_type: "REAL".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "price_tier_threshold".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    // 价格来源（models.dev 的厂商渠道 id），展示用，未命中目录时为 NULL。
+                    ColumnDefinition {
+                        name: "price_source".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: true,
                         default_value: None,

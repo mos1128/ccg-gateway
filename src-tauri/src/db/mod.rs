@@ -170,6 +170,7 @@ pub async fn init_stats_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
             cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
             output_tokens INTEGER NOT NULL DEFAULT 0,
             elapsed_ms INTEGER NOT NULL DEFAULT 0,
+            total_cost REAL,
             PRIMARY KEY (usage_date, cli_type, provider_name, model_id)
         )
         "#,
@@ -177,12 +178,28 @@ pub async fn init_stats_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     .execute(&pool)
     .await?;
 
+    // 这张表不走 schema 差异迁移，加列要自己来。费用快照是后加的，升级前的历史行
+    // 没有价格可回溯，直接按 0 处理（用户只关心当前和未来的费用）。
+    let has_total_cost: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('usage_daily_model') WHERE name = 'total_cost'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    if has_total_cost == 0 {
+        sqlx::query("ALTER TABLE usage_daily_model ADD COLUMN total_cost REAL")
+            .execute(&pool)
+            .await?;
+    }
+    sqlx::query("UPDATE usage_daily_model SET total_cost = 0 WHERE total_cost IS NULL")
+        .execute(&pool)
+        .await?;
+
     sqlx::query("DROP TABLE IF EXISTS stats_meta")
         .execute(&pool)
         .await?;
 
     create_version_table(&pool).await?;
-    update_version(&pool, 3).await?;
+    update_version(&pool, 4).await?;
 
     Ok(pool)
 }

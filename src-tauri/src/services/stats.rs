@@ -1,5 +1,6 @@
 use crate::config::get_data_dir;
 use crate::db::models::RequestLogInfo;
+use crate::services::cost::PriceSnapshot;
 use crate::time::{local_date_from_timestamp, now_timestamp, today_local_date};
 use chrono::{Duration, Local, NaiveDate};
 use sqlx::SqlitePool;
@@ -20,14 +21,15 @@ pub async fn record_request(
     cache_read_input_tokens: i64,
     cache_creation_input_tokens: i64,
     output_tokens: i64,
+    total_cost: f64,
 ) -> Result<(), sqlx::Error> {
     let today = today_local_date();
     let stat_model_id = model_id.or(source_model).unwrap_or("未知模型");
 
     sqlx::query(
         r#"
-        INSERT INTO usage_daily_model (usage_date, cli_type, provider_name, model_id, request_count, success_count, failure_count, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, elapsed_ms)
-        VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO usage_daily_model (usage_date, cli_type, provider_name, model_id, request_count, success_count, failure_count, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, elapsed_ms, total_cost)
+        VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(usage_date, cli_type, provider_name, model_id) DO UPDATE SET
             request_count = request_count + 1,
             success_count = success_count + excluded.success_count,
@@ -36,7 +38,8 @@ pub async fn record_request(
             cache_read_input_tokens = cache_read_input_tokens + excluded.cache_read_input_tokens,
             cache_creation_input_tokens = cache_creation_input_tokens + excluded.cache_creation_input_tokens,
             output_tokens = output_tokens + excluded.output_tokens,
-            elapsed_ms = elapsed_ms + excluded.elapsed_ms
+            elapsed_ms = elapsed_ms + excluded.elapsed_ms,
+            total_cost = COALESCE(total_cost, 0) + excluded.total_cost
         "#,
     )
     .bind(&today)
@@ -50,6 +53,7 @@ pub async fn record_request(
     .bind(cache_creation_input_tokens)
     .bind(output_tokens)
     .bind(elapsed_ms)
+    .bind(total_cost)
     .execute(stats_db)
     .await?;
 
@@ -248,14 +252,15 @@ pub async fn record_request_log(
     source_model: Option<&str>,
     target_model: Option<&str>,
     info: Option<RequestLogInfo>,
+    price: &PriceSnapshot,
 ) -> Result<i64, sqlx::Error> {
     let now = now_timestamp();
     let info = info.unwrap_or_default();
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
@@ -279,6 +284,13 @@ pub async fn record_request_log(
     .bind(&info.error_message)
     .bind(source_model)
     .bind(target_model)
+    .bind(price.price_input_per_m)
+    .bind(price.price_output_per_m)
+    .bind(price.price_cache_read_per_m)
+    .bind(price.price_cache_creation_per_m)
+    .bind(price.price_multiplier)
+    .bind(price.price_tier_threshold)
+    .bind(&price.price_source)
     .execute(log_db)
     .await?;
 
@@ -348,6 +360,7 @@ pub async fn finish_request_log(
     source_model: Option<&str>,
     target_model: Option<&str>,
     info: Option<RequestLogInfo>,
+    price: &PriceSnapshot,
 ) -> Result<(), sqlx::Error> {
     let (created_at,) =
         sqlx::query_as::<_, (i64,)>("SELECT created_at FROM request_logs WHERE id = ?")
@@ -364,7 +377,10 @@ pub async fn finish_request_log(
             provider_name = ?, model_id = ?, status_code = ?,
             elapsed_ms = ?, first_byte_ms = ?, input_tokens = ?, cache_read_input_tokens = ?,
             cache_creation_input_tokens = ?, output_tokens = ?, client_method = ?, client_path = ?,
-            forward_url = ?, error_message = ?, source_model = ?, target_model = ?
+            forward_url = ?, error_message = ?, source_model = ?, target_model = ?,
+            price_input_per_m = ?, price_output_per_m = ?, price_cache_read_per_m = ?,
+            price_cache_creation_per_m = ?, price_multiplier = ?, price_tier_threshold = ?,
+            price_source = ?
         WHERE id = ?
         "#,
     )
@@ -388,6 +404,13 @@ pub async fn finish_request_log(
     .bind(&info.error_message)
     .bind(source_model)
     .bind(target_model)
+    .bind(price.price_input_per_m)
+    .bind(price.price_output_per_m)
+    .bind(price.price_cache_read_per_m)
+    .bind(price.price_cache_creation_per_m)
+    .bind(price.price_multiplier)
+    .bind(price.price_tier_threshold)
+    .bind(&price.price_source)
     .bind(log_id)
     .execute(log_db)
     .await?;

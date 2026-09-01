@@ -217,6 +217,7 @@ onMounted(async () => {
   --v2-info: var(--v2-accent);
   --v2-selected-bg: color-mix(in srgb, var(--v2-accent) 12%, var(--v2-surface));
   --v2-danger-bg: color-mix(in srgb, var(--v2-danger) 12%, transparent);
+  --v2-warning-bg: color-mix(in srgb, var(--v2-warning) 12%, transparent);
   --v2-brand-bg: color-mix(in srgb, var(--v2-brand-current, var(--v2-accent)) 12%, var(--v2-surface));
   --v2-chart-purple: #8b5cf6;
   --v2-chart-cyan: #06b6d4;

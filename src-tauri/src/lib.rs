@@ -190,6 +190,7 @@ pub fn run() {
                     log_db.clone(),
                     app_handle.clone(),
                 );
+                services::pricing::start_background_sync(db.clone());
 
                 let addr = config.bind_addr();
 
@@ -372,6 +373,14 @@ pub fn run() {
             commands::provider_commands::reset_provider_failures,
             commands::provider_commands::write_provider_direct_config_command,
             commands::provider_commands::test_provider_models,
+            commands::pricing_commands::get_price_sync_status,
+            commands::pricing_commands::sync_model_prices,
+            commands::pricing_commands::get_model_price_catalog,
+            commands::model_sync_commands::get_provider_models,
+            commands::model_sync_commands::sync_provider_models,
+            commands::model_sync_commands::sync_all_provider_models,
+            commands::model_sync_commands::add_provider_manual_model,
+            commands::model_sync_commands::delete_provider_model,
             commands::scheduled_task_commands::get_scheduled_tasks,
             commands::scheduled_task_commands::get_scheduled_task,
             commands::scheduled_task_commands::create_scheduled_task,

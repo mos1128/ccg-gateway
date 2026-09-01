@@ -1,5 +1,17 @@
 use super::*;
 
+#[derive(Debug, sqlx::FromRow)]
+struct ProviderStatsRow {
+    provider_name: String,
+    total_requests: i64,
+    total_success: i64,
+    total_tokens: i64,
+    total_cache_read_tokens: i64,
+    total_cache_creation_tokens: i64,
+    total_elapsed_ms: i64,
+    total_cost: f64,
+}
+
 #[tauri::command]
 pub async fn clear_stats_data(stats_db: State<'_, StatsDb>) -> Result<()> {
     crate::services::stats::clear_usage_stats(&stats_db.0)
@@ -9,7 +21,6 @@ pub async fn clear_stats_data(stats_db: State<'_, StatsDb>) -> Result<()> {
 
 #[tauri::command]
 pub async fn get_provider_stats(
-    db: State<'_, SqlitePool>,
     stats_db: State<'_, StatsDb>,
     start_date: Option<String>,
     end_date: Option<String>,
@@ -20,16 +31,14 @@ pub async fn get_provider_stats(
 
     let mut query = r#"
         SELECT
-            cli_type,
             provider_name,
             SUM(request_count) as total_requests,
             SUM(success_count) as total_success,
-            SUM(input_tokens) as total_input_tokens,
-            SUM(output_tokens) as total_output_tokens,
             SUM(input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens) as total_tokens,
             SUM(cache_read_input_tokens) as total_cache_read_tokens,
             SUM(cache_creation_input_tokens) as total_cache_creation_tokens,
-            SUM(elapsed_ms) as total_elapsed_ms
+            SUM(elapsed_ms) as total_elapsed_ms,
+            COALESCE(SUM(total_cost), 0) as total_cost
         FROM usage_daily_model
         WHERE 1=1
     "#.to_string();
@@ -63,23 +72,9 @@ pub async fn get_provider_stats(
     }
 
     let rows = q.fetch_all(pool).await.map_err(|e| e.to_string())?;
-    let pricing_map = crate::services::cost::provider_pricing_map(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
     let mut grouped: HashMap<String, ProviderStatsResponse> = HashMap::new();
 
     for row in rows {
-        let pricing = pricing_map
-            .get(&(row.cli_type.clone(), row.provider_name.clone()))
-            .copied()
-            .unwrap_or_default();
-        let total_cost = crate::services::cost::calculate_token_cost(
-            pricing,
-            row.total_input_tokens,
-            row.total_cache_read_tokens,
-            row.total_cache_creation_tokens,
-            row.total_output_tokens,
-        );
         let entry =
             grouped
                 .entry(row.provider_name.clone())
@@ -100,7 +95,7 @@ pub async fn get_provider_stats(
         entry.total_cache_read_tokens += row.total_cache_read_tokens;
         entry.total_cache_creation_tokens += row.total_cache_creation_tokens;
         entry.total_elapsed_ms += row.total_elapsed_ms;
-        entry.total_cost += total_cost;
+        entry.total_cost += row.total_cost;
     }
 
     let mut results: Vec<ProviderStatsResponse> = grouped.into_values().collect();
@@ -118,7 +113,6 @@ pub async fn get_provider_stats(
 
 #[tauri::command]
 pub async fn get_advanced_stats(
-    db: State<'_, SqlitePool>,
     stats_db: State<'_, StatsDb>,
     start_date: Option<String>,
     end_date: Option<String>,
@@ -141,7 +135,7 @@ pub async fn get_advanced_stats(
             SUM(output_tokens) as total_output_tokens,
             SUM(cache_read_input_tokens) as total_cache_read_tokens,
             SUM(cache_creation_input_tokens) as total_cache_creation_tokens,
-            0.0 as total_cost
+            COALESCE(SUM(total_cost), 0) as total_cost
         FROM usage_daily_model
         WHERE 1=1
     "#.to_string();
@@ -181,23 +175,7 @@ pub async fn get_advanced_stats(
         q = q.bind(mid);
     }
 
-    let mut rows = q.fetch_all(pool).await.map_err(|e| e.to_string())?;
-    let pricing_map = crate::services::cost::provider_pricing_map(db.inner())
-        .await
-        .map_err(|e| e.to_string())?;
-    for row in &mut rows {
-        let pricing = pricing_map
-            .get(&(row.cli_type.clone(), row.provider_name.clone()))
-            .copied()
-            .unwrap_or_default();
-        row.total_cost = crate::services::cost::calculate_token_cost(
-            pricing,
-            row.total_input_tokens,
-            row.total_cache_read_tokens,
-            row.total_cache_creation_tokens,
-            row.total_output_tokens,
-        );
-    }
+    let rows = q.fetch_all(pool).await.map_err(|e| e.to_string())?;
 
     Ok(rows)
 }

@@ -121,6 +121,10 @@
 
       <div class="toolbar-right">
         <template v-if="viewMode === 'relay'">
+          <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="showPriceDialog = true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            价格
+          </button>
           <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="showDetectDialog = true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             检测
@@ -212,11 +216,17 @@
       :base-url-placeholder="baseUrlPlaceholder"
       :protocols="activeProtocols"
       :remark="activeAgent?.remark"
+      :model-sync="editingProviderModelSync"
+      :model-sync-loading="!!editingProvider && modelSyncLoadingId === editingProvider.id"
+      :can-sync-models="!!editingProvider"
       @confirm="handleSave"
       @add-model-map="addModelMap"
       @remove-model-map="removeModelMap"
       @add-model-blacklist="addModelBlacklist"
       @remove-model-blacklist="removeModelBlacklist"
+      @sync-models="handleSyncEditingModels"
+      @add-model="handleAddEditingModel"
+      @remove-model="handleRemoveEditingModel"
     />
     <CredentialDrawer
       v-model="showCredentialDialog"
@@ -240,6 +250,12 @@
       @toggle-provider="toggleDetectProvider"
       @copy-response="copyResponseText"
     />
+    <ModelPriceModal
+      v-model="showPriceDialog"
+      :sync-state="priceSyncStatus"
+      :sync-loading="priceSyncLoading"
+      @sync="refreshPriceCatalog"
+    />
   </div>
 </template>
 
@@ -251,6 +267,7 @@ import CredentialRow from './components/CredentialRow.vue'
 import ProviderDrawer from './components/ProviderDrawer.vue'
 import CredentialDrawer from './components/CredentialDrawer.vue'
 import ModelDetectionModal from './components/ModelDetectionModal.vue'
+import ModelPriceModal from './components/ModelPriceModal.vue'
 import V2Empty from '@/components/V2Empty.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
 import { confirm } from '@/utils/confirm'
@@ -265,7 +282,7 @@ import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { InfoFilled } from '@element-plus/icons-vue'
-import type { Provider, ProviderCreate, ProviderUpdate, CliType, ConfigFormat, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult } from '@/types/models'
+import type { Provider, ProviderCreate, ProviderUpdate, CliType, ConfigFormat, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult, ProviderModelsResponse, PriceSyncState } from '@/types/models'
 import { getReusableModelName, saveReusableModelName, getReusableTestText, saveReusableTestText } from '@/utils/modelDefaults'
 
 const providerStore = useProviderStore()
@@ -612,12 +629,10 @@ interface ProviderDraft {
   api_key: string
   enabled: boolean
   failure_threshold: number
+  retry_limit: number
   blacklist_minutes: number
   custom_useragent: string
-  input_price_per_m: number
-  output_price_per_m: number
-  cache_read_price_per_m: number
-  cache_creation_price_per_m: number
+  price_multiplier: number
   model_maps: FormModelMap[]
   model_blacklist: FormModelBlacklist[]
 }
@@ -627,13 +642,41 @@ const toggleLoadingId = ref<number | null>(null)
 const writeCredentialLoadingId = ref<number | null>(null)
 
 const form = ref({
-  protocol: '' as Protocol | '', name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
-  custom_useragent: '', input_price_per_m: 0, output_price_per_m: 0,
-  cache_read_price_per_m: 0, cache_creation_price_per_m: 0,
+  protocol: '' as Protocol | '', name: '', base_url: '', api_key: '', failure_threshold: 5, retry_limit: 3, blacklist_minutes: 10,
+  custom_useragent: '', price_multiplier: 1,
   model_maps: [] as FormModelMap[], model_blacklist: [] as FormModelBlacklist[]
 })
 const copiedProvider = ref<ProviderDraft | null>(null)
 const pasteLoading = ref(false)
+const modelSyncMap = ref<Record<number, ProviderModelsResponse>>({})
+const modelSyncSignatures = ref<Record<number, string>>({})
+const modelSyncRequestVersions = new Map<number, number>()
+const modelSyncLoadingId = ref<number | null>(null)
+const priceSyncStatus = ref<PriceSyncState | null>(null)
+const priceSyncLoading = ref(false)
+const showPriceDialog = ref(false)
+// Manual models added while creating a provider, flushed once it has an id.
+const pendingManualModels = ref<string[]>([])
+const editingProviderModelSync = computed<ProviderModelsResponse | undefined>(() => {
+  const providerId = editingProvider.value?.id
+  if (providerId) return modelSyncMap.value[providerId]
+  if (!pendingManualModels.value.length) return undefined
+  // A provider that has not been created yet owns no rows, so the buffered
+  // names are shown as if they were already stored (negative ids mark them).
+  return {
+    provider_id: 0,
+    models: pendingManualModels.value.map((modelName, index) => ({
+      id: -(index + 1),
+      provider_id: 0,
+      model_name: modelName,
+      source: 'manual',
+      enabled: true,
+      first_seen_at: 0,
+      last_seen_at: 0,
+    })),
+    sync_state: null,
+  }
+})
 
 const credentialForm = ref<{ name: string; files: Record<string, string> }>({ name: '', files: {} })
 
@@ -685,10 +728,11 @@ function defaultProtocol(): Protocol | '' {
 
 function resetForm() {
   form.value = {
-    protocol: defaultProtocol(), name: '', base_url: '', api_key: '', failure_threshold: 5, blacklist_minutes: 10,
-    custom_useragent: '', input_price_per_m: 0, output_price_per_m: 0,
-    cache_read_price_per_m: 0, cache_creation_price_per_m: 0, model_maps: [], model_blacklist: []
+    protocol: defaultProtocol(), name: '', base_url: '', api_key: '', failure_threshold: 5, retry_limit: 3, blacklist_minutes: 10,
+    custom_useragent: '', price_multiplier: 1,
+    model_maps: [], model_blacklist: []
   }
+  pendingManualModels.value = []
 }
 function resetCredentialForm() {
   credentialForm.value = {
@@ -702,10 +746,9 @@ function cloneProviderDraft(draft: ProviderDraft): ProviderDraft {
 function createProviderDraft(provider: Provider): ProviderDraft {
   return {
     protocol: provider.protocol, name: provider.name, base_url: provider.base_url, api_key: provider.api_key, enabled: provider.enabled,
-    failure_threshold: provider.failure_threshold, blacklist_minutes: provider.blacklist_minutes,
+    failure_threshold: provider.failure_threshold, retry_limit: normalizeRetryLimit(provider.retry_limit), blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
-    input_price_per_m: provider.input_price_per_m || 0, output_price_per_m: provider.output_price_per_m || 0,
-    cache_read_price_per_m: provider.cache_read_price_per_m || 0, cache_creation_price_per_m: provider.cache_creation_price_per_m || 0,
+    price_multiplier: normalizeMultiplier(provider.price_multiplier),
     model_maps: provider.model_maps.map(({ source_model, target_model, enabled }) => ({ source_model, target_model, enabled })),
     model_blacklist: provider.model_blacklist.map(({ model_pattern }) => ({ model_pattern }))
   }
@@ -841,9 +884,169 @@ function removeModelMap(index: number) { form.value.model_maps.splice(index, 1) 
 function addModelBlacklist() { form.value.model_blacklist.push({ model_pattern: '' }) }
 function removeModelBlacklist(index: number) { form.value.model_blacklist.splice(index, 1) }
 
-function normalizePrice(value: unknown): number {
+function normalizeMultiplier(value: unknown): number {
   const numberValue = Number(value)
-  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : 0
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : 1
+}
+
+/** 连续重试次数限定在 1-20：0 会让服务商一次都不被尝试。 */
+function normalizeRetryLimit(value: unknown): number {
+  const numberValue = Number(value)
+  if (!Number.isFinite(numberValue) || numberValue < 1) return 3
+  return Math.min(Math.floor(numberValue), 20)
+}
+
+function providerModelSyncSignature(provider: Provider): string {
+  return JSON.stringify([
+    provider.id,
+    provider.profile,
+    provider.protocol,
+    provider.base_url.trim().replace(/\/+$/, ''),
+    provider.api_key.trim(),
+  ])
+}
+
+function nextModelSyncRequest(providerId: number): number {
+  const version = (modelSyncRequestVersions.get(providerId) || 0) + 1
+  modelSyncRequestVersions.set(providerId, version)
+  return version
+}
+
+function isCurrentModelSyncRequest(providerId: number, signature: string, version: number): boolean {
+  const current = providerStore.providers.find((item) => item.id === providerId)
+  return modelSyncRequestVersions.get(providerId) === version
+    && modelSyncSignatures.value[providerId] === signature
+    && !!current
+    && providerModelSyncSignature(current) === signature
+}
+
+function clearModelSyncEntry(providerId: number) {
+  const nextModels = { ...modelSyncMap.value }
+  delete nextModels[providerId]
+  modelSyncMap.value = nextModels
+  const nextSignatures = { ...modelSyncSignatures.value }
+  delete nextSignatures[providerId]
+  modelSyncSignatures.value = nextSignatures
+  nextModelSyncRequest(providerId)
+}
+
+async function loadProviderModels(
+  provider: Provider,
+  silent = true,
+  signature = providerModelSyncSignature(provider),
+) {
+  const requestVersion = nextModelSyncRequest(provider.id)
+  try {
+    const { data } = await providersApi.getModels(provider.id)
+    if (!isCurrentModelSyncRequest(provider.id, signature, requestVersion)) return
+    modelSyncMap.value = { ...modelSyncMap.value, [provider.id]: data }
+  } catch (e: any) {
+    if (!silent && isCurrentModelSyncRequest(provider.id, signature, requestVersion)) {
+      notify(getErrorMessage(e, '获取模型列表失败'), 'error')
+    }
+  }
+}
+
+async function applyModelMutation(
+  provider: Provider,
+  request: () => Promise<{ data: ProviderModelsResponse }>,
+  errorText: string,
+): Promise<boolean> {
+  modelSyncLoadingId.value = provider.id
+  const signature = providerModelSyncSignature(provider)
+  modelSyncSignatures.value = { ...modelSyncSignatures.value, [provider.id]: signature }
+  const requestVersion = nextModelSyncRequest(provider.id)
+  try {
+    const { data } = await request()
+    if (!isCurrentModelSyncRequest(provider.id, signature, requestVersion)) return false
+    modelSyncMap.value = { ...modelSyncMap.value, [provider.id]: data }
+    return true
+  } catch (e: any) {
+    if (isCurrentModelSyncRequest(provider.id, signature, requestVersion)) {
+      notify(getErrorMessage(e, errorText), 'error')
+    }
+    return false
+  } finally {
+    modelSyncLoadingId.value = null
+  }
+}
+
+async function syncProviderModels(provider: Provider) {
+  if (modelSyncLoadingId.value !== null) return
+  const ok = await applyModelMutation(provider, () => providersApi.syncModels(provider.id), '同步模型列表失败')
+  if (ok) notify(`已同步 ${provider.name} 的模型列表`)
+}
+
+// The backend syncs against the saved endpoint, so unsaved credential edits
+// would silently produce a model list for the previous configuration.
+function handleSyncEditingModels() {
+  const provider = editingProvider.value
+  if (!provider) return
+  const endpointEdited = form.value.protocol !== provider.protocol
+    || form.value.base_url.trim() !== provider.base_url.trim()
+    || form.value.api_key.trim() !== provider.api_key.trim()
+  if (endpointEdited) {
+    notify('端点配置已修改，请先保存后再同步', 'warning')
+    return
+  }
+  void syncProviderModels(provider)
+}
+async function handleAddEditingModel(modelName: string) {
+  const provider = editingProvider.value
+  if (!provider) {
+    const name = modelName.trim()
+    if (!name || pendingManualModels.value.some((item) => item.toLowerCase() === name.toLowerCase())) return
+    pendingManualModels.value = [...pendingManualModels.value, name]
+    return
+  }
+  if (modelSyncLoadingId.value !== null) return
+  await applyModelMutation(provider, () => providersApi.addManualModel(provider.id, modelName), '添加模型失败')
+}
+async function handleRemoveEditingModel(modelId: number) {
+  const provider = editingProvider.value
+  if (!provider) {
+    const index = -modelId - 1
+    pendingManualModels.value = pendingManualModels.value.filter((_, position) => position !== index)
+    return
+  }
+  if (modelSyncLoadingId.value !== null) return
+  await applyModelMutation(provider, () => providersApi.deleteModel(provider.id, modelId), '移除模型失败')
+}
+
+async function flushPendingManualModels(providerId: number) {
+  const failed: string[] = []
+  for (const modelName of pendingManualModels.value) {
+    try {
+      await providersApi.addManualModel(providerId, modelName)
+    } catch {
+      failed.push(modelName)
+    }
+  }
+  if (failed.length) notify(`以下模型未能添加：${failed.join('、')}`, 'warning')
+}
+
+async function refreshPriceCatalog() {
+  if (priceSyncLoading.value) return
+  priceSyncLoading.value = true
+  try {
+    const { data } = await providersApi.syncPrices()
+    priceSyncStatus.value = data
+    notify(`价格目录已更新（${data.model_count} 个模型）`)
+  } catch (e: any) {
+    notify(getErrorMessage(e, '更新价格目录失败'), 'error')
+    try {
+      const { data } = await providersApi.getPriceSyncStatus()
+      priceSyncStatus.value = data
+    } catch { /* keep the previous status */ }
+  } finally {
+    priceSyncLoading.value = false
+  }
+}
+
+function loadPriceSyncStatus() {
+  providersApi.getPriceSyncStatus().then(({ data }) => {
+    priceSyncStatus.value = data
+  }).catch(() => undefined)
 }
 
 async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
@@ -906,6 +1109,36 @@ watch(() => activeProfile.value, (profile) => {
     providerStore.fetchProviders(activeCliType.value as CliType, profile)
   }
 })
+watch(
+  () => providerStore.providers.map((provider) => ({
+    provider,
+    signature: providerModelSyncSignature(provider),
+  })),
+  (entries) => {
+    const activeIds = new Set<number>()
+    for (const { provider, signature } of entries) {
+      const { id } = provider
+      activeIds.add(id)
+      if (modelSyncSignatures.value[id] !== signature) {
+        modelSyncSignatures.value = { ...modelSyncSignatures.value, [id]: signature }
+        const nextModels = { ...modelSyncMap.value }
+        delete nextModels[id]
+        modelSyncMap.value = nextModels
+        nextModelSyncRequest(id)
+      }
+      if (!modelSyncMap.value[id]) void loadProviderModels(provider, true, signature)
+    }
+    for (const key of Object.keys(modelSyncMap.value)) {
+      const id = Number(key)
+      if (!activeIds.has(id)) clearModelSyncEntry(id)
+    }
+    for (const key of Object.keys(modelSyncSignatures.value)) {
+      const id = Number(key)
+      if (!activeIds.has(id)) clearModelSyncEntry(id)
+    }
+  },
+  { immediate: true },
+)
 watch(profileRenameDraft, (value) => {
   if (!editingProfileName.value) return
   profileRenameError.value = profileNameError(value)
@@ -957,10 +1190,9 @@ function handleEdit(provider: Provider) {
   editingProvider.value = provider
   form.value = {
     protocol: provider.protocol, name: provider.name, base_url: provider.base_url, api_key: provider.api_key,
-    failure_threshold: provider.failure_threshold, blacklist_minutes: provider.blacklist_minutes,
+    failure_threshold: provider.failure_threshold, retry_limit: normalizeRetryLimit(provider.retry_limit), blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
-    input_price_per_m: provider.input_price_per_m || 0, output_price_per_m: provider.output_price_per_m || 0,
-    cache_read_price_per_m: provider.cache_read_price_per_m || 0, cache_creation_price_per_m: provider.cache_creation_price_per_m || 0,
+    price_multiplier: normalizeMultiplier(provider.price_multiplier),
     model_maps: provider.model_maps.map((m) => ({ ...m })), model_blacklist: provider.model_blacklist.map((b) => ({ ...b }))
   }
 }
@@ -981,12 +1213,10 @@ async function handleSave() {
     base_url: form.value.base_url,
     api_key: form.value.api_key,
     failure_threshold: form.value.failure_threshold,
+    retry_limit: normalizeRetryLimit(form.value.retry_limit),
     blacklist_minutes: form.value.blacklist_minutes,
     custom_useragent: form.value.custom_useragent,
-    input_price_per_m: normalizePrice(form.value.input_price_per_m),
-    output_price_per_m: normalizePrice(form.value.output_price_per_m),
-    cache_read_price_per_m: normalizePrice(form.value.cache_read_price_per_m),
-    cache_creation_price_per_m: normalizePrice(form.value.cache_creation_price_per_m),
+    price_multiplier: normalizeMultiplier(form.value.price_multiplier),
     model_maps: form.value.model_maps.filter((m) => m.source_model && m.target_model),
     model_blacklist: form.value.model_blacklist.filter((b) => b.model_pattern),
   } satisfies ProviderUpdate
@@ -995,8 +1225,9 @@ async function handleSave() {
       await providerStore.updateProvider(editingProvider.value.id, data)
       notify('更新成功')
     } else {
-      await providerStore.createProvider({ cli_type: activeCliType.value, ...data })
+      const created = await providerStore.createProvider({ cli_type: activeCliType.value, ...data })
       notify('添加成功')
+      await flushPendingManualModels(created.id)
     }
     showDialog.value = false
     resetForm()
@@ -1032,6 +1263,7 @@ async function handleCommand(command: string, provider: Provider) {
     try {
       await confirm('确定删除该服务商？', '确认')
       await providerStore.deleteProvider(provider.id)
+      clearModelSyncEntry(provider.id)
       notify('已删除')
     } catch (e) {
       if (e !== 'cancel') notify(getErrorMessage(e, '删除失败'), 'error')
@@ -1173,6 +1405,7 @@ onMounted(async () => {
   await loadProfiles()
   const profile = await ensureCurrentProfileOrFallback()
   providerStore.fetchProviders(activeCliType.value as CliType, profile)
+  loadPriceSyncStatus()
   if (canUseOfficialCredentials.value) {
     credentialStore.fetchCredentials(activeCliType.value as CliType)
   }
@@ -1237,7 +1470,7 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--v2-surface-2);
 }
 .toolbar-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.toolbar-right { display: flex; align-items: center; gap: 8px; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 .prov-body { flex: 1; min-height: 0; overflow: auto; }
 .prov-shell > .v2-empty { flex: 1; min-height: 0; }
