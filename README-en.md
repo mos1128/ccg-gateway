@@ -3,15 +3,15 @@
 [中文](README.md) | English
 
 <div align="center">
-<strong>Intelligent AI Model Gateway | Unified Proxy · Direct CLI Writes · Load Balancing · Failover</strong>
+<strong>Intelligent AI Model Gateway | Unified Proxy · Direct CLI Writes · Smart Failover · Accurate Billing</strong>
 
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0+-blue.svg)](https://tauri.app/)
 [![Vue](https://img.shields.io/badge/Vue-3.5+-brightgreen.svg)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9+-blue.svg)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-</div>
 
+</div>
 
 ## 📖 Introduction
 
@@ -21,41 +21,24 @@ This project was initiated based on the author's actual needs to solve various p
 
 ---
 
-## 🔥 Core Pain Points
+## ✨ Highlights
 
-**Unstable Service Providers**
-
-When service providers experience quota reset windows, rate limiting, or downtime, the gateway automatically switches to available providers and periodically re-checks them, with no user intervention required.
-
-Also supported: provider availability checks; model name mapping; automatic routing to another provider when a model is unavailable; custom request User-Agent.
-
-**Provider Keep-Alive & Refresh Windows**
-
-Scheduled tasks automatically make small calls to cover provider windows and improve N-hour quota usage efficiency.
-
-**Multi-Project, Multi-Provider Parallel Workflow**
-
-When developing multiple projects in parallel with the same Agent, Profiles let different projects use different providers.
-
-**Cost & Usage Statistics**
-
-The statistics dashboard provides provider/model breakdowns for token usage, costs, and request counts.
-
-**Opaque Request Information**
-
-Request logs record status, latency, token usage, cost, agent requests, provider responses, and more for every call — all at a glance.
-
-**Hard to Trace Sessions**
-
-Browse session history grouped by project, with access to the AI's thought process, tool calls, and return results.
-
-**Repetitive Configuration Across Multiple Agents**
-
-MCP, preset prompts, Skills, plugins, and other tools only need to be configured once to be quickly applied across multiple Agents.
-
-**Cross-Device Configuration Sync**
-
-Supports local export and WebDAV cloud backup for quick restoration of full configurations across devices.
+- 🧩 **Multi-Agent Management** - 10+ built-in Agent templates, plus custom templates for onboarding new Agents
+- 🔌 **Multi-Protocol Routing** - Supports four endpoint types: Anthropic Messages / OpenAI Chat / OpenAI Responses / Gemini generateContent
+- 🔀 **Failover** - On upstream failure, automatic retries, provider switching, breaker cooldown, and periodic re-checks — invisible to the user
+- 🛡️ **Stream Inspection** - A stream reaches the client only after its first chunk passes inspection; on an upstream error the provider is switched silently without interrupting the Agent's task
+- 🔁 **Model Mapping** - Wildcard rewriting when Agent and provider model names differ, with no manual config edits
+- 🚫 **Model Blacklist** - Models a provider doesn't support are skipped automatically and routed to a provider that does
+- 💰 **Price Sync** - Official model prices are synced automatically (including long-context tiered pricing); each provider only needs a single multiplier
+- 📋 **Model List Sync** - Quickly fetch a provider's available models and pick mapping targets straight from a dropdown
+- 🧪 **Availability Detection** - Batch-check model availability and latency across multiple providers
+- ⏰ **Scheduled Tasks** - Small calls during idle hours to move quota resets earlier; keeps accounts alive
+- 📊 **Full-Dimension Statistics** - Token usage, cost, request counts, and cache hit rate across provider / model dimensions
+- 🔍 **Request Logs** - Status, first-byte / total latency, token breakdown, cache hit rate, cost derivation, raw request and response for every call
+- 💬 **Traceable Sessions** - Browse session history grouped by project, including thought process, tool calls, and results
+- 🗂️ **Multi-Profile** - Run the same Agent on parallel projects, with different providers per project
+- 🧰 **Shared Tool Config** - Configure MCP, prompts, Skills, and Plugins once, then apply them across multiple Agents
+- ☁️ **Cross-Device Sync** - Local export/import and WebDAV cloud backup for quick full-configuration restore across devices
 
 ---
 
@@ -78,75 +61,68 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 
 ## 💡 Features
 
-> Only unique features are listed here for quick reference!!!
+> Only some feature points are explained here, for a quick start!!!
 
-### Statistics Overview
+### Dashboard
 
-- Provides statistics across provider/model dimensions, covering token usage, request counts, and costs.
-- Supports clearing historical statistics in Log Management.
-
-### CLI Modes
-
-- Relay Routing: Agent requests are written to the gateway address, and the gateway handles provider routing, load balancing, and failover.
-- Relay Direct: Write a specified provider directly to the CLI config, so the Agent connects to that provider directly.
-- Official Direct: Write official account credentials to the CLI config, so the Agent uses the official request path.
+- Two-dimension charts: legend entries are selectable, and the KPI cards update along with the selection.
+- Filter by date range or quick presets.
+- Statistics auto-refresh on a timer and can be paused at any time.
 
 ### Agent Templates
 
-- Built-in support for Claude Code, Codex, Gemini CLI, OpenCode, Kimi Code, ZCode, Grok Build, Pi, Oh My Pi, and DeepSeek Harness.
 - User templates can add new Agents or override built-in templates by using the same `id`.
-- Templates can declare request protocols, configuration write rules, official credentials, Profiles, MCP, Skills, sessions, and other capabilities.
-- User templates are stored in `~/.ccg-gateway/agent-definitions/{id}.json` by default and require an application restart after changes. See the [Agent Template Field Guide](agent-template-guide.md) for field definitions, allowed values, and complete examples.
+- User templates are stored in `~/.ccg-gateway/agent-definitions/{id}.json` by default and require an application restart after changes. See the [Agent Template Development Guide](agent-template-guide.md) for field definitions, allowed values, and complete examples.
 
 ### Relay Providers
 
+- Endpoint Type: declare each provider as Anthropic / OpenAI Chat / OpenAI Responses / Gemini; the gateway matches it against the Agent's actual request path.
 - Model Mapping: Automatically maps when the agent's model name differs from the provider's model name, with no need to manually edit config files.
   - Wildcards: `*` for any length of characters, `?` for a single character.
   - Example: `*opus* -> gml-5` maps any model with "opus" in its name to the provider's gml-5 model.
-- Model Blacklist: Configure models a provider doesn't support; requests automatically skip that provider and route to one that supports the model.
-- Failure Blacklist: Automatically blacklists a provider after N consecutive failures for M minutes, with periodic automatic recovery. The default failure threshold is 5.
-- Pricing: Configure per-million-token prices for input, output, cache read, and cache creation. Statistics and logs use them to calculate costs automatically.
-- Supports writing a provider to the CLI config with one click and displaying the current direct-access status.
+  - Mapping targets can be selected from the provider's available models via dropdown, or typed manually.
+- Failover Rules: On failure, the request first retries on the current provider (configurable consecutive retry count, default 3), then switches to the next provider; once every provider has had a turn, the rotation starts over until one succeeds or all of them trip the breaker. When consecutive failures reach the threshold (default 5), the provider enters a breaker cooldown (default 10 minutes) and other providers take over in the meantime. Problems with the request itself, such as invalid credentials or a nonexistent model, switch providers immediately instead of wasting retries.
+
+### Multi-Profile
+
+- Create multiple Profiles under the same Agent, each maintaining its own provider list; double-click a tab to rename it.
+- Every Profile generates a matching launch command that can be copied with one click (e.g. `claude --settings ~/.claude/settings-ccg-work.json`).
+- Agents started with their respective launch commands don't interfere with each other.
 
 ### Official Accounts
 
-- Supports credential configuration for multiple accounts, with one-click reading from the Agent.
+- Supports credential configuration for multiple accounts, with one-click import of already logged-in credentials.
 - Supports drag-and-drop to quickly switch the currently active account credentials.
-- Supports writing specified official credentials to the CLI config and displaying the current write status.
-- Official accounts bypass gateway forwarding and use the Agent's own requests to avoid account risk controls.
+- Official accounts are not forwarded through the gateway, avoiding account risk controls.
 
-### Scheduled Tasks
+### Global Settings
 
-- Call providers during idle periods to trigger billing window updates and move the next reset time forward.
-- Periodically call providers for keep-alive, preventing accounts from being removed by providers.
-
-### Global CLI Settings
-
-- CLI Runtime Configuration: Supports configuring Agent data directories, making it easy for WSL users to write files correctly.
 - Global Presets: Written into each Agent's configuration file (e.g., `~/.claude/settings.json`). No need to configure BASE_URL or AUTH_TOKEN — the gateway writes them automatically.
-- Incremental / Full Write: Incremental writing preserves configurations made by the Agent itself; full writing does not.
-- After the config directory, default config, or write mode changes, the corresponding config is automatically rewritten according to the current CLI mode.
+- Incremental / Full Write: Incremental writing preserves configurations written by the Agent itself; full writing does not.
 
 ### Log Management
 
 - Request Logs: Split into request metadata and request details.
-  - Metadata: request time, agent, provider, status, latency, token breakdown, cost, model mapping, error messages, etc.
+  - Metadata: request time, agent, provider, status, first-byte/total latency, token breakdown, cache hit rate, cost, model mapping, error messages, etc.
   - Request Details: agent request headers / body, gateway forwarded request headers / body, provider response headers / body.
+  - Cost Details: every cost shows its line-by-line calculation (tokens × unit price × multiplier) and the price source; errors are categorized as gateway-caught or upstream.
+- System Logs: diagnostic events such as unmatched User-Agent, Agent/protocol config conflicts, and no available provider, with duplicate events collapsed.
 - Log Levels: full logging, log details on failure only, or disable logging. Full logging records request details regardless of success; disabling logging records nothing.
 - Request detail data is stored in files, allowing cleanup of large logs while retaining metadata.
-- Supports clearing statistics for recalculating usage and request counts.
+- Cleanup Scopes: all logs / all details / statistics / logs older than 30 days / details older than 30 days; clearing statistics restarts usage and request counting.
 
 ### MCP / Prompts / Skills / Plugin Management
 
-- MCP: Configure once, enable/disable across multiple CLIs. Codex automatically converts to Toml format.
-- Prompts: Configure once, enable/disable across multiple CLIs.
-- Skills: supports installation from local directories or remote Git repositories, providing skill favorites and quick reinstallation.
-- Plugins: supports installation from local directories or remote Git repositories, providing plugin favorites and quick reinstallation.
+- MCP: Configure once, enable/disable across multiple Agents; special Agents get the format converted automatically.
+- Prompts: Configure once, enable/disable across multiple Agents.
+- Skills: add a remote Git repository or local directory as a skill repo, browse and install skills from it, with favorites, reinstall, uninstall, and a stale marker.
+- Plugins: add a plugin marketplace (remote Git repository or local directory), then install, update, uninstall, and favorite plugins.
 
 ### Appearance & Experience
 
-- Theme Switching: Supports one-click switching between global light/dark themes.
-- Traditional Color Palette: Hand-picked color schemes for a comfortable visual experience.
+- Theme Switching: Supports one-click switching between global light / dark themes.
+- The window size is remembered automatically and restored on the next launch.
+- Built-in update check: checks GitHub Releases for new versions.
 
 ---
 
@@ -155,7 +131,7 @@ Supports local export and WebDAV cloud backup for quick restoration of full conf
 ### Method 1: Download from Releases (Multi-platform)
 
 1. Go to the [Releases](https://github.com/mos1128/ccg-gateway/releases) page to download the latest version.
-2. Select the corresponding file for your operating system.
+2. Pick the file for your OS: `.exe` on Windows, `.dmg` (Universal) on macOS, `.AppImage` on Linux.
 
 ### Method 2: Install with Scoop (Windows)
 
@@ -175,16 +151,12 @@ scoop install extras/ccg-gateway
 
 **Method 3-1: One-click Start Script**
 
-The script automatically starts the frontend development server and the Tauri backend. Requires `tauri-cli` to be installed.
-
 ```bash
-# Start the development environment (Frontend + Backend)
+# Start the development environment (Frontend + Backend), requires tauri-cli
 ./dev.bat
 ```
 
 **Method 3-2: Manual Dependency Installation and Start**
-
-Run directly via `cargo`. Does not support hot reloading; the backend must be restarted manually.
 
 ```bash
 # Start the frontend development server
@@ -205,13 +177,13 @@ cargo run
 
 CCG Gateway is configured via environment variables. All configurations have default values and work out of the box.
 
-| Environment Variable | Default Value | Description |
-|---------|------|------|
-| `CCG_GATEWAY_HOST` | `127.0.0.1` | Backend API server listening address |
-| `CCG_GATEWAY_PORT` | `7788` | Backend API server port |
-| `CCG_DATA_DIR` | `~/.ccg-gateway` | Directory for databases, logs, and user Agent templates |
-| `CCG_LOG_FILE` | `false` | Set to `true` or `1` to enable file logging |
-| `CCG_LOG_LEVEL` | See description below | Log level configuration |
+| Environment Variable | Default Value         | Description                                             |
+| -------------------- | --------------------- | ------------------------------------------------------- |
+| `CCG_GATEWAY_HOST`   | `127.0.0.1`           | Backend API server listening address                    |
+| `CCG_GATEWAY_PORT`   | `7788`                | Backend API server port                                 |
+| `CCG_DATA_DIR`       | `~/.ccg-gateway`      | Directory for databases, logs, and user Agent templates |
+| `CCG_LOG_FILE`       | `false`               | Set to `true` or `1` to enable file logging             |
+| `CCG_LOG_LEVEL`      | See description below | Log level configuration                                 |
 
 **CCG_LOG_LEVEL Description**
 
@@ -233,6 +205,7 @@ Example: `CCG_LOG_LEVEL=warn,ccg_gateway_lib=trace` means global warn, but ccg_g
 #### How to Set Environment Variables
 
 **Windows (PowerShell)**
+
 ```powershell
 # Temporary setting (valid for the current terminal session)
 $env:CCG_GATEWAY_PORT="8080"
@@ -243,6 +216,7 @@ $env:CCG_DATA_DIR="D:\ccg-data"
 ```
 
 **macOS / Linux (Bash/Zsh)**
+
 ```bash
 # Temporary setting (valid for the current terminal session)
 export CCG_GATEWAY_PORT=8080
@@ -275,9 +249,11 @@ Thanks to the contributors of the following open-source projects:
 - [cc-switch](https://github.com/farion1231/cc-switch) - A cross-platform desktop All-in-One assistant tool for Claude Code, Codex & Gemini CLI.
 - [coding-tool](https://github.com/CooperJiang/coding-tool) - claudecode|codex|gemini cli enhancement tool.
 - [code-switch-R](https://github.com/Rogers-F/code-switch-R) - Claude Code & Codex multi-provider proxy & management tool.
+- [linux.do](https://linux.do/) - A friendly non-Linux community.
 
 ---
 
 <div align="center">
 <strong>If this project is helpful to you, please give it a ⭐️ Star!</strong>
 </div>
+
