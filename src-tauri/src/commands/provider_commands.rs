@@ -76,7 +76,16 @@ fn validate_provider_protocol(agent_id: &str, protocol: Option<&str>) -> Result<
         None => return Err("该 Agent 支持多个 Protocol，请明确选择".to_string()),
     };
     if !declared.contains(&protocol) {
-        return Err(format!("Agent {} 未声明 Protocol {}", agent_id, protocol));
+        // 端点类型可以和 Agent 声明的协议不同，网关转发时自动转换；Gemini 不参与
+        // 转换，所以两边都必须落在可转换集合里。
+        let convertible = crate::services::translate::is_convertible(protocol)
+            && declared
+                .iter()
+                .copied()
+                .any(crate::services::translate::is_convertible);
+        if !convertible {
+            return Err(format!("Agent {} 无法使用 Protocol {}", agent_id, protocol));
+        }
     }
     Ok(protocol.as_str().to_string())
 }

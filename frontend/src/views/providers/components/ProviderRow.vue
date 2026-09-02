@@ -14,6 +14,11 @@
         <el-tooltip :content="protocolLabel" placement="top" effect="light" :show-after="250">
           <span class="v2-pill v2-pill-neutral pt-protocol">{{ protocolLabel }}</span>
         </el-tooltip>
+        <el-tooltip v-if="translated" content="端点类型与 Agent 协议不同，转发时自动转换" placement="top" effect="light" :show-after="250">
+          <span class="pt-translate">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
+          </span>
+        </el-tooltip>
       </div>
       <div>
         <el-tooltip :content="statusTitle" placement="top" effect="light" :disabled="!provider.is_blacklisted" :show-after="250">
@@ -50,6 +55,7 @@ import type { Provider } from '@/types/models'
 const props = defineProps<{
   provider: Provider
   unblacklistText: string
+  translated?: boolean
   toggleLoading?: boolean
 }>()
 
@@ -89,5 +95,7 @@ function onToggleChange(value: string | number | boolean) {
 </script>
 
 <style scoped>
+.pt-col-protocol { display: flex; align-items: center; gap: 4px; }
 .pt-protocol { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-translate { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--v2-text-3); }
 </style>

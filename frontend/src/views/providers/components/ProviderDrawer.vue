@@ -18,6 +18,10 @@
           width="100%"
           @change="value => form.protocol = value as Protocol"
         />
+        <div v-if="translated" class="dr-translate-note">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
+          <span>该端点类型与 Agent 协议不同，转发时自动转换。转换后模型的思考内容只能在本服务商内延续，一旦故障转移到别的服务商，历史思考链会被丢弃（对话本身不受影响）。</span>
+        </div>
       </div>
       <div class="v2-field">
         <label class="v2-label">服务商名称 <span class="req">*</span></label>
@@ -223,7 +227,7 @@ import V2Drawer from '@/components/V2Drawer.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
 import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
 import { InfoFilled } from '@element-plus/icons-vue'
-import { PROTOCOL_LABELS } from '@/types/models'
+import { CONVERTIBLE_PROTOCOLS, PROTOCOL_LABELS } from '@/types/models'
 import type { Protocol, ProviderModelsResponse } from '@/types/models'
 
 interface ProviderEditForm {
@@ -246,6 +250,7 @@ const props = defineProps<{
   form: ProviderEditForm
   baseUrlPlaceholder: string
   protocols: Protocol[]
+  declaredProtocols: Protocol[]
   remark?: string | null
   modelSync?: ProviderModelsResponse
   modelSyncLoading?: boolean
@@ -276,6 +281,13 @@ const protocolOptions = computed(() => props.protocols.map((protocol) => ({
   value: protocol,
   label: PROTOCOL_LABELS[protocol],
 })))
+// 端点类型与 Agent 声明的协议都在可转换集合里、且确实不同，这条链路才会走转换。
+const translated = computed(() => {
+  const protocol = props.form.protocol as Protocol
+  return CONVERTIBLE_PROTOCOLS.includes(protocol)
+    && props.declaredProtocols.some((declared) => CONVERTIBLE_PROTOCOLS.includes(declared))
+    && !props.declaredProtocols.includes(protocol)
+})
 
 const providerModels = computed(() => props.modelSync?.models ?? [])
 const modelOptions = computed<AppSelectOption[]>(() => providerModels.value
@@ -335,6 +347,8 @@ watch(() => props.modelValue, (open) => {
   overflow-wrap: anywhere;
   white-space: pre-line;
 }
+.dr-translate-note { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; color: var(--v2-warning); font-size: var(--v2-fs-xs); line-height: 1.5; }
+.dr-translate-note svg { flex: 0 0 auto; margin-top: 2px; }
 .dr-sec-title { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-semibold); color: var(--v2-text); }
 .dr-map { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 9px; align-items: center; }
 .dr-map-single { grid-template-columns: 1fr auto; }

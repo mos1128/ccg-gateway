@@ -168,6 +168,7 @@
             <ProviderRow
               :provider="element"
               :unblacklist-text="getUnblacklistTime(element)"
+              :translated="isTranslated(element.protocol)"
               :toggle-loading="toggleLoadingId === element.id"
               @copy="handleCopyProvider"
               @edit="handleEdit"
@@ -215,6 +216,7 @@
       :form="form"
       :base-url-placeholder="baseUrlPlaceholder"
       :protocols="activeProtocols"
+      :declared-protocols="declaredProtocols"
       :remark="activeAgent?.remark"
       :model-sync="editingProviderModelSync"
       :model-sync-loading="!!editingProvider && modelSyncLoadingId === editingProvider.id"
@@ -282,6 +284,7 @@ import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
 import { InfoFilled } from '@element-plus/icons-vue'
+import { CONVERTIBLE_PROTOCOLS } from '@/types/models'
 import type { Provider, ProviderCreate, ProviderUpdate, CliType, ConfigFormat, Protocol, ProviderProfile, ProviderProfileItem, CliProfileSettingsStatus, CredentialFileDefinition, OfficialCredential, OfficialCredentialCreate, OfficialCredentialPayload, OfficialLoginOperation, TestProviderResult, ProviderModelsResponse, PriceSyncState } from '@/types/models'
 import { getReusableModelName, saveReusableModelName, getReusableTestText, saveReusableTestText } from '@/utils/modelDefaults'
 
@@ -321,7 +324,17 @@ const activeProfile = computed({
 type ViewMode = 'relay' | 'official'
 const viewMode = ref<ViewMode>('relay')
 const activeAgent = computed(() => agentStore.get(activeCliType.value))
-const activeProtocols = computed<Protocol[]>(() => activeAgent.value?.protocols ?? [])
+const declaredProtocols = computed<Protocol[]>(() => activeAgent.value?.protocols ?? [])
+// 端点类型可以和 Agent 声明的协议不同，网关转发时自动转换协议；Gemini 不参与转换。
+const activeProtocols = computed<Protocol[]>(() => {
+  const declared = declaredProtocols.value
+  if (!declared.some((protocol) => CONVERTIBLE_PROTOCOLS.includes(protocol))) return declared
+  return [...declared, ...CONVERTIBLE_PROTOCOLS.filter((protocol) => !declared.includes(protocol))]
+})
+// 两边都在可转换集合里、且确实不同，才会真的走转换；Gemini 只能透传。
+const isTranslated = (protocol: Protocol) => CONVERTIBLE_PROTOCOLS.includes(protocol)
+  && declaredProtocols.value.some((declared) => CONVERTIBLE_PROTOCOLS.includes(declared))
+  && !declaredProtocols.value.includes(protocol)
 const profileFeature = computed(() => activeAgent.value?.features.profiles)
 const supportsProfiles = computed(() => profileFeature.value?.enabled === true)
 const officialLoginFeature = computed(() => activeAgent.value?.features.official_login)
@@ -723,7 +736,7 @@ const baseUrlPlaceholder = computed(() => {
 })
 
 function defaultProtocol(): Protocol | '' {
-  return activeProtocols.value.length === 1 ? activeProtocols.value[0] : ''
+  return declaredProtocols.value.length === 1 ? declaredProtocols.value[0] : ''
 }
 
 function resetForm() {
@@ -1166,9 +1179,7 @@ async function handlePasteProvider() {
   try {
     await providerStore.fetchProviders(targetCliType, targetProfile)
     const draft = cloneProviderDraft(copiedProvider.value)
-    if (activeProtocols.value.length === 1) {
-      draft.protocol = activeProtocols.value[0]
-    } else if (!activeProtocols.value.includes(draft.protocol)) {
+    if (!activeProtocols.value.includes(draft.protocol)) {
       notify('复制的端点类型不受当前 Agent 支持，请通过编辑服务商重新选择', 'error')
       return
     }

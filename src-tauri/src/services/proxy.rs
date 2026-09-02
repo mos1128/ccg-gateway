@@ -1,4 +1,4 @@
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, HeaderValue};
 use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -361,22 +361,34 @@ fn apply_claude_usage(value: &Value, usage: &mut TokenUsage) {
 }
 
 fn apply_openai_usage(value: &Value, usage: &mut TokenUsage) {
-    let cached_updated = value
+    let details = value
         .get("input_tokens_details")
-        .or_else(|| value.get("prompt_tokens_details"))
-        .and_then(|details| details.get("cached_tokens"))
-        .and_then(|v| v.as_i64())
+        .or_else(|| value.get("prompt_tokens_details"));
+    let detail = |key: &str| {
+        details
+            .and_then(|details| details.get(key))
+            .and_then(|v| v.as_i64())
+    };
+    let cached_updated = detail("cached_tokens")
         .map(|cached| {
             usage.cache_read_input_tokens = cached;
         })
         .is_some();
+    // 缓存写入：OpenAI 官方用量里没有这一格，但 Responses 兼容端点普遍会给，实测两种
+    // 写法都有。和 cached_tokens 一样已经算在 input_tokens 里，所以下面要一起减掉，
+    // 漏读会让这部分按普通输入计价（Anthropic 的缓存写入贵 25%）。
+    if let Some(written) = detail("cache_write_tokens").or_else(|| detail("cached_creation_tokens"))
+    {
+        usage.cache_creation_input_tokens = written;
+    }
 
     if let Some(input) = value
         .get("input_tokens")
         .or_else(|| value.get("prompt_tokens"))
         .and_then(|v| v.as_i64())
     {
-        usage.input_tokens = (input - usage.cache_read_input_tokens).max(0);
+        usage.input_tokens =
+            (input - usage.cache_read_input_tokens - usage.cache_creation_input_tokens).max(0);
     } else if cached_updated {
         usage.input_tokens = usage.input_tokens.max(0);
     }
@@ -537,12 +549,65 @@ pub fn filter_headers(headers: &HeaderMap) -> reqwest::header::HeaderMap {
     filtered
 }
 
+/// 协议专属请求头，转换时全部丢掉：认证头由 set_auth_header 按上游协议重新补，
+/// 内容协商头在下面按上游协议重建。
+const PROTOCOL_HEADERS: &[&str] = &[
+    "anthropic-version",
+    "anthropic-beta",
+    "anthropic-dangerous-direct-browser-access",
+    "x-api-key",
+    "x-goog-api-key",
+    "authorization",
+    "openai-beta",
+    "openai-organization",
+    "openai-project",
+    "x-app",
+    "content-type",
+    "accept",
+    "accept-encoding",
+];
+
+/// 转换协议时改写客户端请求头，使其符合上游协议。
+pub fn adapt_headers_for_protocol(headers: &HeaderMap, to: Protocol, streaming: bool) -> HeaderMap {
+    let mut adapted = HeaderMap::new();
+    for (name, value) in headers.iter() {
+        if !PROTOCOL_HEADERS
+            .iter()
+            .any(|h| name.as_str().eq_ignore_ascii_case(h))
+        {
+            adapted.append(name.clone(), value.clone());
+        }
+    }
+
+    adapted.insert("content-type", HeaderValue::from_static("application/json"));
+    adapted.insert(
+        "accept",
+        HeaderValue::from_static(if streaming {
+            "text/event-stream"
+        } else {
+            "application/json"
+        }),
+    );
+    // reqwest 没开解压 feature，转换必须拿到明文响应体。
+    adapted.insert("accept-encoding", HeaderValue::from_static("identity"));
+    if to == Protocol::AnthropicMessages {
+        adapted.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+    }
+
+    adapted
+}
+
 /// Set authentication header based on CLI type
 pub fn set_auth_header(
     headers: &mut reqwest::header::HeaderMap,
     api_key: &str,
     protocol: Protocol,
 ) {
+    // 服务商没配密钥（本地端点，或有意让客户端自带凭证）时什么都不写：写一个空的
+    // `Bearer ` 会把客户端原本带上来的 authorization / x-api-key 顶掉。
+    if api_key.is_empty() {
+        return;
+    }
     match protocol {
         Protocol::AnthropicMessages | Protocol::OpenaiChat | Protocol::OpenaiResponses => {
             if let Ok(value) =

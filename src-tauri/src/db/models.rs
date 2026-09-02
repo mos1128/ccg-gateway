@@ -694,20 +694,6 @@ pub struct ProviderKeepalivePayload {
 
 // ==================== Settings 相关实体 ====================
 
-// Gateway Settings (完整版 - 对应数据库表)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct GatewaySettingsRow {
-    pub id: i64,
-    pub debug_log: i64,
-    pub log_detail_mode: String,
-    pub launch_on_startup: i64,
-    pub silent_startup: i64,
-    pub minimize_to_tray_on_close: i64,
-    pub window_width: Option<f64>,
-    pub window_height: Option<f64>,
-    pub updated_at: i64,
-}
-
 // Gateway Settings (简化版 - 用于API响应)
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct GatewaySettings {
@@ -716,18 +702,9 @@ pub struct GatewaySettings {
     pub launch_on_startup: i64,
     pub silent_startup: i64,
     pub minimize_to_tray_on_close: i64,
+    pub translate_max_tokens: i64,
     pub window_width: Option<f64>,
     pub window_height: Option<f64>,
-}
-
-// Timeout Settings (完整版 - 对应数据库表)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct TimeoutSettingsRow {
-    pub id: i64,
-    pub stream_first_byte_timeout: i64,
-    pub stream_idle_timeout: i64,
-    pub non_stream_timeout: i64,
-    pub updated_at: i64,
 }
 
 // Timeout Settings (简化版 - 用于API响应)

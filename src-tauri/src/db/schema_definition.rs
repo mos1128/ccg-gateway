@@ -740,6 +740,12 @@ impl DatabaseSchema {
                         default_value: Some("1".to_string()),
                     },
                     ColumnDefinition {
+                        name: "translate_max_tokens".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("32000".to_string()),
+                    },
+                    ColumnDefinition {
                         name: "window_width".to_string(),
                         data_type: "REAL".to_string(),
                         nullable: true,

@@ -7,6 +7,8 @@ export const PROTOCOL_LABELS: Record<Protocol, string> = {
   openai_responses: 'OpenAI Responses',
   gemini_generate_content: 'Gemini GenerateContent',
 }
+// 可互相转换的协议，Gemini 不参与转换
+export const CONVERTIBLE_PROTOCOLS: Protocol[] = ['anthropic_messages', 'openai_chat', 'openai_responses']
 export type AgentFeatureName = 'provider_config' | 'global_preset' | 'profiles' | 'official_login' | 'model_mapping' | 'token_usage' | 'skills' | 'mcp' | 'sessions' | 'plugins' | 'prompts'
 
 export interface ToggleFeature {
@@ -390,6 +392,7 @@ export interface GatewaySettings {
   launch_on_startup: boolean
   silent_startup: boolean
   minimize_to_tray_on_close: boolean
+  translate_max_tokens: number
 }
 
 export interface GatewaySettingsRaw {
@@ -398,6 +401,7 @@ export interface GatewaySettingsRaw {
   launch_on_startup: number
   silent_startup: number
   minimize_to_tray_on_close: number
+  translate_max_tokens: number
 }
 
 export interface TimeoutSettings {
@@ -439,6 +443,7 @@ export interface GatewaySettingsUpdate {
   launch_on_startup?: boolean
   silent_startup?: boolean
   minimize_to_tray_on_close?: boolean
+  translate_max_tokens?: number
 }
 
 export interface TimeoutSettingsUpdate {

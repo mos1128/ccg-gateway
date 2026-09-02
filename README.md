@@ -25,6 +25,7 @@ CCG Gateway 是一款面向 Claude Code、Codex、Gemini CLI、OpenCode、Kimi C
 
 - 🧩 **多 Agent 管理** - 内置 10+ Agent 模板，也可用自定义模板接入新的 Agent
 - 🔌 **多协议路由** - 支持 Anthropic Messages / OpenAI Chat / OpenAI Responses / Gemini generateContent 四类端点
+- 🔄 **协议转换** - Anthropic Messages / OpenAI Chat / OpenAI Responses 三者互转，Agent 可直接使用不同协议的服务商
 - 🔀 **故障转移** - 上游失败自动重试、切换服务商、熔断冷却并定期回检，用户零感知
 - 🛡️ **流式校验** - 流式首包校验通过才落地到客户端，上游报错时静默换服务商，不中断 Agent 任务 
 - 🔁 **模型映射** - Agent 与服务商模型名不一致时按通配符自动改写，无需手改配置文件
@@ -77,6 +78,7 @@ CCG Gateway 是一款面向 Claude Code、Codex、Gemini CLI、OpenCode、Kimi C
 ### 中转服务商
 
 - 端点类型：按 Anthropic / OpenAI Chat / OpenAI Responses / Gemini 声明服务商协议，网关按 Agent 的实际请求路径匹配。
+- 协议转换：端点类型与 Agent 的请求协议不同时自动转换请求与响应（含流式），例如 Claude Code 直接使用 OpenAI Chat 的服务商。Anthropic Messages / OpenAI Chat / OpenAI Responses 三者可互转，Gemini 不参与转换，只能原样转发。服务商列表中带转换标记的即为需要转换的服务商。
 - 模型映射：Agent 模型名称与服务商模型名称不一致时自动映射，无需手动修改配置文件。
   - 通配符：`*` 任意长度字符，`?` 单个字符
   - 示例：`*opus* -> gml-5` 表示将名称含有 opus 的模型映射到服务商的 gml-5 模型

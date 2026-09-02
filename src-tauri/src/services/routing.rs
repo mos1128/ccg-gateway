@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::db::models::{Protocol, Provider, ProviderModelBlacklist, ProviderModelMap};
 use crate::services::proxy::wildcard_match;
+use crate::services::translate;
 use crate::time::now_timestamp;
 
 pub const DEFAULT_PROFILE: &str = "default";
@@ -59,6 +60,14 @@ pub fn profile_from_gateway_token(token: &str) -> Option<String> {
 
     let profile = token.strip_prefix("ccg-gateway-")?;
     normalize_profile(Some(profile))
+}
+
+/// 服务商的端点类型能否服务这次请求：协议相同，或两边都在可转换集合里。
+fn provider_matches(protocol: Protocol, provider_protocol: &str) -> bool {
+    match provider_protocol.parse::<Protocol>() {
+        Ok(upstream) => upstream == protocol || translate::can_translate(protocol, upstream),
+        Err(_) => false,
+    }
 }
 
 /// Provider with its model mappings and blacklist
@@ -132,6 +141,9 @@ async fn load_provider_maps(
 }
 
 /// Get all providers eligible for a request, in failover order.
+///
+/// 端点类型与请求协议不同的服务商也参与竞争，转发时由 translate 模块转换协议；
+/// Gemini 不参与转换，只能协议完全一致才用。
 pub async fn get_available_providers(
     db: &SqlitePool,
     cli_type: &str,
@@ -147,7 +159,6 @@ pub async fn get_available_providers(
         SELECT * FROM providers
         WHERE cli_type = ?
           AND profile = ?
-          AND protocol = ?
           AND enabled = 1
           AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
         ORDER BY sort_order, id
@@ -155,10 +166,15 @@ pub async fn get_available_providers(
     )
     .bind(cli_type)
     .bind(&profile)
-    .bind(protocol.as_str())
     .bind(now)
     .fetch_all(db)
     .await?;
+
+    // 顺序严格按用户配置的 sort_order，不因协议是否需要转换而调整。
+    let providers: Vec<Provider> = providers
+        .into_iter()
+        .filter(|provider| provider_matches(protocol, &provider.protocol))
+        .collect();
 
     let provider_ids: Vec<i64> = providers.iter().map(|provider| provider.id).collect();
     let (mut maps_by_provider, mut blacklist_by_provider) =

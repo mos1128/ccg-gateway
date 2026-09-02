@@ -25,6 +25,7 @@ This project was initiated based on the author's actual needs to solve various p
 
 - 🧩 **Multi-Agent Management** - 10+ built-in Agent templates, plus custom templates for onboarding new Agents
 - 🔌 **Multi-Protocol Routing** - Supports four endpoint types: Anthropic Messages / OpenAI Chat / OpenAI Responses / Gemini generateContent
+- 🔄 **Protocol Translation** - Anthropic Messages / OpenAI Chat / OpenAI Responses convert to one another, so an Agent can use providers that speak a different protocol
 - 🔀 **Failover** - On upstream failure, automatic retries, provider switching, breaker cooldown, and periodic re-checks — invisible to the user
 - 🛡️ **Stream Inspection** - A stream reaches the client only after its first chunk passes inspection; on an upstream error the provider is switched silently without interrupting the Agent's task
 - 🔁 **Model Mapping** - Wildcard rewriting when Agent and provider model names differ, with no manual config edits
@@ -77,6 +78,7 @@ This project was initiated based on the author's actual needs to solve various p
 ### Relay Providers
 
 - Endpoint Type: declare each provider as Anthropic / OpenAI Chat / OpenAI Responses / Gemini; the gateway matches it against the Agent's actual request path.
+- Protocol Translation: when the endpoint type differs from the Agent's request protocol, the request and response (including streaming) are converted automatically — for example, Claude Code can use an OpenAI Chat provider directly. Anthropic Messages / OpenAI Chat / OpenAI Responses convert to one another; Gemini stays pass-through only. Providers marked with the translation icon in the list are the ones being converted.
 - Model Mapping: Automatically maps when the agent's model name differs from the provider's model name, with no need to manually edit config files.
   - Wildcards: `*` for any length of characters, `?` for a single character.
   - Example: `*opus* -> gml-5` maps any model with "opus" in its name to the provider's gml-5 model.

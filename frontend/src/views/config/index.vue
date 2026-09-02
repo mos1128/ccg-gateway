@@ -120,6 +120,10 @@
             <span class="cfg-toggle-c"><span class="cfg-toggle-t">关闭时最小化到托盘</span><span class="cfg-toggle-d">点关闭按钮时隐藏窗口，应用继续后台运行</span></span>
             <el-switch v-model="gatewayForm.minimize_to_tray_on_close" :loading="gatewaySaving" @change="saveGateway" />
           </label>
+          <label class="cfg-toggle">
+            <span class="cfg-toggle-c"><span class="cfg-toggle-t">转换默认 max_tokens</span><span class="cfg-toggle-d">Codex 这类客户端不发 max_tokens，转成 Anthropic 协议时用这个值补上；思考预算最多占它的一半，最小 1024</span></span>
+            <input v-model.number="gatewayForm.translate_max_tokens" type="number" min="1024" step="1024" class="v2-input cfg-tnum" @change="saveGateway">
+          </label>
         </div>
       </div>
     </div>
@@ -440,7 +444,7 @@ async function handleRestoreDefault() {
 
 // ===== 超时 / 基础配置 =====
 const timeoutForm = ref({ stream_first_byte_timeout: 30, stream_idle_timeout: 60, non_stream_timeout: 120 })
-const gatewayForm = ref({ launch_on_startup: false, silent_startup: false, minimize_to_tray_on_close: true })
+const gatewayForm = ref({ launch_on_startup: false, silent_startup: false, minimize_to_tray_on_close: true, translate_max_tokens: 32000 })
 const gatewaySaving = ref(false)
 
 watch(() => settingsStore.settings, (settings) => {
@@ -449,7 +453,8 @@ watch(() => settingsStore.settings, (settings) => {
     gatewayForm.value = {
       launch_on_startup: settings.gateway.launch_on_startup,
       silent_startup: settings.gateway.silent_startup,
-      minimize_to_tray_on_close: settings.gateway.minimize_to_tray_on_close
+      minimize_to_tray_on_close: settings.gateway.minimize_to_tray_on_close,
+      translate_max_tokens: settings.gateway.translate_max_tokens
     }
   }
 }, { immediate: true })

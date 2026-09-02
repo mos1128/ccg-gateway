@@ -25,7 +25,7 @@ use crate::services::proxy::{
 use crate::services::routing::get_available_providers;
 use crate::services::{
     agent as agent_service, protocol as protocol_service, provider as provider_service,
-    stats as stats_service,
+    stats as stats_service, translate,
 };
 
 const RESPONSE_FILTERED_HEADERS: &[&str] = &[
@@ -41,6 +41,10 @@ const RESPONSE_FILTERED_HEADERS: &[&str] = &[
 ];
 const CLIENT_CLOSED_REQUEST_STATUS: u16 = 499;
 const CLIENT_CLOSED_REQUEST_MESSAGE: &str = "客户端在完成前断开了连接";
+/// 流式响应体收集进日志的上限，10MB。
+const MAX_BODY_LOG: usize = 10 * 1024 * 1024;
+/// 整流判定要把错误体整个读进内存，4xx 的错误体最多几 KB，1MB 足够。
+const MAX_ERROR_BODY: usize = 1024 * 1024;
 
 #[derive(Clone)]
 struct RequestIdentity {
@@ -286,6 +290,9 @@ pub async fn proxy_handler_catchall(
     // Check if streaming
     let streaming = is_streaming(&body_bytes, &full_path, protocol);
 
+    // Codex 私有工具在转换时被展平成普通函数，响应还原要照请求里的形状来。
+    let tool_shapes = translate::tool_shapes(protocol, &body_bytes);
+
     // Only learn from streaming requests since our test is streaming
     if streaming {
         crate::services::proxy::update_captured_headers(&agent.id, protocol, &headers);
@@ -352,6 +359,15 @@ pub async fn proxy_handler_catchall(
         Err(_) => TimeoutConfig::default(),
     };
 
+    // 协议转换到 Anthropic 时源请求没给 max_tokens 的兜底值（Anthropic 必填）。
+    let translate_max_tokens = sqlx::query_scalar::<_, i64>(
+        "SELECT translate_max_tokens FROM gateway_settings WHERE id = 1",
+    )
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(translate::DEFAULT_MAX_TOKENS)
+    .max(1024);
+
     let model_mapping_enabled = agent.features.model_mapping.enabled;
     // Rotating failover: every failed attempt counts once toward the channel
     // breaker. A channel gets up to its `retry_limit` consecutive attempts
@@ -364,11 +380,21 @@ pub async fn proxy_handler_catchall(
     // model): rotating back to them would only repeat the same error.
     let mut skipped: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
-    'rotation: loop {
+    loop {
     for provider_with_maps in &providers {
         let provider = &provider_with_maps.provider;
         let provider_id = provider.id;
         let provider_name = provider.name.clone();
+        // 端点类型与客户端协议不同时转换协议；解析失败按同协议处理（路由已经筛过）。
+        let upstream_protocol = provider
+            .protocol
+            .parse::<Protocol>()
+            .unwrap_or(protocol);
+        let translate_path = if translate::can_translate(protocol, upstream_protocol) {
+            translate::upstream_path(upstream_protocol)
+        } else {
+            None
+        };
         if skipped.contains(&provider_id) {
             continue;
         }
@@ -379,8 +405,11 @@ pub async fn proxy_handler_catchall(
         }
         // At least 1 so a stored 0 cannot silence the channel entirely.
         let retry_limit = provider.retry_limit.clamp(1, 20) as usize;
+        // 事后整流：这一轮已经剥掉过历史里的思考块，不再重复剥。
+        let mut rectified = false;
 
-        for attempt in 0..retry_limit {
+        let mut attempt = 0usize;
+        while attempt < retry_limit {
             if provider_unavailable(&state.db, provider_id).await {
                 break;
             }
@@ -428,14 +457,68 @@ pub async fn proxy_handler_catchall(
                 ),
             };
             let model_id = target_model.clone().or(source_model.clone());
+            // 整流过的这一轮不再回放客户端带回来的私有载荷。
+            let replay_key = if rectified {
+                translate::NO_REPLAY.to_string()
+            } else {
+                provider_id.to_string()
+            };
+            // 转换在模型映射之后做：映射改的是 model 字段，转换才换协议外壳。
+            let converted_body = translate_path.and_then(|_| {
+                serde_json::from_slice::<Value>(&final_body).ok().and_then(|body| {
+                    translate::convert_request(
+                        protocol,
+                        upstream_protocol,
+                        &body,
+                        &replay_key,
+                        translate_max_tokens,
+                    )
+                })
+                .and_then(|body| serde_json::to_vec(&body).ok())
+            });
+            let (final_body, final_path) = match (translate_path, converted_body) {
+                (Some(path), Some(body)) => (body, path.to_string()),
+                (Some(_), None) => {
+                    tracing::warn!(
+                        provider_id,
+                        provider = %provider_name,
+                        "请求体无法转成上游协议，跳过该服务商"
+                    );
+                    skipped.insert(provider_id);
+                    break;
+                }
+                (None, _) => {
+                    // 直通路径：同协议不必转换，但历史里的思考块可能已经失效——整流
+                    // 这一轮要把它们全剥掉重试，平时也得剥掉网关自己写进去的 Opaque
+                    // 信封，那是上一轮走过转换留下的，原生上游一律验不过。
+                    let stale = rectified || translate::has_envelope(&final_body);
+                    let mut parsed = stale
+                        .then(|| serde_json::from_slice::<Value>(&final_body).ok())
+                        .flatten();
+                    let mut stripped = None;
+                    if let Some(body) = parsed.as_mut() {
+                        if translate::strip_thinking(protocol, body, rectified) {
+                            stripped = serde_json::to_vec(body).ok();
+                        }
+                    }
+                    (stripped.unwrap_or(final_body), final_path)
+                }
+            };
+            let adapted_headers = translate_path.map(|_| {
+                crate::services::proxy::adapt_headers_for_protocol(
+                    &headers,
+                    upstream_protocol,
+                    streaming,
+                )
+            });
             let upstream_url =
                 crate::services::proxy::join_upstream_url(&provider.base_url, &final_path);
             let request = match crate::services::proxy::build_upstream_request(
                 &state.http_client,
                 provider,
-                protocol,
+                upstream_protocol,
                 &upstream_url,
-                &headers,
+                adapted_headers.as_ref().unwrap_or(&headers),
                 final_body,
                 reqwest::Method::from_bytes(method.as_str().as_bytes())
                     .unwrap_or(reqwest::Method::GET),
@@ -491,6 +574,8 @@ pub async fn proxy_handler_catchall(
                     provider_id,
                     &provider_name,
                     identity,
+                    upstream_protocol,
+                    &tool_shapes,
                     model_id.as_deref(),
                     method.as_ref(),
                     &raw_full_path,
@@ -510,6 +595,8 @@ pub async fn proxy_handler_catchall(
                     provider_id,
                     &provider_name,
                     identity,
+                    upstream_protocol,
+                    &tool_shapes,
                     model_id.as_deref(),
                     method.as_ref(),
                     &raw_full_path,
@@ -523,7 +610,7 @@ pub async fn proxy_handler_catchall(
                 .await
             };
 
-            let response = match result {
+            let mut response = match result {
                 Ok(response) => response,
                 Err(status) => json_error_response(
                     status,
@@ -533,7 +620,42 @@ pub async fn proxy_handler_catchall(
             };
 
             let status_code = response.status().as_u16();
+            // 上游拒了历史里的思考块：这些签名/密文只可能是跨上游回放留下的，剥掉
+            // 回放再发一次，其余错误照常走重试与轮转。透传路径也检查，避免信封/空
+            // 签名块被原生上游拒后一直卡在 400 无法故障转移。
+            if !rectified && is_client_request_error(status_code) {
+                let (rejected, buffered) = thinking_rejected(response).await;
+                response = buffered;
+                if rejected {
+                    rectified = true;
+                    tracing::warn!(
+                        provider_id,
+                        provider = %provider_name,
+                        "上游拒绝历史思考块，剥掉私有载荷回放后重试"
+                    );
+                    drain_response_body(response).await;
+                    continue;
+                }
+            }
             if !is_channel_failure(status_code) {
+                // 跨协议转换时，不同服务商收到的请求可能不同（参数转换、模型映射、工具展平）
+                // 服务商 A 的 400 不代表服务商 B 也会 400，应该尝试轮转一次
+                if translate_path.is_some() && is_client_request_error(status_code) {
+                    tracing::warn!(
+                        provider_id,
+                        provider = %provider_name,
+                        status = %status_code,
+                        "Client error in translation mode, trying next provider"
+                    );
+                    if let Some(previous) = last_failure.replace(response) {
+                        drain_response_body(previous).await;
+                    }
+                    skipped.insert(provider_id);
+                    // 不记熔断：400 大概率是我们转出来的请求这家不认，渠道本身没坏，
+                    // 记进熔断会把好渠道拉黑。
+                    break;  // 继续外层循环，尝试下一个服务商
+                }
+                // 同协议或非 400/413/422 的错误，直接返回
                 return Ok(response);
             }
 
@@ -572,6 +694,7 @@ pub async fn proxy_handler_catchall(
             if provider_unavailable(&state.db, provider_id).await {
                 break;
             }
+            attempt += 1;
         }
     }
 
@@ -636,6 +759,44 @@ async fn provider_unavailable(db: &sqlx::SqlitePool, provider_id: i64) -> bool {
 
 async fn drain_response_body(response: Response<Body>) {
     let _ = axum::body::to_bytes(response.into_body(), 2 * 1024 * 1024).await;
+}
+
+/// 上游是不是在抱怨历史里的思考块。只认签名/思考块本身被拒这几种说法，别的 4xx
+/// 交给正常的重试与轮转，免得把普通参数错误也当成整流机会。
+fn rejects_thinking(message: &str) -> bool {
+    const SCENARIOS: [&[&str]; 9] = [
+        &["signature", "thinking"],
+        &["thought signature"],
+        &["must start with a thinking block"],
+        &["expected", "thinking", "found", "tool_use"],
+        &["signature", "field required"],
+        &["signature", "extra inputs are not permitted"],
+        &["thinking", "cannot be modified"],
+        &["reasoning", "without its required"],
+        &["encrypted_content"],
+    ];
+    SCENARIOS
+        .iter()
+        .any(|keywords| keywords.iter().all(|keyword| message.contains(keyword)))
+}
+
+/// 4xx 的错误体上游一定已经发全，读出来判定完原样装回去，好继续往下走。
+async fn thinking_rejected(response: Response<Body>) -> (bool, Response<Body>) {
+    let (parts, body) = response.into_parts();
+    let bytes = match axum::body::to_bytes(body, MAX_ERROR_BODY).await {
+        Ok(bytes) => bytes,
+        // 读不出来（超限或连接中断）就没法原样装回去了。补一个同状态码的说明体，
+        // 不能把空 body 甩给客户端。
+        Err(error) => {
+            tracing::warn!(status = %parts.status, %error, "读取上游错误响应体失败");
+            return (
+                false,
+                json_error_response(parts.status, "upstream_error", "上游错误响应体读取失败"),
+            );
+        }
+    };
+    let rejected = rejects_thinking(&String::from_utf8_lossy(&bytes).to_lowercase());
+    (rejected, Response::from_parts(parts, Body::from(bytes)))
 }
 
 fn json_error_response(status: StatusCode, error_type: &str, message: &str) -> Response<Body> {
@@ -1090,6 +1251,76 @@ where
     }
 }
 
+/// 上游 SSE -> 客户端协议 SSE。原始上游字节顺带收进 `collected`，日志里的「服务商
+/// 响应体」记的是上游真正发的内容，不是转换后的。`completed` 记录上游是否正常 EOF，
+/// 非正常结束（传输错误/超时）不补完成事件，避免把截断流伪造成完整响应。
+fn translated_stream<S>(
+    upstream: S,
+    upstream_protocol: Protocol,
+    mut translator: translate::StreamTranslator,
+    collected: Arc<Mutex<Vec<Bytes>>>,
+    truncated: Arc<Mutex<bool>>,
+    completed: Arc<Mutex<bool>>,
+) -> impl Stream<Item = Result<Bytes, reqwest::Error>>
+where
+    S: Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static,
+{
+    async_stream::stream! {
+        let mut upstream = Box::pin(upstream);
+        let mut collected_bytes = 0usize;
+        while let Some(item) = upstream.next().await {
+            let chunk = match item {
+                Ok(chunk) => chunk,
+                Err(error) => {
+                    yield Err(error);
+                    return;
+                }
+            };
+            if collected_bytes < MAX_BODY_LOG {
+                let to_collect = chunk.len().min(MAX_BODY_LOG - collected_bytes);
+                if to_collect > 0 {
+                    collected.lock().await.push(chunk.slice(..to_collect));
+                    collected_bytes += to_collect;
+                }
+                if to_collect < chunk.len() {
+                    *truncated.lock().await = true;
+                }
+            } else {
+                *truncated.lock().await = true;
+            }
+            let output = translator.push(&chunk);
+            if !output.is_empty() {
+                yield Ok(Bytes::from(output));
+            }
+        }
+        // 请求写了 stream，上游却把一整块 JSON 当响应回来（兼容端点很常见）。转换器
+        // 会把它摊成流式事件，错误体也一样会被摊成「空内容 + 正常结束」，客户端和
+        // 网关双双当成功。所以先按**上游**协议判错，口径与非流式、透传两条路径共用
+        // 同一个 response_body_error。判出错误就发错误事件，首包检查会据此判失败并
+        // 切下一个服务商。判错只喂还没被当成 SSE 帧吃掉的那一段：上游先发过保活注释
+        // 的话，整条流的字节拼起来不是合法 JSON，判错会整个漏掉。
+        let pending_error = translator
+            .pending_body()
+            .and_then(|body| response_body_error(upstream_protocol, body));
+        if let Some(message) = pending_error {
+            let message = format!("上游响应错误: {}", message);
+            tracing::warn!(error = %message, "Upstream returned a structured error body on a streaming request");
+            let frame = translator.error(&message);
+            if !frame.is_empty() {
+                yield Ok(Bytes::from(frame));
+            }
+            return;
+        }
+        // 上游流干净结束才补完成事件并标记 completed，中途传输错误已经走 Err 分支
+        // 提前返回了，不会走到这里。
+        let tail = translator.finish();
+        if !tail.is_empty() {
+            yield Ok(Bytes::from(tail));
+        }
+        *completed.lock().await = true;
+    }
+}
+
 fn serialize_headers(headers: &axum::http::HeaderMap) -> String {
     let map: std::collections::HashMap<String, String> = headers
         .iter()
@@ -1131,6 +1362,36 @@ fn copy_response_headers(
         }
     }
 
+    builder
+}
+
+/// 转换模式下上游的 content-type / content-length / content-encoding 都已经不成立，
+/// 不能整份照抄；但限流与追踪类的头对客户端有用（Claude Code 靠 retry-after 决定
+/// 退避），按前缀挑出来带上。
+fn copy_metadata_headers(
+    mut builder: axum::http::response::Builder,
+    headers: &reqwest::header::HeaderMap,
+) -> axum::http::response::Builder {
+    const KEPT: [&str; 5] = [
+        "retry-after",
+        "x-ratelimit-",
+        "anthropic-ratelimit-",
+        "x-request-id",
+        "request-id",
+    ];
+    for (name, value) in headers.iter() {
+        let name = name.as_str();
+        if !KEPT.iter().any(|kept| {
+            name.len() >= kept.len() && name[..kept.len()].eq_ignore_ascii_case(kept)
+        }) {
+            continue;
+        }
+        if let Ok(header_value) = axum::http::HeaderValue::from_bytes(value.as_bytes()) {
+            if let Ok(header_name) = axum::http::HeaderName::from_bytes(name.as_bytes()) {
+                builder = builder.header(header_name, header_value);
+            }
+        }
+    }
     builder
 }
 
@@ -1262,6 +1523,8 @@ async fn handle_streaming_request(
     provider_id: i64,
     provider_name: &str,
     identity: RequestIdentity,
+    upstream_protocol: Protocol,
+    tool_shapes: &translate::ToolShapes,
     model_id: Option<&str>,
     client_method: &str,
     client_path: &str,
@@ -1273,6 +1536,7 @@ async fn handle_streaming_request(
     request_log_id: Option<i64>,
 ) -> Result<Response<Body>, StatusCode> {
     let protocol = identity.protocol;
+    let translating = translate::can_translate(protocol, upstream_protocol);
     let cancel_guard = RequestLogCancelGuard::new(state, request_log_id, start_time);
 
     // Send request with timeout for first byte
@@ -1359,7 +1623,7 @@ async fn handle_streaming_request(
                 Ok(Err(error)) => format!("读取上游错误响应失败: {}", error).into_bytes(),
                 Err(_) => "读取上游错误响应超时".as_bytes().to_vec(),
             };
-        let message = upstream_error_message(protocol, &error_body);
+        let message = upstream_error_message(upstream_protocol, &error_body);
         tracing::warn!(
             provider_id,
             provider = provider_name,
@@ -1394,15 +1658,84 @@ async fn handle_streaming_request(
         return Ok(build_passthrough_error_response(status, &error_body, &resp_headers));
     }
 
-    let response_encoded = has_body_encoding(
+    // 响应体收集缓冲：转换模式下由 translated_stream 填原始上游字节，其余情况在下面
+    // 的流循环里填规整后的输出。
+    let collected_chunks = Arc::new(Mutex::new(Vec::<Bytes>::new()));
+    let body_truncated_flag = Arc::new(Mutex::new(false));
+
+    let upstream_encoded = has_body_encoding(
         resp_headers
             .get("content-encoding")
             .and_then(|value| value.to_str().ok()),
     );
-    let content_type = resp_headers
-        .get("content-type")
-        .and_then(|value| value.to_str().ok());
-    let mut byte_stream = response.bytes_stream();
+    // 转换必须读明文。请求已经要过 identity，上游还压缩就交给下一个服务商。
+    if translating && upstream_encoded {
+        let message = "上游压缩了流式响应，无法转换协议".to_string();
+        tracing::warn!(provider_id, provider = provider_name, error = %message, "Compressed upstream stream cannot be translated");
+        log_info.error_message = Some(message.clone());
+        let elapsed = start_time.elapsed().as_millis() as i64;
+        record_request_stats(
+            state,
+            &identity,
+            provider_name,
+            model_id,
+            Some(StatusCode::BAD_GATEWAY.as_u16()),
+            elapsed,
+            elapsed,
+            TokenUsage::default(),
+            client_method,
+            client_path,
+            source_model,
+            target_model,
+            Some(log_info),
+            request_log_id,
+        )
+        .await;
+        if let Some(guard) = &cancel_guard {
+            guard.disarm();
+        }
+        return Ok(json_error_response(
+            StatusCode::BAD_GATEWAY,
+            "translate_failed",
+            &message,
+        ));
+    }
+    // 转换后到客户端的一定是 SSE，后续判定全部按客户端协议走。
+    let response_encoded = upstream_encoded && !translating;
+    let content_type = if translating {
+        Some("text/event-stream")
+    } else {
+        resp_headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+    };
+    let translator = if translating {
+        // 上游标识：客户端回传的私有载荷只在原路回到同一个服务商时才回放。
+        translate::StreamTranslator::new(
+            upstream_protocol,
+            protocol,
+            &provider_id.to_string(),
+            tool_shapes,
+        )
+    } else {
+        None
+    };
+    // 转换流需要跟踪上游是否真正完成，免得截断时伪造完成事件。
+    let stream_really_completed = Arc::new(Mutex::new(false));
+    let stream_really_completed_for_check = stream_really_completed.clone();
+    let mut byte_stream: std::pin::Pin<
+        Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>,
+    > = match translator {
+        Some(translator) => Box::pin(translated_stream(
+            response.bytes_stream(),
+            upstream_protocol,
+            translator,
+            collected_chunks.clone(),
+            body_truncated_flag.clone(),
+            stream_really_completed.clone(),
+        )),
+        None => Box::pin(response.bytes_stream()),
+    };
     let prefetched = if status.is_success() {
         match read_stream_prefix(
             &mut byte_stream,
@@ -1468,18 +1801,22 @@ async fn handle_streaming_request(
     let mut builder =
         Response::builder().status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK));
 
-    builder = copy_response_headers(builder, &resp_headers);
+    // 转换后上游的 content-type / content-length 已经不成立，只给必要的头，另外把
+    // 限流与追踪类的头挑出来带上。
+    builder = if translating {
+        copy_metadata_headers(builder, &resp_headers)
+            .header("content-type", "text/event-stream")
+            .header("cache-control", "no-cache")
+    } else {
+        copy_response_headers(builder, &resp_headers)
+    };
 
     // Create streaming body
     let is_success = status.is_success();
 
-    // Collect body chunks for logging, capped at 10MB.
-    const MAX_BODY_LOG: usize = 10 * 1024 * 1024;
-    let collected_chunks = Arc::new(Mutex::new(Vec::<Bytes>::new()));
     let collected_chunks_for_stream = collected_chunks.clone();
     let stream_usage = Arc::new(Mutex::new(TokenUsage::default()));
     let stream_usage_for_stream = stream_usage.clone();
-    let body_truncated_flag = Arc::new(Mutex::new(false));
     let body_truncated_flag_for_stream = body_truncated_flag.clone();
     let idle_timeout_flag = Arc::new(Mutex::new(false));
     let idle_timeout_flag_for_stream = idle_timeout_flag.clone();
@@ -1565,18 +1902,21 @@ async fn handle_streaming_request(
                     }
 
                     // Collect the normalized chunk for body logging.
-                    if collected_bytes < MAX_BODY_LOG {
-                        let mut chunks = collected_chunks_for_stream.lock().await;
-                        let to_collect = output_chunk.len().min(MAX_BODY_LOG - collected_bytes);
-                        if to_collect > 0 {
-                            chunks.push(output_chunk.slice(..to_collect));
-                            collected_bytes += to_collect;
-                        }
-                        if to_collect < output_chunk.len() {
+                    // 转换模式下日志记的是原始上游响应，已经由 translated_stream 收好。
+                    if !translating {
+                        if collected_bytes < MAX_BODY_LOG {
+                            let mut chunks = collected_chunks_for_stream.lock().await;
+                            let to_collect = output_chunk.len().min(MAX_BODY_LOG - collected_bytes);
+                            if to_collect > 0 {
+                                chunks.push(output_chunk.slice(..to_collect));
+                                collected_bytes += to_collect;
+                            }
+                            if to_collect < output_chunk.len() {
+                                *body_truncated_flag_for_stream.lock().await = true;
+                            }
+                        } else {
                             *body_truncated_flag_for_stream.lock().await = true;
                         }
-                    } else {
-                        *body_truncated_flag_for_stream.lock().await = true;
                     }
 
                     tracing::debug!(
@@ -1640,17 +1980,19 @@ async fn handle_streaming_request(
             } else {
                 Bytes::from(std::mem::take(&mut pending_sse))
             };
-            if collected_bytes < MAX_BODY_LOG {
-                let mut chunks = collected_chunks_for_stream.lock().await;
-                let to_collect = pending.len().min(MAX_BODY_LOG - collected_bytes);
-                if to_collect > 0 {
-                    chunks.push(pending.slice(..to_collect));
-                }
-                if to_collect < pending.len() {
+            if !translating {
+                if collected_bytes < MAX_BODY_LOG {
+                    let mut chunks = collected_chunks_for_stream.lock().await;
+                    let to_collect = pending.len().min(MAX_BODY_LOG - collected_bytes);
+                    if to_collect > 0 {
+                        chunks.push(pending.slice(..to_collect));
+                    }
+                    if to_collect < pending.len() {
+                        *body_truncated_flag_for_stream.lock().await = true;
+                    }
+                } else {
                     *body_truncated_flag_for_stream.lock().await = true;
                 }
-            } else {
-                *body_truncated_flag_for_stream.lock().await = true;
             }
             yield Ok::<Bytes, std::io::Error>(pending);
         }
@@ -1669,24 +2011,33 @@ async fn handle_streaming_request(
             && !upstream_error_event
             && !stream_completed_for_stream.load(Ordering::Relaxed)
         {
-            let mut failure = stream_failure_for_stream.lock().await;
-            if failure.is_none() {
-                *failure = Some("上游流在完成事件前结束".to_string());
-            }
-            drop(failure);
+            // 转换流的完成判定在 translated_stream 里已经记录，这里只补错误事件。
+            // 防止截断时 translator.finish() 伪造的完成事件被误判。
+            let really_done = if translating {
+                *stream_really_completed_for_check.lock().await
+            } else {
+                false
+            };
+            if !really_done {
+                let mut failure = stream_failure_for_stream.lock().await;
+                if failure.is_none() {
+                    *failure = Some("上游流在完成事件前结束".to_string());
+                }
+                drop(failure);
 
-            let event = stream_error_event(protocol);
-            if collected_bytes < MAX_BODY_LOG {
-                let mut chunks = collected_chunks_for_stream.lock().await;
-                let to_collect = event.len().min(MAX_BODY_LOG - collected_bytes);
-                if to_collect > 0 {
-                    chunks.push(event.slice(..to_collect));
+                let event = stream_error_event(protocol);
+                if !translating && collected_bytes < MAX_BODY_LOG {
+                    let mut chunks = collected_chunks_for_stream.lock().await;
+                    let to_collect = event.len().min(MAX_BODY_LOG - collected_bytes);
+                    if to_collect > 0 {
+                        chunks.push(event.slice(..to_collect));
+                    }
+                    if to_collect < event.len() {
+                        *body_truncated_flag_for_stream.lock().await = true;
+                    }
                 }
-                if to_collect < event.len() {
-                    *body_truncated_flag_for_stream.lock().await = true;
-                }
+                yield Ok::<Bytes, std::io::Error>(event);
             }
-            yield Ok::<Bytes, std::io::Error>(event);
         }
 
         tracing::debug!("[{}] Stream loop ended naturally", protocol);
@@ -1780,13 +2131,20 @@ async fn handle_streaming_request(
                 streaming_body_log_text(&full_body, MAX_BODY_LOG, body_truncated),
             )
         } else {
-            stream_completed |= stream_body_has_completion(&full_body, protocol);
-            (
-                if log_identity.token_usage_enabled {
-                    stream_usage.lock().await.clone()
+            // 转换模式下收集的是原始上游响应，完成判定按上游协议来，但用量要从原始
+            // 上游字节解析才能保留 cache_creation。
+            stream_completed |= stream_body_has_completion(&full_body, upstream_protocol);
+            let usage = if log_identity.token_usage_enabled {
+                if translating {
+                    parse_streaming_usage_body(&full_body, upstream_protocol)
                 } else {
-                    TokenUsage::default()
-                },
+                    stream_usage.lock().await.clone()
+                }
+            } else {
+                TokenUsage::default()
+            };
+            (
+                usage,
                 streaming_body_log_text(&full_body, MAX_BODY_LOG, body_truncated),
             )
         };
@@ -1893,6 +2251,8 @@ async fn handle_non_streaming_request(
     provider_id: i64,
     provider_name: &str,
     identity: RequestIdentity,
+    upstream_protocol: Protocol,
+    tool_shapes: &translate::ToolShapes,
     model_id: Option<&str>,
     client_method: &str,
     client_path: &str,
@@ -1904,6 +2264,7 @@ async fn handle_non_streaming_request(
     request_log_id: Option<i64>,
 ) -> Result<Response<Body>, StatusCode> {
     let protocol = identity.protocol;
+    let translating = translate::can_translate(protocol, upstream_protocol);
     let cancel_guard = RequestLogCancelGuard::new(state, request_log_id, start_time);
 
     // Send request with timeout
@@ -2062,7 +2423,7 @@ async fn handle_non_streaming_request(
     log_info.provider_body = Some(truncate_body(&decompressed_body));
 
     if !is_success {
-        let message = upstream_error_message(protocol, &decompressed_body);
+        let message = upstream_error_message(upstream_protocol, &decompressed_body);
         tracing::warn!(
             provider_id,
             provider = provider_name,
@@ -2097,7 +2458,7 @@ async fn handle_non_streaming_request(
     }
 
     if is_success {
-        if let Some(message) = response_body_error(protocol, &decompressed_body) {
+        if let Some(message) = response_body_error(upstream_protocol, &decompressed_body) {
             let message = format!("上游响应错误: {}", message);
             tracing::warn!(
                 provider_id,
@@ -2132,10 +2493,62 @@ async fn handle_non_streaming_request(
         }
     }
 
+    // 只转换成功响应；转不动就报 502，交给上层继续故障转移。
+    let converted_body = if translating {
+        let converted = serde_json::from_slice::<Value>(&decompressed_body)
+            .ok()
+            .and_then(|value| {
+                translate::convert_response(
+                    upstream_protocol,
+                    protocol,
+                    &value,
+                    &provider_id.to_string(),
+                    tool_shapes,
+                )
+            })
+            .and_then(|value| serde_json::to_vec(&value).ok());
+        match converted {
+            Some(body) => Some(body),
+            None => {
+                let message = "上游响应无法转成客户端协议".to_string();
+                tracing::warn!(provider_id, provider = provider_name, error = %message, "Upstream response cannot be translated");
+                log_info.error_message = Some(message.clone());
+                let elapsed = start_time.elapsed().as_millis() as i64;
+                record_request_stats(
+                    state,
+                    &identity,
+                    provider_name,
+                    model_id,
+                    Some(StatusCode::BAD_GATEWAY.as_u16()),
+                    elapsed,
+                    first_byte_ms,
+                    TokenUsage::default(),
+                    client_method,
+                    client_path,
+                    source_model,
+                    target_model,
+                    Some(log_info),
+                    request_log_id,
+                )
+                .await;
+                if let Some(guard) = &cancel_guard {
+                    guard.disarm();
+                }
+                return Ok(json_error_response(
+                    StatusCode::BAD_GATEWAY,
+                    "translate_failed",
+                    &message,
+                ));
+            }
+        }
+    } else {
+        None
+    };
+
     // Parse token usage (use decompressed body)
     let mut usage = TokenUsage::default();
     if identity.token_usage_enabled {
-        parse_token_usage(&decompressed_body, protocol, &mut usage);
+        parse_token_usage(&decompressed_body, upstream_protocol, &mut usage);
     }
 
     // Record success. Failure paths have all returned above with an error
@@ -2179,9 +2592,20 @@ async fn handle_non_streaming_request(
     let mut builder =
         Response::builder().status(StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::OK));
 
-    builder = copy_response_headers(builder, &resp_headers);
+    builder = if translating {
+        // 转换后上游的 content-type / content-length 已经不成立，限流与追踪类的头
+        // 照旧带给客户端。
+        copy_metadata_headers(builder, &resp_headers).header("content-type", "application/json")
+    } else {
+        copy_response_headers(builder, &resp_headers)
+    };
 
-    Ok(builder.body(Body::from(body_bytes)).unwrap())
+    let body = match converted_body {
+        Some(body) => Body::from(body),
+        None => Body::from(body_bytes),
+    };
+
+    Ok(builder.body(body).unwrap())
 }
 
 /// 根据设置过滤日志详情字段
