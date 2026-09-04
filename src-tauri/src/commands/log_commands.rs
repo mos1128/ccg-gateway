@@ -14,7 +14,7 @@ pub async fn get_request_logs(
     let offset = (page - 1) * page_size;
     let pool = &log_db.0;
 
-    let mut sql = "SELECT id, created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source, client_method, client_path, source_model, target_model FROM request_logs WHERE 1=1".to_string();
+    let mut sql = "SELECT id, created_at, finished_at, cli_type, protocol, upstream_protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source, client_method, client_path, source_model, target_model FROM request_logs WHERE 1=1".to_string();
     let mut count_sql = "SELECT COUNT(*) FROM request_logs WHERE 1=1".to_string();
 
     if cli_type.is_some() {
@@ -123,7 +123,7 @@ pub async fn get_request_log_detail(
     id: i64,
 ) -> Result<RequestLogDetail> {
     let mut detail = sqlx::query_as::<_, RequestLogDetail>(
-        "SELECT id, created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source, client_method, client_path, NULL as client_headers, NULL as client_body, forward_url, NULL as forward_headers, NULL as forward_body, NULL as provider_headers, NULL as provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, finished_at, cli_type, protocol, upstream_protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source, client_method, client_path, NULL as client_headers, NULL as client_body, forward_url, NULL as forward_headers, NULL as forward_body, NULL as provider_headers, NULL as provider_body, error_message, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&log_db.0)

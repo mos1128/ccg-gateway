@@ -112,7 +112,12 @@
                 <td class="mono logs-map">
                   <template v-if="row.source_model || row.target_model">
                     <span class="logs-model-badge">{{ row.source_model || '-' }}</span>
-                    <span class="logs-model-arrow">→</span>
+                    <el-tooltip v-if="row.upstream_protocol" :content="`协议转换：${formatProtocolLabel(row.protocol)} → ${formatProtocolLabel(row.upstream_protocol)}`" placement="top" effect="light" :show-after="250">
+                      <span class="logs-model-arrow translated">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
+                      </span>
+                    </el-tooltip>
+                    <span v-else class="logs-model-arrow">→</span>
                     <span class="logs-model-badge">{{ row.target_model || '-' }}</span>
                   </template>
                   <span v-else class="logs-model-empty">-</span>
@@ -173,7 +178,7 @@
         <div class="logs-detail-meta">
           <span class="v2-pill v2-pill-neutral">{{ formatCliLabel(requestDetail.cli_type) }}</span>
           <span class="v2-pill v2-pill-neutral mono">{{ requestDetail.profile || 'default' }}</span>
-          <span class="v2-pill v2-pill-info mono">{{ formatProtocolLabel(requestDetail.protocol) }}</span>
+          <span class="v2-pill v2-pill-info mono">{{ formatProtocolLabel(requestDetail.protocol) }}<template v-if="requestDetail.upstream_protocol"> → {{ formatProtocolLabel(requestDetail.upstream_protocol) }}</template></span>
           <span class="v2-pill v2-pill-neutral">{{ requestDetail.provider_name || '未选择服务商' }}</span>
         </div>
         <div v-if="requestDetail.error_message" class="logs-detail-err" :class="errorMessageClass(requestDetail)">
@@ -840,6 +845,7 @@ onUnmounted(() => {
 .logs-cli-text { font-size: var(--v2-fs-sm); color: var(--v2-text); }
 .logs-model-badge { display: inline-block; font-size: var(--v2-fs-xs); padding: 2px 6px; background: var(--v2-surface-2); border: 1px solid var(--v2-surface-2); border-radius: 4px; color: var(--v2-text-2); white-space: nowrap; vertical-align: middle; }
 .logs-model-arrow { margin: 0 4px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); vertical-align: middle; }
+.logs-model-arrow.translated { display: inline-flex; align-items: center; color: var(--v2-warning); cursor: help; }
 .logs-model-empty { color: var(--v2-text-3); }
 
 .logs-scroll th.logs-sticky-col {

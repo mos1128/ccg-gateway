@@ -53,6 +53,8 @@ struct RequestIdentity {
     agent_id: String,
     profile: String,
     protocol: Protocol,
+    /// 真的走了协议转换时才有值：请求最终发给上游用的协议。
+    upstream_protocol: Option<Protocol>,
     provider_id: i64,
     token_usage_enabled: bool,
 }
@@ -387,15 +389,6 @@ pub async fn proxy_handler_catchall(
         Err(_) => TimeoutConfig::default(),
     };
 
-    // 协议转换到 Anthropic 时源请求没给 max_tokens 的兜底值（Anthropic 必填）。
-    let translate_max_tokens = sqlx::query_scalar::<_, i64>(
-        "SELECT translate_max_tokens FROM gateway_settings WHERE id = 1",
-    )
-    .fetch_one(&state.db)
-    .await
-    .unwrap_or(translate::DEFAULT_MAX_TOKENS)
-    .max(1024);
-
     let model_mapping_enabled = agent.features.model_mapping.enabled;
     // Rotating failover: every failed attempt counts once toward the channel
     // breaker. A channel gets up to its `retry_limit` consecutive attempts
@@ -433,6 +426,9 @@ pub async fn proxy_handler_catchall(
         }
         // At least 1 so a stored 0 cannot silence the channel entirely.
         let retry_limit = provider.retry_limit.clamp(1, 20) as usize;
+        // 转成 Anthropic 时源请求没给 max_tokens 的兜底值（Anthropic 必填），按上游
+        // 模型的上限由服务商自己配；低于 1024 连思考预算都摆不下。
+        let translate_max_tokens = provider.translate_max_tokens.max(1024);
         // 事后整流：这一轮已经剥掉过历史里的思考块，不再重复剥。
         let mut rectified = false;
 
@@ -578,6 +574,7 @@ pub async fn proxy_handler_catchall(
                 agent_id: agent.id.clone(),
                 profile: provider_profile.clone(),
                 protocol,
+                upstream_protocol: translate_path.map(|_| upstream_protocol),
                 provider_id,
                 token_usage_enabled: agent.features.token_usage.enabled,
             };
@@ -2802,7 +2799,7 @@ fn filter_log_detail(log_info: &mut RequestLogInfo, mode: &str, is_success: bool
 
 async fn emit_request_log_event(state: &Arc<AppState>, event: &str, log_id: i64) {
     let log_item = sqlx::query_as::<_, RequestLogItem>(
-        "SELECT id, created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
+        "SELECT id, created_at, finished_at, cli_type, protocol, upstream_protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, 0.0 as total_cost, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source, client_method, client_path, source_model, target_model FROM request_logs WHERE id = ?",
     )
     .bind(log_id)
     .fetch_one(&state.log_db)
@@ -2849,6 +2846,7 @@ async fn start_request_log(
         &state.log_db,
         &identity.agent_id,
         identity.protocol.as_str(),
+        identity.upstream_protocol.map(Protocol::as_str),
         identity.provider_id,
         &identity.profile,
         provider_name,
@@ -2963,6 +2961,7 @@ async fn record_request_stats(
             log_id,
             &identity.agent_id,
             identity.protocol.as_str(),
+            identity.upstream_protocol.map(Protocol::as_str),
             identity.provider_id,
             &identity.profile,
             provider_name,
@@ -2992,6 +2991,7 @@ async fn record_request_stats(
             &state.log_db,
             &identity.agent_id,
             identity.protocol.as_str(),
+            identity.upstream_protocol.map(Protocol::as_str),
             identity.provider_id,
             &identity.profile,
             provider_name,

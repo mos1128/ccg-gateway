@@ -170,7 +170,7 @@ pub fn run() {
                 app.manage(StatsDb(stats_db.clone()));
 
                 let startup_settings = sqlx::query_as::<_, db::models::GatewaySettings>(
-                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, translate_max_tokens, window_width, window_height FROM gateway_settings WHERE id = 1",
+                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, window_width, window_height FROM gateway_settings WHERE id = 1",
                 )
                 .fetch_one(&db)
                 .await
@@ -180,7 +180,6 @@ pub fn run() {
                     launch_on_startup: 0,
                     silent_startup: 0,
                     minimize_to_tray_on_close: 1,
-                    translate_max_tokens: services::translate::DEFAULT_MAX_TOKENS,
                     window_width: None,
                     window_height: None,
                 });

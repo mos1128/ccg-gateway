@@ -754,7 +754,7 @@ textarea.v2-input {
 .v2-input[type="number"] {
   -moz-appearance: textfield;
 }
-.v2-hint { font-size: var(--v2-fs-xs); color: var(--v2-text-3); margin-top: 6px; }
+.v2-hint { font-size: var(--v2-fs-xs); line-height: 1.5; color: var(--v2-text-3); margin-top: 6px; }
 .v2-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--v2-space-4); }
 
 .v2-file-editor {

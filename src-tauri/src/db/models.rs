@@ -337,6 +337,8 @@ pub struct Provider {
     pub sort_order: i64,
     pub custom_useragent: Option<String>,
     pub price_multiplier: f64,
+    /// 转成 Anthropic 协议时源请求没给 max_tokens 的兜底值，按上游模型的上限设。
+    pub translate_max_tokens: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -436,6 +438,7 @@ pub struct ProviderCreate {
     pub blacklist_minutes: Option<i64>,
     pub custom_useragent: Option<String>,
     pub price_multiplier: Option<f64>,
+    pub translate_max_tokens: Option<i64>,
     pub model_maps: Option<Vec<ModelMapInput>>,
     pub model_blacklist: Option<Vec<ModelBlacklistInput>>,
 }
@@ -453,6 +456,7 @@ pub struct ProviderUpdate {
     pub blacklist_minutes: Option<i64>,
     pub custom_useragent: Option<String>,
     pub price_multiplier: Option<f64>,
+    pub translate_max_tokens: Option<i64>,
     pub model_maps: Option<Vec<ModelMapInput>>,
     pub model_blacklist: Option<Vec<ModelBlacklistInput>>,
 }
@@ -490,6 +494,7 @@ pub struct ProviderResponse {
     pub sort_order: i64,
     pub custom_useragent: Option<String>,
     pub price_multiplier: f64,
+    pub translate_max_tokens: i64,
     pub is_blacklisted: bool,
     pub model_maps: Vec<ModelMapResponse>,
     pub model_blacklist: Vec<ModelBlacklistResponse>,
@@ -523,6 +528,7 @@ impl From<Provider> for ProviderResponse {
             sort_order: p.sort_order,
             custom_useragent: p.custom_useragent,
             price_multiplier: p.price_multiplier,
+            translate_max_tokens: p.translate_max_tokens,
             is_blacklisted,
             model_maps: vec![],
             model_blacklist: vec![],
@@ -731,7 +737,6 @@ pub struct GatewaySettings {
     pub launch_on_startup: i64,
     pub silent_startup: i64,
     pub minimize_to_tray_on_close: i64,
-    pub translate_max_tokens: i64,
     pub window_width: Option<f64>,
     pub window_height: Option<f64>,
 }
@@ -1064,6 +1069,8 @@ pub struct RequestLogItem {
     pub finished_at: Option<i64>,
     pub cli_type: String,
     pub protocol: Option<String>,
+    /// 真的走了协议转换时才有值：请求最终发给上游用的协议。
+    pub upstream_protocol: Option<String>,
     pub provider_id: Option<i64>,
     pub profile: Option<String>,
     pub provider_name: String,
@@ -1097,6 +1104,8 @@ pub struct RequestLogDetail {
     pub finished_at: Option<i64>,
     pub cli_type: String,
     pub protocol: Option<String>,
+    /// 真的走了协议转换时才有值：请求最终发给上游用的协议。
+    pub upstream_protocol: Option<String>,
     pub provider_id: Option<i64>,
     pub profile: Option<String>,
     pub provider_name: String,

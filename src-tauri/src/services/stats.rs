@@ -236,6 +236,7 @@ pub async fn record_request_log(
     log_db: &SqlitePool,
     cli_type: &str,
     protocol: &str,
+    upstream_protocol: Option<&str>,
     provider_id: i64,
     profile: &str,
     provider_name: &str,
@@ -259,14 +260,15 @@ pub async fn record_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, upstream_protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
     .bind(now)
     .bind(cli_type)
     .bind(protocol)
+    .bind(upstream_protocol)
     .bind(provider_id)
     .bind(profile)
     .bind(provider_name)
@@ -303,6 +305,7 @@ pub async fn start_request_log(
     log_db: &SqlitePool,
     cli_type: &str,
     protocol: &str,
+    upstream_protocol: Option<&str>,
     provider_id: i64,
     profile: &str,
     provider_name: &str,
@@ -317,13 +320,14 @@ pub async fn start_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, provider_id, profile, provider_name, model_id, client_method, client_path, forward_url, source_model, target_model)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, upstream_protocol, provider_id, profile, provider_name, model_id, client_method, client_path, forward_url, source_model, target_model)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
     .bind(cli_type)
     .bind(protocol)
+    .bind(upstream_protocol)
     .bind(provider_id)
     .bind(profile)
     .bind(provider_name)
@@ -344,6 +348,7 @@ pub async fn finish_request_log(
     log_id: i64,
     cli_type: &str,
     protocol: &str,
+    upstream_protocol: Option<&str>,
     provider_id: i64,
     profile: &str,
     provider_name: &str,
@@ -373,7 +378,7 @@ pub async fn finish_request_log(
     sqlx::query(
         r#"
         UPDATE request_logs
-        SET finished_at = ?, cli_type = ?, protocol = ?, provider_id = ?, profile = ?,
+        SET finished_at = ?, cli_type = ?, protocol = ?, upstream_protocol = ?, provider_id = ?, profile = ?,
             provider_name = ?, model_id = ?, status_code = ?,
             elapsed_ms = ?, first_byte_ms = ?, input_tokens = ?, cache_read_input_tokens = ?,
             cache_creation_input_tokens = ?, output_tokens = ?, client_method = ?, client_path = ?,
@@ -387,6 +392,7 @@ pub async fn finish_request_log(
     .bind(finished_at)
     .bind(cli_type)
     .bind(protocol)
+    .bind(upstream_protocol)
     .bind(provider_id)
     .bind(profile)
     .bind(provider_name)

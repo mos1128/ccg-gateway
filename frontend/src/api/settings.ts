@@ -36,7 +36,6 @@ export const settingsApi = {
           launch_on_startup: !!gateway.launch_on_startup,
           silent_startup: !!gateway.silent_startup,
           minimize_to_tray_on_close: !!gateway.minimize_to_tray_on_close,
-          translate_max_tokens: gateway.translate_max_tokens,
         },
         timeouts,
         cli_settings: cliSettings,
@@ -51,7 +50,6 @@ export const settingsApi = {
       launchOnStartup: data.launch_on_startup,
       silentStartup: data.silent_startup,
       minimizeToTrayOnClose: data.minimize_to_tray_on_close,
-      translateMaxTokens: data.translate_max_tokens,
     })
     return { data: null }
   },

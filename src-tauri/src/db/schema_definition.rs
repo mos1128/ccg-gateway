@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 37,
+            version: 38,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -106,7 +106,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 18,
+            version: 19,
             tables: Self::define_log_tables(),
             indexes: Self::define_log_indexes(),
         }
@@ -241,6 +241,12 @@ impl DatabaseSchema {
                         data_type: "REAL".to_string(),
                         nullable: false,
                         default_value: Some("1".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "translate_max_tokens".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("32000".to_string()),
                     },
                 ],
                 primary_key: vec!["id".to_string()],
@@ -738,12 +744,6 @@ impl DatabaseSchema {
                         data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: Some("1".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "translate_max_tokens".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("32000".to_string()),
                     },
                     ColumnDefinition {
                         name: "window_width".to_string(),
@@ -1364,6 +1364,13 @@ impl DatabaseSchema {
                     // 价格来源（models.dev 的厂商渠道 id），展示用，未命中目录时为 NULL。
                     ColumnDefinition {
                         name: "price_source".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    // 老库靠 ALTER 追加，位置必须和 ALTER 一样留在末尾，免得下次升级整表重建
+                    ColumnDefinition {
+                        name: "upstream_protocol".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: true,
                         default_value: None,

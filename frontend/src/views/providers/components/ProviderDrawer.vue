@@ -18,10 +18,13 @@
           width="100%"
           @change="value => form.protocol = value as Protocol"
         />
-        <div v-if="translated" class="dr-translate-note">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>
-          <span>该端点类型与 Agent 协议不同，转发时自动转换。转换后模型的思考内容只能在本服务商内延续，一旦故障转移到别的服务商，历史思考链会被丢弃（对话本身不受影响）。</span>
-        </div>
+        <div v-if="translated" class="dr-translate-note">该端点类型与 Agent 协议不同，转发时自动转换。转换后模型的思考内容只能在本服务商内延续，一旦故障转移到别的服务商，历史思考链会被丢弃（对话本身不受影响）。</div>
+      </div>
+      <!-- 只有这条链路真会转协议才用得上这个兜底值 -->
+      <div v-if="canTranslate" class="v2-field">
+        <label class="v2-label">转换默认 max_tokens</label>
+        <input v-model.number="form.translate_max_tokens" type="number" min="1024" step="1024" class="v2-input">
+        <div class="v2-hint">转协议时源请求没带 max_tokens 就用该值</div>
       </div>
       <div class="v2-field">
         <label class="v2-label">服务商名称 <span class="req">*</span></label>
@@ -240,6 +243,7 @@ interface ProviderEditForm {
   blacklist_minutes: number
   custom_useragent: string
   price_multiplier: number
+  translate_max_tokens: number
   model_maps: Array<{ source_model: string; target_model: string; enabled: boolean }>
   model_blacklist: Array<{ model_pattern: string }>
 }
@@ -287,6 +291,13 @@ const translated = computed(() => {
   return CONVERTIBLE_PROTOCOLS.includes(protocol)
     && props.declaredProtocols.some((declared) => CONVERTIBLE_PROTOCOLS.includes(declared))
     && !props.declaredProtocols.includes(protocol)
+})
+// 多协议 Agent 声明的协议里只要有一个和端点类型不同，客户端用那个协议发来就会转换，
+// 所以判断「会不会转」要看有没有别的可转协议，而不是端点类型有没有被声明。
+const canTranslate = computed(() => {
+  const protocol = props.form.protocol as Protocol
+  return CONVERTIBLE_PROTOCOLS.includes(protocol)
+    && props.declaredProtocols.some((declared) => CONVERTIBLE_PROTOCOLS.includes(declared) && declared !== protocol)
 })
 
 const providerModels = computed(() => props.modelSync?.models ?? [])
@@ -347,8 +358,7 @@ watch(() => props.modelValue, (open) => {
   overflow-wrap: anywhere;
   white-space: pre-line;
 }
-.dr-translate-note { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; color: var(--v2-warning); font-size: var(--v2-fs-xs); line-height: 1.5; }
-.dr-translate-note svg { flex: 0 0 auto; margin-top: 2px; }
+.dr-translate-note { margin-top: 6px; color: var(--v2-warning); font-size: var(--v2-fs-xs); line-height: 1.5; }
 .dr-sec-title { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-semibold); color: var(--v2-text); }
 .dr-map { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 9px; align-items: center; }
 .dr-map-single { grid-template-columns: 1fr auto; }

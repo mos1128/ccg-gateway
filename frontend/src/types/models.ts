@@ -241,6 +241,8 @@ export interface Provider {
   sort_order: number
   custom_useragent: string | null
   price_multiplier: number
+  /** 转成 Anthropic 协议时源请求没给 max_tokens 的兜底值，按上游模型的上限设。 */
+  translate_max_tokens: number
   model_maps: ModelMap[]
   model_blacklist: ModelBlacklist[]
   is_blacklisted: boolean
@@ -259,6 +261,7 @@ export interface ProviderCreate {
   blacklist_minutes?: number
   custom_useragent?: string
   price_multiplier?: number
+  translate_max_tokens?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
 }
@@ -275,6 +278,7 @@ export interface ProviderUpdate {
   blacklist_minutes?: number
   custom_useragent?: string
   price_multiplier?: number
+  translate_max_tokens?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
 }
@@ -399,7 +403,6 @@ export interface GatewaySettings {
   launch_on_startup: boolean
   silent_startup: boolean
   minimize_to_tray_on_close: boolean
-  translate_max_tokens: number
 }
 
 export interface GatewaySettingsRaw {
@@ -408,7 +411,6 @@ export interface GatewaySettingsRaw {
   launch_on_startup: number
   silent_startup: number
   minimize_to_tray_on_close: number
-  translate_max_tokens: number
 }
 
 export interface TimeoutSettings {
@@ -450,7 +452,6 @@ export interface GatewaySettingsUpdate {
   launch_on_startup?: boolean
   silent_startup?: boolean
   minimize_to_tray_on_close?: boolean
-  translate_max_tokens?: number
 }
 
 export interface TimeoutSettingsUpdate {
@@ -661,6 +662,8 @@ export interface RequestLogListItem {
   finished_at: number | null
   cli_type: CliType
   protocol: Protocol | null
+  /** 真的走了协议转换时才有值：请求最终发给上游用的协议。 */
+  upstream_protocol: Protocol | null
   provider_id: number | null
   profile: string | null
   provider_name: string

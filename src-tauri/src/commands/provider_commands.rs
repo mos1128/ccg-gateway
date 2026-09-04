@@ -64,6 +64,13 @@ fn normalize_provider_update_multiplier(input: &ProviderUpdate) -> Option<f64> {
         .map(|value| normalize_price_multiplier(Some(value)))
 }
 
+/// 小于 1024 时 Anthropic 侧连思考预算都摆不下，直接钳住，免得存进去一个废值。
+fn normalize_translate_max_tokens(value: Option<i64>) -> i64 {
+    value
+        .unwrap_or(crate::services::translate::DEFAULT_MAX_TOKENS)
+        .max(1024)
+}
+
 fn validate_provider_protocol(agent_id: &str, protocol: Option<&str>) -> Result<String> {
     let definition = crate::services::agent::get_definition(agent_id)
         .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
@@ -103,8 +110,8 @@ struct ProviderInsert<'a> {
 async fn insert_provider_record(pool: &SqlitePool, values: ProviderInsert<'_>) -> Result<i64> {
     let result = sqlx::query(
         r#"
-        INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, enabled, failure_threshold, retry_limit, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, price_multiplier)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?)
+        INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, enabled, failure_threshold, retry_limit, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, price_multiplier, translate_max_tokens)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?, ?)
         "#,
     )
     .bind(values.cli_type)
@@ -124,6 +131,9 @@ async fn insert_provider_record(pool: &SqlitePool, values: ProviderInsert<'_>) -
     .bind(values.now)
     .bind(values.now)
     .bind(values.price_multiplier)
+    .bind(normalize_translate_max_tokens(
+        values.input.translate_max_tokens,
+    ))
     .execute(pool)
     .await
     .map_err(map_db_error)?;
@@ -601,6 +611,10 @@ pub async fn update_provider(
         updates.push("price_multiplier = ?".to_string());
         has_updates = true;
     }
+    if input.translate_max_tokens.is_some() {
+        updates.push("translate_max_tokens = ?".to_string());
+        has_updates = true;
+    }
 
     if has_updates {
         let query = format!("UPDATE providers SET {} WHERE id = ?", updates.join(", "));
@@ -644,6 +658,9 @@ pub async fn update_provider(
         }
         if let Some(value) = price_multiplier {
             q = q.bind(value);
+        }
+        if input.translate_max_tokens.is_some() {
+            q = q.bind(normalize_translate_max_tokens(input.translate_max_tokens));
         }
 
         q.bind(id).execute(db.inner()).await.map_err(map_db_error)?;
