@@ -705,7 +705,7 @@ const eventTypeMap: Record<string, string> = {
   provider_created: '服务商创建', provider_updated: '服务商更新', provider_deleted: '服务商删除',
   provider_reset: '状态重置', scheduled_task_failed: '定时任务失败',
   config_conflict: 'Agent 配置冲突', unknown_agent: '未知 Agent',
-  protocol_conflict: '端点类型冲突', protocol_not_matched: '端点类型未匹配',
+  protocol_conflict: '端点类型冲突', protocol_not_matched: '端点类型未匹配', passthrough_failed: '透传失败',
   config_patch_failed: '配置写入失败', official_credential_write_failed: '官方凭证写入失败',
 }
 const eventTypeOptions = computed<AppSelectOption[]>(() => [{ label: '全部事件', value: '' }, ...Object.entries(eventTypeMap).map(([value, label]) => ({ value, label }))])

@@ -210,32 +210,58 @@ pub async fn proxy_handler_catchall(
     let protocol_match = match protocol_service::detect_protocol(&agent, &method, &full_path) {
         Some(protocol_match) => protocol_match,
         None => {
-            let payload = serde_json::json!({
-                "type": "protocol_not_matched",
-                "agent_id": agent.id,
-                "method": method.as_str(),
-                "path": full_path,
-            });
-            let key = format!("{}|{}|{}", agent.id, method, full_path);
-            let _ = agent_service::record_diagnostic(
-                &state.log_db,
-                "protocol_not_matched",
-                &key,
-                &payload,
+            // 不匹配任何端点类型的路径（count_tokens、/models 这类辅助端点）不再拒绝：
+            // 网关本来就是要把流量转给上游的，挑一家原样透传就好。路径归属决定挑哪家，
+            // 一家上游都没有时才报错。
+            match crate::services::routing::get_passthrough_provider(
+                &state.db,
+                &agent.id,
+                &provider_profile,
+                protocol_service::infer_protocol(&full_path),
             )
-            .await;
-            let _ = stats_service::record_system_log_dedup(
-                &state.log_db,
-                "protocol_not_matched",
-                &payload.to_string(),
-                600,
-            )
-            .await;
-            return Ok(json_error_response(
-                StatusCode::NOT_FOUND,
-                "protocol_not_matched",
-                "Request path does not match any protocol declared by this Agent",
-            ));
+            .await
+            {
+                Ok(Some((provider, upstream_protocol))) => {
+                    return handle_passthrough_request(
+                        &state,
+                        &agent.id,
+                        provider,
+                        upstream_protocol,
+                        &method,
+                        &headers,
+                        req.into_body(),
+                        &full_path,
+                    )
+                    .await;
+                }
+                // 路径没命中协议不再算错误，唯一的失败是没有上游可转——这和命中协议时
+                // 挑不到服务商是同一件事，报同一个错。
+                Ok(None) => {
+                    let payload = serde_json::json!({
+                        "type": "no_provider_available",
+                        "agent_id": agent.id,
+                        "profile": provider_profile,
+                        "method": method.as_str(),
+                        "path": full_path,
+                    });
+                    let _ = stats_service::record_system_log_dedup(
+                        &state.log_db,
+                        "no_provider_available",
+                        &payload.to_string(),
+                        600,
+                    )
+                    .await;
+                    return Ok(json_error_response(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "no_provider_available",
+                        "没有可用的服务商，无法透传该请求",
+                    ));
+                }
+                Err(error) => {
+                    tracing::error!(error = %error, "Failed to select passthrough provider");
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            }
         }
     };
     let protocol = protocol_match.selected;
@@ -725,6 +751,157 @@ pub async fn proxy_handler_catchall(
             "所有服务商均未能成功响应",
         )
     }))
+}
+
+/// 透传一个不匹配任何协议的请求。
+///
+/// 只做凭证替换和地址重写：不转换协议、不做模型映射、不解析 token 用量、不写请求日志
+/// 和统计，单次尝试不轮转，成功失败都不计入熔断——辅助端点在三方中转上本来就常常没
+/// 实现，它答的 404 说明不了这个渠道跑正经请求时的健康状况。
+#[allow(clippy::too_many_arguments)]
+async fn handle_passthrough_request(
+    state: &Arc<AppState>,
+    agent_id: &str,
+    provider: crate::db::models::Provider,
+    upstream_protocol: Protocol,
+    method: &axum::http::Method,
+    client_headers: &axum::http::HeaderMap,
+    body: Body,
+    full_path: &str,
+) -> Result<Response<Body>, StatusCode> {
+    let body_bytes = match axum::body::to_bytes(body, 20 * 1024 * 1024).await {
+        Ok(bytes) => bytes.to_vec(),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to read passthrough request body");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+
+    // 客户端带上来的网关令牌要先归一，否则 x-api-key 会盖掉下面写进去的真实凭证。
+    let mut headers = client_headers.clone();
+    crate::services::proxy::normalize_anthropic_auth_headers(&mut headers, upstream_protocol);
+    let upstream_url = crate::services::proxy::join_upstream_url(&provider.base_url, full_path);
+    let request = match crate::services::proxy::build_upstream_request(
+        &state.http_client,
+        &provider,
+        upstream_protocol,
+        &upstream_url,
+        &headers,
+        body_bytes,
+        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET),
+    ) {
+        Ok(request) => request,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to build passthrough request");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    let timeout = std::time::Duration::from_secs(
+        sqlx::query_scalar::<_, i64>("SELECT non_stream_timeout FROM timeout_settings WHERE id = 1")
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or(120)
+            .clamp(1, 600) as u64,
+    );
+    // 辅助端点答的都是一次性 JSON，整读进来原样带回；真流式的路径走不到这里。
+    let response = match tokio::time::timeout(timeout, state.http_client.execute(request)).await {
+        Ok(Ok(response)) => response,
+        Ok(Err(e)) => {
+            let reason = format!("上游请求失败: {}", e);
+            record_passthrough_failure(state, agent_id, &provider.name, method, full_path, &reason)
+                .await;
+            return Ok(json_error_response(
+                StatusCode::BAD_GATEWAY,
+                "passthrough_failed",
+                &reason,
+            ));
+        }
+        Err(_) => {
+            record_passthrough_failure(
+                state,
+                agent_id,
+                &provider.name,
+                method,
+                full_path,
+                "请求超时",
+            )
+            .await;
+            return Ok(json_error_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                "passthrough_timeout",
+                "透传请求超时",
+            ));
+        }
+    };
+
+    let status =
+        StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let resp_headers = response.headers().clone();
+    let body_bytes = match response.bytes().await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            let reason = format!("读取上游响应体失败: {}", e);
+            record_passthrough_failure(state, agent_id, &provider.name, method, full_path, &reason)
+                .await;
+            return Ok(json_error_response(
+                StatusCode::BAD_GATEWAY,
+                "passthrough_failed",
+                &reason,
+            ));
+        }
+    };
+
+    if !status.is_success() {
+        // 上游明确答了就原样带回客户端，只留一条去重日志，方便看出它没实现这个端点。
+        record_passthrough_failure(
+            state,
+            agent_id,
+            &provider.name,
+            method,
+            full_path,
+            &format!("上游返回 {}", status.as_u16()),
+        )
+        .await;
+    }
+
+    let builder = copy_response_headers(Response::builder().status(status), &resp_headers);
+    Ok(builder
+        .body(Body::from(body_bytes))
+        .unwrap_or_else(|_| {
+            json_error_response(
+                StatusCode::BAD_GATEWAY,
+                "passthrough_failed",
+                "透传响应构造失败",
+            )
+        }))
+}
+
+/// 透传失败留一条 1 小时去重的系统日志：成功的透传完全静默，失败的看得见又不刷屏。
+/// 窗口比别的诊断长，因为"这家上游没实现这个端点"是个静态事实，知道一次就够了。
+async fn record_passthrough_failure(
+    state: &Arc<AppState>,
+    agent_id: &str,
+    provider_name: &str,
+    method: &axum::http::Method,
+    full_path: &str,
+    reason: &str,
+) {
+    let payload = serde_json::json!({
+        "type": "passthrough_failed",
+        "agent_id": agent_id,
+        "provider": provider_name,
+        "method": method.as_str(),
+        "path": full_path,
+        "reason": reason,
+    });
+    let _ = stats_service::record_system_log_dedup(
+        &state.log_db,
+        "passthrough_failed",
+        &payload.to_string(),
+        3600,
+    )
+    .await;
 }
 
 /// The upstream rejected the request itself. Another channel would reject it

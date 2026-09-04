@@ -39,6 +39,29 @@ pub fn matches_request(protocol: Protocol, method: &Method, path_and_query: &str
     }
 }
 
+/// 反推一个不匹配任何端点类型的路径该归给哪种上游。
+///
+/// 辅助端点都挂在主端点下面（`/v1/messages/count_tokens` 是 Anthropic 的，
+/// `models/x:countTokens` 是 Gemini 的），按主端点的路径前缀归属就够了。各家都有的
+/// 路径（`/models` 列表）归不出来，返回 None 表示随便哪家上游都行。
+pub fn infer_protocol(path_and_query: &str) -> Option<Protocol> {
+    let path = request_path(path_and_query).trim_end_matches('/');
+    // 版本前缀由 join_upstream_url 负责对齐，归属只看后面的业务路径。
+    let rest = ["/v1beta", "/v1"]
+        .iter()
+        .find_map(|prefix| path.strip_prefix(prefix))
+        .unwrap_or(path);
+    match rest.split('/').nth(1)? {
+        "messages" => Some(Protocol::AnthropicMessages),
+        "chat" => Some(Protocol::OpenaiChat),
+        "responses" => Some(Protocol::OpenaiResponses),
+        // Gemini 把方法名写在模型后面（`models/gemini-x:countTokens`），带冒号才是它的
+        // 调用形式；光秃秃的 `models` 各家都有，不归属。
+        "models" if rest.contains(':') => Some(Protocol::GeminiGenerateContent),
+        _ => None,
+    }
+}
+
 pub fn detect_protocol(
     agent: &AgentInfo,
     method: &Method,

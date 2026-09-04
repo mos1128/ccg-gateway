@@ -70,6 +70,51 @@ fn provider_matches(protocol: Protocol, provider_protocol: &str) -> bool {
     }
 }
 
+/// 透传用的服务商：不匹配任何端点类型的路径要原样转给上游，优先挑端点类型和路径归属
+/// 一致的那一家（`/v1/messages/count_tokens` 只有 Anthropic 上游认），归不出归属或没有
+/// 同类的，就用顺序第一家，由上游自己回答认不认。透传不做协议转换，所以不能复用
+/// `provider_matches` 的可转换判定。
+pub async fn get_passthrough_provider(
+    db: &SqlitePool,
+    cli_type: &str,
+    profile: &str,
+    preferred: Option<Protocol>,
+) -> Result<Option<(Provider, Protocol)>, sqlx::Error> {
+    let now = now_timestamp();
+    let profile = normalize_profile(Some(profile)).unwrap_or_else(|| DEFAULT_PROFILE.to_string());
+
+    let candidates: Vec<(Provider, Protocol)> = sqlx::query_as::<_, Provider>(
+        r#"
+        SELECT * FROM providers
+        WHERE cli_type = ?
+          AND profile = ?
+          AND enabled = 1
+          AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
+        ORDER BY sort_order, id
+        "#,
+    )
+    .bind(cli_type)
+    .bind(&profile)
+    .bind(now)
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .filter_map(|provider| {
+        let protocol = provider.protocol.parse::<Protocol>().ok()?;
+        Some((provider, protocol))
+    })
+    .collect();
+
+    let index = preferred
+        .and_then(|preferred| {
+            candidates
+                .iter()
+                .position(|(_, protocol)| *protocol == preferred)
+        })
+        .unwrap_or(0);
+    Ok(candidates.into_iter().nth(index))
+}
+
 /// Provider with its model mappings and blacklist
 #[derive(Debug, Clone)]
 pub struct ProviderWithMaps {
