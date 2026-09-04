@@ -346,6 +346,7 @@ const showProfileHelp = computed(() => showProfileControls.value && supportsProf
 const currentProviderProfile = computed<ProviderProfile>(() => showProfileControls.value ? activeProfile.value : 'default')
 const profileSwitching = ref<ProviderProfile | null>(null)
 let testResultListener: (() => void) | null = null
+let healthListener: (() => void) | null = null
 
 const currentProfileLabel = computed(() =>
   profileDisplayLabel(profileTabs.value.find(profile => profile.name === activeProfile.value)) || activeProfile.value
@@ -1251,7 +1252,6 @@ async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
   toggleLoadingId.value = provider.id
   try {
     await providerStore.updateProvider(provider.id, { enabled })
-    provider.enabled = enabled
     notify(enabled ? '已启用' : '已停用')
   } catch (e: any) {
     notify(getErrorMessage(e, '切换失败'), 'error')
@@ -1266,7 +1266,6 @@ async function handleDragEnd() {
 }
 async function handleReset(provider: Provider) {
   await providerStore.resetFailures(provider.id)
-  if (provider.is_blacklisted) await providerStore.unblacklist(provider.id)
   notify('重置成功')
 }
 async function handleCommand(command: string, provider: Provider) {
@@ -1395,7 +1394,9 @@ const now = ref(Date.now())
 let timer: ReturnType<typeof setInterval> | null = null
 
 function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') now.value = Date.now()
+  if (document.visibilityState !== 'visible') return
+  now.value = Date.now()
+  providerStore.expireBlacklists(now.value / 1000)
 }
 function getUnblacklistTime(provider: Provider): string {
   if (!provider.is_blacklisted || !provider.blacklisted_until) return '已熔断'
@@ -1406,6 +1407,8 @@ function getUnblacklistTime(provider: Provider): string {
 }
 
 onMounted(async () => {
+  // 先挂监听再拉列表，避免首屏拉取到监听生效之间漏掉熔断事件
+  healthListener = await providersApi.listenHealthChanges((health) => providerStore.applyHealthEvent(health))
   await Promise.all([
     agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
     settingsStore.fetchSettings(),
@@ -1423,15 +1426,8 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
   timer = setInterval(() => {
     if (document.visibilityState !== 'visible') return
-    const oldNow = now.value
     now.value = Date.now()
-    const hasExpired = providerStore.providers.some((p) => {
-      if (p.is_blacklisted && p.blacklisted_until) {
-        return p.blacklisted_until > (oldNow / 1000) && p.blacklisted_until <= (now.value / 1000)
-      }
-      return false
-    })
-    if (hasExpired) providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
+    providerStore.expireBlacklists(now.value / 1000)
   }, 1000)
 })
 onUnmounted(() => {
@@ -1443,6 +1439,10 @@ onUnmounted(() => {
   if (testResultListener) {
     testResultListener()
     testResultListener = null
+  }
+  if (healthListener) {
+    healthListener()
+    healthListener = null
   }
 })
 </script>

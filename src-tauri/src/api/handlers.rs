@@ -15,7 +15,7 @@ use tauri::Emitter;
 use tokio::sync::{mpsc, Mutex};
 
 use super::AppState;
-use crate::db::models::{Protocol, RequestLogInfo, RequestLogItem};
+use crate::db::models::{Protocol, ProviderHealthEvent, RequestLogInfo, RequestLogItem};
 use crate::services::proxy::{
     apply_body_model_mapping, apply_url_model_mapping, detect_gateway_profile,
     extract_model_from_body, extract_model_from_path, is_stream_completion_line, is_streaming,
@@ -45,6 +45,8 @@ const CLIENT_CLOSED_REQUEST_MESSAGE: &str = "客户端在完成前断开了连�
 const MAX_BODY_LOG: usize = 10 * 1024 * 1024;
 /// 整流判定要把错误体整个读进内存，4xx 的错误体最多几 KB，1MB 足够。
 const MAX_ERROR_BODY: usize = 1024 * 1024;
+/// 服务商熔断状态变化的事件名，前端服务商页监听它做增量更新。
+const PROVIDER_HEALTH_EVENT: &str = "provider-health-changed";
 
 #[derive(Clone)]
 struct RequestIdentity {
@@ -1187,6 +1189,38 @@ async fn record_provider_failure(state: &Arc<AppState>, provider_id: i64) {
             )
             .await;
         }
+        emit_provider_health_event(state, provider_id).await;
+    }
+}
+
+async fn record_provider_success(state: &Arc<AppState>, provider_id: i64, provider_name: &str) {
+    if let Ok(had_failures) = provider_service::record_success(&state.db, provider_id).await {
+        if had_failures {
+            let _ = stats_service::record_system_log(
+                &state.log_db,
+                "provider_recovered",
+                &format!("服务商 {} 已恢复正常", provider_name),
+            )
+            .await;
+            emit_provider_health_event(state, provider_id).await;
+        }
+    }
+}
+
+/// 把服务商当前的熔断状态推给前端，让服务商页无需切页就能刷新状态。
+async fn emit_provider_health_event(state: &Arc<AppState>, provider_id: i64) {
+    let row = sqlx::query_as::<_, (i64, Option<i64>)>(
+        "SELECT consecutive_failures, blacklisted_until FROM providers WHERE id = ?",
+    )
+    .bind(provider_id)
+    .fetch_optional(&state.db)
+    .await;
+
+    if let Ok(Some((failures, blacklisted_until))) = row {
+        let event = ProviderHealthEvent::new(provider_id, failures, blacklisted_until);
+        if let Err(e) = state.app_handle.emit(PROVIDER_HEALTH_EVENT, event) {
+            tracing::error!(error = %e, "Failed to emit provider health event");
+        }
     }
 }
 
@@ -2184,31 +2218,9 @@ async fn handle_streaming_request(
         let elapsed = start_time.elapsed().as_millis() as i64;
         let first_byte_ms = (*first_chunk_ms.lock().await).unwrap_or(first_byte_fallback_ms);
         if !client_cancelled && stream_failure.is_none() && log_is_success {
-            if let Ok(had_failures) =
-                provider_service::record_success(&log_state.db, log_provider_id).await
-            {
-                if had_failures {
-                    let _ = stats_service::record_system_log(
-                        &log_state.log_db,
-                        "provider_recovered",
-                        &format!("服务商 {} 已恢复正常", log_provider_name),
-                    )
-                    .await;
-                }
-            }
+            record_provider_success(&log_state, log_provider_id, &log_provider_name).await;
         } else if !client_cancelled {
-            if let Ok((was_blacklisted, prov_name)) =
-                provider_service::record_failure(&log_state.db, log_provider_id).await
-            {
-                if was_blacklisted {
-                    let _ = stats_service::record_system_log(
-                        &log_state.log_db,
-                        "provider_blacklisted",
-                        &format!("服务商 {} 因连续失败已被加入黑名单", prov_name),
-                    )
-                    .await;
-                }
-            }
+            record_provider_failure(&log_state, log_provider_id).await;
         }
 
         record_request_stats(
@@ -2554,16 +2566,7 @@ async fn handle_non_streaming_request(
     // Record success. Failure paths have all returned above with an error
     // response, so only the success path reaches here; the failover loop in
     // the caller records failures once per provider per request.
-    if let Ok(had_failures) = provider_service::record_success(&state.db, provider_id).await {
-        if had_failures {
-            let _ = stats_service::record_system_log(
-                &state.log_db,
-                "provider_recovered",
-                &format!("服务商 {} 已恢复正常", provider_name),
-            )
-            .await;
-        }
-    }
+    record_provider_success(state, provider_id, provider_name).await;
 
     // Record stats
     let elapsed = start_time.elapsed().as_millis() as i64;

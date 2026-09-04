@@ -491,7 +491,6 @@ pub struct ProviderResponse {
     pub custom_useragent: Option<String>,
     pub price_multiplier: f64,
     pub is_blacklisted: bool,
-    pub is_direct_active: bool,
     pub model_maps: Vec<ModelMapResponse>,
     pub model_blacklist: Vec<ModelBlacklistResponse>,
 }
@@ -525,9 +524,39 @@ impl From<Provider> for ProviderResponse {
             custom_useragent: p.custom_useragent,
             price_multiplier: p.price_multiplier,
             is_blacklisted,
-            is_direct_active: false,
             model_maps: vec![],
             model_blacklist: vec![],
+        }
+    }
+}
+
+/// 熔断状态变化时推给前端的增量事件：服务商页把列表缓存在内存里，
+/// 没有这个事件就只能靠重新挂载页面才能看到熔断/恢复。
+#[derive(Debug, Clone, Serialize)]
+pub struct ProviderHealthEvent {
+    pub provider_id: i64,
+    pub consecutive_failures: i64,
+    pub blacklisted_until: Option<i64>,
+    pub is_blacklisted: bool,
+}
+
+impl ProviderHealthEvent {
+    pub fn new(
+        provider_id: i64,
+        consecutive_failures: i64,
+        blacklisted_until: Option<i64>,
+    ) -> Self {
+        let now = now_timestamp();
+        let blacklist_expired = blacklisted_until.is_some_and(|t| t <= now);
+        Self {
+            provider_id,
+            consecutive_failures: if blacklist_expired {
+                0
+            } else {
+                consecutive_failures
+            },
+            blacklisted_until,
+            is_blacklisted: blacklisted_until.is_some_and(|t| t > now),
         }
     }
 }

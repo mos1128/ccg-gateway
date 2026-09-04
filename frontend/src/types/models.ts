@@ -244,7 +244,6 @@ export interface Provider {
   model_maps: ModelMap[]
   model_blacklist: ModelBlacklist[]
   is_blacklisted: boolean
-  is_direct_active: boolean
 }
 
 export interface ProviderCreate {
@@ -278,6 +277,14 @@ export interface ProviderUpdate {
   price_multiplier?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
+}
+
+/** 后端在熔断/恢复时推送的增量状态，用于服务商页免刷新更新。 */
+export interface ProviderHealthEvent {
+  provider_id: number
+  consecutive_failures: number
+  blacklisted_until: number | null
+  is_blacklisted: boolean
 }
 
 // Model Detection types

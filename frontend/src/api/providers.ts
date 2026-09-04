@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from './tauri-bridge'
-import type { ModelPriceCatalogEntry, PriceSyncState, Provider, ProviderCreate, ProviderModelsResponse, ProviderProfileItem, ProviderUpdate, TestProviderResult } from '@/types/models'
+import type { ModelPriceCatalogEntry, PriceSyncState, Provider, ProviderCreate, ProviderHealthEvent, ProviderModelsResponse, ProviderProfileItem, ProviderUpdate, TestProviderResult } from '@/types/models'
 
 export const providersApi = {
   listProfiles: async (cliType: string): Promise<{ data: ProviderProfileItem[] }> => {
@@ -50,10 +50,6 @@ export const providersApi = {
     await invoke('reset_provider_failures', { id })
     return { data: null }
   },
-  unblacklist: async (id: number) => {
-    await invoke('reset_provider_failures', { id })
-    return { data: null }
-  },
   getModels: async (providerId: number): Promise<{ data: ProviderModelsResponse }> => {
     const data = await invoke<ProviderModelsResponse>('get_provider_models', { providerId })
     return { data }
@@ -90,6 +86,11 @@ export const providersApi = {
   },
   listenTestResults: (callback: (result: TestProviderResult) => void): Promise<UnlistenFn> => {
     return listen<TestProviderResult>('provider-test-result', (event) => {
+      callback(event.payload)
+    })
+  },
+  listenHealthChanges: (callback: (health: ProviderHealthEvent) => void): Promise<UnlistenFn> => {
+    return listen<ProviderHealthEvent>('provider-health-changed', (event) => {
       callback(event.payload)
     })
   }

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { providersApi } from '@/api/providers'
-import type { CliType, Provider, ProviderCreate, ProviderProfile, ProviderUpdate } from '@/types/models'
+import type { CliType, Provider, ProviderCreate, ProviderHealthEvent, ProviderProfile, ProviderUpdate } from '@/types/models'
 import { useUiStore } from './ui'
 import { useAgentStore } from './agents'
 
@@ -69,12 +69,11 @@ export const useProviderStore = defineStore('providers', () => {
 
   async function updateProvider(id: number, data: ProviderUpdate) {
     const { data: provider } = await providersApi.update(id, data)
-    const key = activeCacheKey.value
-    if (providersMap.value[key]) {
-      const index = providersMap.value[key].findIndex(p => p.id === id)
-      if (index !== -1) {
-        providersMap.value[key][index] = provider
-      }
+    // 按 id 找回所在分组，而不是认定它一定在当前分组：请求期间用户可能已经切了
+    // tab，那时写当前分组会落空，界面就会停在旧值
+    for (const list of Object.values(providersMap.value)) {
+      const index = list.findIndex((p) => p.id === id)
+      if (index !== -1) list[index] = provider
     }
     return provider
   }
@@ -97,9 +96,28 @@ export const useProviderStore = defineStore('providers', () => {
     await fetchProviders()
   }
 
-  async function unblacklist(id: number) {
-    await providersApi.unblacklist(id)
-    await fetchProviders()
+  // 熔断状态由后端推送，直接就地更新所有缓存分组，避免切换页面才刷新
+  function applyHealthEvent(health: ProviderHealthEvent) {
+    for (const list of Object.values(providersMap.value)) {
+      const provider = list.find((p) => p.id === health.provider_id)
+      if (!provider) continue
+      provider.consecutive_failures = health.consecutive_failures
+      provider.blacklisted_until = health.blacklisted_until
+      provider.is_blacklisted = health.is_blacklisted
+    }
+  }
+
+  // 解除时刻随列表一起下发，到期不必回头问后端：按后端 ProviderResponse 的口径
+  // 本地算一遍即可（熔断已过期则失败计数显示为 0，blacklisted_until 保持原值）
+  function expireBlacklists(nowSeconds: number) {
+    for (const list of Object.values(providersMap.value)) {
+      for (const provider of list) {
+        if (!provider.is_blacklisted || !provider.blacklisted_until) continue
+        if (provider.blacklisted_until > nowSeconds) continue
+        provider.is_blacklisted = false
+        provider.consecutive_failures = 0
+      }
+    }
   }
 
   return {
@@ -113,6 +131,7 @@ export const useProviderStore = defineStore('providers', () => {
     deleteProvider,
     reorderProviders,
     resetFailures,
-    unblacklist
+    applyHealthEvent,
+    expireBlacklists
   }
 })
