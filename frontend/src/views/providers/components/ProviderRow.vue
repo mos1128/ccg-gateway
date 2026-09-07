@@ -95,7 +95,7 @@ function onToggleChange(value: string | number | boolean) {
 </script>
 
 <style scoped>
-.pt-col-protocol { display: flex; align-items: center; gap: 4px; }
+.pt-col-protocol { display: flex; align-items: center; justify-content: center; gap: 4px; }
 .pt-protocol { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pt-translate { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--v2-text-3); }
 </style>
