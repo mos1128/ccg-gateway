@@ -272,9 +272,9 @@ Session adapter 是已经编译进 CCG 的解析实现。用户模板不能只�
 | Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
 | `enabled` | `true` / `false` | 是否支持插件管理。 |
-| `adapter` | 非空字符串 | `enabled: true` 时必填。当前实际实现为 `claude_code`。 |
+| `adapter` | 非空字符串 | `enabled: true` 时必填。当前实际实现为 `dsh`。 |
 
-Plugin adapter 是已经编译进 CCG 的插件生命周期实现，不能由模板新增。
+Plugin adapter 是已经编译进 CCG 的插件生命周期实现，不能由模板新增。`dsh` adapter 通过 `dsh plugin` 命令（pnpm 转发）管理 DeepSeek Harness profile 的插件，输入 Git 仓库地址即可安装。
 
 ### `prompts`
 

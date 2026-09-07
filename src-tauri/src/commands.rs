@@ -3,10 +3,10 @@ use crate::config::{
 };
 use crate::db::models::{
     AdvancedStatsRow, CliSettingsResponse, CliSettingsUpdate, DiscoverableSkill, GatewaySettings,
-    InstalledSkillResponse, MarketplaceInfo, McpCliFlag, McpConfig, McpCreate, McpResponse,
+    InstalledSkillResponse, McpCliFlag, McpConfig, McpCreate, McpResponse,
     McpUpdate, OfficialCredential, OfficialCredentialCreate, OfficialCredentialResponse,
     OfficialCredentialUpdate, PaginatedLogs, PaginatedProjects, PaginatedSessions,
-    PluginFavoriteItem, PluginItem, ProjectInfo, PromptCliFlag, PromptCreate, PromptPreset,
+    PluginItem, ProjectInfo, PromptCliFlag, PromptCreate, PromptPreset,
     PromptResponse, PromptUpdate, Provider, ProviderStatsResponse, RequestLogDetail,
     RequestLogItem, ScheduledTaskCreate, ScheduledTaskResponse, ScheduledTaskRun,
     ScheduledTaskRunItem, ScheduledTaskRunListResponse, ScheduledTaskUpdate, SessionInfo,
@@ -243,9 +243,6 @@ fn map_db_error(e: sqlx::Error) -> String {
             && err_str.contains("official_credentials.name")
         {
             return "同类型的凭证名称已存在".to_string();
-        }
-        if err_str.contains("plugin_favorites.plugin_id") {
-            return "该插件已收藏".to_string();
         }
         if err_str.contains("skill_favorites.skill_key") {
             return "该技能已收藏".to_string();

@@ -20,8 +20,8 @@
         />
         <div v-if="translated" class="dr-translate-note">该端点类型与 Agent 协议不同，转发时自动转换。转换后模型的思考内容只能在本服务商内延续，一旦故障转移到别的服务商，历史思考链会被丢弃（对话本身不受影响）。</div>
       </div>
-      <!-- 只有这条链路真会转协议才用得上这个兜底值 -->
-      <div v-if="canTranslate" class="v2-field">
+      <!-- 选了带 [转换] 标记的端点类型才真走转换，也才用得上这个兜底值 -->
+      <div v-if="translated" class="v2-field">
         <label class="v2-label">转换默认 max_tokens</label>
         <input v-model.number="form.translate_max_tokens" type="number" min="1024" step="1024" class="v2-input">
         <div class="v2-hint">转协议时源请求没带 max_tokens 就用该值</div>
@@ -281,24 +281,17 @@ const tabs = [
 const tab = ref('basic')
 const showApiKey = ref(false)
 const manualModel = ref('')
-const protocolOptions = computed(() => props.protocols.map((protocol) => ({
-  value: protocol,
-  label: PROTOCOL_LABELS[protocol],
-})))
-// 端点类型与 Agent 声明的协议都在可转换集合里、且确实不同，这条链路才会走转换。
-const translated = computed(() => {
-  const protocol = props.form.protocol as Protocol
+// Agent 不支持但可转换的端点类型：选中才会真走转换，Gemini 只能透传。
+function needsTranslate(protocol: Protocol): boolean {
   return CONVERTIBLE_PROTOCOLS.includes(protocol)
     && props.declaredProtocols.some((declared) => CONVERTIBLE_PROTOCOLS.includes(declared))
     && !props.declaredProtocols.includes(protocol)
-})
-// 多协议 Agent 声明的协议里只要有一个和端点类型不同，客户端用那个协议发来就会转换，
-// 所以判断「会不会转」要看有没有别的可转协议，而不是端点类型有没有被声明。
-const canTranslate = computed(() => {
-  const protocol = props.form.protocol as Protocol
-  return CONVERTIBLE_PROTOCOLS.includes(protocol)
-    && props.declaredProtocols.some((declared) => CONVERTIBLE_PROTOCOLS.includes(declared) && declared !== protocol)
-})
+}
+const protocolOptions = computed(() => props.protocols.map((protocol) => ({
+  value: protocol,
+  label: needsTranslate(protocol) ? `[转换]${PROTOCOL_LABELS[protocol]}` : PROTOCOL_LABELS[protocol],
+})))
+const translated = computed(() => needsTranslate(props.form.protocol as Protocol))
 
 const providerModels = computed(() => props.modelSync?.models ?? [])
 const modelOptions = computed<AppSelectOption[]>(() => providerModels.value

@@ -38,7 +38,7 @@ This project was initiated based on the author's actual needs to solve various p
 - 🔍 **Request Logs** - Status, first-byte / total latency, token breakdown, cache hit rate, cost derivation, raw request and response for every call
 - 💬 **Traceable Sessions** - Browse session history grouped by project, including thought process, tool calls, and results
 - 🗂️ **Multi-Profile** - Run the same Agent on parallel projects, with different providers per project
-- 🧰 **Shared Tool Config** - Configure MCP, prompts, Skills, and Plugins once, then apply them across multiple Agents
+- 🧰 **Shared Tool Config** - Configure MCP, prompts, and Skills once, then apply them across multiple Agents
 - ☁️ **Cross-Device Sync** - Local export/import and WebDAV cloud backup for quick full-configuration restore across devices
 
 ---
@@ -118,7 +118,7 @@ This project was initiated based on the author's actual needs to solve various p
 - MCP: Configure once, enable/disable across multiple Agents; special Agents get the format converted automatically.
 - Prompts: Configure once, enable/disable across multiple Agents.
 - Skills: add a remote Git repository or local directory as a skill repo, browse and install skills from it, with favorites, reinstall, uninstall, and a stale marker.
-- Plugins: add a plugin marketplace (remote Git repository or local directory), then install, update, uninstall, and favorite plugins.
+- Plugins: install DeepSeek Harness plugins directly from a Git repository URL, with update and uninstall.
 
 ### Appearance & Experience
 

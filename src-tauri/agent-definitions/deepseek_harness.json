@@ -3,7 +3,7 @@
   "id": "deepseek_harness",
   "sort_order": 90,
   "name": "DeepSeek Harness",
-  "remark": "网关会接管 DeepSeek Harness 的 deepseek-official、openai 与 anthropic 路由，分别使用 OpenAI Chat、OpenAI Responses 与 Anthropic Messages 协议，选择对应的模型即可。",
+  "remark": "网关会接管 DeepSeek Harness 的 deepseek-official、openai 与 anthropic 服务商，分别使用 OpenAI Chat、OpenAI Responses 与 Anthropic Messages 协议，选择对应的模型即可。",
   "icon": {
     "view_box": "0 0 50 50",
     "paths": [
@@ -112,7 +112,7 @@
       "adapter": "dsh"
     },
     "sessions": { "enabled": false },
-    "plugins": { "enabled": false },
+    "plugins": { "enabled": true, "adapter": "dsh" },
     "prompts": { "enabled": true, "file": "AGENTS.md" }
   }
 }

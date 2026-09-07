@@ -79,7 +79,7 @@
       "servers_path": ["mcpServers"]
     },
     "sessions": { "enabled": true, "adapter": "claude_code" },
-    "plugins": { "enabled": true, "adapter": "claude_code" },
+    "plugins": { "enabled": false },
     "prompts": { "enabled": true, "file": "CLAUDE.md" }
   }
 }

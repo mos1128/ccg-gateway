@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 38,
+            version: 39,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -1042,66 +1042,6 @@ impl DatabaseSchema {
                 ],
                 primary_key: vec!["id".to_string()],
                 unique_constraints: vec![vec!["cli_type".to_string(), "name".to_string()]],
-            },
-        );
-
-        // plugin_favorites 表（收藏的插件）
-        tables.insert(
-            "plugin_favorites".to_string(),
-            TableDefinition {
-                name: "plugin_favorites".to_string(),
-                columns: vec![
-                    ColumnDefinition {
-                        name: "id".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "plugin_id".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "plugin_name".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "marketplace_name".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "version".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "description".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "created_at".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: None,
-                    },
-                    ColumnDefinition {
-                        name: "marketplace_source".to_string(),
-                        data_type: "TEXT".to_string(),
-                        nullable: true,
-                        default_value: None,
-                    },
-                ],
-                primary_key: vec!["id".to_string()],
-                unique_constraints: vec![vec!["plugin_id".to_string()]],
             },
         );
 

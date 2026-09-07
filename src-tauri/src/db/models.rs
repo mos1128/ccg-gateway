@@ -1268,71 +1268,12 @@ pub struct SystemStatus {
 
 // ==================== Plugin 相关实体 ====================
 
-// 收藏的插件 (对应数据库表)
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct PluginFavorite {
-    pub id: i64,
-    pub plugin_id: String,
-    pub plugin_name: String,
-    pub marketplace_name: String,
-    pub version: Option<String>,
-    pub description: Option<String>,
-    pub created_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct PluginFavoriteCreate {
-    pub plugin_id: String,
-    pub plugin_name: String,
-    pub marketplace_name: String,
-    pub version: Option<String>,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct PluginFavoriteItem {
-    pub plugin_id: String,
-    pub plugin_name: String,
-    pub marketplace_name: String,
-    pub is_installed: bool,
-    pub marketplace_source: Option<String>,
-}
-
-// 市场信息 (从 JSON 解析)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MarketplaceInfo {
-    pub name: String,
-    #[serde(default)]
-    pub marketplace_source: Option<String>,
-}
-
-// 市场中的插件信息 (从 JSON 解析)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MarketplacePlugin {
-    pub name: String,
-    pub version: Option<String>,
-    pub description: Option<String>,
-    pub marketplace_name: String,
-}
-
-// 已安装插件信息 (从 CLI 解析)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InstalledPlugin {
-    pub name: String,
-    pub version: Option<String>,
-    pub description: Option<String>,
-    pub marketplace_name: Option<String>,
-    pub is_enabled: bool,
-}
-
-// 合并后的插件展示项
+// 已安装插件信息（从 dsh profile 解析）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginItem {
+    /// 所属 dsh profile 名
+    pub profile: String,
     pub name: String,
     pub version: Option<String>,
     pub description: Option<String>,
-    pub marketplace_name: String,
-    pub is_installed: Option<bool>,
-    pub is_enabled: Option<bool>,
-    pub is_favorited: Option<bool>,
 }

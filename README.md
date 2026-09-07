@@ -38,7 +38,7 @@ CCG Gateway 是一款面向 Claude Code、Codex、Gemini CLI、OpenCode、Kimi C
 - 🔍 **请求日志** - 每次调用的状态、首字节 / 总耗时、Token 明细、缓存命中率、费用推导、原始请求与响应
 - 💬 **会话追溯** - 按项目分组浏览会话历史，可查看思考过程、工具调用及返回结果
 - 🗂️ **多 Profile** - 使用同一个 Agent 并行开发多个项目时，不同项目使用不同服务商
-- 🧰 **快捷配置** - MCP、提示词、Skill、Plugin 配置一次，即可应用到多个 Agent
+- 🧰 **快捷配置** - MCP、提示词、Skill 配置一次，即可应用到多个 Agent
 - ☁️ **跨设备同步** - 本地导出导入与 WebDAV 云备份，跨设备快速恢复完整配置
 
 ---
@@ -118,7 +118,7 @@ CCG Gateway 是一款面向 Claude Code、Codex、Gemini CLI、OpenCode、Kimi C
 - MCP：一次配置，多 Agent 启用 / 停用，特殊 Agent 会自动转换格式。
 - 提示词：一次配置，多 Agent 启用 / 停用。
 - Skill：支持添加远程 Git 仓库或本地目录作为技能仓库，浏览并安装其中的技能，提供收藏、重装、卸载与失效标记。
-- 插件：支持添加插件市场（远程 Git 仓库或本地目录），提供安装、更新、卸载与收藏。
+- 插件：输入 Git 仓库地址即可直接安装 DeepSeek Harness 插件，提供更新与卸载。
 
 ### 外观与体验
 

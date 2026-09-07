@@ -716,50 +716,14 @@ export interface SystemLogListResponse {
 }
 
 // Plugin types
-export interface InstalledPlugin {
-  name: string
-  version: string | null
-  description: string | null
-  marketplace_name: string | null
-  is_enabled: boolean
-}
-
-export interface MarketplaceInfo {
-  name: string
-  marketplace_source: string | null
-}
-
-export interface MarketplacePlugin {
-  name: string
-  version: string | null
-  description: string | null
-  marketplace_name: string
-}
-
 export interface PluginItem {
+  profile: string
   name: string
   version: string | null
   description: string | null
-  marketplace_name: string
-  is_installed: boolean | null
-  is_enabled: boolean | null
-  is_favorited: boolean | null
-}
-
-export interface PluginFavoriteItem {
-  plugin_id: string
-  plugin_name: string
-  marketplace_name: string
-  is_installed: boolean
-  marketplace_source: string | null
 }
 
 // 插件操作返回结果
 export interface PluginActionResult {
-  cli_output: string
-}
-
-// 市场操作返回结果
-export interface MarketplaceActionResult {
   cli_output: string
 }

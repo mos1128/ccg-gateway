@@ -465,14 +465,7 @@ pub fn run() {
             commands::credential_commands::set_cli_mode,
             commands::credential_commands::set_dashboard_cli_mode,
             commands::plugin_commands::get_installed_plugins,
-            commands::plugin_commands::get_marketplace_plugins,
-            commands::plugin_commands::get_marketplaces,
             commands::plugin_commands::plugin_action,
-            commands::plugin_commands::get_plugin_favorites,
-            commands::plugin_commands::add_plugin_favorite,
-            commands::plugin_commands::remove_plugin_favorite,
-            commands::plugin_commands::marketplace_action,
-            commands::plugin_commands::install_favorite_plugin,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

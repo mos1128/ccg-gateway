@@ -3,7 +3,7 @@
   "id": "zcode",
   "sort_order": 60,
   "name": "ZCode",
-  "remark": "网关会添加两个自定义服务商，支持 Anthropic Messages 和 OpenAI Responses 协议，在对应服务商中添加模型即可。 \n 如果开启路由模式未见新增服务商，在 ZCode 模型设置界面刷新=即可。",
+  "remark": "网关会添加两个自定义服务商，支持 Anthropic Messages 和 OpenAI Responses 协议，在对应服务商中添加模型即可。 \n 如果开启路由模式未见新增服务商，在 ZCode 模型设置界面刷新即可。",
   "icon": {
     "view_box": "-80 -99 416 416",
     "paths": [
