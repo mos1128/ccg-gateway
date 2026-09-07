@@ -38,7 +38,7 @@
           <table class="v2-table">
             <thead>
               <tr>
-                <th>ID</th><th>时间</th><th>Agent</th><th>服务商</th><th>状态</th><th>耗时 (首/总)</th>
+                <th>ID</th><th>Agent</th><th>服务商</th><th>状态</th><th>耗时 (首/总)</th>
                 <th>
                   <el-tooltip content="输入 / 输出" placement="top" effect="light" :show-after="250">
                     <span>Token (I/O)</span>
@@ -49,13 +49,12 @@
                     <span>缓存命中率</span>
                   </el-tooltip>
                 </th>
-                <th>费用</th><th>模型映射</th><th class="logs-sticky-col">操作</th>
+                <th>费用</th><th>时间</th><th>模型映射</th><th class="logs-sticky-col">操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in requestLogs" :key="row.id">
                 <td class="mono">{{ row.id }}</td>
-                <td class="mono">{{ formatTime(row.created_at) }}</td>
                 <td>
                   <el-tooltip :content="formatCliLabel(row.cli_type)" placement="top" effect="light" :show-after="250">
                     <div class="logs-cli-cell">
@@ -109,6 +108,7 @@
                     <span class="logs-cost-info" tabindex="0" aria-label="查看费用计算"><el-icon><InfoFilled /></el-icon></span>
                   </el-tooltip>
                 </td>
+                <td class="mono">{{ formatTime(row.created_at) }}</td>
                 <td class="mono logs-map">
                   <template v-if="row.source_model || row.target_model">
                     <span class="logs-model-badge">{{ row.source_model || '-' }}</span>
