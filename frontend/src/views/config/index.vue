@@ -811,7 +811,6 @@ onMounted(async () => {
 .webdav-table-scroll thead th { position: sticky; top: 0; z-index: 1; }
 .webdav-table-scroll .v2-table th,
 .webdav-table-scroll .v2-table td { padding: 12px 14px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.webdav-table-scroll .v2-table .webdav-col-name { text-align: left; }
 .webdav-table-scroll .v2-table .webdav-col-time { width: 172px; }
 .webdav-table-scroll .v2-table .webdav-col-size { width: 96px; }
 .webdav-table-scroll .v2-table .webdav-col-act { width: 108px; }
@@ -819,6 +818,7 @@ onMounted(async () => {
 .webdav-file-cell {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   min-width: 0;
 }
