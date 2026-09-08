@@ -56,7 +56,10 @@ CCG Gateway 是一款面向 Claude Code、Codex、Gemini CLI、OpenCode、Kimi C
   <img src="img/8.png" width="48%" />
   <img src="img/9.png" width="48%" />
   <img src="img/10.png" width="48%" />
+  <img src="img/11.png" width="48%" />
+  <img src="img/12.png" width="48%" />
 </div>
+
 
 ---
 

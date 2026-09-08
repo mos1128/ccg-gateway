@@ -56,6 +56,8 @@ This project was initiated based on the author's actual needs to solve various p
   <img src="img/8.png" width="48%" />
   <img src="img/9.png" width="48%" />
   <img src="img/10.png" width="48%" />
+  <img src="img/11.png" width="48%" />
+  <img src="img/12.png" width="48%" />
 </div>
 
 ---
@@ -258,4 +260,3 @@ Thanks to the contributors of the following open-source projects:
 <div align="center">
 <strong>If this project is helpful to you, please give it a ⭐️ Star!</strong>
 </div>
-
