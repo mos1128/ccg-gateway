@@ -36,7 +36,4 @@ const tabs = computed(() => (props.feature
   align-items: center;
   justify-content: center;
 }
-.v2-chip.on {
-  color: var(--v2-text);
-}
 </style>

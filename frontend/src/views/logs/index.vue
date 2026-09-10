@@ -948,7 +948,7 @@ onUnmounted(() => {
   border-left: 1px solid var(--v2-surface-3);
 }
 .logs-scroll tbody tr:hover td.logs-sticky-col {
-  background: var(--v2-surface-2);
+  background: var(--v2-row-hover-bg);
 }
 
 .logs-time-danger { color: var(--v2-danger); }

@@ -1554,7 +1554,7 @@ onUnmounted(() => {
 .pt-row.off:hover::before {
   background: var(--v2-text-3);
 }
-.pt-row:hover { background: var(--v2-surface-2); }
+.pt-row:hover { background: var(--v2-row-hover-bg); }
 .pt-row.bl { background: var(--v2-danger-bg); }
 .pt-row .pt-cols { height: 54px; }
 .pt-row .pt-cols > div { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-regular); line-height: 1.35; color: var(--v2-text); }

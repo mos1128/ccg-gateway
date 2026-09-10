@@ -202,6 +202,7 @@ onMounted(async () => {
   --v2-surface: var(--el-bg-color);
   --v2-surface-2: var(--el-fill-color-light);
   --v2-surface-3: var(--el-border-color-extra-light);
+  --v2-row-hover-bg: var(--el-fill-color);
   --v2-tab-divider: #dfe3e9;
   --v2-text: var(--el-text-color-primary);
   --v2-text-2: var(--el-text-color-regular);
@@ -898,9 +899,9 @@ textarea.v2-input {
   transition: background 0.15s;
 }
 .v2-chip.on {
-  background: color-mix(in srgb, var(--v2-accent) 9%, var(--v2-surface));
+  background: color-mix(in srgb, var(--v2-accent) 18%, var(--v2-surface));
   border-color: transparent;
-  color: var(--v2-accent);
+  color: var(--v2-text-2);
   box-shadow: none;
 }
 .v2-chip.on .v2-chip-dot { background: var(--v2-accent); }
@@ -1007,7 +1008,7 @@ html.dark .v2-kpi {
   border-bottom: none;
 }
 .v2-table tbody tr:hover td {
-  background: var(--v2-surface-2);
+  background: var(--v2-row-hover-bg);
 }
 
 /* 更多菜单 popper */
