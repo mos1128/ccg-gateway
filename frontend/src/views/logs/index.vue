@@ -35,13 +35,23 @@
         </div>
 
         <div class="logs-scroll">
-          <table class="v2-table">
+          <table class="v2-table logs-request-table">
             <thead>
               <tr>
-                <th>ID</th><th>Agent</th><th>服务商</th><th>状态</th><th>耗时 (首/总)</th>
+                <th>ID</th><th>Agent</th><th>服务商</th><th>状态</th>
                 <th>
-                  <el-tooltip content="输入 / 输出" placement="top" effect="light" :show-after="250">
-                    <span>Token (I/O)</span>
+                  <el-tooltip content="首字节耗时 / 总耗时" placement="top" effect="light" :show-after="250">
+                    <span>耗时</span>
+                  </el-tooltip>
+                </th>
+                <th>
+                  <el-tooltip content="生成速度：输出 Token ÷（总耗时 − 首字节耗时）" placement="top" effect="light" :show-after="250">
+                    <span>速度</span>
+                  </el-tooltip>
+                </th>
+                <th>
+                  <el-tooltip content="输入 Token / 输出 Token" placement="top" effect="light" :show-after="250">
+                    <span>Token</span>
                   </el-tooltip>
                 </th>
                 <th>
@@ -72,13 +82,20 @@
                   <span v-else-if="row.status_code" class="v2-pill dot" :class="statusPill(row.status_code)">{{ row.status_code }}</span>
                   <span v-else>-</span>
                 </td>
-                <td class="mono" :class="elapsedTimeClass(row)">{{ formatLatencyPair(row) }}</td>
+                <td class="mono" :class="elapsedTimeClass(row)">
+                  <div class="logs-cell-stack logs-metric-stack">
+                    <span class="logs-cell-line"><span class="logs-cell-label">首</span><span>{{ formatDuration(row.first_byte_ms) }}</span></span>
+                    <span class="logs-cell-line"><span class="logs-cell-label">总</span><span>{{ formatDuration(requestElapsedMs(row)) }}</span></span>
+                  </div>
+                </td>
                 <td class="mono">
-                  <span class="tok-group">
-                    <span class="tok-val">{{ formatTokens(row.input_tokens) }}</span>
-                    <span class="tok-sep">/</span>
-                    <span class="tok-val">{{ formatTokens(row.output_tokens) }}</span>
-                  </span>
+                  <span class="logs-speed-cell">{{ formatTokenSpeed(row) }}</span>
+                </td>
+                <td class="mono">
+                  <div class="logs-cell-stack logs-metric-stack">
+                    <span class="logs-cell-line"><span class="logs-cell-label">入</span><span>{{ formatTokens(row.input_tokens) }}</span></span>
+                    <span class="logs-cell-line"><span class="logs-cell-label">出</span><span>{{ formatTokens(row.output_tokens) }}</span></span>
+                  </div>
                 </td>
                 <td class="mono">{{ formatCacheHitRate(row) }}</td>
                 <td class="mono logs-cost-cell">
@@ -108,23 +125,40 @@
                     <span class="logs-cost-info" tabindex="0" aria-label="查看费用计算"><el-icon><InfoFilled /></el-icon></span>
                   </el-tooltip>
                 </td>
-                <td class="mono">{{ formatTime(row.created_at) }}</td>
+                <td class="mono">
+                  <el-tooltip :content="formatFullTime(row.created_at)" placement="top" effect="light" :show-after="250">
+                    <div class="logs-cell-stack logs-time-cell">
+                      <span class="logs-cell-sub">{{ formatLogDate(row.created_at) }}</span>
+                      <span>{{ formatClockTime(row.created_at) }}</span>
+                    </div>
+                  </el-tooltip>
+                </td>
                 <td class="mono logs-map">
-                  <template v-if="row.source_model || row.target_model">
-                    <span class="logs-model-badge">{{ row.source_model || '-' }}</span>
-                    <el-tooltip v-if="row.upstream_protocol" :content="`协议转换：${formatProtocolLabel(row.protocol)} → ${formatProtocolLabel(row.upstream_protocol)}`" placement="top" effect="light" :show-after="250">
-                      <span class="logs-model-arrow translated">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
-                      </span>
-                    </el-tooltip>
-                    <span v-else class="logs-model-arrow">→</span>
-                    <span class="logs-model-badge">{{ row.target_model || '-' }}</span>
-                  </template>
+                  <div v-if="requestModel(row)" class="logs-cell-stack logs-model-stack">
+                    <span class="logs-cell-line logs-model-line">
+                      <span class="logs-cell-label">请求</span>
+                      <el-tooltip :content="requestModel(row)" placement="top" effect="light" :show-after="400">
+                        <span class="logs-model-badge">{{ requestModel(row) }}</span>
+                      </el-tooltip>
+                    </span>
+                    <span class="logs-cell-line logs-model-line">
+                      <span class="logs-cell-label">上游</span>
+                      <el-tooltip v-if="row.target_model" :content="row.target_model" placement="top" effect="light" :show-after="400">
+                        <span class="logs-model-badge">{{ row.target_model }}</span>
+                      </el-tooltip>
+                      <span v-else class="logs-model-badge logs-model-direct">直传</span>
+                      <el-tooltip v-if="row.upstream_protocol" :content="`协议转换：${formatProtocolLabel(row.protocol)} → ${formatProtocolLabel(row.upstream_protocol)}`" placement="top" effect="light" :show-after="250">
+                        <span class="logs-model-protocol">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
+                        </span>
+                      </el-tooltip>
+                    </span>
+                  </div>
                   <span v-else class="logs-model-empty">-</span>
                 </td>
                 <td class="logs-sticky-col"><a v-if="row.finished_at" class="logs-link" @click="showRequestDetail(row.id)">详情</a><span v-else class="v2-hint">-</span></td>
               </tr>
-              <tr v-if="requestLogs.length === 0"><td colspan="11" class="logs-empty">暂无日志记录</td></tr>
+              <tr v-if="requestLogs.length === 0"><td colspan="12" class="logs-empty">暂无日志记录</td></tr>
             </tbody>
           </table>
         </div>
@@ -500,6 +534,24 @@ function formatTime(timestamp: number): string {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
+function formatClockTime(timestamp: number): string {
+  const d = new Date(timestamp * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+function formatLogDate(timestamp: number): string {
+  const d = new Date(timestamp * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${String(d.getFullYear()).slice(-2)}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+function formatFullTime(timestamp: number): string {
+  const d = new Date(timestamp * 1000)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
 function formatCliLabel(type: string): string {
   return agentStore.get(type)?.name || type
 }
@@ -521,9 +573,27 @@ function formatDuration(ms: number): string {
   return ms > 0 ? `${(ms / 1000).toFixed(2)}s` : '-'
 }
 
-function formatLatencyPair(row: RequestLogListItem): string {
-  const elapsed = row.finished_at ? row.elapsed_ms : Math.max(0, (currentTimestamp.value - row.created_at) * 1000)
-  return `${formatDuration(row.first_byte_ms)}/${formatDuration(elapsed)}`
+function requestElapsedMs(row: RequestLogListItem): number {
+  return row.finished_at ? row.elapsed_ms : Math.max(0, (currentTimestamp.value - row.created_at) * 1000)
+}
+
+function tokenSpeed(row: RequestLogListItem): number | null {
+  if (!row.finished_at || row.output_tokens <= 0 || row.first_byte_ms <= 0) return null
+  const generationMs = row.elapsed_ms - row.first_byte_ms
+  return generationMs > 0 ? (row.output_tokens * 1000) / generationMs : null
+}
+
+function formatTokenSpeed(row: RequestLogListItem): string {
+  const speed = tokenSpeed(row)
+  if (speed === null) return '—'
+  const value = speed >= 1000
+    ? `${Number((speed / 1000).toFixed(1))}K`
+    : Number(speed.toFixed(speed >= 100 ? 0 : 1)).toString()
+  return `${value}t/s`
+}
+
+function requestModel(row: RequestLogListItem): string {
+  return row.source_model || row.model_id || row.target_model || ''
 }
 
 function formatCacheHitRate(row: RequestLogListItem): string {
@@ -805,6 +875,10 @@ onUnmounted(() => {
 .logs-scroll { flex: 1; overflow: auto; }
 .logs-scroll thead th { position: sticky; top: 0; z-index: 1; text-align: center; }
 .logs-scroll tbody td { text-align: center; }
+.logs-request-table { min-width: 1060px; }
+.logs-scroll .logs-request-table th,
+.logs-scroll .logs-request-table td { padding-left: 10px; padding-right: 10px; }
+.logs-scroll .logs-request-table td { height: 56px; padding-top: 8px; padding-bottom: 8px; }
 .logs-map { text-align: center; }
 .logs-danger { color: var(--v2-danger); }
 .logs-running { min-width: 42px; justify-content: center; }
@@ -843,9 +917,20 @@ onUnmounted(() => {
 .logs-cli-cell { display: inline-flex; align-items: center; gap: 6px; }
 .logs-cli-icon { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; flex-shrink: 0; }
 .logs-cli-text { font-size: var(--v2-fs-sm); color: var(--v2-text); }
-.logs-model-badge { display: inline-block; font-size: var(--v2-fs-xs); padding: 2px 6px; background: var(--v2-surface-2); border: 1px solid var(--v2-surface-2); border-radius: 4px; color: var(--v2-text-2); white-space: nowrap; vertical-align: middle; }
-.logs-model-arrow { margin: 0 4px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); vertical-align: middle; }
-.logs-model-arrow.translated { display: inline-flex; align-items: center; color: var(--v2-warning); cursor: help; }
+.logs-cell-stack { display: inline-flex; min-height: 34px; flex-direction: column; align-items: center; justify-content: center; gap: 3px; line-height: 1.1; vertical-align: middle; }
+.logs-cell-line { display: inline-flex; max-width: 100%; align-items: center; gap: 5px; }
+.logs-cell-label { flex: none; color: var(--v2-text-3); font-family: var(--font-ui); font-size: 11px; line-height: 1; }
+.logs-cell-sub { color: var(--v2-text-3); font-size: 11px; }
+.logs-metric-stack { align-items: flex-start; }
+.logs-metric-stack .logs-cell-label { width: 11px; text-align: center; }
+.logs-speed-cell { display: inline-block; white-space: nowrap; }
+.logs-time-cell { gap: 3px; }
+.logs-model-stack { width: 150px; align-items: stretch; }
+.logs-model-line { width: 100%; min-width: 0; }
+.logs-model-line .logs-cell-label { width: 24px; text-align: right; }
+.logs-model-badge { display: block; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; font-size: 11px; padding: 2px 6px; background: var(--v2-surface-2); border: 1px solid var(--v2-surface-2); border-radius: 4px; color: var(--v2-text-2); white-space: nowrap; }
+.logs-model-direct { color: var(--v2-text-3); font-family: var(--font-ui); text-align: center; }
+.logs-model-protocol { display: inline-flex; flex: none; align-items: center; color: var(--v2-warning); cursor: help; }
 .logs-model-empty { color: var(--v2-text-3); }
 
 .logs-scroll th.logs-sticky-col {
@@ -870,9 +955,6 @@ onUnmounted(() => {
 .logs-time-danger-slow { color: var(--v2-danger); font-weight: var(--v2-fw-regular); }
 .logs-time-warning { color: var(--v2-warning); font-weight: var(--v2-fw-regular); }
 
-.tok-group { display: inline-flex; align-items: center; gap: 3px; font-family: inherit; }
-.tok-val { font-size: var(--v2-fs-sm); color: var(--v2-text); }
-.tok-sep { color: var(--v2-text-3); margin: 0 1px; font-size: var(--v2-fs-sm); }
 .logs-cost-cell { white-space: nowrap; }
 .logs-cost-info { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-left: 5px; color: var(--v2-text-3); cursor: help; vertical-align: -2px; }
 .logs-cost-info:hover, .logs-cost-info:focus { color: var(--v2-text-2); outline: none; }
