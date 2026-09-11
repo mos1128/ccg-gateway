@@ -769,23 +769,7 @@ async fn write_provider_direct_config_impl(
     previous_preset: Option<&str>,
     write_mode_override: Option<&str>,
 ) -> Result<Vec<PathBuf>, String> {
-    if provider.base_url.trim().is_empty() || provider.api_key.trim().is_empty() {
-        return Err(format!(
-            "服务商 {} 的 Base URL 或 API Key 为空",
-            provider.name
-        ));
-    }
     let resolved = resolved_agent(db, &provider.cli_type).await?;
-    if !resolved
-        .protocols
-        .iter()
-        .any(|protocol| protocol.as_str() == provider.protocol.trim())
-    {
-        return Err(format!(
-            "Agent {} 未声明 Provider Protocol {}",
-            resolved.name, provider.protocol
-        ));
-    }
     let feature = &resolved.features.provider_config;
     if !feature.enabled {
         return Err(format!("Agent {} 不支持服务商直连模式", resolved.name));

@@ -336,6 +336,39 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
     Ok(response)
 }
 
+async fn apply_first_enabled_provider_direct(
+    db: &SqlitePool,
+    cli_type: &str,
+    profile: &str,
+) -> Result<()> {
+    let provider = crate::services::routing::get_first_enabled_provider_for_direct(
+        db, cli_type, profile,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if let Some(provider) = provider {
+        crate::services::agent_config::write_provider_direct_config(db, &provider).await?;
+        remember_default_provider_direct_provider(db, &provider, now_timestamp()).await?;
+    } else if profile == DEFAULT_PROFILE {
+        sqlx::query(
+            "UPDATE cli_settings SET last_provider_direct_provider_id = NULL, updated_at = ? WHERE cli_type = ?",
+        )
+        .bind(now_timestamp())
+        .bind(cli_type)
+        .execute(db)
+        .await
+        .map_err(map_db_error)?;
+    }
+
+    Ok(())
+}
+
+async fn refresh_provider_direct_config(db: &SqlitePool, active: &Provider) -> Result<()> {
+    crate::services::agent_config::remove_provider_direct_config_for_provider(db, active).await?;
+    apply_first_enabled_provider_direct(db, &active.cli_type, &active.profile).await
+}
+
 #[tauri::command]
 pub async fn write_provider_direct_config_command(
     db: State<'_, SqlitePool>,
@@ -349,6 +382,9 @@ pub async fn write_provider_direct_config_command(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "服务商不存在".to_string())?;
+    if provider.enabled == 0 {
+        return Err("已停用的服务商不能用于中转直连".to_string());
+    }
 
     let agent = crate::services::agent::get_agent(db.inner(), &provider.cli_type)
         .await
@@ -500,13 +536,22 @@ pub async fn update_provider(
         .ok_or_else(|| "服务商不存在".to_string())?;
     let provider_name = provider_before.name.clone();
     let provider_cli_type = provider_before.cli_type.clone();
-    let was_direct_active = crate::services::agent_config::provider_direct_active_provider_id(
+    let active_direct_provider_id = crate::services::agent_config::provider_direct_active_provider_id(
         db.inner(),
         &provider_before.cli_type,
         &provider_before.profile,
     )
-    .await?
-        == Some(id);
+    .await?;
+    let active_direct_provider = match active_direct_provider_id {
+        Some(active_id) if active_id == id => Some(provider_before.clone()),
+        Some(active_id) => sqlx::query_as::<_, Provider>("SELECT * FROM providers WHERE id = ?")
+            .bind(active_id)
+            .fetch_optional(db.inner())
+            .await
+            .map_err(|e| e.to_string())?,
+        None => None,
+    };
+    let was_direct_active = active_direct_provider_id == Some(id);
 
     // Check if model maps will be updated (before moving)
     let has_model_maps_update = input.model_maps.is_some();
@@ -540,6 +585,9 @@ pub async fn update_provider(
         .api_key
         .as_ref()
         .is_some_and(|api_key| api_key.trim() != provider_before.api_key.trim());
+    let enabled_changed = input
+        .enabled
+        .is_some_and(|enabled| enabled != (provider_before.enabled != 0));
     let custom_useragent_changed = input.custom_useragent.as_ref().is_some_and(|useragent| {
         useragent.trim()
             != provider_before
@@ -552,16 +600,6 @@ pub async fn update_provider(
         profile_changed || protocol_changed || base_url_changed || api_key_changed;
     let model_sync_config_changed =
         protocol_changed || base_url_changed || api_key_changed || custom_useragent_changed;
-    if was_direct_active && provider_config_changed {
-        let base_url = input
-            .base_url
-            .as_deref()
-            .unwrap_or(&provider_before.base_url);
-        let api_key = input.api_key.as_deref().unwrap_or(&provider_before.api_key);
-        if base_url.trim().is_empty() || api_key.trim().is_empty() {
-            return Err("当前直连服务商的 Base URL 或 API Key 不能为空".to_string());
-        }
-    }
 
     // Build dynamic update query
     let mut updates = vec!["updated_at = ?".to_string()];
@@ -718,21 +756,11 @@ pub async fn update_provider(
         }
     }
 
-    if was_direct_active && provider_config_changed {
-        let provider_after: Provider = sqlx::query_as("SELECT * FROM providers WHERE id = ?")
-            .bind(id)
-            .fetch_one(db.inner())
-            .await
-            .map_err(|e| e.to_string())?;
-        if profile_changed {
-            crate::services::agent_config::remove_provider_direct_config_for_provider(
-                db.inner(),
-                &provider_before,
-            )
-            .await?;
-        }
-        crate::services::agent_config::write_provider_direct_config(db.inner(), &provider_after)
-            .await?;
+    if let Some(active) = active_direct_provider
+        .as_ref()
+        .filter(|_| enabled_changed || (was_direct_active && provider_config_changed))
+    {
+        refresh_provider_direct_config(db.inner(), active).await?;
     }
 
     // Log system event (only if there were actual updates)
@@ -817,6 +845,11 @@ pub async fn delete_provider(
     .map_err(map_db_error)?;
     tx.commit().await.map_err(|e| e.to_string())?;
 
+    if was_direct_active {
+        apply_first_enabled_provider_direct(db.inner(), &provider.cli_type, &provider.profile)
+            .await?;
+    }
+
     // Log system event
     let _ = crate::services::stats::record_system_log(
         &log_db.0,
@@ -840,17 +873,22 @@ async fn reorder_providers_impl(db: &SqlitePool, ids: Vec<i64>) -> Result<()> {
     .fetch_optional(db)
     .await
     .map_err(|e| e.to_string())?;
-    let was_default_provider_direct = if let Some((cli_type, profile)) = &scope {
-        profile == DEFAULT_PROFILE
-            && crate::services::agent_config::provider_direct_active_provider_id(
-                db,
-                cli_type,
-                DEFAULT_PROFILE,
-            )
-            .await?
-            .is_some()
+    let active_direct_provider = if let Some((cli_type, profile)) = &scope {
+        let active_id = crate::services::agent_config::provider_direct_active_provider_id(
+            db, cli_type, profile,
+        )
+        .await?;
+        if let Some(active_id) = active_id {
+            sqlx::query_as::<_, Provider>("SELECT * FROM providers WHERE id = ?")
+                .bind(active_id)
+                .fetch_optional(db)
+                .await
+                .map_err(|e| e.to_string())?
+        } else {
+            None
+        }
     } else {
-        false
+        None
     };
 
     // 使用 CASE WHEN 批量更新（避免 N 次单独更新）
@@ -870,18 +908,8 @@ async fn reorder_providers_impl(db: &SqlitePool, ids: Vec<i64>) -> Result<()> {
 
     sqlx::query(&sql).execute(db).await.map_err(map_db_error)?;
 
-    if was_default_provider_direct {
-        let (cli_type, profile) = scope.expect("provider scope should exist");
-        let provider: Provider = sqlx::query_as(
-            "SELECT * FROM providers WHERE cli_type = ? AND profile = ? ORDER BY sort_order, id LIMIT 1",
-        )
-        .bind(&cli_type)
-        .bind(&profile)
-        .fetch_one(db)
-        .await
-        .map_err(|e| e.to_string())?;
-        crate::services::agent_config::write_provider_direct_config(db, &provider).await?;
-        remember_default_provider_direct_provider(db, &provider, now_timestamp()).await?;
+    if let Some(active) = &active_direct_provider {
+        refresh_provider_direct_config(db, active).await?;
     }
 
     Ok(())

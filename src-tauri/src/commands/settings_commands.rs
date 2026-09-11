@@ -321,16 +321,6 @@ async fn collect_provider_direct_rewrite_ids(db: &SqlitePool, cli_type: &str) ->
     Ok(ids)
 }
 
-fn validate_provider_direct_provider(provider: &Provider) -> Result<()> {
-    if provider.base_url.trim().is_empty() || provider.api_key.trim().is_empty() {
-        return Err(format!(
-            "服务商 {} 的 Base URL 或 API Key 为空",
-            provider.name
-        ));
-    }
-    Ok(())
-}
-
 async fn provider_direct_rewrite_providers(
     db: &SqlitePool,
     cli_type: &str,
@@ -347,7 +337,6 @@ async fn provider_direct_rewrite_providers(
         .await
         .map_err(|e| e.to_string())?
         {
-            validate_provider_direct_provider(&provider)?;
             providers.push(provider);
         }
     }
@@ -356,17 +345,15 @@ async fn provider_direct_rewrite_providers(
         return Ok(providers);
     }
 
-    let provider = sqlx::query_as::<_, Provider>(
-        "SELECT * FROM providers WHERE cli_type = ? AND profile = ? AND enabled = 1 ORDER BY sort_order, id LIMIT 1",
+    let provider = crate::services::routing::get_first_enabled_provider_for_direct(
+        db,
+        cli_type,
+        DEFAULT_PROFILE,
     )
-    .bind(cli_type)
-    .bind(DEFAULT_PROFILE)
-    .fetch_optional(db)
     .await
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "default Profile 下没有已启用的服务商，请先启用服务商".to_string())?;
 
-    validate_provider_direct_provider(&provider)?;
     Ok(vec![provider])
 }
 

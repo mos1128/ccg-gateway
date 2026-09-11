@@ -70,6 +70,23 @@ fn provider_matches(protocol: Protocol, provider_protocol: &str) -> bool {
     }
 }
 
+/// 中转直连完全按用户排序选择，只排除用户已经停用的服务商。
+pub async fn get_first_enabled_provider_for_direct(
+    db: &SqlitePool,
+    cli_type: &str,
+    profile: &str,
+) -> Result<Option<Provider>, sqlx::Error> {
+    let profile = normalize_profile(Some(profile)).unwrap_or_else(|| DEFAULT_PROFILE.to_string());
+
+    sqlx::query_as::<_, Provider>(
+        "SELECT * FROM providers WHERE cli_type = ? AND profile = ? AND enabled = 1 ORDER BY sort_order, id LIMIT 1",
+    )
+    .bind(cli_type)
+    .bind(&profile)
+    .fetch_optional(db)
+    .await
+}
+
 /// 已启用、未熔断且凭证配置完整的服务商候选，按用户配置的顺序返回。
 pub async fn get_enabled_configured_providers(
     db: &SqlitePool,

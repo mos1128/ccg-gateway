@@ -437,6 +437,8 @@ pub async fn delete_profile(
                 .fetch_all(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
+        let provider_id_set: Vec<i64> = provider_ids.iter().map(|(id,)| *id).collect();
+        delete_profile_tasks_tx(&mut tx, &cli_type, &profile, &provider_id_set).await?;
         for (id,) in provider_ids {
             sqlx::query("DELETE FROM provider_model_map WHERE provider_id = ?")
                 .bind(id)
@@ -716,6 +718,70 @@ async fn rewrite_tasks_profile_tx(
                 .await
                 .map_err(map_db_error)?;
         }
+    }
+
+    Ok(())
+}
+
+async fn delete_profile_tasks_tx(
+    tx: &mut Transaction<'_, sqlx::Sqlite>,
+    cli_type: &str,
+    profile: &str,
+    provider_ids: &[i64],
+) -> Result<()> {
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT id, payload_json, last_status FROM scheduled_tasks WHERE task_type = 'provider_keepalive'",
+    )
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut task_ids = Vec::new();
+    for (id, payload_json, last_status) in rows {
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(&payload_json) else {
+            continue;
+        };
+
+        let matches_profile = payload
+            .get("cli_type")
+            .and_then(|value| value.as_str())
+            .map(|task_cli_type| task_cli_type == cli_type)
+            .unwrap_or(false)
+            && normalize_profile(payload.get("profile").and_then(|value| value.as_str()))
+                .as_deref()
+                == Some(profile);
+
+        let matches_provider = payload
+            .get("provider_ids")
+            .and_then(|value| value.as_array())
+            .map(|ids| {
+                ids.iter().filter_map(|value| value.as_i64()).any(|id| {
+                    provider_ids.iter().any(|provider_id| *provider_id == id)
+                })
+            })
+            .unwrap_or(false);
+
+        let should_delete = match payload.get("target_mode").and_then(|value| value.as_str()) {
+            Some("all") => matches_profile,
+            Some("selected") => matches_provider,
+            _ => false,
+        };
+
+        if !should_delete {
+            continue;
+        }
+        if last_status == "running" {
+            return Err("该 Profile 关联的定时任务正在执行，请稍后再删除".to_string());
+        }
+        task_ids.push(id);
+    }
+
+    for id in task_ids {
+        sqlx::query("DELETE FROM scheduled_tasks WHERE id = ?")
+            .bind(id)
+            .execute(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
     }
 
     Ok(())

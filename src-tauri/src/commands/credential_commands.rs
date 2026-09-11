@@ -602,28 +602,14 @@ pub async fn write_credential_config(
 }
 
 async fn dashboard_provider_direct_provider(db: &SqlitePool, cli_type: &str) -> Result<Provider> {
-    let agent = crate::services::agent::get_agent(db, cli_type)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("未知 Agent: {}", cli_type))?;
-    let providers =
-        crate::services::routing::get_enabled_configured_providers(db, cli_type, DEFAULT_PROFILE)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    // 直连不经过网关，不能使用路由里的协议转换，只接受 Agent 声明的原生协议。
-    providers
-        .into_iter()
-        .find(|provider| {
-            provider
-                .protocol
-                .parse::<crate::db::models::Protocol>()
-                .ok()
-                .is_some_and(|protocol| agent.protocols.contains(&protocol))
-        })
-        .ok_or_else(|| {
-            "default Profile 下没有启用、配置完整且协议匹配的服务商，请先检查服务商配置".to_string()
-        })
+    crate::services::routing::get_first_enabled_provider_for_direct(
+        db,
+        cli_type,
+        DEFAULT_PROFILE,
+    )
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "default Profile 下没有已启用的服务商，请先启用服务商".to_string())
 }
 
 async fn first_official_credential(db: &SqlitePool, cli_type: &str) -> Result<OfficialCredential> {

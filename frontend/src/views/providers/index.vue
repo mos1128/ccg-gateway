@@ -1263,6 +1263,7 @@ async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
   toggleLoadingId.value = provider.id
   try {
     await providerStore.updateProvider(provider.id, { enabled })
+    await settingsStore.fetchSettings()
     notify(enabled ? '已启用' : '已停用')
   } catch (e: any) {
     notify(getErrorMessage(e, '切换失败'), 'error')
@@ -1284,6 +1285,7 @@ async function handleCommand(command: string, provider: Provider) {
     try {
       await confirm('确定删除该服务商？', '确认')
       await providerStore.deleteProvider(provider.id)
+      await settingsStore.fetchSettings()
       clearModelSyncEntry(provider.id)
       notify('已删除')
     } catch (e) {
