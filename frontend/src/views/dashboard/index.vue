@@ -59,6 +59,9 @@
             value-format="YYYY-MM-DD"
             :default-value="datePanelDefaultValue"
             :shortcuts="shortcuts"
+            :disabled-date="isDateDisabled"
+            @calendar-change="handleCalendarChange"
+            @visible-change="handleDatePickerVisibleChange"
             @change="handleRangeChange"
             class="v2-date-picker"
           />
@@ -386,6 +389,9 @@ async function setMode(cli: CliType, mode: CliMode) {
 
 // ===== 时间段筛选 =====
 const dateRange = ref<[string, string] | null>(null)
+const MAX_STATS_DAYS = 365
+const DAY_MS = 24 * 60 * 60 * 1000
+const pendingRangeStart = ref<Date | null>(null)
 const datePanelDefaultValue = computed<[Date, Date]>(() => {
   const currentMonth = new Date()
   currentMonth.setDate(1)
@@ -436,7 +442,41 @@ const shortcuts = [
   }
 ]
 
-function handleRangeChange() {
+function dateOnlyTimestamp(date: Date) {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function dateTextTimestamp(value: string) {
+  const [year, month, day] = value.split('-').map(Number)
+  return Date.UTC(year, month - 1, day)
+}
+
+function rangeDays(range: [string, string]) {
+  return Math.floor(Math.abs(dateTextTimestamp(range[1]) - dateTextTimestamp(range[0])) / DAY_MS) + 1
+}
+
+function isDateDisabled(date: Date) {
+  if (!pendingRangeStart.value) return false
+  const distance = Math.abs(dateOnlyTimestamp(date) - dateOnlyTimestamp(pendingRangeStart.value)) / DAY_MS
+  return distance >= MAX_STATS_DAYS
+}
+
+function handleCalendarChange(value: [Date, Date | null] | undefined) {
+  pendingRangeStart.value = value?.[0] ? new Date(value[0]) : null
+}
+
+function handleDatePickerVisibleChange(visible: boolean) {
+  if (!visible) pendingRangeStart.value = null
+}
+
+function handleRangeChange(value: [string, string] | null) {
+  pendingRangeStart.value = null
+  if (value && rangeDays(value) > MAX_STATS_DAYS) {
+    dateRange.value = null
+    notify(`日期范围最多 ${MAX_STATS_DAYS} 天`, 'warning')
+    void refreshStatsNow()
+    return
+  }
   void refreshStatsNow()
 }
 
@@ -496,7 +536,7 @@ const kpis = computed(() => {
     },
     {
       id: 'requests',
-      label: '请求次数',
+      label: '全部请求数',
       value: reqs.toLocaleString(),
       color: '',
       borderColor: 'var(--v2-chart-cyan)',
@@ -603,9 +643,8 @@ const chartOption = computed(() => {
     const start = new Date(startStr)
     const end = new Date(endStr)
     let current = new Date(start)
-    const maxDays = 365
     let dayCount = 0
-    while (current <= end && dayCount < maxDays) {
+    while (current <= end && dayCount < MAX_STATS_DAYS) {
       dates.push(fmt(current))
       current.setDate(current.getDate() + 1)
       dayCount++

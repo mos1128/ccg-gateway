@@ -115,7 +115,7 @@ This project was initiated based on the author's actual needs to solve various p
 - System Logs: diagnostic events such as unmatched User-Agent, Agent/protocol config conflicts, and no available provider, with duplicate events collapsed.
 - Log Levels: full logging, log details on failure only, or disable logging. Full logging records request details regardless of success; disabling logging records nothing.
 - Request detail data is stored in files, allowing cleanup of large logs while retaining metadata.
-- Cleanup Scopes: all logs / all details / statistics / logs older than 30 days / details older than 30 days; clearing statistics restarts usage and request counting.
+- Cleanup Scopes: all logs / all details / statistics / logs older than 30 days / details older than 30 days.
 
 ### MCP / Prompts / Skills / Plugin Management
 
