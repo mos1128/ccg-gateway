@@ -782,6 +782,7 @@ const eventTypeMap: Record<string, string> = {
   config_conflict: 'Agent 配置冲突', unknown_agent: '未知 Agent',
   protocol_conflict: '端点类型冲突', protocol_not_matched: '端点类型未匹配', passthrough_failed: '透传失败',
   config_patch_failed: '配置写入失败', official_credential_write_failed: '官方凭证写入失败',
+  gateway_endpoint_migration_failed: '网关地址同步失败',
 }
 const eventTypeOptions = computed<AppSelectOption[]>(() => [{ label: '全部事件', value: '' }, ...Object.entries(eventTypeMap).map(([value, label]) => ({ value, label }))])
 function formatEventType(eventType: string): string {

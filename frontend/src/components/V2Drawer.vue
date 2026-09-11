@@ -11,7 +11,7 @@
         <div class="v2dr" :style="{ width: props.width }" role="dialog">
           <div class="v2dr-head">
             <div class="v2dr-title">{{ title }}</div>
-            <button class="v2dr-close" type="button" aria-label="关闭" @click="close">
+            <button class="v2dr-close" type="button" aria-label="关闭" :disabled="!closable" @click="close">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
             </button>
           </div>
@@ -38,13 +38,15 @@ const props = withDefaults(defineProps<{
   confirmText?: string
   confirmDisabled?: boolean
   closeOnMask?: boolean
+  closable?: boolean
 }>(), {
   width: '50%',
   showFooter: true,
   cancelText: '取消',
   confirmText: '保存',
   confirmDisabled: false,
-  closeOnMask: true
+  closeOnMask: true,
+  closable: true
 })
 
 const emit = defineEmits<{
@@ -53,6 +55,7 @@ const emit = defineEmits<{
 }>()
 
 function close() {
+  if (!props.closable) return
   emit('update:modelValue', false)
 }
 let maskPointerStarted = false
@@ -68,10 +71,10 @@ function handleMaskPointerDown(e: PointerEvent) {
 function handleMaskPointerUp(e: PointerEvent) {
   const shouldClose = maskPointerStarted && isMaskEvent(e)
   resetMaskPointerDown()
-  if (shouldClose && props.closeOnMask) close()
+  if (shouldClose && props.closeOnMask && props.closable) close()
 }
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape' && props.modelValue) {
+  if (e.key === 'Escape' && props.modelValue && props.closable) {
     e.stopPropagation()
     close()
   }
@@ -130,6 +133,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   transition: background 0.15s, color 0.15s;
 }
 .v2dr-close:hover { background: var(--v2-surface-2); color: var(--v2-text); }
+.v2dr-close:disabled { cursor: not-allowed; opacity: 0.45; }
 .v2dr-body { flex: 1; overflow-y: auto; padding: 20px; background: var(--v2-surface); display: flex; flex-direction: column; }
 .v2dr-foot {
   flex-shrink: 0;

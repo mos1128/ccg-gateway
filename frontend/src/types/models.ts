@@ -403,6 +403,8 @@ export interface GatewaySettings {
   launch_on_startup: boolean
   silent_startup: boolean
   minimize_to_tray_on_close: boolean
+  gateway_host: string
+  gateway_port: number
 }
 
 export interface GatewaySettingsRaw {
@@ -411,6 +413,8 @@ export interface GatewaySettingsRaw {
   launch_on_startup: number
   silent_startup: number
   minimize_to_tray_on_close: number
+  gateway_host: string
+  gateway_port: number
 }
 
 export interface TimeoutSettings {
@@ -452,6 +456,14 @@ export interface GatewaySettingsUpdate {
   launch_on_startup?: boolean
   silent_startup?: boolean
   minimize_to_tray_on_close?: boolean
+  gateway_host?: string
+  gateway_port?: number
+}
+
+export interface BootstrapSettingsUpdate {
+  data_dir?: string
+  log_file?: boolean
+  log_level?: string
 }
 
 export interface TimeoutSettingsUpdate {
@@ -504,10 +516,20 @@ export interface CredentialFileDefinition {
 }
 
 export interface SystemStatus {
-  status: 'running' | 'stopped'
+  status: 'starting' | 'running' | 'error'
   host: string
   port: number
   gateway_url: string
+  error_message: string | null
+  host_env_override: boolean
+  port_env_override: boolean
+  data_dir: string
+  default_data_dir: string
+  data_dir_env_override: boolean
+  log_file: boolean
+  log_file_env_override: boolean
+  log_level: string
+  log_level_env_override: boolean
   uptime: number
   version: string
 }

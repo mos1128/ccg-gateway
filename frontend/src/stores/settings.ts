@@ -1,10 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { settingsApi } from '@/api/settings'
-import type { AllSettings, CliType, CliMode, GatewaySettingsUpdate, TimeoutSettingsUpdate, CliSettingsUpdate } from '@/types/models'
+import type { AllSettings, BootstrapSettingsUpdate, CliType, CliMode, GatewaySettingsUpdate, SystemStatus, TimeoutSettingsUpdate, CliSettingsUpdate } from '@/types/models'
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AllSettings | null>(null)
+  const gatewayStatus = ref<SystemStatus | null>(null)
   const loading = ref(false)
 
   async function fetchSettings() {
@@ -12,6 +13,7 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       const { data } = await settingsApi.getAll()
       settings.value = data
+      gatewayStatus.value = data.status
     } finally {
       loading.value = false
     }
@@ -19,7 +21,18 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function updateGateway(data: GatewaySettingsUpdate) {
     await settingsApi.updateGateway(data)
-    await fetchSettings()
+    if (settings.value) Object.assign(settings.value.gateway, data)
+  }
+
+  async function fetchGatewayStatus() {
+    const { data } = await settingsApi.getStatus()
+    gatewayStatus.value = data
+    if (settings.value) settings.value.status = data
+    return data
+  }
+
+  async function updateBootstrap(data: BootstrapSettingsUpdate) {
+    await settingsApi.updateBootstrap(data)
   }
 
   async function updateTimeouts(data: TimeoutSettingsUpdate) {
@@ -42,5 +55,5 @@ export const useSettingsStore = defineStore('settings', () => {
     await fetchSettings()
   }
 
-  return { settings, loading, fetchSettings, updateGateway, updateTimeouts, updateCli, setCliMode, setDashboardCliMode }
+  return { settings, gatewayStatus, loading, fetchSettings, fetchGatewayStatus, updateGateway, updateBootstrap, updateTimeouts, updateCli, setCliMode, setDashboardCliMode }
 })

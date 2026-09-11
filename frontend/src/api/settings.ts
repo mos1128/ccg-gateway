@@ -12,6 +12,7 @@ import type {
   CliProfileSettingsStatus,
   CliMode,
   AgentInfo,
+  BootstrapSettingsUpdate,
 } from '@/types/models'
 
 export const settingsApi = {
@@ -36,6 +37,8 @@ export const settingsApi = {
           launch_on_startup: !!gateway.launch_on_startup,
           silent_startup: !!gateway.silent_startup,
           minimize_to_tray_on_close: !!gateway.minimize_to_tray_on_close,
+          gateway_host: gateway.gateway_host,
+          gateway_port: gateway.gateway_port,
         },
         timeouts,
         cli_settings: cliSettings,
@@ -50,6 +53,16 @@ export const settingsApi = {
       launchOnStartup: data.launch_on_startup,
       silentStartup: data.silent_startup,
       minimizeToTrayOnClose: data.minimize_to_tray_on_close,
+      gatewayHost: data.gateway_host,
+      gatewayPort: data.gateway_port,
+    })
+    return { data: null }
+  },
+  updateBootstrap: async (data: BootstrapSettingsUpdate) => {
+    await invoke('update_bootstrap_settings', {
+      dataDir: data.data_dir,
+      logFile: data.log_file,
+      logLevel: data.log_level,
     })
     return { data: null }
   },
@@ -80,5 +93,11 @@ export const settingsApi = {
   getStatus: async () => {
     const data = await invoke<SystemStatus>('get_system_status')
     return { data }
+  },
+  validateGatewayBind: async (host: string, port: number) => {
+    await invoke('validate_gateway_bind', { host, port })
+  },
+  closeApp: async () => {
+    await invoke('close_app')
   }
 }

@@ -71,6 +71,8 @@ This project was initiated based on the author's actual needs to solve various p
 - Two-dimension charts: legend entries are selectable, and the KPI cards update along with the selection.
 - Filter by date range or quick presets.
 - Statistics auto-refresh on a timer and can be paused at any time.
+- Gateway Settings: click the status dot beside the title to open the settings dialog and configure the listening host, listening port, data directory, file logging, and log level.
+- Remote Access: After binding to `0.0.0.0`, `::`, or a LAN IP, other devices can connect through this machine's LAN IP.
 
 ### Agent Templates
 
@@ -179,7 +181,7 @@ cargo run
 
 ### Environment Variables
 
-CCG Gateway is configured via environment variables. All configurations have default values and work out of the box.
+CCG Gateway can be configured through environment variables or the gateway settings dialog. All configurations have default values and work out of the box.
 
 | Environment Variable | Default Value         | Description                                             |
 | -------------------- | --------------------- | ------------------------------------------------------- |
@@ -188,6 +190,8 @@ CCG Gateway is configured via environment variables. All configurations have def
 | `CCG_DATA_DIR`       | `~/.ccg-gateway`      | Directory for databases, logs, and user Agent templates |
 | `CCG_LOG_FILE`       | `false`               | Set to `true` or `1` to enable file logging             |
 | `CCG_LOG_LEVEL`      | See description below | Log level configuration                                 |
+
+Configuration priority is environment variables > gateway settings dialog > defaults. When a valid environment variable is present, the corresponding dialog field is disabled to prevent accidental overrides.
 
 **CCG_LOG_LEVEL Description**
 
@@ -220,6 +224,8 @@ $env:CCG_DATA_DIR="D:\ccg-data"
 ```
 
 **macOS / Linux (Bash/Zsh)**
+
+> On macOS, an installed app launched from Finder normally does not read environment variables from shell profile files. Prefer the settings dialog opened from the gateway status dot beside the title.
 
 ```bash
 # Temporary setting (valid for the current terminal session)

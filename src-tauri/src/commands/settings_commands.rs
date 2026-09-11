@@ -5,7 +5,7 @@ use crate::services::provider_profile::list_provider_profile_names;
 #[tauri::command]
 pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySettings> {
     sqlx::query_as::<_, GatewaySettings>(
-        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, window_width, window_height FROM gateway_settings WHERE id = 1",
+        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, gateway_host, gateway_port, window_width, window_height FROM gateway_settings WHERE id = 1",
     )
     .fetch_one(db.inner())
     .await
@@ -16,13 +16,40 @@ pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySe
 pub async fn update_gateway_settings(
     app: tauri::AppHandle,
     db: State<'_, SqlitePool>,
+    config: State<'_, Config>,
+    log_db: State<'_, LogDb>,
     debug_log: Option<bool>,
     log_detail_mode: Option<String>,
     launch_on_startup: Option<bool>,
     silent_startup: Option<bool>,
     minimize_to_tray_on_close: Option<bool>,
+    gateway_host: Option<String>,
+    gateway_port: Option<i64>,
 ) -> Result<()> {
     let now = now_timestamp();
+    let current = get_gateway_settings(db.clone()).await?;
+    let endpoint_update_requested = gateway_host.is_some() || gateway_port.is_some();
+    let normalized_host = gateway_host
+        .as_deref()
+        .map(crate::config::validate_gateway_host)
+        .transpose()?;
+    let normalized_port = match gateway_port {
+        Some(port) if (1..=u16::MAX as i64).contains(&port) => Some(port),
+        Some(_) => return Err("监听端口必须是 1 到 65535 之间的整数".to_string()),
+        None => None,
+    };
+    let next_host = normalized_host
+        .clone()
+        .unwrap_or_else(|| current.gateway_host.clone());
+    let next_port = normalized_port.unwrap_or(current.gateway_port);
+    let stored_before = config
+        .inner()
+        .clone()
+        .with_stored_server(&current.gateway_host, current.gateway_port);
+    let stored_after = config
+        .inner()
+        .clone()
+        .with_stored_server(&next_host, next_port);
 
     let mut updates = Vec::new();
     if debug_log.is_some() {
@@ -39,6 +66,12 @@ pub async fn update_gateway_settings(
     }
     if minimize_to_tray_on_close.is_some() {
         updates.push("minimize_to_tray_on_close = ?");
+    }
+    if normalized_host.is_some() {
+        updates.push("gateway_host = ?");
+    }
+    if normalized_port.is_some() {
+        updates.push("gateway_port = ?");
     }
     updates.push("updated_at = ?");
 
@@ -69,6 +102,12 @@ pub async fn update_gateway_settings(
         crate::set_minimize_to_tray_on_close(&app, minimize_to_tray_on_close);
         query = query.bind(if minimize_to_tray_on_close { 1i64 } else { 0 });
     }
+    if let Some(host) = normalized_host {
+        query = query.bind(host);
+    }
+    if let Some(port) = normalized_port {
+        query = query.bind(port);
+    }
 
     query
         .bind(now)
@@ -76,6 +115,80 @@ pub async fn update_gateway_settings(
         .await
         .map_err(map_db_error)?;
 
+    let old_gateway_url = config.gateway_base_url();
+    let new_gateway_url = stored_after.gateway_base_url();
+    let stored_before_url = stored_before.gateway_base_url();
+    let mut migration_failures = Vec::new();
+
+    if endpoint_update_requested
+        && (old_gateway_url != new_gateway_url || stored_before_url != new_gateway_url)
+    {
+        let mut old_endpoints = vec![old_gateway_url.clone()];
+        if stored_before_url != old_gateway_url {
+            old_endpoints.push(stored_before_url);
+        }
+
+        for agent in crate::services::agent::ordered_agents(db.inner())
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            if !agent.features.provider_config.enabled
+                || agent.features.provider_config.operations.is_empty()
+            {
+                continue;
+            }
+            let profiles = if agent.features.profiles.enabled {
+                match list_provider_profile_names(db.inner(), &agent.id).await {
+                    Ok(profiles) => profiles,
+                    Err(error) => {
+                        migration_failures.push(format!("{} / *: {}", agent.name, error));
+                        continue;
+                    }
+                }
+            } else {
+                vec![DEFAULT_PROFILE.to_string()]
+            };
+
+            for profile in profiles {
+                if let Err(error) = crate::services::agent_config::migrate_gateway_endpoints(
+                    db.inner(),
+                    &agent.id,
+                    &old_endpoints,
+                    &new_gateway_url,
+                    &profile,
+                )
+                .await
+                {
+                    migration_failures.push(format!("{} / {}: {}", agent.name, profile, error));
+                }
+            }
+        }
+
+        if !migration_failures.is_empty() {
+            let _ = crate::services::stats::record_system_log(
+                &log_db.0,
+                "gateway_endpoint_migration_failed",
+                &migration_failures.join("; "),
+            )
+            .await;
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn validate_gateway_bind(host: String, port: i64) -> Result<()> {
+    let host = crate::config::validate_gateway_host(&host)?;
+    let port = u16::try_from(port)
+        .ok()
+        .filter(|port| *port > 0)
+        .ok_or_else(|| "监听端口必须是 1 到 65535 之间的整数".to_string())?;
+    let addr = crate::config::bind_addr_for(&host, port);
+
+    tokio::net::TcpListener::bind(addr.as_str())
+        .await
+        .map_err(|error| format!("无法监听 {}：{}", addr, error))?;
     Ok(())
 }
 

@@ -10,8 +10,8 @@ use config::Config;
 use db::{init_db, init_stats_db};
 use sqlx::SqlitePool;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, LogicalSize, Manager, Size, WebviewWindow};
@@ -19,6 +19,60 @@ use tauri::{AppHandle, LogicalSize, Manager, Size, WebviewWindow};
 // Type wrappers for Tauri state
 pub struct LogDb(pub SqlitePool);
 pub struct StatsDb(pub SqlitePool);
+
+#[derive(Clone)]
+pub struct GatewayRuntimeSnapshot {
+    pub status: &'static str,
+    pub error_message: Option<String>,
+    pub started_at: Option<Instant>,
+}
+
+pub struct GatewayRuntimeState {
+    snapshot: RwLock<GatewayRuntimeSnapshot>,
+}
+
+impl Default for GatewayRuntimeState {
+    fn default() -> Self {
+        Self {
+            snapshot: RwLock::new(GatewayRuntimeSnapshot {
+                status: "starting",
+                error_message: None,
+                started_at: None,
+            }),
+        }
+    }
+}
+
+impl GatewayRuntimeState {
+    pub fn snapshot(&self) -> GatewayRuntimeSnapshot {
+        self.snapshot
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    fn set_running(&self) {
+        *self
+            .snapshot
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = GatewayRuntimeSnapshot {
+            status: "running",
+            error_message: None,
+            started_at: Some(Instant::now()),
+        };
+    }
+
+    fn set_error(&self, error_message: String) {
+        *self
+            .snapshot
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = GatewayRuntimeSnapshot {
+            status: "error",
+            error_message: Some(error_message),
+            started_at: None,
+        };
+    }
+}
 
 pub struct WindowBehaviorState {
     minimize_to_tray_on_close: AtomicBool,
@@ -128,14 +182,14 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(WindowBehaviorState::default())
+        .manage(GatewayRuntimeState::default())
         .setup(move |app| {
-            let config = config.clone();
-            app.manage(config.clone());
+            let base_config = config.clone();
 
             // Initialize database
-            let db_path = config.database.path.clone();
-            let log_db_path = config.database.log_path.clone();
-            let stats_db_path = config.database.stats_path.clone();
+            let db_path = base_config.database.path.clone();
+            let log_db_path = base_config.database.log_path.clone();
+            let stats_db_path = base_config.database.stats_path.clone();
 
             let startup_settings = tauri::async_runtime::block_on(async {
                 // Ensure data directory exists
@@ -170,7 +224,7 @@ pub fn run() {
                 app.manage(StatsDb(stats_db.clone()));
 
                 let startup_settings = sqlx::query_as::<_, db::models::GatewaySettings>(
-                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, window_width, window_height FROM gateway_settings WHERE id = 1",
+                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, gateway_host, gateway_port, window_width, window_height FROM gateway_settings WHERE id = 1",
                 )
                 .fetch_one(&db)
                 .await
@@ -180,9 +234,17 @@ pub fn run() {
                     launch_on_startup: 0,
                     silent_startup: 0,
                     minimize_to_tray_on_close: 1,
+                    gateway_host: "127.0.0.1".to_string(),
+                    gateway_port: 7788,
                     window_width: None,
                     window_height: None,
                 });
+
+                let config = base_config.clone().with_stored_server(
+                    &startup_settings.gateway_host,
+                    startup_settings.gateway_port,
+                );
+                app.manage(config.clone());
 
                 let app_handle = app.handle().clone();
                 services::scheduler::start_scheduler(
@@ -195,6 +257,7 @@ pub fn run() {
                 let addr = config.bind_addr();
 
                 tokio::spawn(async move {
+                    let runtime_app_handle = app_handle.clone();
                     let http_client = reqwest::Client::builder()
                         .pool_max_idle_per_host(10)
                         .pool_idle_timeout(std::time::Duration::from_secs(90))
@@ -217,13 +280,31 @@ pub fn run() {
                             listener
                         }
                         Err(e) => {
-                            tracing::error!("Failed to bind to {}: {}", addr, e);
-                            std::process::exit(1);
+                            let message = format!("无法监听 {}：{}", addr, e);
+                            tracing::error!("{}", message);
+                            runtime_app_handle
+                                .state::<GatewayRuntimeState>()
+                                .set_error(message);
+                            if let Some(window) = runtime_app_handle.get_webview_window("main") {
+                                show_main_window(&window);
+                            }
+                            return;
                         }
                     };
 
+                    runtime_app_handle
+                        .state::<GatewayRuntimeState>()
+                        .set_running();
+
                     if let Err(e) = axum::serve(listener, router).await {
-                        tracing::error!("Gateway server error: {}", e);
+                        let message = format!("网关服务异常停止：{}", e);
+                        tracing::error!("{}", message);
+                        runtime_app_handle
+                            .state::<GatewayRuntimeState>()
+                            .set_error(message);
+                        if let Some(window) = runtime_app_handle.get_webview_window("main") {
+                            show_main_window(&window);
+                        }
                     }
                 });
 
@@ -301,7 +382,12 @@ pub fn run() {
                     }
                 }
 
-                if startup_settings.silent_startup != 0 {
+                let gateway_failed = app
+                    .state::<GatewayRuntimeState>()
+                    .snapshot()
+                    .status
+                    == "error";
+                if startup_settings.silent_startup != 0 && !gateway_failed {
                     let _ = window.hide();
                     #[cfg(target_os = "windows")]
                     let _ = window.set_skip_taskbar(true);
@@ -391,6 +477,7 @@ pub fn run() {
             commands::scheduled_task_commands::get_scheduled_task_run_items,
             commands::settings_commands::get_gateway_settings,
             commands::settings_commands::update_gateway_settings,
+            commands::settings_commands::validate_gateway_bind,
             commands::settings_commands::get_timeout_settings,
             commands::settings_commands::update_timeout_settings,
             commands::settings_commands::get_cli_settings,
@@ -406,6 +493,8 @@ pub fn run() {
             commands::log_commands::get_system_logs,
             commands::log_commands::clear_system_logs,
             commands::system_commands::get_system_status,
+            commands::system_commands::update_bootstrap_settings,
+            commands::system_commands::close_app,
             commands::system_commands::toggle_devtools,
             commands::mcp_commands::get_mcps,
             commands::mcp_commands::get_mcp,

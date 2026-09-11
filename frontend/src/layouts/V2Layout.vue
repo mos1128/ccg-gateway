@@ -5,6 +5,15 @@
       <div class="v2-topbar-inner">
         <div class="v2-brand" @click="go('/')">
           <span class="v2-logo-text">CCG <span>Gateway</span></span>
+          <el-tooltip :content="gatewayStatusText" placement="bottom" effect="light" :show-after="150">
+            <button
+              class="v2-gateway-status"
+              :class="[gatewayStatusTone, { 'needs-attention': !gatewayDialogSeen }]"
+              type="button"
+              :aria-label="gatewayStatusText"
+              @click.stop="openGatewayDialog"
+            ><span></span></button>
+          </el-tooltip>
         </div>
 
         <nav ref="navEl" class="v2-nav" :class="{ 'has-slider': navSlider.ready }" :style="navSliderStyle">
@@ -70,6 +79,167 @@
         <router-view />
       </div>
     </main>
+
+    <V2Drawer
+      v-model="gatewayDialogVisible"
+      title="网关设置"
+      width="560px"
+      :closable="!gatewayEndpointSaving"
+    >
+      <div class="gateway-listen-status" :class="gatewayStatusTone">
+        <el-icon class="gateway-listen-status-icon">
+          <CircleCheckFilled v-if="gatewayIsRunning" />
+          <CircleCloseFilled v-else-if="gatewayIsError" />
+          <Loading v-else />
+        </el-icon>
+        <div class="gateway-listen-status-copy">
+          <div class="gateway-listen-status-title">{{ gatewayListenStatusTitle }}</div>
+          <div class="gateway-listen-status-detail">{{ gatewayListenStatusDetail }}</div>
+        </div>
+      </div>
+
+      <div class="gateway-settings-section">
+        <div class="gateway-endpoint-grid">
+          <div class="v2-field">
+            <label class="v2-label">监听地址</label>
+            <el-tooltip
+              content="已被环境变量 CCG_GATEWAY_HOST 覆盖，无法编辑"
+              placement="top"
+              effect="light"
+              :show-after="250"
+              :disabled="!hostEnvOverride"
+            >
+              <span class="gateway-control-shell">
+                <el-autocomplete
+                  v-model="gatewayEndpointForm.gateway_host"
+                  :fetch-suggestions="gatewayHostSuggestions"
+                  :debounce="0"
+                  fit-input-width
+                  class="gateway-host-autocomplete mono"
+                  popper-class="gateway-host-popper v2-scope"
+                  :disabled="hostEnvOverride || dataDirChanging"
+                  placeholder="选择或输入监听地址"
+                >
+                  <template #default="{ item }">
+                    <div class="gateway-host-option">
+                      <span class="mono">{{ item.value }}</span>
+                      <span class="gateway-host-option-label">{{ item.label }}</span>
+                    </div>
+                  </template>
+                </el-autocomplete>
+              </span>
+            </el-tooltip>
+          </div>
+          <div class="v2-field">
+            <label class="v2-label">监听端口</label>
+            <el-tooltip
+              content="已被环境变量 CCG_GATEWAY_PORT 覆盖，无法编辑"
+              placement="top"
+              effect="light"
+              :show-after="250"
+              :disabled="!portEnvOverride"
+            >
+              <span class="gateway-control-shell">
+                <input
+                  v-model.number="gatewayEndpointForm.gateway_port"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  step="1"
+                  class="v2-input mono"
+                  :disabled="portEnvOverride || dataDirChanging"
+                  placeholder="7788"
+                >
+              </span>
+            </el-tooltip>
+          </div>
+        </div>
+        <div v-if="exposesGateway" class="gateway-endpoint-warning">
+          <el-icon><WarningFilled /></el-icon>
+          <span>当前地址允许其他设备访问，请仅在可信网络中使用。</span>
+        </div>
+      </div>
+
+      <div class="gateway-settings-section">
+        <div class="v2-field">
+          <label class="v2-label">数据目录</label>
+          <el-tooltip
+            content="已被环境变量 CCG_DATA_DIR 覆盖，无法编辑"
+            placement="top"
+            effect="light"
+            :show-after="250"
+            :disabled="!dataDirEnvOverride"
+          >
+            <div class="gateway-path-row">
+              <input
+                v-model="gatewayEndpointForm.data_dir"
+                class="v2-input mono"
+                :disabled="dataDirEnvOverride"
+                placeholder="输入数据目录"
+              >
+              <el-tooltip content="恢复默认" placement="top" effect="light" :show-after="250" :disabled="dataDirEnvOverride">
+                <button
+                  type="button"
+                  class="v2-row-act gateway-path-reset"
+                  :disabled="dataDirEnvOverride || gatewayEndpointSaving"
+                  @click="resetGatewayDataDir"
+                >
+                  <svg :class="{ spinning: gatewayDataDirResetting }" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+              </el-tooltip>
+            </div>
+          </el-tooltip>
+          <div v-if="!dataDirEnvOverride && dataDirChanging" class="v2-hint">数据目录需单独保存并关闭应用后，再调整监听地址和端口。</div>
+          <div v-else-if="!dataDirEnvOverride" class="v2-hint">修改后重启生效，原目录的数据库、日志和用户配置不会自动迁移。</div>
+        </div>
+
+        <div class="gateway-toggle-row">
+          <span class="gateway-toggle-copy">
+            <span class="gateway-toggle-title">文件日志</span>
+            <span class="gateway-toggle-desc">运行日志写入数据目录</span>
+          </span>
+          <el-tooltip
+            content="已被环境变量 CCG_LOG_FILE 覆盖，无法编辑"
+            placement="top"
+            effect="light"
+            :show-after="250"
+            :disabled="!logFileEnvOverride"
+          >
+            <span class="gateway-switch-control">
+              <el-switch v-model="gatewayEndpointForm.log_file" :disabled="logFileEnvOverride" />
+            </span>
+          </el-tooltip>
+        </div>
+        <div class="v2-field gateway-log-level-field">
+          <label class="v2-label">日志级别</label>
+          <el-tooltip
+            content="已被环境变量 CCG_LOG_LEVEL 覆盖，无法编辑"
+            placement="top"
+            effect="light"
+            :show-after="250"
+            :disabled="!logLevelEnvOverride"
+          >
+            <span class="gateway-control-shell">
+              <input
+                v-model="gatewayEndpointForm.log_level"
+                class="v2-input mono"
+                :disabled="logLevelEnvOverride"
+                placeholder="info"
+              >
+            </span>
+          </el-tooltip>
+        </div>
+      </div>
+
+      <template #footer>
+        <button class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="gatewayEndpointSaving" @click="gatewayDialogVisible = false">取消</button>
+        <button
+          class="v2-btn v2-btn-sm v2-btn-primary"
+          :disabled="gatewayEndpointSaving || !canSaveGatewayEndpoint"
+          @click="saveGatewayEndpoint"
+        >{{ gatewayEndpointSaving ? '处理中...' : gatewayEndpointActionText }}</button>
+      </template>
+    </V2Drawer>
   </div>
 </template>
 
@@ -82,7 +252,13 @@ import { checkForUpdates } from '@/utils/updater'
 import { useThemeStore } from '@/stores/theme'
 import { useSettingsStore } from '@/stores/settings'
 import { useAgentStore } from '@/stores/agents'
+import { settingsApi } from '@/api/settings'
+import { confirm } from '@/utils/confirm'
+import { notify } from '@/utils/notification'
+import { getErrorMessage } from '@/utils/error'
 import AppTitleBar from '@/components/AppTitleBar.vue'
+import V2Drawer from '@/components/V2Drawer.vue'
+import { CircleCheckFilled, CircleCloseFilled, Loading, WarningFilled } from '@element-plus/icons-vue'
 import type { ComponentPublicInstance } from 'vue'
 
 const route = useRoute()
@@ -167,6 +343,235 @@ function go(path: string) {
 
 const appVersion = ref('0.0.0')
 const checkingUpdate = ref(false)
+const gatewayDialogVisible = ref(false)
+const GATEWAY_DIALOG_SEEN_KEY = 'ccg-gateway-endpoint-dialog-seen'
+
+function readGatewayDialogSeen() {
+  try {
+    return localStorage.getItem(GATEWAY_DIALOG_SEEN_KEY) === '1'
+  } catch {
+    return true
+  }
+}
+
+const gatewayDialogSeen = ref(readGatewayDialogSeen())
+const gatewayEndpointForm = ref({
+  gateway_host: '127.0.0.1',
+  gateway_port: 7788,
+  data_dir: '',
+  log_file: false,
+  log_level: 'info',
+})
+const gatewayHostSuggestions = [
+  { value: '127.0.0.1', label: '仅本机' },
+  { value: '0.0.0.0', label: '局域网' },
+]
+const gatewayEndpointSaving = ref(false)
+const gatewayDataDirResetting = ref(false)
+const gatewayStatus = computed(() => settingsStore.gatewayStatus)
+const gatewayStatusTone = computed(() => settingsStore.gatewayStatus?.status ?? 'starting')
+const gatewayIsRunning = computed(() => gatewayStatus.value?.status === 'running')
+const gatewayIsError = computed(() => gatewayStatus.value?.status === 'error')
+function formatGatewayEndpoint(host: string, port: number) {
+  const normalizedHost = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+  return `${normalizedHost}:${port}`
+}
+const gatewayListenStatusTitle = computed(() => {
+  if (gatewayIsRunning.value) return '监听正常'
+  if (gatewayIsError.value) return '监听失败'
+  return '正在启动监听'
+})
+const gatewayListenStatusDetail = computed(() => {
+  const status = gatewayStatus.value
+  if (!status) return '正在获取监听状态...'
+  if (status.status === 'error') {
+    return status.error_message || `无法监听 ${formatGatewayEndpoint(status.host, status.port)}`
+  }
+  const endpoint = formatGatewayEndpoint(status.host, status.port)
+  return status.status === 'running' ? `已监听 ${endpoint}` : `正在尝试监听 ${endpoint}`
+})
+const gatewayStatusText = computed(() => {
+  const status = settingsStore.gatewayStatus
+  const action = gatewayDialogSeen.value ? '点击修改网关配置' : '点击查看网关配置'
+  if (!status || status.status === 'starting') return `网关启动中 · ${action}`
+  if (status.status === 'running') {
+    const host = status.host.includes(':') && !status.host.startsWith('[') ? `[${status.host}]` : status.host
+    return `网关运行中 · 监听于 ${host}:${status.port} · ${action}`
+  }
+  return `${status.error_message || '网关启动失败'} · ${action}`
+})
+const hostEnvOverride = computed(() => gatewayStatus.value?.host_env_override === true)
+const portEnvOverride = computed(() => gatewayStatus.value?.port_env_override === true)
+const dataDirEnvOverride = computed(() => gatewayStatus.value?.data_dir_env_override === true)
+const logFileEnvOverride = computed(() => gatewayStatus.value?.log_file_env_override === true)
+const logLevelEnvOverride = computed(() => gatewayStatus.value?.log_level_env_override === true)
+const dataDirChanging = computed(() => (
+  !!gatewayStatus.value
+  && !dataDirEnvOverride.value
+  && gatewayEndpointForm.value.data_dir.trim() !== gatewayStatus.value.data_dir
+))
+const gatewayListenerDirty = computed(() => {
+  const saved = settingsStore.settings?.gateway
+  const savedHost = saved?.gateway_host ?? gatewayStatus.value?.host
+  const savedPort = saved?.gateway_port ?? gatewayStatus.value?.port
+  return savedHost !== undefined && savedPort !== undefined && (
+    (!hostEnvOverride.value && gatewayEndpointForm.value.gateway_host.trim() !== savedHost)
+    || (!portEnvOverride.value && Number(gatewayEndpointForm.value.gateway_port) !== savedPort)
+  )
+})
+const bootstrapDirty = computed(() => {
+  const status = gatewayStatus.value
+  return !!status && (
+    (!dataDirEnvOverride.value && gatewayEndpointForm.value.data_dir.trim() !== status.data_dir)
+    || (!logFileEnvOverride.value && gatewayEndpointForm.value.log_file !== status.log_file)
+    || (!logLevelEnvOverride.value && gatewayEndpointForm.value.log_level.trim() !== status.log_level)
+  )
+})
+const gatewayEndpointDirty = computed(() => (
+  gatewayListenerDirty.value || bootstrapDirty.value
+))
+const canSaveGatewayEndpoint = computed(() => gatewayEndpointDirty.value || gatewayStatus.value?.status === 'error')
+const gatewayEndpointActionText = computed(() => {
+  if (!gatewayEndpointDirty.value) {
+    return gatewayStatus.value?.status === 'error' ? '关闭应用' : '无更改'
+  }
+  return '保存并关闭'
+})
+const exposesGateway = computed(() => {
+  const host = (hostEnvOverride.value
+    ? gatewayStatus.value?.host
+    : gatewayEndpointForm.value.gateway_host)?.trim().toLowerCase()
+  return !!host && host !== 'localhost' && host !== '::1' && !/^127(?:\.\d{1,3}){3}$/.test(host)
+})
+let gatewayStatusTimer: ReturnType<typeof setInterval> | null = null
+let gatewayErrorAutoOpened = false
+
+function markGatewayDialogSeen() {
+  if (gatewayDialogSeen.value) return
+  gatewayDialogSeen.value = true
+  try {
+    localStorage.setItem(GATEWAY_DIALOG_SEEN_KEY, '1')
+  } catch {
+    // Keep the in-memory state when localStorage is unavailable.
+  }
+}
+
+async function openGatewayDialog() {
+  try {
+    const status = gatewayStatus.value ?? await settingsStore.fetchGatewayStatus()
+    if (!status) return
+    gatewayEndpointForm.value = {
+      gateway_host: status.host,
+      gateway_port: status.port,
+      data_dir: status.data_dir,
+      log_file: status.log_file,
+      log_level: status.log_level,
+    }
+    gatewayDialogVisible.value = true
+    markGatewayDialogSeen()
+    void settingsStore.fetchGatewayStatus().catch(() => undefined)
+  } catch (error) {
+    notify(getErrorMessage(error, '网关设置加载失败'), 'error')
+  }
+}
+
+function resetGatewayDataDir() {
+  if (gatewayDataDirResetting.value) return
+  const defaultDataDir = gatewayStatus.value?.default_data_dir
+  if (defaultDataDir) gatewayEndpointForm.value.data_dir = defaultDataDir
+  gatewayDataDirResetting.value = true
+  setTimeout(() => {
+    gatewayDataDirResetting.value = false
+  }, 600)
+}
+
+async function closeGatewayApp(message: string) {
+  gatewayEndpointSaving.value = true
+  try {
+    await settingsApi.closeApp()
+    notify(message)
+  } catch (error) {
+    gatewayEndpointSaving.value = false
+    notify(getErrorMessage(error, '应用关闭失败'), 'error')
+  }
+}
+
+async function saveGatewayEndpoint() {
+  if (!gatewayEndpointDirty.value) {
+    if (gatewayStatus.value?.status !== 'error') return
+    await closeGatewayApp('应用将关闭，请手动重新启动')
+    return
+  }
+
+  const host = gatewayEndpointForm.value.gateway_host.trim()
+  const port = Number(gatewayEndpointForm.value.gateway_port)
+  const dataDir = gatewayEndpointForm.value.data_dir.trim()
+  const logLevel = gatewayEndpointForm.value.log_level.trim()
+
+  if (gatewayListenerDirty.value) {
+    if (!host) {
+      notify('监听地址不能为空', 'error')
+      return
+    }
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      notify('监听端口必须是 1 到 65535 之间的整数', 'error')
+      return
+    }
+  }
+  if (bootstrapDirty.value && !dataDirEnvOverride.value && !dataDir) {
+    notify('数据目录不能为空', 'error')
+    return
+  }
+  if (dataDirChanging.value && gatewayListenerDirty.value) {
+    notify('修改数据目录时请先单独保存并关闭应用，再调整监听地址和端口', 'error')
+    return
+  }
+  if (bootstrapDirty.value && !logLevelEnvOverride.value && !logLevel) {
+    notify('日志级别不能为空', 'error')
+    return
+  }
+
+  if (gatewayListenerDirty.value) {
+    const effectiveHost = hostEnvOverride.value ? gatewayStatus.value?.host ?? host : host
+    const effectivePort = portEnvOverride.value ? gatewayStatus.value?.port ?? port : port
+    try {
+      await settingsApi.validateGatewayBind(effectiveHost, effectivePort)
+    } catch (error) {
+      try {
+        await confirm(
+          `当前监听地址暂时无法绑定：${getErrorMessage(error, '未知错误')}\n\n这可能由旧监听仍被当前进程占用、端口冲突或地址尚不可用导致。仍可继续保存；保存后应用会关闭，请确认端口可用后手动重新启动。`,
+          '监听地址检查失败',
+          { confirmText: '继续保存' },
+        )
+      } catch (confirmError) {
+        if (confirmError === 'cancel') return
+        throw confirmError
+      }
+    }
+  }
+
+  gatewayEndpointSaving.value = true
+  try {
+    if (bootstrapDirty.value) {
+      const bootstrapUpdate: { data_dir?: string; log_file?: boolean; log_level?: string } = {}
+      if (!dataDirEnvOverride.value) bootstrapUpdate.data_dir = dataDir
+      if (!logFileEnvOverride.value) bootstrapUpdate.log_file = gatewayEndpointForm.value.log_file
+      if (!logLevelEnvOverride.value) bootstrapUpdate.log_level = logLevel
+      await settingsStore.updateBootstrap(bootstrapUpdate)
+    }
+    if (gatewayListenerDirty.value) {
+      const listenerUpdate: { gateway_host?: string; gateway_port?: number } = {}
+      if (!hostEnvOverride.value) listenerUpdate.gateway_host = host
+      if (!portEnvOverride.value) listenerUpdate.gateway_port = port
+      await settingsStore.updateGateway(listenerUpdate)
+    }
+    await settingsApi.closeApp()
+    notify('配置已保存，应用将关闭，请手动重新启动')
+  } catch (error) {
+    gatewayEndpointSaving.value = false
+    notify(getErrorMessage(error, '网关设置保存失败'), 'error')
+  }
+}
 
 async function handleCheckUpdate() {
   checkingUpdate.value = true
@@ -183,14 +588,32 @@ async function toggleDevtools() {
   await invoke('toggle_devtools')
 }
 
+watch(() => gatewayStatus.value?.status, (status) => {
+  if (status === 'running') {
+    gatewayErrorAutoOpened = false
+    return
+  }
+  if (status !== 'error' || gatewayErrorAutoOpened) return
+  gatewayErrorAutoOpened = true
+  if (!gatewayDialogVisible.value) void openGatewayDialog()
+}, { immediate: true })
+
 onMounted(async () => {
   scheduleNavSliderUpdate()
+  gatewayStatusTimer = setInterval(() => {
+    void settingsStore.fetchGatewayStatus().catch(() => undefined)
+  }, 2000)
+  void settingsStore.fetchGatewayStatus().catch(() => undefined)
   appVersion.value = await getVersion()
   await Promise.all([
     agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
     settingsStore.settings ? Promise.resolve() : settingsStore.fetchSettings(),
   ])
   checkForUpdates(true)
+})
+
+onUnmounted(() => {
+  if (gatewayStatusTimer) clearInterval(gatewayStatusTimer)
 })
 </script>
 
@@ -298,6 +721,235 @@ html.dark {
 .v2-logo-text span {
   color: var(--v2-text-3);
   font-weight: var(--v2-fw-semibold);
+}
+.v2-gateway-status {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.v2-gateway-status span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--v2-text-3);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-text-3) 12%, transparent);
+}
+.v2-gateway-status.running span {
+  background: var(--v2-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-success) 14%, transparent);
+}
+.v2-gateway-status.error span {
+  background: var(--v2-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-danger) 14%, transparent);
+}
+.v2-gateway-status.starting span {
+  animation: gateway-status-pulse 1.4s ease-in-out infinite;
+}
+.v2-gateway-status.needs-attention::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 1px solid color-mix(in srgb, var(--v2-accent) 70%, transparent);
+  border-radius: 50%;
+  animation: gateway-status-guide 1.8s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes gateway-status-pulse {
+  50% { opacity: 0.35; }
+}
+@keyframes gateway-status-guide {
+  0% { opacity: 0.8; transform: scale(0.5); }
+  80%, 100% { opacity: 0; transform: scale(1.45); }
+}
+
+.gateway-listen-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  margin-bottom: 20px;
+  border: 1px solid var(--v2-surface-3);
+  border-radius: var(--v2-r);
+  background: var(--v2-surface-2);
+}
+.gateway-listen-status.running {
+  border-color: color-mix(in srgb, var(--v2-success) 24%, transparent);
+  background: color-mix(in srgb, var(--v2-success) 9%, transparent);
+}
+.gateway-listen-status.error {
+  border-color: color-mix(in srgb, var(--v2-danger) 24%, transparent);
+  background: var(--v2-danger-bg);
+}
+.gateway-listen-status-icon {
+  margin-top: 1px;
+  flex-shrink: 0;
+  color: var(--v2-text-3);
+  font-size: 16px;
+}
+.gateway-listen-status.running .gateway-listen-status-icon {
+  color: var(--v2-success);
+}
+.gateway-listen-status.error .gateway-listen-status-icon {
+  color: var(--v2-danger);
+}
+.gateway-listen-status.starting .gateway-listen-status-icon {
+  animation: gateway-reset-spin 1s linear infinite;
+}
+.gateway-listen-status-copy {
+  min-width: 0;
+}
+.gateway-listen-status-title {
+  color: var(--v2-text);
+  font-size: var(--v2-fs-sm);
+  font-weight: var(--v2-fw-medium);
+  line-height: 1.4;
+}
+.gateway-listen-status.running .gateway-listen-status-title {
+  color: var(--v2-success);
+}
+.gateway-listen-status.error .gateway-listen-status-title {
+  color: var(--v2-danger);
+}
+.gateway-listen-status-detail {
+  margin-top: 3px;
+  color: var(--v2-text-2);
+  font-size: var(--v2-fs-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.gateway-endpoint-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 12px;
+}
+.gateway-settings-section + .gateway-settings-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--v2-surface-3);
+}
+.gateway-endpoint-grid .v2-field {
+  margin-bottom: 0;
+}
+.gateway-path-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.gateway-path-row .v2-input {
+  flex: 1;
+  padding-right: 36px;
+}
+.gateway-path-row .v2-row-act {
+  position: absolute;
+  right: 4px;
+  flex-shrink: 0;
+}
+.gateway-path-reset:disabled {
+  color: var(--v2-text-3);
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.gateway-path-reset svg.spinning {
+  animation: gateway-reset-spin 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes gateway-reset-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.gateway-control-shell {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+.gateway-switch-control {
+  display: inline-flex;
+  width: auto;
+}
+.gateway-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 0 0 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--v2-surface-2);
+}
+.gateway-toggle-copy {
+  min-width: 0;
+}
+.gateway-toggle-title {
+  display: block;
+  font-size: var(--v2-fs-sm);
+  font-weight: var(--v2-fw-medium);
+  color: var(--v2-text);
+}
+.gateway-toggle-desc {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--v2-fs-xs);
+  line-height: 1.4;
+  color: var(--v2-text-3);
+}
+.gateway-log-level-field {
+  margin-bottom: 0;
+}
+.gateway-host-autocomplete {
+  width: 100%;
+}
+.gateway-host-autocomplete .el-input__wrapper {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: var(--v2-r);
+  background: var(--v2-bg-base);
+  box-shadow: none !important;
+}
+.gateway-host-autocomplete .el-input__inner {
+  color: var(--v2-text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: var(--v2-fw-medium);
+}
+.gateway-host-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.gateway-host-option-label {
+  color: var(--v2-text-3);
+  font-size: var(--v2-fs-xs);
+}
+.gateway-endpoint-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  margin-top: 16px;
+  border-radius: var(--v2-r-sm);
+  background: var(--v2-warning-bg);
+  color: var(--v2-text-2);
+  font-size: var(--v2-fs-xs);
+  line-height: 1.5;
+}
+.gateway-endpoint-warning .el-icon {
+  margin-top: 2px;
+  flex-shrink: 0;
+  color: var(--v2-warning);
+}
+@media (max-width: 520px) {
+  .gateway-endpoint-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .v2-nav {
@@ -506,6 +1158,10 @@ html.dark .v2-card {
   gap: 6px;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
   white-space: nowrap;
+}
+.v2-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .v2-btn-sm {
   padding: 6px 10px;

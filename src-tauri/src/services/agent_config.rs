@@ -669,6 +669,73 @@ pub async fn sync_proxy_route_config(
     }
 }
 
+pub async fn migrate_gateway_endpoints(
+    db: &SqlitePool,
+    agent_id: &str,
+    old_endpoints: &[String],
+    new_endpoint: &str,
+    profile: &str,
+) -> Result<(), String> {
+    let resolved = resolved_agent(db, agent_id).await?;
+    if !resolved.features.provider_config.enabled {
+        return Ok(());
+    }
+
+    let operations = resolve_profile_operations(&resolved, profile)?;
+    let config_dir = get_cli_config_dir_path(db, agent_id).await;
+    let groups = group_operations(&config_dir, &operations)?;
+    if groups.is_empty() {
+        return Ok(());
+    }
+
+    let old_contexts: Vec<_> = old_endpoints
+        .iter()
+        .filter(|endpoint| {
+            endpoint.trim().trim_end_matches('/') != new_endpoint.trim().trim_end_matches('/')
+        })
+        .map(|endpoint| gateway_context(agent_id, profile, endpoint))
+        .collect();
+    if old_contexts.is_empty() {
+        return Ok(());
+    }
+    let new_context = gateway_context(agent_id, profile, new_endpoint);
+    let mut prepared = Vec::new();
+
+    for group in &groups {
+        let Some(content) = read_optional(&group.path).await? else {
+            return Ok(());
+        };
+        if config_patch::operations_applied(group.format, &content, &group.operations, &new_context)
+            .map_err(|error| format!("解析 {} 失败: {}", group.path.display(), error))?
+        {
+            continue;
+        }
+        let mut matches_old = false;
+        for context in &old_contexts {
+            if config_patch::operations_applied(group.format, &content, &group.operations, context)
+                .map_err(|error| format!("解析 {} 失败: {}", group.path.display(), error))?
+            {
+                matches_old = true;
+                break;
+            }
+        }
+        if !matches_old {
+            return Ok(());
+        }
+        let next =
+            config_patch::patch_content(group.format, &content, &group.operations, &new_context)?;
+        prepared.push((group.path.clone(), next, group.private));
+    }
+
+    if prepared.is_empty() {
+        return Ok(());
+    }
+    for (path, content, private) in prepared {
+        config_patch::write_atomic_text_with_privacy(&path, &content, private).await?;
+    }
+    Ok(())
+}
+
 pub async fn is_provider_config_applied(
     db: &SqlitePool,
     agent_id: &str,

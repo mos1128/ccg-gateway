@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 39,
+            version: 40,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -744,6 +744,18 @@ impl DatabaseSchema {
                         data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: Some("1".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "gateway_host".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'127.0.0.1'".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "gateway_port".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("7788".to_string()),
                     },
                     ColumnDefinition {
                         name: "window_width".to_string(),

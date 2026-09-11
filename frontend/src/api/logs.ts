@@ -30,6 +30,11 @@ export const logsApi = {
       data: {
         debug_log: !!data.debug_log,
         log_detail_mode: data.log_detail_mode as 'full' | 'failure_only',
+        launch_on_startup: !!data.launch_on_startup,
+        silent_startup: !!data.silent_startup,
+        minimize_to_tray_on_close: !!data.minimize_to_tray_on_close,
+        gateway_host: data.gateway_host,
+        gateway_port: data.gateway_port,
       } as GatewaySettings
     }
   },
