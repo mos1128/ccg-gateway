@@ -475,7 +475,7 @@ dependencies = [
 
 [[package]]
 name = "ccg-gateway"
-version = "2.0.7"
+version = "2.0.8"
 dependencies = [
  "async-stream",
  "atomic-write-file",
