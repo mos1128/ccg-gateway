@@ -22,24 +22,42 @@
     <div style="margin-bottom: 24px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
         <label class="c-label" style="margin-bottom: 0;">选择服务商</label>
-        <span class="text-12 text-info fw-normal" style="cursor: pointer;" @click="$emit('toggle-all')">
-          {{ isAllSelected ? '取消全选' : '全选' }}
-        </span>
       </div>
-      <div class="v2-chip-row">
-        <button
-          v-for="provider in providers"
-          :key="provider.id"
-          type="button"
-          class="v2-chip"
-          :class="{ on: selectedIds.includes(provider.id) }"
-          @click="$emit('toggle-provider', provider.id)"
-        >
-          <span class="v2-chip-dot"></span>{{ provider.name }}
-        </button>
+      <div v-if="providers.length > 0" class="det-provider-groups">
+        <section v-for="group in providerGroups" :key="String(group.enabled)" class="det-provider-group" :aria-label="`${group.label}服务商`">
+          <div class="det-provider-group-head">
+            <div class="det-provider-group-title">
+              <span class="v2-pill dot" :class="group.enabled ? 'v2-pill-success' : 'v2-pill-neutral'">{{ group.label }}</span>
+              <span class="text-muted">已选 {{ group.selectedCount }} / {{ group.providers.length }}</span>
+            </div>
+            <button
+              type="button"
+              class="v2-btn v2-btn-sm v2-btn-ghost"
+              :disabled="group.providers.length === 0"
+              :aria-label="`${group.allSelected ? '取消全选' : '全选'}${group.label}服务商`"
+              @click="$emit('toggle-group', group.enabled)"
+            >
+              {{ group.allSelected ? '取消全选' : '全选' }}
+            </button>
+          </div>
+          <div v-if="group.providers.length > 0" class="v2-chip-row">
+            <button
+              v-for="provider in group.providers"
+              :key="provider.id"
+              type="button"
+              class="v2-chip"
+              :class="{ on: selectedIds.includes(provider.id) }"
+              :aria-pressed="selectedIds.includes(provider.id)"
+              @click="$emit('toggle-provider', provider.id)"
+            >
+              <span class="v2-chip-dot"></span>{{ provider.name }}
+            </button>
+          </div>
+          <div v-else class="text-muted text-14">暂无{{ group.label }}的服务商</div>
+        </section>
       </div>
-      <div v-if="providers.length === 0" class="text-muted text-14" style="padding: 8px 0;">
-        当前 Agent 类型无已启用的服务商
+      <div v-else class="text-muted text-14" style="padding: 8px 0;">
+        当前 Agent 类型暂无服务商
       </div>
     </div>
 
@@ -98,7 +116,6 @@ const props = defineProps<{
   testText: string
   providers: Provider[]
   selectedIds: number[]
-  isAllSelected: boolean
   loading: boolean
   results: TestProviderResult[]
 }>()
@@ -108,7 +125,7 @@ const emit = defineEmits<{
   'update:model': [value: string]
   'update:testText': [value: string]
   confirm: []
-  'toggle-all': []
+  'toggle-group': [enabled: boolean]
   'toggle-provider': [id: number]
   'copy-response': [text: string]
 }>()
@@ -117,6 +134,18 @@ const visible = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value)
 })
+
+const providerGroups = computed(() => [true, false].map((enabled) => {
+  const providers = props.providers.filter((provider) => provider.enabled === enabled)
+  const selectedCount = providers.filter((provider) => props.selectedIds.includes(provider.id)).length
+  return {
+    enabled,
+    label: enabled ? '已启用' : '未启用',
+    providers,
+    selectedCount,
+    allSelected: providers.length > 0 && selectedCount === providers.length
+  }
+}))
 
 function handleModelInput(event: Event) {
   emit('update:model', (event.target as HTMLInputElement).value)
@@ -146,11 +175,13 @@ function statusClass(status: 'pending' | 'success' | 'failed'): string {
 
 <style scoped>
 .c-label { display: block; font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text-2); margin-bottom: 7px; }
-.text-12 { font-size: var(--v2-fs-xs); }
 .text-14 { font-size: var(--v2-fs-base); }
-.fw-normal { font-weight: var(--v2-fw-regular); }
 .text-muted { color: var(--v2-text-3); }
-.text-info { color: var(--v2-accent); }
+
+.det-provider-groups { display: grid; gap: 12px; }
+.det-provider-group { padding: 14px; border: 1px solid var(--v2-surface-3); border-radius: var(--v2-r); }
+.det-provider-group-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.det-provider-group-title { display: flex; align-items: center; gap: 10px; font-size: var(--v2-fs-xs); }
 
 .det-results { margin-top: 18px; }
 .det-subtitle { font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-semibold); color: var(--v2-text-3); margin-bottom: 8px; }

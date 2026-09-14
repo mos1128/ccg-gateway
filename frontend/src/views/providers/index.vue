@@ -244,11 +244,10 @@
       v-model:test-text="detectTestText"
       :providers="detectProviderList"
       :selected-ids="detectSelectedIds"
-      :is-all-selected="isAllDetectSelected"
       :loading="detectLoading"
       :results="detectResults"
       @confirm="handleStartDetect"
-      @toggle-all="toggleAllDetectProviders"
+      @toggle-group="toggleAllDetectProviders"
       @toggle-provider="toggleDetectProvider"
       @copy-response="copyResponseText"
     />
@@ -790,24 +789,29 @@ const detectTestText = ref('')
 const detectSelectedIds = ref<number[]>([])
 const detectResults = ref<TestProviderResult[]>([])
 
-const detectProviderList = computed(() => providerStore.providers.filter((provider) => provider.enabled))
-const isAllDetectSelected = computed(() => detectProviderList.value.length > 0 && detectSelectedIds.value.length === detectProviderList.value.length)
+const detectProviderList = computed(() => providerStore.providers)
 
 function toggleDetectProvider(id: number) {
   const idx = detectSelectedIds.value.indexOf(id)
   if (idx >= 0) detectSelectedIds.value.splice(idx, 1)
   else detectSelectedIds.value.push(id)
 }
-function toggleAllDetectProviders() {
-  if (isAllDetectSelected.value) detectSelectedIds.value = []
-  else detectSelectedIds.value = detectProviderList.value.map((p) => p.id)
+function toggleAllDetectProviders(enabled: boolean) {
+  const ids = detectProviderList.value
+    .filter((provider) => provider.enabled === enabled)
+    .map((provider) => provider.id)
+  if (ids.every((id) => detectSelectedIds.value.includes(id))) {
+    detectSelectedIds.value = detectSelectedIds.value.filter((id) => !ids.includes(id))
+  } else {
+    detectSelectedIds.value = [...new Set([...detectSelectedIds.value, ...ids])]
+  }
 }
 
 watch(showDetectDialog, (open) => {
   if (open) {
     detectModel.value = getReusableModelName(activeCliType.value)
     detectTestText.value = getReusableTestText(activeCliType.value)
-    detectSelectedIds.value = detectProviderList.value.map((p) => p.id)
+    detectSelectedIds.value = detectProviderList.value.filter((provider) => provider.enabled).map((p) => p.id)
     detectResults.value = []
     detectLoading.value = false
   } else if (testResultListener) {
