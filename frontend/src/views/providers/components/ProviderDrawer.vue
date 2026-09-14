@@ -172,44 +172,55 @@
     </div>
 
     <div v-show="tab === 'advanced'">
-      <div class="dr-sec-title dr-price-title" style="margin-top: 0;">
-        <span>容错配置</span>
-        <el-tooltip effect="light" placement="top" :show-after="150" popper-class="v2-profile-pop v2-scope">
-          <template #content>
-            <div class="profile-help">
-              <div class="tooltip-title">重试与熔断规则</div>
-              <div class="tooltip-item" style="margin-bottom: 4px;">请求失败后先在当前服务商重试，连续失败「连续重试次数」次后切换下一个服务商</div>
-              <div class="tooltip-item" style="margin-bottom: 4px;">所有服务商轮完一圈后从头再轮，直到某次成功或所有服务商熔断</div>
-              <div class="tooltip-item" style="margin-bottom: 4px;"><strong>每次失败的尝试都会累计到该服务商的失败计数</strong></div>
-              <div class="tooltip-item" style="margin-bottom: 4px;">密钥错误、模型不存在等问题不重试该服务商，直接切换</div>
-              <div class="tooltip-item" style="border-top: 1px solid var(--v2-surface-2); padding-top: 8px; margin-top: 8px;">
-                连续失败累计达到「失败阈值」后，服务商熔断「熔断时长」分钟，期间请求自动由其他服务商接管
-              </div>
+      <div class="dr-group-card">
+        <div class="dr-group-header">
+          <div>
+            <div class="dr-group-title-wrapper">
+              <span class="dr-group-title">容错配置</span>
+              <el-tooltip effect="light" placement="top" :show-after="150" popper-class="v2-profile-pop v2-scope">
+                <template #content>
+                  <div class="profile-help">
+                    <div class="tooltip-title">阶梯熔断规则</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;">渠道失败（超时、5xx、429 等）在网关内重试，每次失败计入连续失败计数</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;">连续失败命中某档的次数后，服务商按该档时长熔断，请求自动切换下一个服务商</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;"><strong>401/403/404</strong>（密钥错误、模型不存在等）不会自愈，不重试，直接按最小档熔断</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;"><strong>400/413/422</strong>（请求本身错误）直接返回客户端，不重试也不熔断</div>
+                    <div class="tooltip-item" style="border-top: 1px solid var(--v2-surface-2); padding-top: 8px; margin-top: 8px;">
+                      失败计数跨冷却期保留：熔断到期后自动放行试探流量，<strong>成功一次即清零</strong>；反复故障会命中更高档、冷却更久
+                    </div>
+                  </div>
+                </template>
+                <span class="v2-help">
+                  <el-icon><InfoFilled /></el-icon>
+                </span>
+              </el-tooltip>
             </div>
-          </template>
-          <span class="v2-help"><el-icon><InfoFilled /></el-icon></span>
-        </el-tooltip>
-      </div>
-      <div class="v2-grid-2">
-        <div class="v2-field">
-          <label class="v2-label">连续重试次数</label>
-          <div class="v2-input-wrapper">
-            <input v-model.number="form.retry_limit" type="number" min="1" max="20" class="v2-input">
-            <span class="v2-input-unit">次</span>
+            <div class="dr-group-hint">连续失败达到某档次数后，按该档时长熔断，可配置多档递进</div>
           </div>
+          <button class="v2-btn v2-btn-sm v2-btn-outline" @click="emit('add-blacklist-tier')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            添加
+          </button>
         </div>
-        <div class="v2-field">
-          <label class="v2-label">失败阈值</label>
-          <div class="v2-input-wrapper">
-            <input v-model.number="form.failure_threshold" type="number" min="0" class="v2-input">
-            <span class="v2-input-unit">次</span>
+        <div class="dr-group-body">
+          <div v-for="(tier, index) in form.blacklist_tiers" :key="'t' + index" class="dr-map dr-tier-row">
+            <span class="dr-tier-label">连续失败</span>
+            <div class="v2-input-wrapper">
+              <input v-model.number="tier.failure_count" type="number" min="1" max="50" class="v2-input">
+              <span class="v2-input-unit">次</span>
+            </div>
+            <span class="dr-arrow">→</span>
+            <span class="dr-tier-label">拉黑</span>
+            <div class="v2-input-wrapper">
+              <input v-model.number="tier.blacklist_minutes" type="number" min="1" max="10080" class="v2-input">
+              <span class="v2-input-unit">分钟</span>
+            </div>
+            <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
+              <button class="v2-x" @click="emit('remove-blacklist-tier', index)"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+            </el-tooltip>
           </div>
-        </div>
-        <div class="v2-field">
-          <label class="v2-label">熔断时长</label>
-          <div class="v2-input-wrapper">
-            <input v-model.number="form.blacklist_minutes" type="number" min="0" class="v2-input">
-            <span class="v2-input-unit">分钟</span>
+          <div v-if="!form.blacklist_tiers.length" class="dr-empty">
+            <span>暂无熔断档位</span>
           </div>
         </div>
       </div>
@@ -239,14 +250,12 @@ interface ProviderEditForm {
   name: string
   base_url: string
   api_key: string
-  failure_threshold: number
-  retry_limit: number
-  blacklist_minutes: number
   custom_useragent: string
   price_multiplier: number
   translate_max_tokens: number
   model_maps: Array<{ source_model: string; target_model: string; enabled: boolean }>
   model_blacklist: Array<{ model_pattern: string }>
+  blacklist_tiers: Array<{ failure_count: number; blacklist_minutes: number }>
 }
 
 const props = defineProps<{
@@ -269,6 +278,8 @@ const emit = defineEmits<{
   'remove-model-map': [index: number]
   'add-model-blacklist': []
   'remove-model-blacklist': [index: number]
+  'add-blacklist-tier': []
+  'remove-blacklist-tier': [index: number]
   'sync-models': []
   'add-model': [modelName: string]
   'remove-model': [modelId: number]
@@ -360,6 +371,9 @@ watch(() => props.modelValue, (open) => {
 .dr-sec-title { font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-semibold); color: var(--v2-text); }
 .dr-map { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 9px; align-items: center; }
 .dr-map-single { grid-template-columns: 1fr auto; }
+.dr-tier-row { grid-template-columns: auto 1fr auto auto 1fr auto; gap: 8px; }
+.dr-tier-label { color: var(--v2-text-2); font-size: var(--v2-fs-sm); white-space: nowrap; }
+.dr-tier-row .v2-input-wrapper { min-width: 0; }
 .dr-arrow { color: var(--v2-text-3); font-size: var(--v2-fs-sm); }
 .dr-map :deep(.dr-model-target) { width: 100%; min-width: 0; }
 .dr-map :deep(.dr-model-target .el-input__wrapper) {

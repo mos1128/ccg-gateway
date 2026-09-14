@@ -25,7 +25,7 @@
           <span class="v2-pill dot pt-status" :class="[health.cls, { 'pt-status-clickable': provider.is_blacklisted }]" @click="onStatusClick">{{ health.text }}</span>
         </el-tooltip>
       </div>
-      <div class="pt-fail mono" :class="{ danger: failDanger }">{{ provider.consecutive_failures }}/{{ provider.failure_threshold }}</div>
+      <div class="pt-fail mono" :class="{ danger: failDanger }">{{ failText }}</div>
       <div class="pt-cell pt-col-map" :class="{ muted: !mappingText }">
         <OverflowText :text="mappingText || '—'" />
       </div>
@@ -67,7 +67,20 @@ const emit = defineEmits<{
   toggle: [payload: { provider: Provider; enabled: boolean }]
 }>()
 
-const failDanger = computed(() => props.provider.consecutive_failures >= props.provider.failure_threshold)
+const failDanger = computed(() => {
+  const tiers = props.provider.blacklist_tiers ?? []
+  const first = tiers[0]?.failure_count ?? 5
+  return props.provider.consecutive_failures >= first
+})
+// 展示「当前计数/下一档触发数」；已到顶档后显示最高档。
+const failText = computed(() => {
+  const count = props.provider.consecutive_failures
+  const tiers = [...(props.provider.blacklist_tiers ?? [])].sort((a, b) => a.failure_count - b.failure_count)
+  if (!tiers.length) return `${count}`
+  const next = tiers.find((tier) => tier.failure_count > count)
+  const target = next?.failure_count ?? tiers[tiers.length - 1].failure_count
+  return `${count}/${target}`
+})
 const protocolLabel = computed(() => PROTOCOL_LABELS[props.provider.protocol] || props.provider.protocol)
 const mappingText = computed(() => {
   if (props.provider.model_maps?.length) return props.provider.model_maps.map((m) => m.target_model).join('、')

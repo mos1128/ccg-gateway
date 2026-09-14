@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 40,
+            version: 42,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -180,25 +180,6 @@ impl DatabaseSchema {
                         data_type: "INTEGER".to_string(),
                         nullable: false,
                         default_value: Some("1".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "failure_threshold".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("5".to_string()),
-                    },
-                    // 单个服务商在一轮里连续尝试的上限，达到后切下一个服务商。
-                    ColumnDefinition {
-                        name: "retry_limit".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("3".to_string()),
-                    },
-                    ColumnDefinition {
-                        name: "blacklist_minutes".to_string(),
-                        data_type: "INTEGER".to_string(),
-                        nullable: false,
-                        default_value: Some("10".to_string()),
                     },
                     ColumnDefinition {
                         name: "consecutive_failures".to_string(),
@@ -374,6 +355,59 @@ impl DatabaseSchema {
                 unique_constraints: vec![vec![
                     "provider_id".to_string(),
                     "model_pattern".to_string(),
+                ]],
+            },
+        );
+
+        // provider_blacklist_tier 表：阶梯熔断档位。连续失败命中某档的
+        // failure_count 即按该档 blacklist_minutes 拉黑；档位只增不减，
+        // 失败计数跨冷却保留，服务商成功一次才清零。
+        tables.insert(
+            "provider_blacklist_tier".to_string(),
+            TableDefinition {
+                name: "provider_blacklist_tier".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "provider_id".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "failure_count".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("5".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "blacklist_minutes".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("10".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "created_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "updated_at".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                ],
+                primary_key: vec!["id".to_string()],
+                unique_constraints: vec![vec![
+                    "provider_id".to_string(),
+                    "failure_count".to_string(),
                 ]],
             },
         );

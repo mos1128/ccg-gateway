@@ -67,10 +67,16 @@ pub async fn record_success(db: &SqlitePool, provider_id: i64) -> Result<bool, s
     Ok(result.rows_affected() > 0 && failures > 0)
 }
 
-/// Record a failed request for a provider
-/// Increments consecutive_failures and blacklists if threshold is reached
-/// If the provider was blacklisted but blacklist has expired, resets count before incrementing
-/// Uses a single write transaction to avoid lost updates under concurrent failures
+/// 档位被清空或异常时的兜底：连续失败 5 次拉黑 10 分钟。
+const FALLBACK_TIER_FAILURE_COUNT: i64 = 5;
+const FALLBACK_TIER_BLACKLIST_MINUTES: i64 = 10;
+
+/// Record a failed request for a provider.
+/// 阶梯熔断：失败计数跨冷却期保留（成功一次才清零，冷却到期不清零，
+/// 否则高于第一档的档位永远数不到）。计数命中某档的 failure_count 时，
+/// 取满足条件的最高档按该档时长拉黑。冷却期内到达的在途失败不计数，
+/// 避免冷却被反复续期。
+/// Uses a single write transaction to avoid lost updates under concurrent failures.
 /// Returns (was_blacklisted, provider_name) tuple
 pub async fn record_failure(
     db: &SqlitePool,
@@ -82,49 +88,54 @@ pub async fn record_failure(
     let result = sqlx::query(
         r#"
         UPDATE providers
-        SET consecutive_failures = CASE
-                WHEN blacklisted_until IS NOT NULL AND blacklisted_until <= ? THEN 1
-                ELSE consecutive_failures + 1
-            END,
-            blacklisted_until = CASE
-                WHEN (
-                    CASE
-                        WHEN blacklisted_until IS NOT NULL AND blacklisted_until <= ? THEN 1
-                        ELSE consecutive_failures + 1
-                    END
-                ) >= failure_threshold THEN ? + blacklist_minutes * 60
-                WHEN blacklisted_until IS NOT NULL AND blacklisted_until <= ? THEN NULL
-                ELSE blacklisted_until
-            END,
+        SET consecutive_failures = consecutive_failures + 1,
             updated_at = ?
         WHERE id = ?
           AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
         "#,
     )
     .bind(now)
-    .bind(now)
-    .bind(now)
-    .bind(now)
-    .bind(now)
     .bind(provider_id)
     .bind(now)
     .execute(&mut *tx)
     .await?;
 
-    let provider: Option<(String, i64, i64)> = sqlx::query_as(
-        "SELECT name, consecutive_failures, failure_threshold FROM providers WHERE id = ?",
+    if result.rows_affected() == 0 {
+        // 冷却期内的在途失败：不计数也不拉黑。
+        tx.commit().await?;
+        return Ok((false, String::new()));
+    }
+
+    let provider: Option<(String, i64)> = sqlx::query_as(
+        "SELECT name, consecutive_failures FROM providers WHERE id = ?",
     )
     .bind(provider_id)
     .fetch_optional(&mut *tx)
     .await?;
 
-    tx.commit().await?;
-
-    let Some((provider_name, failures, threshold)) = provider else {
+    let Some((provider_name, failures)) = provider else {
+        tx.commit().await?;
         return Ok((false, String::new()));
     };
 
-    let should_blacklist = result.rows_affected() > 0 && failures >= threshold;
+    // 命中的最高档：失败次数达到越多，拉黑越久。
+    let minutes = match_tier_minutes(&mut tx, provider_id, failures).await?;
+
+    let should_blacklist = minutes.is_some();
+    if let Some(minutes) = minutes {
+        sqlx::query(
+            "UPDATE providers SET blacklisted_until = ? + ? * 60, updated_at = ? WHERE id = ?",
+        )
+        .bind(now)
+        .bind(minutes)
+        .bind(now)
+        .bind(provider_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
     if should_blacklist {
         tracing::warn!(
             provider_id = provider_id,
@@ -134,6 +145,91 @@ pub async fn record_failure(
     }
 
     Ok((should_blacklist, provider_name))
+}
+
+/// 401/403/404 专用：凭证/资源错误不会自愈，直接按最小档拉黑，
+/// 不再给试探机会。失败计数保持不变（这类错误与渠道健康度无关）；
+/// 已在冷却期内的重复调用不续期。
+/// Returns (was_blacklisted, provider_name) tuple
+pub async fn blacklist_first_tier(
+    db: &SqlitePool,
+    provider_id: i64,
+) -> Result<(bool, String), sqlx::Error> {
+    let now = now_timestamp();
+    let mut tx = db.begin().await?;
+
+    let provider: Option<(String, Option<i64>)> = sqlx::query_as(
+        "SELECT name, blacklisted_until FROM providers WHERE id = ?",
+    )
+    .bind(provider_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some((provider_name, blacklisted_until)) = provider else {
+        tx.commit().await?;
+        return Ok((false, String::new()));
+    };
+
+    if blacklisted_until.is_some_and(|until| until > now) {
+        // 已在冷却中：在途请求的重复 401/403/404 不续期。
+        tx.commit().await?;
+        return Ok((false, provider_name));
+    }
+
+    let minutes: i64 = sqlx::query_as::<_, (i64,)>(
+        "SELECT blacklist_minutes FROM provider_blacklist_tier WHERE provider_id = ? ORDER BY failure_count ASC LIMIT 1",
+    )
+    .bind(provider_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .map(|(minutes,)| minutes.max(1))
+    .unwrap_or(FALLBACK_TIER_BLACKLIST_MINUTES);
+
+    let result = sqlx::query(
+        r#"
+        UPDATE providers
+        SET blacklisted_until = ? + ? * 60,
+            updated_at = ?
+        WHERE id = ?
+          AND (blacklisted_until IS NULL OR blacklisted_until <= ?)
+        "#,
+    )
+    .bind(now)
+    .bind(minutes)
+    .bind(now)
+    .bind(provider_id)
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok((result.rows_affected() > 0, provider_name))
+}
+
+/// 取失败次数命中的最高档时长；无档位配置时回退到兜底档。
+async fn match_tier_minutes(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    provider_id: i64,
+    failures: i64,
+) -> Result<Option<i64>, sqlx::Error> {
+    let tiers: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT failure_count, blacklist_minutes FROM provider_blacklist_tier WHERE provider_id = ? ORDER BY failure_count DESC",
+    )
+    .bind(provider_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    if tiers.is_empty() {
+        return Ok((failures >= FALLBACK_TIER_FAILURE_COUNT)
+            .then_some(FALLBACK_TIER_BLACKLIST_MINUTES));
+    }
+
+    // 已按 failure_count 降序：第一个满足的即最高档。
+    Ok(tiers
+        .iter()
+        .find(|(failure_count, _)| *failure_count <= failures)
+        .map(|(_, minutes)| (*minutes).max(1)))
 }
 
 /// Reset provider failures and remove blacklist

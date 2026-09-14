@@ -26,7 +26,7 @@ This project was initiated based on the author's actual needs to solve various p
 - 🧩 **Multi-Agent Management** - 10+ built-in Agent templates, plus custom templates for onboarding new Agents
 - 🔌 **Multi-Protocol Routing** - Supports four endpoint types: Anthropic Messages / OpenAI Chat / OpenAI Responses / Gemini generateContent
 - 🔄 **Protocol Translation** - Anthropic Messages / OpenAI Chat / OpenAI Responses convert to one another, so an Agent can use providers that speak a different protocol
-- 🔀 **Failover** - On upstream failure, automatic retries, provider switching, breaker cooldown, and periodic re-checks — invisible to the user
+- 🔀 **Failover** - On upstream failure, automatic retries, provider switching, and escalating breaker cooldowns — invisible to the user
 - 🛡️ **Stream Inspection** - A stream reaches the client only after its first chunk passes inspection; on an upstream error the provider is switched silently without interrupting the Agent's task
 - 🔁 **Model Mapping** - Wildcard rewriting when Agent and provider model names differ, with no manual config edits
 - 🚫 **Model Blacklist** - Models a provider doesn't support are skipped automatically and routed to a provider that does
@@ -87,7 +87,7 @@ This project was initiated based on the author's actual needs to solve various p
   - Wildcards: `*` for any length of characters, `?` for a single character.
   - Example: `*opus* -> gml-5` maps any model with "opus" in its name to the provider's gml-5 model.
   - Mapping targets can be selected from the provider's available models via dropdown, or typed manually.
-- Failover Rules: On failure, the request first retries on the current provider (configurable consecutive retry count, default 3), then switches to the next provider; once every provider has had a turn, the rotation starts over until one succeeds or all of them trip the breaker. When consecutive failures reach the threshold (default 5), the provider enters a breaker cooldown (default 10 minutes) and other providers take over in the meantime. Problems with the request itself, such as invalid credentials or a nonexistent model, switch providers immediately instead of wasting retries.
+- Failover Rules: Channel failures (timeouts, 5xx, 429, etc.) are retried in-gateway and each failure counts toward the provider's consecutive-failure count; once the count reaches a breaker tier (multiple escalating tiers configurable, default: 5 consecutive failures blacklists for 10 minutes), the provider enters that tier's cooldown and requests switch to the next provider. The failure count persists across cooldowns — when a cooldown expires, probe traffic flows again and a single success resets the count, while repeated outages climb to higher tiers with longer cooldowns. 401/403/404 (invalid credentials, nonexistent model, etc.) cannot self-heal and blacklist at the smallest tier immediately; 400/413/422 (errors caused by the request itself) are returned straight to the client with no retry and no breaker impact.
 
 ### Multi-Profile
 

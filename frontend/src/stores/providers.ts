@@ -108,14 +108,14 @@ export const useProviderStore = defineStore('providers', () => {
   }
 
   // 解除时刻随列表一起下发，到期不必回头问后端：按后端 ProviderResponse 的口径
-  // 本地算一遍即可（熔断已过期则失败计数显示为 0，blacklisted_until 保持原值）
+  // 本地算一遍即可。失败计数跨冷却期保留（成功一次才清零，由后端健康事件推送），
+  // 这里只解除熔断标记。
   function expireBlacklists(nowSeconds: number) {
     for (const list of Object.values(providersMap.value)) {
       for (const provider of list) {
         if (!provider.is_blacklisted || !provider.blacklisted_until) continue
         if (provider.blacklisted_until > nowSeconds) continue
         provider.is_blacklisted = false
-        provider.consecutive_failures = 0
       }
     }
   }

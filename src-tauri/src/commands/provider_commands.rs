@@ -78,6 +78,54 @@ fn normalize_translate_max_tokens(value: Option<i64>) -> i64 {
         .max(1024)
 }
 
+/// 阶梯档位归一化：次数 1-50、时长 1-10080 分钟（最长一周），同次数去重。
+/// 空列表回退默认一档（5 次拉黑 10 分钟），保证熔断判定永远有档可用。
+fn normalize_blacklist_tiers(
+    tiers: Option<&Vec<crate::db::models::BlacklistTierInput>>,
+) -> Vec<(i64, i64)> {
+    let mut normalized: Vec<(i64, i64)> = tiers
+        .map(|tiers| {
+            tiers
+                .iter()
+                .map(|tier| {
+                    (
+                        tier.failure_count.clamp(1, 50),
+                        tier.blacklist_minutes.clamp(1, 10080),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    normalized.sort();
+    normalized.dedup_by(|a, b| a.0 == b.0);
+    if normalized.is_empty() {
+        normalized.push((5, 10));
+    }
+    normalized
+}
+
+async fn insert_blacklist_tiers_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    provider_id: i64,
+    tiers: &[(i64, i64)],
+    now: i64,
+) -> Result<()> {
+    for (failure_count, blacklist_minutes) in tiers {
+        sqlx::query(
+            "INSERT INTO provider_blacklist_tier (provider_id, failure_count, blacklist_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(provider_id)
+        .bind(failure_count)
+        .bind(blacklist_minutes)
+        .bind(now)
+        .bind(now)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    }
+    Ok(())
+}
+
 fn validate_provider_protocol(agent_id: &str, protocol: Option<&str>) -> Result<String> {
     let definition = crate::services::agent::get_definition(agent_id)
         .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
@@ -120,8 +168,8 @@ async fn insert_provider_record(
 ) -> Result<i64> {
     let result = sqlx::query(
         r#"
-        INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, enabled, failure_threshold, retry_limit, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, price_multiplier, translate_max_tokens)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?, ?)
+        INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, enabled, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, price_multiplier, translate_max_tokens)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM providers WHERE cli_type = ? AND profile = ?), ?, ?, ?, ?, ?)
         "#,
     )
     .bind(values.cli_type)
@@ -131,10 +179,6 @@ async fn insert_provider_record(
     .bind(&values.input.base_url)
     .bind(&values.input.api_key)
     .bind(values.input.enabled.unwrap_or(true) as i64)
-    .bind(values.input.failure_threshold.unwrap_or(5))
-    // 至少为 1：0 会让服务商在一轮里一次都不被尝试。
-    .bind(values.input.retry_limit.unwrap_or(3).clamp(1, 20))
-    .bind(values.input.blacklist_minutes.unwrap_or(10))
     .bind(values.cli_type)
     .bind(values.profile)
     .bind(values.custom_useragent)
@@ -228,6 +272,19 @@ pub async fn get_providers(
         .await
         .map_err(|e| e.to_string())?;
 
+    let tiers_sql = format!(
+        "SELECT provider_id, failure_count, blacklist_minutes FROM provider_blacklist_tier WHERE provider_id IN ({}) ORDER BY provider_id, failure_count",
+        placeholders
+    );
+    let mut tiers_query = sqlx::query_as::<_, (i64, i64, i64)>(&tiers_sql);
+    for provider_id in &provider_ids {
+        tiers_query = tiers_query.bind(*provider_id);
+    }
+    let all_tiers = tiers_query
+        .fetch_all(db.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
     let maps_by_provider: HashMap<i64, Vec<_>> = all_maps.into_iter().fold(
         HashMap::new(),
         |mut acc, (id, provider_id, source_model, target_model, enabled)| {
@@ -244,9 +301,15 @@ pub async fn get_providers(
     let blacklist_by_provider: HashMap<i64, Vec<_>> = all_blacklist.into_iter().fold(
         HashMap::new(),
         |mut acc, (id, provider_id, model_pattern)| {
-            acc.entry(provider_id)
-                .or_insert_with(Vec::new)
-                .push((id, model_pattern));
+            acc.entry(provider_id).or_insert_with(Vec::new).push((id, model_pattern));
+            acc
+        },
+    );
+
+    let tiers_by_provider: HashMap<i64, Vec<(i64, i64)>> = all_tiers.into_iter().fold(
+        HashMap::new(),
+        |mut acc, (provider_id, failure_count, blacklist_minutes)| {
+            acc.entry(provider_id).or_insert_with(Vec::new).push((failure_count, blacklist_minutes));
             acc
         },
     );
@@ -286,6 +349,23 @@ pub async fn get_providers(
                                 model_pattern: model_pattern.clone(),
                             },
                         )
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // 从分组数据中获取 blacklist_tiers（已按 failure_count 升序）
+            response.blacklist_tiers = tiers_by_provider
+                .get(&provider.id)
+                .map(|tiers| {
+                    tiers.iter()
+                        .enumerate()
+                        .map(|(index, (failure_count, blacklist_minutes))| {
+                            crate::db::models::BlacklistTierResponse {
+                                id: index as i64,
+                                failure_count: *failure_count,
+                                blacklist_minutes: *blacklist_minutes,
+                            }
+                        })
                         .collect()
                 })
                 .unwrap_or_default();
@@ -341,6 +421,27 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
     response.model_blacklist = blacklist
         .into_iter()
         .map(|(id, model_pattern)| crate::db::models::ModelBlacklistResponse { id, model_pattern })
+        .collect();
+
+    // Load blacklist tiers（按失败次数升序，即从最小档到最高档）
+    let tiers: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT failure_count, blacklist_minutes FROM provider_blacklist_tier WHERE provider_id = ? ORDER BY failure_count",
+    )
+    .bind(id)
+    .fetch_all(db.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    response.blacklist_tiers = tiers
+        .into_iter()
+        .enumerate()
+        .map(|(index, (failure_count, blacklist_minutes))| {
+            crate::db::models::BlacklistTierResponse {
+                id: index as i64,
+                failure_count,
+                blacklist_minutes,
+            }
+        })
         .collect();
 
     Ok(response)
@@ -518,6 +619,10 @@ pub async fn create_provider(
         }
     }
 
+    // Insert blacklist tiers（空列表归一化时已回退默认一档）
+    let tiers = normalize_blacklist_tiers(input.blacklist_tiers.as_ref());
+    insert_blacklist_tiers_tx(&mut tx, id, &tiers, now).await?;
+
     tx.commit().await.map_err(|e| e.to_string())?;
 
     // Log system event
@@ -569,6 +674,7 @@ pub async fn update_provider(
     // Check if model maps will be updated (before moving)
     let has_model_maps_update = input.model_maps.is_some();
     let has_model_blacklist_update = input.model_blacklist.is_some();
+    let has_blacklist_tiers_update = input.blacklist_tiers.is_some();
     let normalized_profile = if let Some(ref profile) = input.profile {
         Some(validate_provider_profile(Some(profile.as_str()))?.to_string())
     } else {
@@ -642,18 +748,6 @@ pub async fn update_provider(
         updates.push("enabled = ?".to_string());
         has_updates = true;
     }
-    if input.failure_threshold.is_some() {
-        updates.push("failure_threshold = ?".to_string());
-        has_updates = true;
-    }
-    if input.retry_limit.is_some() {
-        updates.push("retry_limit = ?".to_string());
-        has_updates = true;
-    }
-    if input.blacklist_minutes.is_some() {
-        updates.push("blacklist_minutes = ?".to_string());
-        has_updates = true;
-    }
     if input.custom_useragent.is_some() {
         updates.push("custom_useragent = ?".to_string());
         has_updates = true;
@@ -689,15 +783,6 @@ pub async fn update_provider(
         }
         if let Some(enabled) = input.enabled {
             q = q.bind(enabled as i64);
-        }
-        if let Some(failure_threshold) = input.failure_threshold {
-            q = q.bind(failure_threshold);
-        }
-        if let Some(retry_limit) = input.retry_limit {
-            q = q.bind(retry_limit.clamp(1, 20));
-        }
-        if let Some(blacklist_minutes) = input.blacklist_minutes {
-            q = q.bind(blacklist_minutes);
         }
         if let Some(ref custom_useragent) = input.custom_useragent {
             // Normalize: treat empty string as NULL
@@ -773,6 +858,18 @@ pub async fn update_provider(
         }
     }
 
+    // Update blacklist tiers if provided（整体替换，空列表归一化时已回退默认一档）
+    if input.blacklist_tiers.is_some() {
+        sqlx::query("DELETE FROM provider_blacklist_tier WHERE provider_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+
+        let tiers = normalize_blacklist_tiers(input.blacklist_tiers.as_ref());
+        insert_blacklist_tiers_tx(&mut tx, id, &tiers, now).await?;
+    }
+
     tx.commit().await.map_err(|e| e.to_string())?;
 
     if let Some(active) = active_direct_provider
@@ -783,7 +880,11 @@ pub async fn update_provider(
     }
 
     // Log system event (only if there were actual updates)
-    if has_updates || has_model_maps_update || has_model_blacklist_update {
+    if has_updates
+        || has_model_maps_update
+        || has_model_blacklist_update
+        || has_blacklist_tiers_update
+    {
         let _ = crate::services::stats::record_system_log(
             &log_db.0,
             "provider_updated",
@@ -833,6 +934,12 @@ pub async fn delete_provider(
         .map_err(map_db_error)?;
 
     sqlx::query("DELETE FROM provider_model_blacklist WHERE provider_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    sqlx::query("DELETE FROM provider_blacklist_tier WHERE provider_id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await

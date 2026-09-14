@@ -169,6 +169,13 @@ export interface ModelBlacklist {
   model_pattern: string
 }
 
+/** 阶梯熔断档位：连续失败达到 failure_count 即拉黑 blacklist_minutes 分钟。 */
+export interface BlacklistTier {
+  id?: number
+  failure_count: number
+  blacklist_minutes: number
+}
+
 export interface ProviderModel {
   id: number
   provider_id: number
@@ -232,10 +239,7 @@ export interface Provider {
   base_url: string
   api_key: string
   enabled: boolean
-  failure_threshold: number
-  /** 单个服务商在一轮里连续尝试的上限，达到后切下一个服务商。 */
-  retry_limit: number
-  blacklist_minutes: number
+  /** 连续失败计数：跨冷却期保留，成功一次才清零。 */
   consecutive_failures: number
   blacklisted_until: number | null
   sort_order: number
@@ -245,6 +249,8 @@ export interface Provider {
   translate_max_tokens: number
   model_maps: ModelMap[]
   model_blacklist: ModelBlacklist[]
+  /** 阶梯熔断档位，按失败次数升序。 */
+  blacklist_tiers: BlacklistTier[]
   is_blacklisted: boolean
 }
 
@@ -256,14 +262,12 @@ export interface ProviderCreate {
   base_url: string
   api_key: string
   enabled?: boolean
-  failure_threshold?: number
-  retry_limit?: number
-  blacklist_minutes?: number
   custom_useragent?: string
   price_multiplier?: number
   translate_max_tokens?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
+  blacklist_tiers?: BlacklistTier[]
 }
 
 export interface ProviderUpdate {
@@ -273,14 +277,12 @@ export interface ProviderUpdate {
   base_url?: string
   api_key?: string
   enabled?: boolean
-  failure_threshold?: number
-  retry_limit?: number
-  blacklist_minutes?: number
   custom_useragent?: string
   price_multiplier?: number
   translate_max_tokens?: number
   model_maps?: ModelMap[]
   model_blacklist?: ModelBlacklist[]
+  blacklist_tiers?: BlacklistTier[]
 }
 
 /** 后端在熔断/恢复时推送的增量状态，用于服务商页免刷新更新。 */

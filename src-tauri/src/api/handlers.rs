@@ -390,18 +390,19 @@ pub async fn proxy_handler_catchall(
     };
 
     let model_mapping_enabled = agent.features.model_mapping.enabled;
-    // Rotating failover: every failed attempt counts once toward the channel
-    // breaker. A channel gets up to its `retry_limit` consecutive attempts
-    // before the next channel takes over; once every channel has spent its
-    // round budget, the rotation starts over until one channel succeeds or
-    // all channels are blacklisted. The last upstream error is what the
-    // client sees when every channel is exhausted.
+    // 阶梯熔断下的故障转移：渠道失败（超时、5xx、429 等）在网关内重试，
+    // 每次失败计入连续失败计数，命中熔断档位即拉黑并切换下一个服务商；
+    // 凭证/资源错误（401/403/404）不会自愈，直接按最小档拉黑；
+    // 客户端错误（400/413/422）说明请求本身有问题，换渠道也一样，
+    // 直接回给客户端。所有渠道一轮走完即止，最后的上游错误交给客户端。
     let mut last_failure: Option<Response<Body>> = None;
     // Channels whose own answer rules out any retry (bad credentials, unknown
     // model): rotating back to them would only repeat the same error.
     let mut skipped: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    // 防御性上限：正常配置下第一档远小于该值就会拉黑；档位被清空或
+    // 异常时用它兜底，避免单请求内无限重试。
+    const MAX_ATTEMPTS_PER_PROVIDER: usize = 50;
 
-    loop {
     for provider_with_maps in &providers {
         let provider = &provider_with_maps.provider;
         let provider_id = provider.id;
@@ -424,8 +425,6 @@ pub async fn proxy_handler_catchall(
         if provider_unavailable(&state.db, provider_id).await {
             continue;
         }
-        // At least 1 so a stored 0 cannot silence the channel entirely.
-        let retry_limit = provider.retry_limit.clamp(1, 20) as usize;
         // 转成 Anthropic 时源请求没给 max_tokens 的兜底值（Anthropic 必填），按上游
         // 模型的上限由服务商自己配；低于 1024 连思考预算都摆不下。
         let translate_max_tokens = provider.translate_max_tokens.max(1024);
@@ -433,8 +432,12 @@ pub async fn proxy_handler_catchall(
         let mut rectified = false;
 
         let mut attempt = 0usize;
-        while attempt < retry_limit {
+        loop {
+            // 命中档位被拉黑（或中途被停用）后，切换下一个服务商。
             if provider_unavailable(&state.db, provider_id).await {
+                break;
+            }
+            if attempt >= MAX_ATTEMPTS_PER_PROVIDER {
                 break;
             }
 
@@ -662,42 +665,26 @@ pub async fn proxy_handler_catchall(
                     continue;
                 }
             }
+            // 客户端错误（400/413/422）：请求本身的问题，换渠道也会被同样拒绝，
+            // 直接回给客户端，不重试也不计入熔断（渠道没坏，是请求的锅）。
             if !is_channel_failure(status_code) {
-                // 跨协议转换时，不同服务商收到的请求可能不同（参数转换、模型映射、工具展平）
-                // 服务商 A 的 400 不代表服务商 B 也会 400，应该尝试轮转一次
-                if translate_path.is_some() && is_client_request_error(status_code) {
-                    tracing::warn!(
-                        provider_id,
-                        provider = %provider_name,
-                        status = %status_code,
-                        "Client error in translation mode, trying next provider"
-                    );
-                    if let Some(previous) = last_failure.replace(response) {
-                        drain_response_body(previous).await;
-                    }
-                    skipped.insert(provider_id);
-                    // 不记熔断：400 大概率是我们转出来的请求这家不认，渠道本身没坏，
-                    // 记进熔断会把好渠道拉黑。
-                    break;  // 继续外层循环，尝试下一个服务商
-                }
-                // 同协议或非 400/413/422 的错误，直接返回
                 return Ok(response);
             }
 
-            // 401/403/404 don't retry same provider, move to next immediately
+            // 401/403/404（凭证/资源错误）不会自愈：直接按最小档拉黑，
+            // 本请求内不再重试该服务商，切换下一个。
             if matches!(status_code, 401 | 403 | 404) {
                 tracing::warn!(
                     provider_id,
                     provider = %provider_name,
                     status = %status_code,
-                    "Provider authentication/not-found error, skipping retries"
+                    "Provider authentication/not-found error, blacklisting first tier"
                 );
                 if let Some(previous) = last_failure.replace(response) {
                     drain_response_body(previous).await;
                 }
                 skipped.insert(provider_id);
-                // The failed attempt still counts toward the breaker.
-                record_provider_failure(&state, provider_id).await;
+                blacklist_provider_first_tier(&state, provider_id).await;
                 break;
             }
 
@@ -712,33 +699,11 @@ pub async fn proxy_handler_catchall(
                 drain_response_body(previous).await;
             }
 
-            // Every failed attempt counts once toward the channel breaker;
-            // reaching the threshold blacklists it for the cooldown.
+            // 每次失败计入连续失败计数，命中熔断档位即拉黑（见循环顶部的
+            // provider_unavailable 检查，拉黑后切换下一个服务商）。
             record_provider_failure(&state, provider_id).await;
-
-            if provider_unavailable(&state.db, provider_id).await {
-                break;
-            }
             attempt += 1;
         }
-    }
-
-    // The round is over. Keep rotating while at least one channel is neither
-    // blacklisted nor ruled out by its own answer; otherwise give up and let
-    // the last upstream error reach the client.
-    let mut any_available = false;
-    for provider_with_maps in &providers {
-        if skipped.contains(&provider_with_maps.provider.id) {
-            continue;
-        }
-        if !provider_unavailable(&state.db, provider_with_maps.provider.id).await {
-            any_available = true;
-            break;
-        }
-    }
-    if !any_available {
-        break;
-    }
     }
 
     Ok(last_failure.unwrap_or_else(|| {
@@ -1360,6 +1325,26 @@ async fn record_provider_failure(state: &Arc<AppState>, provider_id: i64) {
                 &state.log_db,
                 "provider_blacklisted",
                 &format!("服务商 {} 因连续失败已被加入黑名单", provider_name),
+            )
+            .await;
+        }
+        emit_provider_health_event(state, provider_id).await;
+    }
+}
+
+/// 401/403/404 用：凭证/资源错误直接按最小档熔断。
+async fn blacklist_provider_first_tier(state: &Arc<AppState>, provider_id: i64) {
+    if let Ok((was_blacklisted, provider_name)) =
+        provider_service::blacklist_first_tier(&state.db, provider_id).await
+    {
+        if was_blacklisted {
+            let _ = stats_service::record_system_log(
+                &state.log_db,
+                "provider_blacklisted",
+                &format!(
+                    "服务商 {} 因凭证/资源错误（401/403/404）已按最小档熔断",
+                    provider_name
+                ),
             )
             .await;
         }

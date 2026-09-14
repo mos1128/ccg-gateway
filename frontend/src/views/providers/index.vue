@@ -226,6 +226,8 @@
       @remove-model-map="removeModelMap"
       @add-model-blacklist="addModelBlacklist"
       @remove-model-blacklist="removeModelBlacklist"
+      @add-blacklist-tier="addBlacklistTier"
+      @remove-blacklist-tier="removeBlacklistTier"
       @sync-models="handleSyncEditingModels"
       @add-model="handleAddEditingModel"
       @remove-model="handleRemoveEditingModel"
@@ -635,30 +637,34 @@ const showCredentialDialog = computed({
 
 interface FormModelMap { source_model: string; target_model: string; enabled: boolean }
 interface FormModelBlacklist { model_pattern: string }
+interface FormBlacklistTier { failure_count: number; blacklist_minutes: number }
 interface ProviderDraft {
   protocol: Protocol
   name: string
   base_url: string
   api_key: string
   enabled: boolean
-  failure_threshold: number
-  retry_limit: number
-  blacklist_minutes: number
   custom_useragent: string
   price_multiplier: number
   translate_max_tokens: number
   model_maps: FormModelMap[]
   model_blacklist: FormModelBlacklist[]
+  blacklist_tiers: FormBlacklistTier[]
 }
 interface ProviderTogglePayload { provider: Provider; enabled: boolean }
 
 const toggleLoadingId = ref<number | null>(null)
 const writeCredentialLoadingId = ref<number | null>(null)
 
+function defaultBlacklistTiers(): FormBlacklistTier[] {
+  return [{ failure_count: 5, blacklist_minutes: 10 }]
+}
+
 const form = ref({
-  protocol: '' as Protocol | '', name: '', base_url: '', api_key: '', failure_threshold: 5, retry_limit: 3, blacklist_minutes: 10,
+  protocol: '' as Protocol | '', name: '', base_url: '', api_key: '',
   custom_useragent: '', price_multiplier: 1, translate_max_tokens: 32000,
-  model_maps: [] as FormModelMap[], model_blacklist: [] as FormModelBlacklist[]
+  model_maps: [] as FormModelMap[], model_blacklist: [] as FormModelBlacklist[],
+  blacklist_tiers: defaultBlacklistTiers()
 })
 const copiedProvider = ref<ProviderDraft | null>(null)
 const pasteLoading = ref(false)
@@ -742,9 +748,9 @@ function defaultProtocol(): Protocol | '' {
 
 function resetForm() {
   form.value = {
-    protocol: defaultProtocol(), name: '', base_url: '', api_key: '', failure_threshold: 5, retry_limit: 3, blacklist_minutes: 10,
+    protocol: defaultProtocol(), name: '', base_url: '', api_key: '',
     custom_useragent: '', price_multiplier: 1, translate_max_tokens: 32000,
-    model_maps: [], model_blacklist: []
+    model_maps: [], model_blacklist: [], blacklist_tiers: defaultBlacklistTiers()
   }
   pendingManualModels.value = []
 }
@@ -755,17 +761,26 @@ function resetCredentialForm() {
   }
 }
 function cloneProviderDraft(draft: ProviderDraft): ProviderDraft {
-  return { ...draft, model_maps: draft.model_maps.map((m) => ({ ...m })), model_blacklist: draft.model_blacklist.map((b) => ({ ...b })) }
+  return {
+    ...draft,
+    model_maps: draft.model_maps.map((m) => ({ ...m })),
+    model_blacklist: draft.model_blacklist.map((b) => ({ ...b })),
+    blacklist_tiers: draft.blacklist_tiers.map((t) => ({ ...t }))
+  }
+}
+function providerDraftTiers(provider: Provider): FormBlacklistTier[] {
+  const tiers = provider.blacklist_tiers?.map(({ failure_count, blacklist_minutes }) => ({ failure_count, blacklist_minutes })) ?? []
+  return tiers.length ? tiers : defaultBlacklistTiers()
 }
 function createProviderDraft(provider: Provider): ProviderDraft {
   return {
     protocol: provider.protocol, name: provider.name, base_url: provider.base_url, api_key: provider.api_key, enabled: provider.enabled,
-    failure_threshold: provider.failure_threshold, retry_limit: normalizeRetryLimit(provider.retry_limit), blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
     price_multiplier: normalizeMultiplier(provider.price_multiplier),
     translate_max_tokens: normalizeTranslateMaxTokens(provider.translate_max_tokens),
     model_maps: provider.model_maps.map(({ source_model, target_model, enabled }) => ({ source_model, target_model, enabled })),
-    model_blacklist: provider.model_blacklist.map(({ model_pattern }) => ({ model_pattern }))
+    model_blacklist: provider.model_blacklist.map(({ model_pattern }) => ({ model_pattern })),
+    blacklist_tiers: providerDraftTiers(provider)
   }
 }
 function makeUniqueProviderName(name: string): string {
@@ -903,17 +918,12 @@ function addModelMap() { form.value.model_maps.push({ source_model: '', target_m
 function removeModelMap(index: number) { form.value.model_maps.splice(index, 1) }
 function addModelBlacklist() { form.value.model_blacklist.push({ model_pattern: '' }) }
 function removeModelBlacklist(index: number) { form.value.model_blacklist.splice(index, 1) }
+function addBlacklistTier() { form.value.blacklist_tiers.push({ failure_count: 3, blacklist_minutes: 5 }) }
+function removeBlacklistTier(index: number) { form.value.blacklist_tiers.splice(index, 1) }
 
 function normalizeMultiplier(value: unknown): number {
   const numberValue = Number(value)
   return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : 1
-}
-
-/** 连续重试次数限定在 1-20：0 会让服务商一次都不被尝试。 */
-function normalizeRetryLimit(value: unknown): number {
-  const numberValue = Number(value)
-  if (!Number.isFinite(numberValue) || numberValue < 1) return 3
-  return Math.min(Math.floor(numberValue), 20)
 }
 
 /** 转换兜底的 max_tokens 最小 1024：再低连思考预算都摆不下。 */
@@ -1215,11 +1225,11 @@ function handleEdit(provider: Provider) {
   editingProvider.value = provider
   form.value = {
     protocol: provider.protocol, name: provider.name, base_url: provider.base_url, api_key: provider.api_key,
-    failure_threshold: provider.failure_threshold, retry_limit: normalizeRetryLimit(provider.retry_limit), blacklist_minutes: provider.blacklist_minutes,
     custom_useragent: provider.custom_useragent || '',
     price_multiplier: normalizeMultiplier(provider.price_multiplier),
     translate_max_tokens: normalizeTranslateMaxTokens(provider.translate_max_tokens),
-    model_maps: provider.model_maps.map((m) => ({ ...m })), model_blacklist: provider.model_blacklist.map((b) => ({ ...b }))
+    model_maps: provider.model_maps.map((m) => ({ ...m })), model_blacklist: provider.model_blacklist.map((b) => ({ ...b })),
+    blacklist_tiers: providerDraftTiers(provider)
   }
 }
 async function handleSave() {
@@ -1238,14 +1248,12 @@ async function handleSave() {
     name: form.value.name,
     base_url: form.value.base_url,
     api_key: form.value.api_key,
-    failure_threshold: form.value.failure_threshold,
-    retry_limit: normalizeRetryLimit(form.value.retry_limit),
-    blacklist_minutes: form.value.blacklist_minutes,
     custom_useragent: form.value.custom_useragent,
     price_multiplier: normalizeMultiplier(form.value.price_multiplier),
     translate_max_tokens: normalizeTranslateMaxTokens(form.value.translate_max_tokens),
     model_maps: form.value.model_maps.filter((m) => m.source_model && m.target_model),
     model_blacklist: form.value.model_blacklist.filter((b) => b.model_pattern),
+    blacklist_tiers: form.value.blacklist_tiers.filter((t) => t.failure_count >= 1 && t.blacklist_minutes >= 1),
   } satisfies ProviderUpdate
   try {
     if (editingProvider.value) {

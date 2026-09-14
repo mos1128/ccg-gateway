@@ -87,13 +87,20 @@ pub async fn init_db(path: &Path) -> Result<SqlitePool, sqlx::Error> {
     // 9. 需要迁移
     tracing::info!("检测到数据库版本过旧，开始自动迁移...");
 
-    // 10. 读取实际结构
+    // 10. 阶梯熔断上线（v42）：providers 表的旧熔断列会被 rebuild 删除，
+    // 旧值必须先搬进档位表，回填必须发生在结构迁移之前。
+    // current_version < 42 的库才存在这些旧列，之后版本再跑会因列不存在而报错。
+    if !is_log_db && current_version < 42 {
+        backfill_blacklist_tiers_before_rebuild(&pool, &expected_schema).await?;
+    }
+
+    // 11. 读取实际结构
     let actual_tables = inspector.get_tables().await?;
 
-    // 11. 对比差异（通过 SQL 比较）
+    // 12. 对比差异（通过 SQL 比较）
     let diff = SchemaDiff::compare_async(&expected_schema, actual_tables, &inspector).await?;
 
-    // 12. 应用变更
+    // 13. 应用变更
     if diff.has_changes() {
         tracing::info!("检测到 {} 个结构变更，开始迁移...", diff.change_count());
         let migrator = SchemaMigrator::new(&pool, &expected_schema);
@@ -297,6 +304,23 @@ async fn init_default_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await?;
     }
 
+    // 阶梯熔断兜底：为还没有档位的服务商补默认一档（5 次拉黑 10 分钟）。
+    // 档位正常由创建/编辑服务商维护，这里只兜异常情况（如手动改库清空档位）。
+    // NOT IN 保证幂等，每次启动自愈。
+    sqlx::query(
+        r#"
+        INSERT INTO provider_blacklist_tier
+            (provider_id, failure_count, blacklist_minutes, created_at, updated_at)
+        SELECT id, 5, 10, ?, ?
+        FROM providers
+        WHERE id NOT IN (SELECT provider_id FROM provider_blacklist_tier)
+        "#,
+    )
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
+
     let _ = skill::ensure_default_skill_repos();
 
     Ok(())
@@ -313,6 +337,37 @@ async fn migrate_provider_protocols(pool: &SqlitePool) -> Result<(), sqlx::Error
             .execute(pool)
             .await?;
     }
+
+    Ok(())
+}
+
+/// v42 阶梯熔断上线：providers 表的旧熔断列（failure_threshold/
+/// blacklist_minutes）会被结构迁移的 rebuild 删除，删掉的值无法找回，
+/// 所以在迁移前先把旧值搬进 provider_blacklist_tier 作为默认一档。
+/// 表不存在时按期望结构先建（to_create_sql 自带 IF NOT EXISTS）。
+async fn backfill_blacklist_tiers_before_rebuild(
+    pool: &SqlitePool,
+    expected_schema: &DatabaseSchema,
+) -> Result<(), sqlx::Error> {
+    let now = now_timestamp();
+
+    if let Some(table) = expected_schema.tables.get("provider_blacklist_tier") {
+        sqlx::query(&table.to_create_sql()).execute(pool).await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO provider_blacklist_tier
+            (provider_id, failure_count, blacklist_minutes, created_at, updated_at)
+        SELECT id, MAX(failure_threshold, 1), MAX(blacklist_minutes, 1), ?, ?
+        FROM providers
+        WHERE id NOT IN (SELECT provider_id FROM provider_blacklist_tier)
+        "#,
+    )
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await?;
 
     Ok(())
 }

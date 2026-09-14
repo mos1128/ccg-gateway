@@ -328,10 +328,7 @@ pub struct Provider {
     pub base_url: String,
     pub api_key: String,
     pub enabled: i64,
-    pub failure_threshold: i64,
-    /// 单个服务商在一轮里连续尝试的上限，达到后切下一个服务商。
-    pub retry_limit: i64,
-    pub blacklist_minutes: i64,
+    /// 连续失败计数：跨冷却期保留，成功一次才清零。
     pub consecutive_failures: i64,
     pub blacklisted_until: Option<i64>,
     pub sort_order: i64,
@@ -357,6 +354,15 @@ pub struct ProviderModelBlacklist {
     pub id: i64,
     pub provider_id: i64,
     pub model_pattern: String,
+}
+
+/// 阶梯熔断档位：连续失败达到 failure_count 即拉黑 blacklist_minutes 分钟。
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct ProviderBlacklistTier {
+    pub id: i64,
+    pub provider_id: i64,
+    pub failure_count: i64,
+    pub blacklist_minutes: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -425,6 +431,12 @@ pub struct ModelBlacklistInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlacklistTierInput {
+    pub failure_count: i64,
+    pub blacklist_minutes: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderCreate {
     pub cli_type: Option<String>,
     pub profile: Option<String>,
@@ -433,14 +445,12 @@ pub struct ProviderCreate {
     pub base_url: String,
     pub api_key: String,
     pub enabled: Option<bool>,
-    pub failure_threshold: Option<i64>,
-    pub retry_limit: Option<i64>,
-    pub blacklist_minutes: Option<i64>,
     pub custom_useragent: Option<String>,
     pub price_multiplier: Option<f64>,
     pub translate_max_tokens: Option<i64>,
     pub model_maps: Option<Vec<ModelMapInput>>,
     pub model_blacklist: Option<Vec<ModelBlacklistInput>>,
+    pub blacklist_tiers: Option<Vec<BlacklistTierInput>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -451,14 +461,12 @@ pub struct ProviderUpdate {
     pub base_url: Option<String>,
     pub api_key: Option<String>,
     pub enabled: Option<bool>,
-    pub failure_threshold: Option<i64>,
-    pub retry_limit: Option<i64>,
-    pub blacklist_minutes: Option<i64>,
     pub custom_useragent: Option<String>,
     pub price_multiplier: Option<f64>,
     pub translate_max_tokens: Option<i64>,
     pub model_maps: Option<Vec<ModelMapInput>>,
     pub model_blacklist: Option<Vec<ModelBlacklistInput>>,
+    pub blacklist_tiers: Option<Vec<BlacklistTierInput>>,
 }
 
 // Response DTOs
@@ -477,6 +485,13 @@ pub struct ModelBlacklistResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlacklistTierResponse {
+    pub id: i64,
+    pub failure_count: i64,
+    pub blacklist_minutes: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderResponse {
     pub id: i64,
     pub cli_type: String,
@@ -486,9 +501,7 @@ pub struct ProviderResponse {
     pub base_url: String,
     pub api_key: String,
     pub enabled: bool,
-    pub failure_threshold: i64,
-    pub retry_limit: i64,
-    pub blacklist_minutes: i64,
+    /// 连续失败计数：跨冷却期保留，成功一次才清零（前端按档位展示）。
     pub consecutive_failures: i64,
     pub blacklisted_until: Option<i64>,
     pub sort_order: i64,
@@ -498,18 +511,13 @@ pub struct ProviderResponse {
     pub is_blacklisted: bool,
     pub model_maps: Vec<ModelMapResponse>,
     pub model_blacklist: Vec<ModelBlacklistResponse>,
+    pub blacklist_tiers: Vec<BlacklistTierResponse>,
 }
 
 impl From<Provider> for ProviderResponse {
     fn from(p: Provider) -> Self {
         let now = now_timestamp();
         let is_blacklisted = p.blacklisted_until.map(|t| t > now).unwrap_or(false);
-        let blacklist_expired = p.blacklisted_until.map(|t| t <= now).unwrap_or(false);
-        let failures = if blacklist_expired {
-            0
-        } else {
-            p.consecutive_failures
-        };
 
         Self {
             id: p.id,
@@ -520,10 +528,7 @@ impl From<Provider> for ProviderResponse {
             base_url: p.base_url,
             api_key: p.api_key,
             enabled: p.enabled != 0,
-            failure_threshold: p.failure_threshold,
-            retry_limit: p.retry_limit,
-            blacklist_minutes: p.blacklist_minutes,
-            consecutive_failures: failures,
+            consecutive_failures: p.consecutive_failures,
             blacklisted_until: p.blacklisted_until,
             sort_order: p.sort_order,
             custom_useragent: p.custom_useragent,
@@ -532,6 +537,7 @@ impl From<Provider> for ProviderResponse {
             is_blacklisted,
             model_maps: vec![],
             model_blacklist: vec![],
+            blacklist_tiers: vec![],
         }
     }
 }
@@ -553,14 +559,11 @@ impl ProviderHealthEvent {
         blacklisted_until: Option<i64>,
     ) -> Self {
         let now = now_timestamp();
-        let blacklist_expired = blacklisted_until.is_some_and(|t| t <= now);
+        // 失败计数跨冷却期保留（成功一次才清零），这里直接透传原始值，
+        // 前端结合档位表判断当前命中档。
         Self {
             provider_id,
-            consecutive_failures: if blacklist_expired {
-                0
-            } else {
-                consecutive_failures
-            },
+            consecutive_failures,
             blacklisted_until,
             is_blacklisted: blacklisted_until.is_some_and(|t| t > now),
         }
