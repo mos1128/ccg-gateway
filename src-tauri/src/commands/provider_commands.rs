@@ -43,11 +43,18 @@ pub async fn rename_provider_profile(
 pub async fn delete_provider_profile(
     db: State<'_, SqlitePool>,
     config: State<'_, Config>,
+    log_db: State<'_, LogDb>,
     cli_type: String,
     profile: String,
 ) -> Result<()> {
-    provider_profile::delete_profile(db.inner(), &config.gateway_base_url(), &cli_type, &profile)
-        .await
+    provider_profile::delete_profile(
+        db.inner(),
+        &log_db.0,
+        &config.gateway_base_url(),
+        &cli_type,
+        &profile,
+    )
+    .await
 }
 
 /// A multiplier of 1 is the official catalog price and the only safe fallback:
@@ -107,7 +114,10 @@ struct ProviderInsert<'a> {
     now: i64,
 }
 
-async fn insert_provider_record(pool: &SqlitePool, values: ProviderInsert<'_>) -> Result<i64> {
+async fn insert_provider_record(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    values: ProviderInsert<'_>,
+) -> Result<i64> {
     let result = sqlx::query(
         r#"
         INSERT INTO providers (cli_type, profile, protocol, name, base_url, api_key, enabled, failure_threshold, retry_limit, blacklist_minutes, consecutive_failures, sort_order, custom_useragent, created_at, updated_at, price_multiplier, translate_max_tokens)
@@ -134,7 +144,7 @@ async fn insert_provider_record(pool: &SqlitePool, values: ProviderInsert<'_>) -
     .bind(normalize_translate_max_tokens(
         values.input.translate_max_tokens,
     ))
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
     Ok(result.last_insert_rowid())
@@ -463,8 +473,9 @@ pub async fn create_provider(
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
+    let mut tx = db.begin().await.map_err(|e| e.to_string())?;
     let id = insert_provider_record(
-        db.inner(),
+        &mut tx,
         ProviderInsert {
             cli_type: &cli_type,
             profile: &profile,
@@ -487,7 +498,7 @@ pub async fn create_provider(
             .bind(&map.source_model)
             .bind(&map.target_model)
             .bind(map.enabled as i64)
-            .execute(db.inner())
+            .execute(&mut *tx)
             .await
             .map_err(map_db_error)?;
         }
@@ -501,11 +512,13 @@ pub async fn create_provider(
             )
             .bind(id)
             .bind(&item.model_pattern)
-            .execute(db.inner())
+            .execute(&mut *tx)
             .await
             .map_err(map_db_error)?;
         }
     }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     // Log system event
     let _ = crate::services::stats::record_system_log(
@@ -654,6 +667,7 @@ pub async fn update_provider(
         has_updates = true;
     }
 
+    let mut tx = db.begin().await.map_err(|e| e.to_string())?;
     if has_updates {
         let query = format!("UPDATE providers SET {} WHERE id = ?", updates.join(", "));
         let mut q = sqlx::query(&query).bind(now);
@@ -701,12 +715,15 @@ pub async fn update_provider(
             q = q.bind(normalize_translate_max_tokens(input.translate_max_tokens));
         }
 
-        q.bind(id).execute(db.inner()).await.map_err(map_db_error)?;
+        q.bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
 
         // The old model snapshot no longer describes the saved endpoint, so it
         // stops counting as synced until the user syncs against the new one.
         if model_sync_config_changed {
-            crate::services::model_sync::invalidate_sync_state(db.inner(), id).await?;
+            crate::services::model_sync::invalidate_sync_state_tx(&mut tx, id).await?;
         }
     }
 
@@ -715,7 +732,7 @@ pub async fn update_provider(
         // Delete existing maps
         sqlx::query("DELETE FROM provider_model_map WHERE provider_id = ?")
             .bind(id)
-            .execute(db.inner())
+            .execute(&mut *tx)
             .await
             .map_err(map_db_error)?;
 
@@ -728,7 +745,7 @@ pub async fn update_provider(
             .bind(&map.source_model)
             .bind(&map.target_model)
             .bind(map.enabled as i64)
-            .execute(db.inner())
+            .execute(&mut *tx)
             .await
             .map_err(map_db_error)?;
         }
@@ -739,7 +756,7 @@ pub async fn update_provider(
         // Delete existing blacklist
         sqlx::query("DELETE FROM provider_model_blacklist WHERE provider_id = ?")
             .bind(id)
-            .execute(db.inner())
+            .execute(&mut *tx)
             .await
             .map_err(map_db_error)?;
 
@@ -750,11 +767,13 @@ pub async fn update_provider(
             )
             .bind(id)
             .bind(&item.model_pattern)
-            .execute(db.inner())
+            .execute(&mut *tx)
             .await
             .map_err(map_db_error)?;
         }
     }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     if let Some(active) = active_direct_provider
         .as_ref()

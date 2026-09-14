@@ -1,8 +1,8 @@
 use crate::db::models::{
     Provider, ProviderProfileCreate, ProviderProfileRename, ProviderProfileResponse,
 };
-use crate::services::agent;
 use crate::services::routing::{normalize_profile, normalize_profile_name, DEFAULT_PROFILE};
+use crate::services::{agent, scheduler};
 use crate::time::now_timestamp;
 use sqlx::{SqlitePool, Transaction};
 use std::path::PathBuf;
@@ -396,6 +396,7 @@ pub async fn rename_profile(
 
 pub async fn delete_profile(
     db: &SqlitePool,
+    log_db: &SqlitePool,
     gateway_url: &str,
     cli_type: &str,
     profile: &str,
@@ -438,7 +439,7 @@ pub async fn delete_profile(
                 .await
                 .map_err(|e| e.to_string())?;
         let provider_id_set: Vec<i64> = provider_ids.iter().map(|(id,)| *id).collect();
-        delete_profile_tasks_tx(&mut tx, &cli_type, &profile, &provider_id_set).await?;
+        let task_ids = delete_profile_tasks_tx(&mut tx, &cli_type, &profile, &provider_id_set).await?;
         for (id,) in provider_ids {
             sqlx::query("DELETE FROM provider_model_map WHERE provider_id = ?")
                 .bind(id)
@@ -446,6 +447,16 @@ pub async fn delete_profile(
                 .await
                 .map_err(map_db_error)?;
             sqlx::query("DELETE FROM provider_model_blacklist WHERE provider_id = ?")
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+            sqlx::query("DELETE FROM provider_models WHERE provider_id = ?")
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+            sqlx::query("DELETE FROM provider_model_sync_state WHERE provider_id = ?")
                 .bind(id)
                 .execute(&mut *tx)
                 .await
@@ -464,6 +475,7 @@ pub async fn delete_profile(
             .execute(&mut *tx)
             .await
             .map_err(map_db_error)?;
+        scheduler::delete_task_run_history(log_db, &task_ids).await?;
         tx.commit().await.map_err(|e| e.to_string())?;
         Ok(())
     }
@@ -728,7 +740,7 @@ async fn delete_profile_tasks_tx(
     cli_type: &str,
     profile: &str,
     provider_ids: &[i64],
-) -> Result<()> {
+) -> Result<Vec<i64>> {
     let rows: Vec<(i64, String, String)> = sqlx::query_as(
         "SELECT id, payload_json, last_status FROM scheduled_tasks WHERE task_type = 'provider_keepalive'",
     )
@@ -776,15 +788,15 @@ async fn delete_profile_tasks_tx(
         task_ids.push(id);
     }
 
-    for id in task_ids {
+    for id in &task_ids {
         sqlx::query("DELETE FROM scheduled_tasks WHERE id = ?")
-            .bind(id)
+            .bind(*id)
             .execute(&mut **tx)
             .await
             .map_err(map_db_error)?;
     }
 
-    Ok(())
+    Ok(task_ids)
 }
 
 fn map_db_error(e: sqlx::Error) -> String {

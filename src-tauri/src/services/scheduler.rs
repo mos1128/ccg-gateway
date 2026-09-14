@@ -406,17 +406,7 @@ async fn delete_task_locked(db: &SqlitePool, log_db: &SqlitePool, id: i64) -> Re
         return Err("任务正在执行，稍后再删除".to_string());
     }
 
-    sqlx::query("DELETE FROM scheduled_task_run_items WHERE run_id IN (SELECT id FROM scheduled_task_runs WHERE task_id = ?)")
-        .bind(id)
-        .execute(log_db)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    sqlx::query("DELETE FROM scheduled_task_runs WHERE task_id = ?")
-        .bind(id)
-        .execute(log_db)
-        .await
-        .map_err(|e| e.to_string())?;
+    delete_task_run_history(log_db, &[id]).await?;
 
     sqlx::query("DELETE FROM scheduled_tasks WHERE id = ?")
         .bind(id)
@@ -425,6 +415,33 @@ async fn delete_task_locked(db: &SqlitePool, log_db: &SqlitePool, id: i64) -> Re
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+pub(crate) async fn delete_task_run_history(
+    log_db: &SqlitePool,
+    task_ids: &[i64],
+) -> Result<(), String> {
+    if task_ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut tx = log_db.begin().await.map_err(|e| e.to_string())?;
+    for task_id in task_ids {
+        sqlx::query(
+            "DELETE FROM scheduled_task_run_items WHERE run_id IN (SELECT id FROM scheduled_task_runs WHERE task_id = ?)",
+        )
+        .bind(*task_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        sqlx::query("DELETE FROM scheduled_task_runs WHERE task_id = ?")
+            .bind(*task_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    tx.commit().await.map_err(|e| e.to_string())
 }
 
 pub async fn run_task_now(

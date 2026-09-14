@@ -126,14 +126,15 @@
           <div v-for="(map, index) in form.model_maps" :key="'m' + index" class="dr-map">
             <input v-model="map.source_model" class="v2-input" placeholder="Agent 源模型">
             <span class="dr-arrow">→</span>
-            <AppSelect
-              :model-value="map.target_model"
-              :options="modelOptions"
-              width="100%"
+            <el-autocomplete
+              v-model="map.target_model"
+              :fetch-suggestions="modelSuggestions"
+              :debounce="0"
+              :suffix-icon="ArrowDown"
+              fit-input-width
+              highlight-first-item
+              class="dr-model-target"
               placeholder="选择或输入服务商模型"
-              filterable
-              allow-create
-              @change="value => map.target_model = String(value)"
             />
             <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
               <button class="v2-x" @click="emit('remove-model-map', index)"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
@@ -228,8 +229,8 @@
 <script setup lang="ts">
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
-import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
-import { InfoFilled } from '@element-plus/icons-vue'
+import AppSelect from '@/components/AppSelect.vue'
+import { ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import { CONVERTIBLE_PROTOCOLS, PROTOCOL_LABELS } from '@/types/models'
 import type { Protocol, ProviderModelsResponse } from '@/types/models'
 
@@ -294,9 +295,13 @@ const protocolOptions = computed(() => props.protocols.map((protocol) => ({
 const translated = computed(() => needsTranslate(props.form.protocol as Protocol))
 
 const providerModels = computed(() => props.modelSync?.models ?? [])
-const modelOptions = computed<AppSelectOption[]>(() => providerModels.value
+const modelOptions = computed(() => providerModels.value
   .filter((model) => model.enabled === true || model.enabled === 1)
-  .map((model) => ({ value: model.model_name, label: model.model_name })))
+  .map((model) => ({ value: model.model_name })))
+function modelSuggestions(queryString: string) {
+  const keyword = queryString.toLowerCase()
+  return modelOptions.value.filter((option) => option.value.toLowerCase().includes(keyword))
+}
 const modelSyncHint = computed(() => {
   if (!props.canSyncModels) return '可先手动添加，保存服务商后能从接口同步'
   const state = props.modelSync?.sync_state
@@ -356,6 +361,19 @@ watch(() => props.modelValue, (open) => {
 .dr-map { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 9px; align-items: center; }
 .dr-map-single { grid-template-columns: 1fr auto; }
 .dr-arrow { color: var(--v2-text-3); font-size: var(--v2-fs-sm); }
+.dr-map :deep(.dr-model-target) { width: 100%; min-width: 0; }
+.dr-map :deep(.dr-model-target .el-input__wrapper) {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--v2-r);
+  background: var(--v2-bg-base);
+  box-shadow: none !important;
+}
+.dr-map :deep(.dr-model-target .el-input__inner) {
+  color: var(--v2-text);
+  font-size: 13px;
+  font-weight: var(--v2-fw-medium);
+}
 
 .dr-model-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 232px; overflow-y: auto; }
 .dr-model-row { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border-radius: var(--v2-r-sm); background: var(--v2-bg-base); max-width: 100%; }

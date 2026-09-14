@@ -80,17 +80,20 @@ pub async fn list_provider_models(
 /// Invalidate the authoritative snapshot after endpoint credentials or protocol
 /// settings change. The rows are kept for inspection, but routing must not use
 /// them until a sync succeeds against the new configuration.
-pub async fn invalidate_sync_state(db: &SqlitePool, provider_id: i64) -> Result<(), String> {
-    ensure_state_row(db, provider_id).await?;
+pub(crate) async fn invalidate_sync_state_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    provider_id: i64,
+) -> Result<(), String> {
     let now = now_timestamp();
     sqlx::query(
-        "UPDATE provider_model_sync_state
-         SET last_success_at = NULL, last_error = NULL, model_count = 0, updated_at = ?
-         WHERE provider_id = ?",
+        "INSERT INTO provider_model_sync_state (provider_id, last_attempt_at, last_success_at, last_error, model_count, updated_at)
+         VALUES (?, NULL, NULL, NULL, 0, ?)
+         ON CONFLICT(provider_id) DO UPDATE SET
+             last_success_at = NULL, last_error = NULL, model_count = 0, updated_at = excluded.updated_at",
     )
-    .bind(now)
     .bind(provider_id)
-    .execute(db)
+    .bind(now)
+    .execute(&mut **tx)
     .await
     .map(|_| ())
     .map_err(|error| error.to_string())
