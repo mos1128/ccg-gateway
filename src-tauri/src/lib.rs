@@ -111,9 +111,11 @@ pub fn set_minimize_to_tray_on_close(app: &tauri::AppHandle, value: bool) {
 fn show_main_window(window: &WebviewWindow) {
     #[cfg(target_os = "windows")]
     let _ = window.set_skip_taskbar(false);
+    // tao 的 set_focus 在窗口最小化时是空操作，必须先 unminimize 使其脱离最小化状态，
+    // set_focus 内部的强前台逻辑（含抢占前台权限）才能生效。
+    let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_focus();
-    let _ = window.unminimize();
 }
 
 fn request_app_exit(app: &AppHandle) {
@@ -353,16 +355,7 @@ pub fn run() {
                         ..
                     } => {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            match (window.is_visible(), window.is_minimized()) {
-                                (Ok(true), Ok(false)) => {
-                                    let _ = window.hide();
-                                    #[cfg(target_os = "windows")]
-                                    let _ = window.set_skip_taskbar(true);
-                                }
-                                _ => {
-                                    show_main_window(&window);
-                                }
-                            }
+                            show_main_window(&window);
                         }
                     }
                     _ => {}
