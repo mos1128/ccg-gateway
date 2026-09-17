@@ -461,6 +461,11 @@ pub async fn delete_profile(
                 .execute(&mut *tx)
                 .await
                 .map_err(map_db_error)?;
+            sqlx::query("DELETE FROM provider_blacklist_tier WHERE provider_id = ?")
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
         }
 
         sqlx::query("DELETE FROM providers WHERE cli_type = ? AND profile = ?")

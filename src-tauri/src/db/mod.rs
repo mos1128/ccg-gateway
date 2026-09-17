@@ -304,6 +304,30 @@ async fn init_default_data(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await?;
     }
 
+    // 服务商子表的孤儿行清理：删服务商时若漏掉某张子表，残留行会一直留着，
+    // 而 SQLite 复用 rowid（新 id = MAX(id) + 1），下一个新服务商拿到同一个 id
+    // 就撞上残留行的唯一约束，从此再也建不出服务商。孤儿行没有任何引用价值，
+    // 每次启动清一遍。必须排在下面补档位之前，否则残留档位会被当成已有档位。
+    //
+    // TODO(v2.2+): 这是为了清理 v2.1.0 之前遗留的孤儿数据（删 Profile 时漏删
+    // provider_blacklist_tier 导致的历史垃圾）。v2.1.0 已修复删除逻辑，v2.2 发布
+    // 3 个月后，假定所有用户已升级并清理完毕，可以删除这段启动清理代码，仅保留
+    // 删除路径的完整性。如果后续发现其他删除路径仍有遗漏，可保留此防御机制。
+    for table in [
+        "provider_model_map",
+        "provider_model_blacklist",
+        "provider_blacklist_tier",
+        "provider_models",
+        "provider_model_sync_state",
+    ] {
+        sqlx::query(&format!(
+            "DELETE FROM {} WHERE provider_id NOT IN (SELECT id FROM providers)",
+            table
+        ))
+        .execute(pool)
+        .await?;
+    }
+
     // 阶梯熔断兜底：为还没有档位的服务商补默认一档（5 次拉黑 10 分钟）。
     // 档位正常由创建/编辑服务商维护，这里只兜异常情况（如手动改库清空档位）。
     // NOT IN 保证幂等，每次启动自愈。
