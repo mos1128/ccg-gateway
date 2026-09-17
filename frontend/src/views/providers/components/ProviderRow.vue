@@ -7,7 +7,7 @@
       <div class="pt-switch">
         <el-switch :model-value="provider.enabled" :loading="toggleLoading" @change="onToggleChange" />
       </div>
-      <div class="pt-name" :class="{ off: !provider.enabled }">
+      <div class="pt-name pt-name-link" :class="{ off: !provider.enabled }" @click="openBaseUrl">
         <OverflowText :text="provider.name" />
       </div>
       <div class="pt-cell pt-col-protocol">
@@ -49,6 +49,9 @@
 
 <script setup lang="ts">
 import OverflowText from './OverflowText.vue'
+import { open } from '@tauri-apps/plugin-shell'
+import { notify } from '@/utils/notification'
+import { getErrorMessage } from '@/utils/error'
 import { PROTOCOL_LABELS } from '@/types/models'
 import type { Provider } from '@/types/models'
 
@@ -101,6 +104,15 @@ const statusTitle = computed(() => {
 function onStatusClick() {
   if (props.provider.is_blacklisted) emit('reset', props.provider)
 }
+async function openBaseUrl() {
+  const url = props.provider.base_url.trim()
+  if (!url) return
+  try {
+    await open(url)
+  } catch (error) {
+    notify(`无法打开 ${url}：${getErrorMessage(error)}`, 'error')
+  }
+}
 function onToggleChange(value: string | number | boolean) {
   if (props.toggleLoading) return
   emit('toggle', { provider: props.provider, enabled: value === true })
@@ -108,6 +120,8 @@ function onToggleChange(value: string | number | boolean) {
 </script>
 
 <style scoped>
+.pt-name-link { cursor: pointer; }
+.pt-name-link:hover { color: var(--v2-accent); text-decoration: underline; }
 .pt-col-protocol { display: flex; align-items: center; justify-content: center; gap: 4px; }
 .pt-protocol { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pt-translate { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--v2-text-3); }
