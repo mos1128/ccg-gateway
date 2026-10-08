@@ -6,15 +6,15 @@ use super::*;
 fn plugins_agent_id() -> Result<String> {
     let agent_ids = crate::services::agent::agent_ids_for_feature("plugins");
     let agent_id = match agent_ids.as_slice() {
-        [] => return Err("没有 Agent 启用插件功能".to_string()),
+        [] => return Err(crate::tr!("err.plugin.no_agent_enabled")),
         [single] => single.to_string(),
-        many => return Err(format!("插件功能同时启用了多个 Agent: {}", many.join(", "))),
+        many => return Err(crate::tr!("err.plugin.multiple_agents", many.join(", "))),
     };
 
     let definition = crate::services::agent::get_definition(&agent_id)
-        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.plugin.unknown_agent", agent_id))?;
     if definition.features.plugins.adapter.as_deref() != Some("dsh") {
-        return Err("插件功能当前仅支持 dsh adapter".to_string());
+        return Err(crate::tr!("err.plugin.dsh_only"));
     }
 
     Ok(agent_id)

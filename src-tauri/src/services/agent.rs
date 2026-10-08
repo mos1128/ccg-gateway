@@ -29,12 +29,12 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
     let feature = &definition.features.provider_config;
     if !feature.enabled {
         if definition.features.profiles.enabled {
-            return Err("enabled profiles 需要启用 provider_config".to_string());
+            return Err(crate::tr!("err.agent.profiles_need_provider_config"));
         }
         return Ok(());
     }
     if feature.operations.is_empty() {
-        return Err("enabled provider_config 必须提供 operations".to_string());
+        return Err(crate::tr!("err.agent.provider_config_operations_required"));
     }
 
     fn validate_operations(
@@ -46,37 +46,25 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
         let mut file_privacy = HashMap::new();
         for operation in operations {
             if operation.id.trim().is_empty() || !operation_ids.insert(operation.id.as_str()) {
-                return Err(format!(
-                    "{} operation id `{}` 为空或重复",
-                    label, operation.id
-                ));
+                return Err(crate::tr!("err.agent.operation_id_invalid", label, operation.id));
             }
             if operation.file.trim().is_empty() {
-                return Err(format!(
-                    "{} operation `{}` 的 file 不能为空",
-                    label, operation.id
-                ));
+                return Err(crate::tr!("err.agent.operation_file_empty", label, operation.id));
             }
             if operation.path.is_empty() || operation.path.iter().any(|part| part.trim().is_empty())
             {
-                return Err(format!(
-                    "{} operation `{}` 的 path 不能为空",
-                    label, operation.id
-                ));
+                return Err(crate::tr!("err.agent.operation_path_empty", label, operation.id));
             }
             if let Some(existing) = file_formats.insert(operation.file.as_str(), operation.format) {
                 if existing != operation.format {
-                    return Err(format!(
-                        "{} 文件 `{}` 不能同时使用不同 format",
-                        label, operation.file
-                    ));
+                    return Err(crate::tr!("err.agent.file_format_conflict", label, operation.file));
                 }
             }
             if let Some(existing) = file_privacy.insert(operation.file.as_str(), operation.private)
             {
                 if existing != operation.private {
-                    return Err(format!(
-                        "{} 文件 `{}` 不能同时使用不同 private 值",
+                    return Err(crate::tr!(
+                        "err.agent.file_private_conflict",
                         label, operation.file
                     ));
                 }
@@ -85,20 +73,14 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
             use crate::db::models::{ConfigFormat, ConfigOperationKind};
             let is_env = operation.format == ConfigFormat::Env;
             if is_env && operation.path.len() != 1 {
-                return Err(format!(
-                    "{} operation `{}` 的 ENV path 必须只有一个 key",
-                    label, operation.id
-                ));
+                return Err(crate::tr!("err.agent.env_path_single_key", label, operation.id));
             }
             let writes_value = operation.op == ConfigOperationKind::Set;
             if writes_value && operation.value.is_none() {
-                return Err(format!("{} operation `{}` 缺少 value", label, operation.id));
+                return Err(crate::tr!("err.agent.operation_value_required", label, operation.id));
             }
             if !writes_value && operation.value.is_some() {
-                return Err(format!(
-                    "{} operation `{}` 不接受 value",
-                    label, operation.id
-                ));
+                return Err(crate::tr!("err.agent.operation_value_unexpected", label, operation.id));
             }
 
             let path_text = operation.path.join("\n");
@@ -107,10 +89,7 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
                 || path_text.contains("{target.")
                 || path_text.contains("{agent.")
             {
-                return Err(format!(
-                    "{} operation `{}` 的 target/agent 模板变量只能用于 value",
-                    label, operation.id
-                ));
+                return Err(crate::tr!("err.agent.template_value_only", label, operation.id));
             }
             let value_text = operation
                 .value
@@ -122,18 +101,15 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
                     || path_text.contains("{profile")
                     || value_text.contains("{profile"))
             {
-                return Err(format!(
-                    "{} operation `{}` 不能使用 Profile 模板变量",
-                    label, operation.id
-                ));
+                return Err(crate::tr!("err.agent.profile_template_forbidden", label, operation.id));
             }
             if operation.file.contains("{profile.absolute_path}")
                 || path_text.contains("{profile.absolute_path}")
                 || value_text.contains("{profile.relative_path}")
                 || value_text.contains("{profile.absolute_path}")
             {
-                return Err(format!(
-                    "{} operation `{}` 的 Profile 路径模板变量位置无效",
+                return Err(crate::tr!(
+                    "err.agent.profile_path_template_invalid",
                     label, operation.id
                 ));
             }
@@ -160,7 +136,7 @@ fn validate_global_preset(definition: &AgentDefinition) -> Result<(), String> {
         .filter(|file| !file.is_empty())
         .is_none()
     {
-        return Err("enabled global_preset 必须提供 file".to_string());
+        return Err(crate::tr!("err.agent.global_preset_file_required"));
     }
     if !matches!(
         feature.format,
@@ -170,7 +146,7 @@ fn validate_global_preset(definition: &AgentDefinition) -> Result<(), String> {
                 | crate::db::models::ConfigFormat::Yaml
         )
     ) {
-        return Err("enabled global_preset 只支持 json、toml 或 yaml".to_string());
+        return Err(crate::tr!("err.agent.global_preset_format_invalid"));
     }
     Ok(())
 }
@@ -181,7 +157,7 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
         return Ok(());
     }
     if feature.operations.is_empty() {
-        return Err("enabled official_login 必须提供 operations".to_string());
+        return Err(crate::tr!("err.agent.official_login_operations_required"));
     }
     let mut source_formats = HashMap::new();
     for operation in &feature.operations {
@@ -190,14 +166,11 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
         let source = match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
                 let source = operation.content_from.as_ref().ok_or_else(|| {
-                    format!(
-                        "official_login operation `{}` 缺少 content_from",
-                        operation.id
-                    )
+                    crate::tr!("err.agent.official_login_content_from_missing", operation.id)
                 })?;
                 if format != ConfigFormat::Json && !source.path.is_empty() {
-                    return Err(format!(
-                        "official_login operation `{}` 的非 JSON 来源不能配置 path",
+                    return Err(crate::tr!(
+                        "err.agent.official_login_source_path_forbidden",
                         operation.id
                     ));
                 }
@@ -208,8 +181,8 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
                     || operation.value.is_some() == operation.value_from.is_some()
                     || operation.format != Some(ConfigFormat::Json)
                 {
-                    return Err(format!(
-                        "official_login operation `{}` 必须使用 JSON format，并正确配置 path 和 value",
+                    return Err(crate::tr!(
+                        "err.agent.official_login_set_field_invalid",
                         operation.id
                     ));
                 }
@@ -219,8 +192,8 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
         if let Some(source) = source {
             if let Some(existing) = source_formats.insert(source.file_id.as_str(), format) {
                 if existing != format {
-                    return Err(format!(
-                        "official_login 逻辑文件 `{}` 不能使用不同 format",
+                    return Err(crate::tr!(
+                        "err.agent.official_login_format_conflict",
                         source.file_id
                     ));
                 }
@@ -238,7 +211,7 @@ fn validate_icon(definition: &AgentDefinition) -> Result<(), String> {
         || icon.paths.is_empty()
         || icon.paths.iter().any(|path| path.d.trim().is_empty())
     {
-        return Err("Agent icon 必须提供 view_box 和非空 paths".to_string());
+        return Err(crate::tr!("err.agent.icon_view_box_required"));
     }
     let invalid_color = |color: &str| {
         color.len() != 7
@@ -247,40 +220,34 @@ fn validate_icon(definition: &AgentDefinition) -> Result<(), String> {
     };
     if let Some(stops) = &icon.linear_gradient {
         if stops.len() < 2 {
-            return Err("Agent icon linear_gradient 至少需要两个 stop".to_string());
+            return Err(crate::tr!("err.agent.icon_gradient_min_stops"));
         }
         if stops
             .iter()
             .any(|stop| !(0.0..=1.0).contains(&stop.offset) || invalid_color(&stop.color))
         {
-            return Err(
-                "Agent icon gradient stop 必须使用 0 到 1 的 offset 和六位十六进制颜色".to_string(),
-            );
+            return Err(crate::tr!("err.agent.icon_gradient_stop_invalid"));
         }
     }
     for path in &icon.paths {
         if let Some(fill) = &path.fill {
             if fill == "linear_gradient" {
                 if icon.linear_gradient.is_none() {
-                    return Err(
-                        "Agent icon path 使用 linear_gradient 时必须提供渐变 stop".to_string()
-                    );
+                    return Err(crate::tr!("err.agent.icon_path_gradient_required"));
                 }
             } else if invalid_color(fill) {
-                return Err(
-                    "Agent icon path fill 必须是六位十六进制颜色或 linear_gradient".to_string(),
-                );
+                return Err(crate::tr!("err.agent.icon_path_fill_invalid"));
             }
         }
         if path
             .opacity
             .is_some_and(|opacity| !(0.0..=1.0).contains(&opacity))
         {
-            return Err("Agent icon path opacity 必须在 0 到 1 之间".to_string());
+            return Err(crate::tr!("err.agent.icon_path_opacity_invalid"));
         }
         for rule in [&path.fill_rule, &path.clip_rule].into_iter().flatten() {
             if rule != "nonzero" && rule != "evenodd" {
-                return Err("Agent icon path rule 只支持 nonzero 或 evenodd".to_string());
+                return Err(crate::tr!("err.agent.icon_path_rule_invalid"));
             }
         }
     }
@@ -297,7 +264,7 @@ fn validate_skills(definition: &AgentDefinition) -> Result<(), String> {
             .filter(|directory| !directory.is_empty())
             .is_none()
     {
-        return Err("enabled skills 必须提供 directory".to_string());
+        return Err(crate::tr!("err.agent.skills_directory_required"));
     }
     Ok(())
 }
@@ -313,15 +280,15 @@ fn validate_mcp(feature: &McpFeature) -> Result<(), String> {
         .filter(|file| !file.is_empty())
         .is_none()
     {
-        return Err("enabled mcp 必须提供 file".to_string());
+        return Err(crate::tr!("err.agent.mcp_file_required"));
     }
     match feature.adapter {
         Some(McpAdapter::Dsh) => {
             if feature.format != Some(crate::db::models::ConfigFormat::Yaml) {
-                return Err("mcp adapter dsh 只支持 yaml format".to_string());
+                return Err(crate::tr!("err.agent.mcp_dsh_yaml_only"));
             }
             if !feature.servers_path.is_empty() {
-                return Err("mcp adapter dsh 不使用 servers_path".to_string());
+                return Err(crate::tr!("err.agent.mcp_dsh_no_servers_path"));
             }
         }
         adapter => {
@@ -329,12 +296,12 @@ fn validate_mcp(feature: &McpFeature) -> Result<(), String> {
                 feature.format,
                 Some(crate::db::models::ConfigFormat::Json | crate::db::models::ConfigFormat::Toml)
             ) {
-                return Err("enabled mcp 只支持 json 或 toml".to_string());
+                return Err(crate::tr!("err.agent.mcp_format_invalid"));
             }
             if adapter == Some(McpAdapter::Opencode)
                 && feature.format != Some(crate::db::models::ConfigFormat::Json)
             {
-                return Err("mcp adapter opencode 只支持 json format".to_string());
+                return Err(crate::tr!("err.agent.mcp_opencode_json_only"));
             }
             if feature.servers_path.is_empty()
                 || feature
@@ -342,7 +309,7 @@ fn validate_mcp(feature: &McpFeature) -> Result<(), String> {
                     .iter()
                     .any(|part| part.trim().is_empty())
             {
-                return Err("enabled mcp 必须提供非空 servers_path".to_string());
+                return Err(crate::tr!("err.agent.mcp_servers_path_required"));
             }
         }
     }
@@ -358,7 +325,7 @@ fn validate_adapter(feature: &AdapterFeature, label: &str) -> Result<(), String>
             .filter(|adapter| !adapter.is_empty())
             .is_none()
     {
-        return Err(format!("enabled {label} 必须提供 adapter"));
+        return Err(crate::tr!("err.agent.adapter_required", label));
     }
     Ok(())
 }
@@ -372,7 +339,7 @@ fn validate_file_feature(feature: &FileFeature, label: &str) -> Result<(), Strin
             .filter(|file| !file.is_empty())
             .is_none()
     {
-        return Err(format!("enabled {label} 必须提供 file"));
+        return Err(crate::tr!("err.agent.file_required", label));
     }
     Ok(())
 }
@@ -387,12 +354,12 @@ fn validate_profiles(definition: &AgentDefinition) -> Result<(), String> {
         .profile_file
         .as_deref()
         .filter(|file| !file.trim().is_empty())
-        .ok_or_else(|| "enabled profiles 必须提供 profile_file".to_string())?;
+        .ok_or_else(|| crate::tr!("err.agent.profiles_file_required"))?;
     if !profile_file.contains("{profile}") {
-        return Err("profiles.profile_file 必须包含 {profile}".to_string());
+        return Err(crate::tr!("err.agent.profile_file_placeholder"));
     }
     if feature.operations.is_empty() {
-        return Err("enabled profiles 必须提供 operations".to_string());
+        return Err(crate::tr!("err.agent.profiles_operations_required"));
     }
 
     if let Some(launch) = &feature.launch {
@@ -401,32 +368,26 @@ fn validate_profiles(definition: &AgentDefinition) -> Result<(), String> {
             ("non_default", &launch.non_default),
         ] {
             if args.iter().any(|arg| arg.trim().is_empty()) {
-                return Err(format!("profiles.launch.{} 不能包含空参数", label));
+                return Err(crate::tr!("err.agent.launch_empty_arg", label));
             }
             if args
                 .iter()
                 .any(|arg| arg.contains("{target.") || arg.contains("{agent."))
             {
-                return Err(format!(
-                    "profiles.launch.{} 不能使用 target/agent 模板变量",
-                    label
-                ));
+                return Err(crate::tr!("err.agent.launch_template_forbidden", label));
             }
             if args
                 .iter()
                 .any(|arg| arg.contains("{profile.relative_path}"))
             {
-                return Err(format!(
-                    "profiles.launch.{} 不能使用 {{profile.relative_path}}",
-                    label
-                ));
+                return Err(crate::tr!("err.agent.launch_relative_path_forbidden", label));
             }
             if label == "default"
                 && args
                     .iter()
                     .any(|arg| arg.contains("{profile.absolute_path}"))
             {
-                return Err("profiles.launch.default 不能使用 {profile.absolute_path}".to_string());
+                return Err(crate::tr!("err.agent.launch_default_path_forbidden"));
             }
         }
     }
@@ -436,34 +397,31 @@ fn validate_profiles(definition: &AgentDefinition) -> Result<(), String> {
 
 fn validate_definition(definition: &AgentDefinition) -> Result<(), String> {
     if definition.schema_version != 1 {
-        return Err(format!(
-            "不支持 schema_version {}",
-            definition.schema_version
-        ));
+        return Err(crate::tr!("err.agent.schema_version_unsupported", definition.schema_version));
     }
     if definition.id.is_empty()
         || !definition.id.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_' || byte == b'-'
         })
     {
-        return Err("Agent id 格式无效".to_string());
+        return Err(crate::tr!("err.agent.invalid_id"));
     }
     if definition.name.trim().is_empty() {
-        return Err("Agent name 不能为空".to_string());
+        return Err(crate::tr!("err.agent.name_empty"));
     }
     if definition
         .remark
         .as_deref()
         .is_some_and(|remark| remark.trim().is_empty())
     {
-        return Err("Agent remark 不能为空".to_string());
+        return Err(crate::tr!("err.agent.remark_empty"));
     }
     validate_icon(definition)?;
     if definition.config_dir.trim().is_empty() {
-        return Err("Agent config_dir 不能为空".to_string());
+        return Err(crate::tr!("err.agent.config_dir_empty"));
     }
     if definition.sort_order < 0 {
-        return Err("Agent sort_order 不能小于 0".to_string());
+        return Err(crate::tr!("err.agent.sort_order_negative"));
     }
     if definition.user_agent.is_empty()
         || definition
@@ -471,10 +429,10 @@ fn validate_definition(definition: &AgentDefinition) -> Result<(), String> {
             .iter()
             .any(|pattern| pattern.trim().is_empty())
     {
-        return Err("user_agent 必须包含非空匹配项".to_string());
+        return Err(crate::tr!("err.agent.user_agent_pattern_required"));
     }
     if definition.protocols.is_empty() {
-        return Err("protocols 不能为空".to_string());
+        return Err(crate::tr!("err.agent.protocols_empty"));
     }
     let mut protocols = HashSet::new();
     if definition
@@ -482,7 +440,7 @@ fn validate_definition(definition: &AgentDefinition) -> Result<(), String> {
         .iter()
         .any(|protocol| !protocols.insert(*protocol))
     {
-        return Err("protocols 不能重复".to_string());
+        return Err(crate::tr!("err.agent.protocols_duplicated"));
     }
     validate_config_operations(definition)?;
     validate_global_preset(definition)?;
@@ -512,7 +470,7 @@ fn parse_definition(
             if definition.id == expected_id {
                 Ok(())
             } else {
-                Err(format!("文件名必须与 Agent id `{}` 一致", definition.id))
+                Err(crate::tr!("err.agent.filename_id_mismatch", definition.id))
             }
         })
         .map_err(|message| AgentDefinitionLoadError {
@@ -533,7 +491,7 @@ fn load_user_definitions(
         Err(error) => {
             errors.push(AgentDefinitionLoadError {
                 source: directory.display().to_string(),
-                message: format!("读取用户模板目录失败: {error}"),
+                message: crate::tr!("err.agent.read_user_dir_failed", error),
             });
             return;
         }
@@ -558,7 +516,7 @@ fn load_user_definitions(
             }
             Err(error) => errors.push(AgentDefinitionLoadError {
                 source: directory.display().to_string(),
-                message: format!("读取用户模板目录项失败: {error}"),
+                message: crate::tr!("err.agent.read_user_dir_entry_failed", error),
             }),
         }
     }
@@ -569,7 +527,7 @@ fn load_user_definitions(
         let Some(expected_id) = file.file_stem().and_then(|stem| stem.to_str()) else {
             errors.push(AgentDefinitionLoadError {
                 source,
-                message: "模板文件名不是有效 UTF-8".to_string(),
+                message: crate::tr!("err.agent.template_filename_not_utf8"),
             });
             continue;
         };
@@ -578,7 +536,7 @@ fn load_user_definitions(
             Err(error) => {
                 errors.push(AgentDefinitionLoadError {
                     source,
-                    message: format!("读取用户模板失败: {error}"),
+                    message: crate::tr!("err.agent.read_user_template_failed", error),
                 });
                 continue;
             }
@@ -605,7 +563,7 @@ fn load_registry_from_user_dir(user_definitions_dir: Option<&Path>) -> AgentRegi
                 {
                     errors.push(AgentDefinitionLoadError {
                         source: (*source).to_string(),
-                        message: format!("Agent id `{source}` 重复"),
+                        message: crate::tr!("err.agent.duplicate_id", source),
                     });
                 }
             }
@@ -662,7 +620,7 @@ pub fn validate_agent_id(agent_id: &str) -> Result<String, String> {
     let agent_id = agent_id.trim();
     get_definition(agent_id)
         .map(|_| agent_id.to_string())
-        .ok_or_else(|| format!("未知 Agent: {}", agent_id))
+        .ok_or_else(|| crate::tr!("err.agent.unknown_id", agent_id))
 }
 
 pub fn default_config_directory(agent_id: &str) -> Option<&'static str> {
@@ -700,6 +658,7 @@ fn resolve_definition(definition: &AgentDefinition) -> AgentInfo {
         id: definition.id.clone(),
         name: definition.name.clone(),
         remark: definition.remark.clone(),
+        remark_en: definition.remark_en.clone(),
         icon: definition.icon.clone(),
         config_dir: definition.config_dir.clone(),
         user_agent: definition.user_agent.clone(),

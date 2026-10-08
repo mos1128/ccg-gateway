@@ -4,11 +4,11 @@
       <div class="st-top">
         <button class="v2-btn v2-btn-sm v2-btn-primary" @click="handleAdd">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-          添加
+          {{ t('common.add') }}
         </button>
       </div>
 
-      <V2Empty class="st-empty-card" v-if="tasks.length === 0" title="还没有定时任务" description="在闲置时段调用服务商，触发计费窗口更新或保活">
+      <V2Empty class="st-empty-card" v-if="tasks.length === 0" :title="t('scheduledTasks.emptyTitle')" :description="t('scheduledTasks.emptyDesc')">
         <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="16" cy="16" r="5"/><path d="M16 13v3l2 1"/></svg></template>
       </V2Empty>
 
@@ -16,7 +16,7 @@
         <table class="v2-table">
           <thead>
             <tr>
-              <th>启用</th><th>任务名称</th><th>类型</th><th>执行计划</th><th>上次结果</th><th>下次执行</th><th>失败</th><th>操作</th>
+              <th>{{ t('scheduledTasks.table.enabled') }}</th><th>{{ t('scheduledTasks.table.name') }}</th><th>{{ t('scheduledTasks.table.type') }}</th><th>{{ t('scheduledTasks.table.schedule') }}</th><th>{{ t('scheduledTasks.table.lastResult') }}</th><th>{{ t('scheduledTasks.table.nextRun') }}</th><th>{{ t('scheduledTasks.table.failures') }}</th><th>{{ t('scheduledTasks.table.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -30,7 +30,7 @@
               <td class="mono">{{ task.retry_count }}/{{ task.retry_limit }}</td>
               <td>
                 <div class="st-acts">
-                  <el-tooltip content="立即执行" placement="top" effect="light" :show-after="250">
+                  <el-tooltip :content="t('scheduledTasks.runNow')" placement="top" effect="light" :show-after="250">
                     <button class="v2-row-act" :disabled="runningIds.includes(task.id)" @click="handleRunNow(task)">
                       <svg v-if="runningIds.includes(task.id)" class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
@@ -40,13 +40,13 @@
                       </svg>
                     </button>
                   </el-tooltip>
-                  <el-tooltip content="执行记录" placement="top" effect="light" :show-after="250">
+                  <el-tooltip :content="t('scheduledTasks.runs.title')" placement="top" effect="light" :show-after="250">
                     <button class="v2-row-act" @click="openRuns(task)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
                   </el-tooltip>
-                  <el-tooltip content="编辑" placement="top" effect="light" :show-after="250">
+                  <el-tooltip :content="t('common.edit')" placement="top" effect="light" :show-after="250">
                     <button class="v2-row-act" @click="handleEdit(task)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
                   </el-tooltip>
-                  <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
+                  <el-tooltip :content="t('common.delete')" placement="top" effect="light" :show-after="250">
                     <button class="v2-row-act danger" @click="handleDelete(task)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
                   </el-tooltip>
                 </div>
@@ -57,28 +57,28 @@
       </div>
     </div>
 
-    <V2Drawer v-model="showDialog" :title="editingTask ? '编辑定时任务' : '添加定时任务'" @confirm="handleSave">
+    <V2Drawer v-model="showDialog" :title="editingTask ? t('scheduledTasks.editTask') : t('scheduledTasks.addTask')" @confirm="handleSave">
       <div class="v2-grid-2">
-        <div class="v2-field"><label class="v2-label">任务名称 <span class="req">*</span></label><input v-model="form.name" class="v2-input" placeholder="例如：Claude 默认服务商调用"></div>
-        <div class="v2-field"><label class="v2-label">任务类型</label><input class="v2-input" value="服务商调用" disabled></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.name') }} <span class="req">*</span></label><input v-model="form.name" class="v2-input" :placeholder="t('scheduledTasks.form.namePlaceholder')"></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.type') }}</label><input class="v2-input" :value="t('scheduledTasks.form.typeProviderKeepalive')" disabled></div>
       </div>
       <div class="v2-grid-2">
-        <div class="v2-field"><label class="v2-label">Agent 类型</label><AppSelect :model-value="form.cli_type" :options="cliSelectOptions" width="100%" @change="v => form.cli_type = v as CliType" /></div>
-        <div class="v2-field"><label class="v2-label">Profile</label><AppSelect :model-value="form.profile" :options="profileSelectOptions" width="100%" @change="v => form.profile = v as ProviderProfile" /></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.cliType') }}</label><AppSelect :model-value="form.cli_type" :options="cliSelectOptions" width="100%" @change="v => form.cli_type = v as CliType" /></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.profile') }}</label><AppSelect :model-value="form.profile" :options="profileSelectOptions" width="100%" @change="v => form.profile = v as ProviderProfile" /></div>
       </div>
       <div class="v2-grid-2">
-        <div class="v2-field"><label class="v2-label">模型名 <span class="req">*</span></label><input v-model="form.model_name" class="v2-input mono" :placeholder="DEFAULT_MODEL_NAMES[form.cli_type]"></div>
-        <div class="v2-field"><label class="v2-label">执行对象</label><AppSelect :model-value="form.target_mode" :options="targetModeOptions" width="100%" @change="v => form.target_mode = v as 'all' | 'selected'" /></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.modelName') }} <span class="req">*</span></label><input v-model="form.model_name" class="v2-input mono" :placeholder="DEFAULT_MODEL_NAMES[form.cli_type]"></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.target') }}</label><AppSelect :model-value="form.target_mode" :options="targetModeOptions" width="100%" @change="v => form.target_mode = v as 'all' | 'selected'" /></div>
       </div>
       <div class="v2-grid-2">
-        <div class="v2-field"><label class="v2-label">执行方式</label><AppSelect :model-value="form.schedule_type" :options="scheduleTypeOptions" width="100%" @change="v => form.schedule_type = v as ScheduledTaskScheduleType" /></div>
-        <div v-if="form.schedule_type === 'interval'" class="v2-field"><label class="v2-label">执行间隔（分钟）</label><input v-model.number="form.interval_minutes" type="number" min="1" class="v2-input" placeholder="例如：60"></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.scheduleType') }}</label><AppSelect :model-value="form.schedule_type" :options="scheduleTypeOptions" width="100%" @change="v => form.schedule_type = v as ScheduledTaskScheduleType" /></div>
+        <div v-if="form.schedule_type === 'interval'" class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.intervalMinutes') }}</label><input v-model.number="form.interval_minutes" type="number" min="1" class="v2-input" :placeholder="t('scheduledTasks.form.intervalMinutesPlaceholder')"></div>
         <div v-else class="v2-field">
-          <label class="v2-label">定期执行</label>
+          <label class="v2-label">{{ t('scheduledTasks.form.scheduleTypeDaily') }}</label>
           <div class="st-periodic">
-            <span class="st-unit">每</span>
+            <span class="st-unit">{{ t('scheduledTasks.form.every') }}</span>
             <input v-model.number="form.period_days" type="number" min="1" max="365" class="v2-input st-days">
-            <span class="st-unit">天</span>
+            <span class="st-unit">{{ t('scheduledTasks.form.dayUnit') }}</span>
             <AppSelect :model-value="form.period_hour" :options="hourOptions" width="100%" @change="v => form.period_hour = String(v)" />
             <span class="st-unit">:</span>
             <AppSelect :model-value="form.period_minute" :options="minuteOptions" width="100%" @change="v => form.period_minute = String(v)" />
@@ -86,14 +86,14 @@
         </div>
       </div>
       <div class="v2-grid-2">
-        <div class="v2-field"><label class="v2-label">目标失败重试次数</label><input v-model.number="form.retry_limit" type="number" min="0" class="v2-input"></div>
-        <div class="v2-field"><label class="v2-label">重试间隔（分钟）</label><input v-model.number="form.retry_interval_minutes" type="number" min="1" class="v2-input"></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.retryLimit') }}</label><input v-model.number="form.retry_limit" type="number" min="0" class="v2-input"></div>
+        <div class="v2-field"><label class="v2-label">{{ t('scheduledTasks.form.retryInterval') }}</label><input v-model.number="form.retry_interval_minutes" type="number" min="1" class="v2-input"></div>
       </div>
 
       <div v-if="form.target_mode === 'selected'" class="v2-field" v-loading="providersLoading">
         <div class="st-prov-head">
-          <label class="v2-label" style="margin:0">选择服务商</label>
-          <span class="st-prov-all" @click="toggleAllProviders">{{ isAllProvidersSelected ? '取消全选' : '全选' }}</span>
+          <label class="v2-label" style="margin:0">{{ t('scheduledTasks.form.selectProviders') }}</label>
+          <span class="st-prov-all" @click="toggleAllProviders">{{ isAllProvidersSelected ? t('scheduledTasks.form.deselectAll') : t('scheduledTasks.form.selectAll') }}</span>
         </div>
         <div class="st-prov-list">
           <button
@@ -108,20 +108,20 @@
             {{ provider.name }}
           </button>
         </div>
-        <div v-if="selectableProviders.length === 0" class="v2-hint">当前 Agent 和 Profile 下暂无已启用服务商</div>
+        <div v-if="selectableProviders.length === 0" class="v2-hint">{{ t('scheduledTasks.form.noProviders') }}</div>
       </div>
     </V2Drawer>
 
-    <V2Drawer v-model="runsVisible" title="执行记录" :show-footer="false" width="60%">
+    <V2Drawer v-model="runsVisible" :title="t('scheduledTasks.runs.title')" :show-footer="false" width="60%">
       <div class="st-runs" v-loading="runsLoading">
-        <div class="st-subtitle">运行历史</div>
+        <div class="st-subtitle">{{ t('scheduledTasks.runs.history') }}</div>
         <div class="st-table-wrap">
           <table class="v2-table">
-            <thead><tr><th>时间</th><th>触发</th><th>结果</th><th>成功</th><th>失败</th><th>跳过</th><th>耗时</th></tr></thead>
+            <thead><tr><th>{{ t('scheduledTasks.runs.time') }}</th><th>{{ t('scheduledTasks.runs.trigger') }}</th><th>{{ t('scheduledTasks.runs.result') }}</th><th>{{ t('scheduledTasks.runs.success') }}</th><th>{{ t('scheduledTasks.runs.failures') }}</th><th>{{ t('scheduledTasks.runs.skipped') }}</th><th>{{ t('scheduledTasks.runs.elapsed') }}</th></tr></thead>
             <tbody>
               <tr v-for="run in runs" :key="run.id" class="st-run-row" :class="{ on: selectedRun?.id === run.id }" @click="selectRun(run)">
                 <td class="mono">{{ formatTime(run.started_at) }}</td>
-                <td>{{ run.trigger_type === 'manual' ? '手动' : '定时' }}</td>
+                <td>{{ run.trigger_type === 'manual' ? t('scheduledTasks.runs.triggerManual') : t('scheduledTasks.runs.triggerScheduled') }}</td>
                 <td><span class="v2-pill dot" :class="statusClass(run.status)">{{ statusLabel(run.status) }}</span></td>
                 <td class="mono">{{ run.success_count }}</td>
                 <td class="mono">{{ run.failure_count }}</td>
@@ -131,13 +131,13 @@
             </tbody>
           </table>
         </div>
-        <div v-if="runs.length === 0" class="v2-hint st-inline">暂无运行记录</div>
+        <div v-if="runs.length === 0" class="v2-hint st-inline">{{ t('scheduledTasks.runs.empty') }}</div>
       </div>
       <div class="st-runs" v-loading="itemsLoading">
-        <div class="st-subtitle">明细</div>
+        <div class="st-subtitle">{{ t('scheduledTasks.runs.detail') }}</div>
         <div class="st-table-wrap">
           <table class="v2-table">
-            <thead><tr><th>服务商</th><th>模型</th><th>状态</th><th>状态码</th><th>耗时</th><th>错误</th></tr></thead>
+            <thead><tr><th>{{ t('scheduledTasks.runs.provider') }}</th><th>{{ t('scheduledTasks.runs.model') }}</th><th>{{ t('scheduledTasks.runs.status') }}</th><th>{{ t('scheduledTasks.runs.statusCode') }}</th><th>{{ t('scheduledTasks.runs.elapsed') }}</th><th>{{ t('scheduledTasks.runs.error') }}</th></tr></thead>
             <tbody>
               <tr v-for="item in runItems" :key="item.id">
                 <td>{{ item.provider_name }}</td>
@@ -154,7 +154,7 @@
             </tbody>
           </table>
         </div>
-        <div v-if="selectedRun && runItems.length === 0" class="v2-hint st-inline">暂无明细</div>
+        <div v-if="selectedRun && runItems.length === 0" class="v2-hint st-inline">{{ t('scheduledTasks.runs.emptyItems') }}</div>
       </div>
     </V2Drawer>
   </div>
@@ -170,6 +170,7 @@ import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { useAgentStore } from '@/stores/agents'
+import { useI18n } from 'vue-i18n'
 import { DEFAULT_MODEL_NAMES, getReusableModelName, getReusableTestText } from '@/utils/modelDefaults'
 import {
   type CliType,
@@ -186,9 +187,10 @@ import {
 } from '@/types/models'
 
 const profileTabs = ref<ProviderProfileItem[]>([
-  { cli_type: 'claude_code', name: 'default', label: '默认', is_default: true, sort_order: 0 }
+  { cli_type: 'claude_code', name: 'default', label: '', is_default: true, sort_order: 0 }
 ])
 const agentStore = useAgentStore()
+const { t, locale } = useI18n()
 
 const hourOptions: AppSelectOption[] = Array.from({ length: 24 }, (_, hour) => {
   const value = String(hour).padStart(2, '0')
@@ -198,14 +200,14 @@ const minuteOptions: AppSelectOption[] = Array.from({ length: 60 }, (_, minute) 
   const value = String(minute).padStart(2, '0')
   return { label: value, value }
 })
-const targetModeOptions: AppSelectOption[] = [
-  { label: '全部服务商', value: 'all' },
-  { label: '指定服务商', value: 'selected' }
-]
-const scheduleTypeOptions: AppSelectOption[] = [
-  { label: '执行间隔', value: 'interval' },
-  { label: '定期执行', value: 'daily' }
-]
+const targetModeOptions = computed<AppSelectOption[]>(() => [
+  { label: t('scheduledTasks.form.targetAll'), value: 'all' },
+  { label: t('scheduledTasks.form.targetSelected'), value: 'selected' }
+])
+const scheduleTypeOptions = computed<AppSelectOption[]>(() => [
+  { label: t('scheduledTasks.form.scheduleTypeInterval'), value: 'interval' },
+  { label: t('scheduledTasks.form.scheduleTypeDaily'), value: 'daily' }
+])
 
 interface FormState {
   name: string
@@ -227,7 +229,7 @@ const cliSelectOptions = computed<AppSelectOption[]>(() =>
   agentStore.visibleAgents.map(agent => ({ label: agent.name, value: agent.id })),
 )
 function profileDisplayLabel(profile: ProviderProfileItem) {
-  if (profile.is_default) return profile.label
+  if (profile.is_default) return profile.label || t('scheduledTasks.form.profileDefault')
   return profile.label.replace(/_/g, ' ')
 }
 
@@ -298,7 +300,7 @@ async function fetchProviders() {
 
 async function fetchProfiles() {
   if (!supportsProfiles.value) {
-    profileTabs.value = [{ cli_type: form.value.cli_type, name: 'default', label: '默认', is_default: true, sort_order: 0 }]
+    profileTabs.value = [{ cli_type: form.value.cli_type, name: 'default', label: '', is_default: true, sort_order: 0 }]
     form.value.profile = 'default'
     return
   }
@@ -350,11 +352,11 @@ function handleEdit(task: ScheduledTask) {
 }
 async function handleSave() {
   if (!form.value.name.trim() || !form.value.model_name.trim()) {
-    notify('请填写任务名称和模型名', 'error')
+    notify(t('scheduledTasks.messages.nameAndModelRequired'), 'error')
     return
   }
   if (form.value.target_mode === 'selected' && form.value.provider_ids.length === 0) {
-    notify('请至少选择一个服务商', 'error')
+    notify(t('scheduledTasks.messages.providerRequired'), 'error')
     return
   }
   const scheduleInput = buildScheduleInput()
@@ -381,48 +383,48 @@ async function handleSave() {
   try {
     if (editingTask.value) {
       await scheduledTasksApi.update(editingTask.value.id, input)
-      notify('任务已更新')
+      notify(t('scheduledTasks.messages.taskUpdated'))
     } else {
       await scheduledTasksApi.create(input)
-      notify('任务已创建')
+      notify(t('scheduledTasks.messages.taskCreated'))
     }
     showDialog.value = false
     await fetchTasks()
   } catch (e: any) {
-    notify(getErrorMessage(e, '保存失败'), 'error')
+    notify(getErrorMessage(e, t('scheduledTasks.messages.saveFailed')), 'error')
   }
 }
 async function handleToggle(task: ScheduledTask, enabled: boolean) {
   try {
     await scheduledTasksApi.update(task.id, { enabled })
     task.enabled = enabled
-    notify(enabled ? '已启用' : '已停用')
+    notify(enabled ? t('scheduledTasks.messages.enabled') : t('scheduledTasks.messages.disabled'))
     await fetchTasks()
   } catch (e: any) {
-    notify(getErrorMessage(e, '更新失败'), 'error')
+    notify(getErrorMessage(e, t('scheduledTasks.messages.updateFailed')), 'error')
   }
 }
 async function handleRunNow(task: ScheduledTask) {
   runningIds.value.push(task.id)
   try {
     const { data } = await scheduledTasksApi.runNow(task.id)
-    notify(`执行完成：${statusLabel(data.status)}`)
+    notify(t('scheduledTasks.messages.runCompleted', { status: statusLabel(data.status) }))
     await fetchTasks()
   } catch (e: any) {
-    notify(getErrorMessage(e, '执行失败'), 'error')
+    notify(getErrorMessage(e, t('scheduledTasks.messages.runFailed')), 'error')
   } finally {
     runningIds.value = runningIds.value.filter(id => id !== task.id)
   }
 }
 async function handleDelete(task: ScheduledTask) {
   try {
-    await confirm(`确定删除定时任务「${task.name}」吗？`, '删除定时任务')
+    await confirm(t('scheduledTasks.confirmDelete.message', { name: task.name }), t('scheduledTasks.confirmDelete.title'))
     await scheduledTasksApi.delete(task.id)
-    notify('已删除')
+    notify(t('scheduledTasks.messages.deleted'))
     await fetchTasks()
   } catch (e: any) {
     if (e === 'cancel') return
-    notify(getErrorMessage(e, '删除失败'), 'error')
+    notify(getErrorMessage(e, t('scheduledTasks.messages.deleteFailed')), 'error')
   }
 }
 async function openRuns(task: ScheduledTask) {
@@ -498,14 +500,14 @@ function buildScheduleInput(): { type: ScheduledTaskScheduleType; expr: string }
   if (form.value.schedule_type === 'interval') {
     const m = Number(form.value.interval_minutes)
     if (!Number.isInteger(m) || m <= 0) {
-      notify('执行间隔必须是大于 0 的整数分钟', 'error')
+      notify(t('scheduledTasks.messages.intervalInvalid'), 'error')
       return null
     }
     return { type: 'interval', expr: String(m) }
   }
   const days = Number(form.value.period_days), hour = Number(form.value.period_hour), minute = Number(form.value.period_minute)
   if (!isValidDailyParts(days, hour, minute)) {
-    notify('定期执行必须是 1-365 天、0-23 时、0-59 分', 'error')
+    notify(t('scheduledTasks.messages.dailyInvalid'), 'error')
     return null
   }
   return { type: 'daily', expr: JSON.stringify({ days, hour, minute }) }
@@ -513,20 +515,28 @@ function buildScheduleInput(): { type: ScheduledTaskScheduleType; expr: string }
 function scheduleLabel(task: ScheduledTask): string {
   if (task.schedule_type === 'daily') {
     const s = parseDailySchedule(task.schedule_expr)
-    return s ? `每 ${s.days} 天 ${s.hour}:${s.minute}` : task.schedule_expr
+    return s ? t('scheduledTasks.schedule.everyDaysAt', { days: s.days, hour: s.hour, minute: s.minute }) : task.schedule_expr
   }
   const minutes = Number(task.schedule_expr)
   if (!Number.isInteger(minutes) || minutes <= 0) return task.schedule_expr
-  if (minutes % 1440 === 0) return `每 ${minutes / 1440} 天`
-  if (minutes % 60 === 0) return `每 ${minutes / 60} 小时`
-  return `每 ${minutes} 分钟`
+  if (minutes % 1440 === 0) return t('scheduledTasks.schedule.everyDays', { days: minutes / 1440 })
+  if (minutes % 60 === 0) return t('scheduledTasks.schedule.everyHours', { hours: minutes / 60 })
+  return t('scheduledTasks.schedule.everyMinutes', { minutes })
 }
 function taskTypeLabel(type: ScheduledTaskType): string {
-  return type === 'provider_keepalive' ? '服务商调用' : type
+  return type === 'provider_keepalive' ? t('scheduledTasks.form.typeProviderKeepalive') : type
 }
+const statusLabels = computed<Record<string, string>>(() => ({
+  pending: t('scheduledTasks.status.pending'),
+  running: t('scheduledTasks.status.running'),
+  success: t('scheduledTasks.status.success'),
+  partial_failed: t('scheduledTasks.status.partialFailed'),
+  failed: t('scheduledTasks.status.failed'),
+  retrying: t('scheduledTasks.status.retrying'),
+  skipped: t('scheduledTasks.status.skipped')
+}))
 function statusLabel(status: ScheduledTaskStatus | 'skipped'): string {
-  const labels: Record<string, string> = { pending: '待执行', running: '执行中', success: '成功', partial_failed: '部分失败', failed: '失败', retrying: '重试中', skipped: '全部跳过' }
-  return labels[status] || status
+  return statusLabels.value[status] || status
 }
 function statusClass(status: ScheduledTaskStatus | 'skipped'): string {
   if (status === 'success') return 'v2-pill-success'
@@ -537,10 +547,10 @@ function statusClass(status: ScheduledTaskStatus | 'skipped'): string {
 }
 function formatTime(timestamp: number | null): string {
   if (!timestamp) return '-'
-  return new Date(timestamp * 1000).toLocaleString()
+  return new Date(timestamp * 1000).toLocaleString(locale.value)
 }
 function handleScheduledTaskChange() {
-  void refreshScheduledTasks().catch((e) => notify(getErrorMessage(e, '定时任务刷新失败'), 'error'))
+  void refreshScheduledTasks().catch((e) => notify(getErrorMessage(e, t('scheduledTasks.messages.refreshFailed')), 'error'))
 }
 
 onMounted(async () => {
@@ -551,12 +561,12 @@ onMounted(async () => {
     await fetchTasks()
     hasLoadedTasks = true
   } catch (e: any) {
-    notify(getErrorMessage(e, '定时任务加载失败'), 'error')
+    notify(getErrorMessage(e, t('scheduledTasks.messages.loadFailed')), 'error')
   }
   try {
     scheduledTaskListener = await scheduledTasksApi.listenChanges(handleScheduledTaskChange)
   } catch (e: any) {
-    notify(getErrorMessage(e, '定时任务事件监听失败'), 'error')
+    notify(getErrorMessage(e, t('scheduledTasks.messages.listenFailed')), 'error')
   }
 })
 onUnmounted(() => {

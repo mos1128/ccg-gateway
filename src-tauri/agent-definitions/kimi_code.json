@@ -4,6 +4,7 @@
   "sort_order": 50,
   "name": "Kimi Code",
   "remark": "网关会接管 KimiCode 内置的 anthropic 与 openai 服务商；在 KimiCode 中选择 anthropic 与 openai 的模型即可。\n注意：需要先在 KimiCode 中通过 /provider 命令添加 anthropic 和 openai 服务商（key随意输入），然后再开启网关中 KimiCode 的路由模式。",
+  "remark_en": "The gateway takes over KimiCode's built-in anthropic and openai providers; just pick anthropic and openai models in KimiCode.\nNote: first add the anthropic and openai providers in KimiCode via the /provider command (any key will do), then enable KimiCode routing in the gateway.",
   "icon": {
     "view_box": "0 0 54 38",
     "paths": [

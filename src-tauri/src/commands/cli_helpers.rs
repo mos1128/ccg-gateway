@@ -40,24 +40,24 @@ pub fn project_dir(base_dir: &Path, cli_type: &str, project: &str) -> PathBuf {
 /// Validates that the given config content matches the expected format for the CLI type.
 pub fn validate_config_format(cli_type: &str, content: &str) -> std::result::Result<(), String> {
     let feature = &crate::services::agent::get_definition(cli_type)
-        .ok_or_else(|| format!("未知 Agent: {}", cli_type))?
+        .ok_or_else(|| crate::tr!("err.cli_helpers.unknown_agent", cli_type))?
         .features
         .global_preset;
     match feature.format {
         Some(crate::db::models::ConfigFormat::Json) => {
             serde_json::from_str::<serde_json::Value>(content)
-                .map_err(|e| format!("JSON 格式错误: {}", e))?;
+                .map_err(|e| crate::tr!("err.cli_helpers.json_invalid", e))?;
         }
         Some(crate::db::models::ConfigFormat::Toml) => {
             content
                 .parse::<toml_edit::DocumentMut>()
-                .map_err(|e| format!("TOML 格式错误: {}", e))?;
+                .map_err(|e| crate::tr!("err.cli_helpers.toml_invalid", e))?;
         }
         Some(crate::db::models::ConfigFormat::Yaml) => {
             serde_yaml::from_str::<serde_json::Value>(content)
-                .map_err(|e| format!("YAML 格式错误: {}", e))?;
+                .map_err(|e| crate::tr!("err.cli_helpers.yaml_invalid", e))?;
         }
-        _ => return Err(format!("Agent {} 未声明可用的全局预设格式", cli_type)),
+        _ => return Err(crate::tr!("err.cli_helpers.preset_format_unsupported", cli_type)),
     }
     Ok(())
 }

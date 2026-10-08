@@ -1,0 +1,21 @@
+export default {
+  addPlugin: 'Add Plugin',
+  install: 'Install',
+  update: 'Update',
+  uninstall: 'Uninstall',
+  activated: 'Activated',
+  profilePlaceholder: 'e.g. web',
+  repoUrl: 'Repository URL',
+  repoUrlPlaceholder: 'https://github.com/owner/repo or github:owner/repo',
+  installHint: 'One repository is one plugin, installed into the specified profile via dsh (dsh and pnpm must already be installed); dsh will initialize the profile automatically if it does not exist.',
+  operationResult: 'Operation Result',
+  loadFailed: 'Load failed',
+  profileRequired: 'Please enter a Profile',
+  repoUrlRequired: 'Please enter a repository URL',
+  installSuccess: 'Installed successfully',
+  installFailed: 'Installation failed',
+  updateFailed: 'Update failed',
+  uninstallFailed: 'Uninstall failed',
+  uninstallConfirm: 'Uninstall plugin "{name}"?',
+  uninstallConfirmTitle: 'Confirm Uninstall'
+}

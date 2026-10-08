@@ -79,7 +79,7 @@ pub async fn test_webdav_connection(
         .header("Depth", "0")
         .send()
         .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.connection_failed", e))?;
 
     Ok(response.status().is_success() || response.status().as_u16() == 207)
 }
@@ -89,10 +89,10 @@ pub async fn export_to_local_path(path: String) -> Result<()> {
     let db_path = get_data_dir().join("ccg_gateway.db");
     let content = tokio::fs::read(&db_path)
         .await
-        .map_err(|e| format!("Failed to read database: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.read_db_failed", e))?;
     tokio::fs::write(&path, &content)
         .await
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.write_file_failed", e))?;
     Ok(())
 }
 
@@ -103,7 +103,7 @@ pub async fn import_from_local(app: tauri::AppHandle, data: Vec<u8>) -> Result<(
     // Write the database file
     tokio::fs::write(&db_path, &data)
         .await
-        .map_err(|e| format!("Failed to write database: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.write_db_failed", e))?;
 
     // 退出应用，用户需手动重启
     exit_application(app);
@@ -117,14 +117,14 @@ pub async fn export_to_webdav(db: State<'_, SqlitePool>) -> Result<String> {
 
     let settings = get_webdav_settings(db.clone()).await?;
     if settings.url.is_empty() {
-        return Err("WebDAV URL not configured".to_string());
+        return Err(crate::tr!("err.backup.webdav_url_missing"));
     }
 
     // Read database file
     let db_path = get_data_dir().join("ccg_gateway.db");
     let content = tokio::fs::read(&db_path)
         .await
-        .map_err(|e| format!("Failed to read database: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.read_db_failed", e))?;
 
     // Generate filename
     let filename = format!("ccg_gateway_{}.db", local_compact_datetime());
@@ -148,10 +148,10 @@ pub async fn export_to_webdav(db: State<'_, SqlitePool>) -> Result<String> {
         .body(content)
         .send()
         .await
-        .map_err(|e| format!("Upload failed: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.upload_failed", e))?;
 
     if !response.status().is_success() && response.status().as_u16() != 201 {
-        return Err(format!("Upload failed with status: {}", response.status()));
+        return Err(crate::tr!("err.backup.upload_status_failed", response.status()));
     }
 
     Ok(filename)
@@ -163,7 +163,7 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
 
     let settings = get_webdav_settings(db).await?;
     if settings.url.is_empty() {
-        return Err("WebDAV URL not configured".to_string());
+        return Err(crate::tr!("err.backup.webdav_url_missing"));
     }
 
     let client = Client::new();
@@ -188,7 +188,7 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
         )
         .send()
         .await
-        .map_err(|e| format!("Failed to list backups: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.list_failed", e))?;
 
     if !response.status().is_success() && response.status().as_u16() != 207 {
         return Ok(Vec::new());
@@ -262,11 +262,7 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
             }
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(format!(
-                    "XML parse error at position {}: {}",
-                    reader.buffer_position(),
-                    e
-                ))
+                return Err(crate::tr!("err.backup.xml_parse_failed", reader.buffer_position(), e))
             }
             _ => {}
         }
@@ -289,7 +285,7 @@ pub async fn import_from_webdav(
 
     let settings = get_webdav_settings(db).await?;
     if settings.url.is_empty() {
-        return Err("WebDAV URL not configured".to_string());
+        return Err(crate::tr!("err.backup.webdav_url_missing"));
     }
 
     let client = Client::new();
@@ -304,13 +300,10 @@ pub async fn import_from_webdav(
         .basic_auth(&settings.username, Some(&settings.password))
         .send()
         .await
-        .map_err(|e| format!("Download failed: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.download_failed", e))?;
 
     if !response.status().is_success() {
-        return Err(format!(
-            "Download failed with status: {}",
-            response.status()
-        ));
+        return Err(crate::tr!("err.backup.download_status_failed", response.status()));
     }
 
     let content = response.bytes().await.map_err(|e| e.to_string())?;
@@ -320,7 +313,7 @@ pub async fn import_from_webdav(
 
     tokio::fs::write(&db_path, &content)
         .await
-        .map_err(|e| format!("Failed to write database: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.write_db_failed", e))?;
 
     // 退出应用，用户需手动重启
     exit_application(app);
@@ -334,7 +327,7 @@ pub async fn delete_webdav_backup(db: State<'_, SqlitePool>, filename: String) -
 
     let settings = get_webdav_settings(db).await?;
     if settings.url.is_empty() {
-        return Err("WebDAV URL not configured".to_string());
+        return Err(crate::tr!("err.backup.webdav_url_missing"));
     }
 
     let client = Client::new();
@@ -349,10 +342,10 @@ pub async fn delete_webdav_backup(db: State<'_, SqlitePool>, filename: String) -
         .basic_auth(&settings.username, Some(&settings.password))
         .send()
         .await
-        .map_err(|e| format!("Delete failed: {}", e))?;
+        .map_err(|e| crate::tr!("err.backup.delete_failed", e))?;
 
     if !response.status().is_success() && response.status().as_u16() != 204 {
-        return Err(format!("Delete failed with status: {}", response.status()));
+        return Err(crate::tr!("err.backup.delete_status_failed", response.status()));
     }
 
     Ok(())

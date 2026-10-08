@@ -249,6 +249,8 @@ pub struct AgentDefinition {
     pub sort_order: i64,
     pub name: String,
     pub remark: Option<String>,
+    /// 英文界面下的备注，缺省时前端回退到 remark
+    pub remark_en: Option<String>,
     pub icon: Option<AgentIcon>,
     pub config_dir: String,
     pub user_agent: Vec<String>,
@@ -262,6 +264,7 @@ pub struct AgentInfo {
     pub id: String,
     pub name: String,
     pub remark: Option<String>,
+    pub remark_en: Option<String>,
     pub icon: Option<AgentIcon>,
     pub config_dir: String,
     pub user_agent: Vec<String>,
@@ -1064,6 +1067,30 @@ pub struct RequestLogInfo {
     pub provider_headers: Option<String>,
     pub provider_body: Option<String>,
     pub error_message: Option<String>,
+    /// 错误来源：gateway（网关生成）/ upstream（上游透传原文）
+    pub error_source: Option<String>,
+    /// 结构化错误码（gateway 错误时由前端按 logErrors.* 词条渲染）
+    pub error_code: Option<String>,
+    /// 结构化错误参数（JSON 对象字符串）
+    pub error_params: Option<String>,
+}
+
+impl RequestLogInfo {
+    /// 记录网关生成的错误：message 列存渲染文本兜底，来源/错误码/参数供前端按语言重渲染
+    pub fn set_gateway_error(&mut self, code: &str, message: String, params: serde_json::Value) {
+        self.error_message = Some(message);
+        self.error_source = Some("gateway".to_string());
+        self.error_code = Some(code.to_string());
+        self.error_params = Some(params.to_string());
+    }
+
+    /// 记录上游透传的错误原文（不做翻译，仅原样保存）
+    pub fn set_upstream_error(&mut self, message: String) {
+        self.error_message = Some(message);
+        self.error_source = Some("upstream".to_string());
+        self.error_code = None;
+        self.error_params = None;
+    }
 }
 
 // Request Log Item (列表视图)
@@ -1140,6 +1167,12 @@ pub struct RequestLogDetail {
     pub provider_headers: Option<String>,
     pub provider_body: Option<String>,
     pub error_message: Option<String>,
+    /// 错误来源：gateway / upstream，旧数据为 NULL
+    pub error_source: Option<String>,
+    /// 结构化错误码，旧数据为 NULL
+    pub error_code: Option<String>,
+    /// 结构化错误参数（JSON 对象字符串），旧数据为 NULL
+    pub error_params: Option<String>,
     pub source_model: Option<String>,
     pub target_model: Option<String>,
 }
@@ -1169,6 +1202,10 @@ pub struct SystemLogItem {
     pub created_at: i64,
     pub event_type: String,
     pub message: String,
+    /// 结构化消息键（前端 systemLogs.* 词条），旧数据为 NULL
+    pub message_key: Option<String>,
+    /// 结构化消息参数（JSON 对象字符串），旧数据为 NULL
+    pub message_params: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1268,6 +1305,8 @@ pub struct SystemStatus {
     pub port: u16,
     pub gateway_url: String,
     pub error_message: Option<String>,
+    /// 结构化错误码：bind_failed / serve_stopped，前端据此翻译，error_message 为原始详情
+    pub error_code: Option<String>,
     pub host_env_override: bool,
     pub port_env_override: bool,
     pub data_dir: String,

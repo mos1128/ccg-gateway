@@ -18,7 +18,9 @@ use super::Format;
 pub const DEFAULT_MAX_TOKENS: i64 = 32000;
 
 /// 工具结果里的图片挪到后续 user 消息时留的说明，免得模型以为图片凭空出现。
-pub const TOOL_MEDIA_MOVED: &str = "[ccg: 上一条工具结果里的图片附在本条消息中]";
+pub fn tool_media_moved() -> String {
+    crate::tr!("translate.tool_media_moved")
+}
 
 /// 工具确实没有输出时（写文件、静默的命令）的占位。空字符串会让模型以为工具挂了，
 /// Anthropic 更是直接拒空文本块。

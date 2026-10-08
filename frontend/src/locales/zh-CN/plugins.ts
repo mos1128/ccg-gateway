@@ -1,0 +1,21 @@
+export default {
+  addPlugin: '添加插件',
+  install: '安装',
+  update: '更新',
+  uninstall: '卸载',
+  activated: '已激活',
+  profilePlaceholder: '例如：web',
+  repoUrl: '仓库地址',
+  repoUrlPlaceholder: 'https://github.com/owner/repo 或 github:owner/repo',
+  installHint: '一个仓库即一个插件，将通过 dsh 安装到指定 profile（需已安装 dsh 和 pnpm）；不存在的 profile 会由 dsh 自动初始化。',
+  operationResult: '操作结果',
+  loadFailed: '加载失败',
+  profileRequired: '请输入 Profile',
+  repoUrlRequired: '请输入仓库地址',
+  installSuccess: '安装成功',
+  installFailed: '安装失败',
+  updateFailed: '更新失败',
+  uninstallFailed: '卸载失败',
+  uninstallConfirm: '确定卸载插件 "{name}"?',
+  uninstallConfirmTitle: '确认卸载'
+}

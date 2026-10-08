@@ -1,17 +1,11 @@
 import { ElNotification } from 'element-plus'
+import { translate } from '@/locales'
 
 type NotifyType = 'success' | 'error' | 'warning' | 'info'
 
-const titles: Record<NotifyType, string> = {
-  success: '成功',
-  error: '错误',
-  warning: '警告',
-  info: '提示'
-}
-
 export function notify(message: string, type: NotifyType = 'success') {
   ElNotification({
-    title: titles[type],
+    title: translate(`common.notify.${type}`),
     message,
     type,
     position: 'top-right',

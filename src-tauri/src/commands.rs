@@ -185,10 +185,10 @@ fn serialize_toml_table<T: Serialize>(value: &T, context: &str) -> Result<toml_e
 
 fn parse_mcp_toml_table(mcp_config_json: &str) -> Result<toml_edit::Table> {
     let value = serde_json::from_str::<serde_json::Value>(mcp_config_json)
-        .map_err(|e| format!("MCP JSON 格式错误: {}", e))?;
+        .map_err(|e| crate::tr!("err.cmd.mcp_json_invalid", e))?;
 
     if !value.is_object() {
-        return Err("TOML MCP 配置必须是 JSON object".to_string());
+        return Err(crate::tr!("err.cmd.mcp_toml_object_required"));
     }
 
     validate_toml_compatible_json(&value)?;
@@ -197,7 +197,7 @@ fn parse_mcp_toml_table(mcp_config_json: &str) -> Result<toml_edit::Table> {
 
 fn validate_toml_compatible_json(value: &serde_json::Value) -> Result<()> {
     match value {
-        serde_json::Value::Null => Err("Codex MCP 配置不能包含 null，TOML 不支持 null".to_string()),
+        serde_json::Value::Null => Err(crate::tr!("err.cmd.toml_null_unsupported")),
         serde_json::Value::Array(items) => {
             for item in items {
                 validate_toml_compatible_json(item)?;
@@ -218,36 +218,36 @@ fn map_db_error(e: sqlx::Error) -> String {
     let err_str = e.to_string();
     if err_str.contains("code: 2067") || err_str.contains("UNIQUE constraint failed") {
         if err_str.contains("providers.cli_type") && err_str.contains("providers.name") {
-            return "同类型同 Profile 的服务商名称已存在".to_string();
+            return crate::tr!("err.db.duplicate_provider_name");
         }
         if err_str.contains("provider_model_map.provider_id")
             && err_str.contains("provider_model_map.source_model")
         {
-            return "该服务商已存在相同的模型映射".to_string();
+            return crate::tr!("err.db.duplicate_model_map");
         }
         if err_str.contains("provider_model_blacklist.provider_id")
             && err_str.contains("provider_model_blacklist.model_pattern")
         {
-            return "该服务商已存在相同的黑名单模式".to_string();
+            return crate::tr!("err.db.duplicate_blacklist");
         }
         if err_str.contains("mcp_configs.name") {
-            return "MCP 配置名称已存在".to_string();
+            return crate::tr!("err.db.duplicate_mcp_name");
         }
         if err_str.contains("prompt_presets.name") {
-            return "提示词预设名称已存在".to_string();
+            return crate::tr!("err.db.duplicate_prompt_name");
         }
         if err_str.contains("skill_configs.directory") {
-            return "该目录已安装过 Skill".to_string();
+            return crate::tr!("err.db.duplicate_skill_dir");
         }
         if err_str.contains("official_credentials.cli_type")
             && err_str.contains("official_credentials.name")
         {
-            return "同类型的凭证名称已存在".to_string();
+            return crate::tr!("err.db.duplicate_credential_name");
         }
         if err_str.contains("skill_favorites.skill_key") {
-            return "该技能已收藏".to_string();
+            return crate::tr!("err.db.duplicate_skill_favorite");
         }
-        return "数据已存在，请勿重复添加".to_string();
+        return crate::tr!("err.db.duplicate");
     }
     err_str
 }
@@ -331,10 +331,11 @@ async fn sync_cli_config_with_log(
     {
         Ok(()) => Ok(()),
         Err(error) => {
-            let _ = crate::services::stats::record_system_log(
+            let _ = crate::services::stats::record_system_log_event(
                 log_db,
                 "config_patch_failed",
-                &format!("Agent {} 配置写入失败: {}", cli_type, error),
+                "logs.sysLog.config_patch_failed",
+                serde_json::json!({ "agent_id": cli_type, "error": error }),
             )
             .await;
             Err(error)

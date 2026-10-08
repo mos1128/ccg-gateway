@@ -3,7 +3,7 @@
     <div v-loading="loading" class="v2-cardgrid">
       <div class="v2-addcard" @click="handleAdd">
         <svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        <span>添加提示词</span>
+        <span>{{ t('prompts.addPrompt') }}</span>
       </div>
       <ConfigCard
         v-for="prompt in promptList"
@@ -18,13 +18,13 @@
       />
     </div>
 
-    <V2Drawer v-model="showDialog" :title="editingPrompt ? '编辑提示词' : '添加提示词'" @confirm="handleSave">
+    <V2Drawer v-model="showDialog" :title="editingPrompt ? t('prompts.editPrompt') : t('prompts.addPrompt')" @confirm="handleSave">
       <div class="v2-field">
-        <label class="v2-label">提示词名称 <span class="req">*</span></label>
-        <input v-model="form.name" type="text" class="v2-input" placeholder="例如：单元测试生成器">
+        <label class="v2-label">{{ t('prompts.name') }} <span class="req">*</span></label>
+        <input v-model="form.name" type="text" class="v2-input" :placeholder="t('prompts.namePlaceholder')">
       </div>
       <div class="v2-field">
-        <label class="v2-label">提示词内容 <span class="req">*</span></label>
+        <label class="v2-label">{{ t('prompts.content') }} <span class="req">*</span></label>
         <div class="v2-file-editor">
           <div class="v2-file-editor-header">
             <div class="v2-file-editor-title">
@@ -40,7 +40,7 @@
               v-model="form.content"
               class="prompt-content-editor"
               rows="16"
-              placeholder="请输入提示词内容..."
+              :placeholder="t('prompts.contentPlaceholder')"
             />
           </div>
         </div>
@@ -50,6 +50,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2CodeEditor from '@/components/V2CodeEditor.vue'
 import ConfigCard from '@/components/ConfigCard.vue'
@@ -58,6 +59,8 @@ import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { promptsApi } from '@/api/prompts'
 import type { CliType, Prompt } from '@/types/models'
+
+const { t } = useI18n()
 
 const promptList = ref<Prompt[]>([])
 const loading = ref(false)
@@ -103,23 +106,23 @@ function handleEdit(prompt: Prompt) {
 
 async function handleSave() {
   if (!form.value.name.trim() || !form.value.content.trim()) {
-    notify('请填写完整的必填项', 'error')
+    notify(t('prompts.requiredFields'), 'error')
     return
   }
   try {
     const data = { name: form.value.name.trim(), content: form.value.content.trim() }
     if (editingPrompt.value) {
       await promptsApi.update(editingPrompt.value.id, data)
-      notify('更新成功')
+      notify(t('prompts.updateSuccess'))
     } else {
       await promptsApi.create(data)
-      notify('添加成功')
+      notify(t('prompts.addSuccess'))
     }
     showDialog.value = false
     form.value = { name: '', content: '' }
     await fetchList()
   } catch (error: any) {
-    notify(getErrorMessage(error, '操作失败'), 'error')
+    notify(getErrorMessage(error, t('common.operationFailed')), 'error')
   }
 }
 
@@ -133,21 +136,21 @@ async function handleCliToggle(prompt: Prompt, cliType: CliType, enabled: boolea
         if (p.id !== prompt.id && p.cli_flags) p.cli_flags[cliType] = false
       }
     }
-    notify('已更新')
+    notify(t('prompts.updated'))
   } catch (error: any) {
-    notify(getErrorMessage(error, '更新失败'), 'error')
+    notify(getErrorMessage(error, t('prompts.updateFailed')), 'error')
     await fetchList()
   }
 }
 
 async function handleDelete(prompt: Prompt) {
   try {
-    await confirm(`确定删除提示词 "${prompt.name}"?`, '确认删除')
+    await confirm(t('prompts.deleteConfirm', { name: prompt.name }), t('prompts.deleteConfirmTitle'))
     await promptsApi.delete(prompt.id)
-    notify('已删除')
+    notify(t('prompts.deleted'))
     await fetchList()
   } catch (error: any) {
-    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, '删除失败'), 'error')
+    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, t('prompts.deleteFailed')), 'error')
   }
 }
 

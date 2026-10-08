@@ -3,6 +3,7 @@ pub mod auto_launch;
 pub mod commands;
 pub mod config;
 pub mod db;
+pub mod i18n;
 pub mod services;
 pub mod time;
 
@@ -24,6 +25,7 @@ pub struct StatsDb(pub SqlitePool);
 pub struct GatewayRuntimeSnapshot {
     pub status: &'static str,
     pub error_message: Option<String>,
+    pub error_code: Option<&'static str>,
     pub started_at: Option<Instant>,
 }
 
@@ -37,6 +39,7 @@ impl Default for GatewayRuntimeState {
             snapshot: RwLock::new(GatewayRuntimeSnapshot {
                 status: "starting",
                 error_message: None,
+                error_code: None,
                 started_at: None,
             }),
         }
@@ -58,17 +61,19 @@ impl GatewayRuntimeState {
             .unwrap_or_else(|error| error.into_inner()) = GatewayRuntimeSnapshot {
             status: "running",
             error_message: None,
+            error_code: None,
             started_at: Some(Instant::now()),
         };
     }
 
-    fn set_error(&self, error_message: String) {
+    fn set_error(&self, error_code: &'static str, error_message: String) {
         *self
             .snapshot
             .write()
             .unwrap_or_else(|error| error.into_inner()) = GatewayRuntimeSnapshot {
             status: "error",
             error_message: Some(error_message),
+            error_code: Some(error_code),
             started_at: None,
         };
     }
@@ -128,6 +133,33 @@ fn request_app_exit(app: &AppHandle) {
         tokio::time::sleep(Duration::from_millis(150)).await;
         app.exit(0);
     });
+}
+
+/// 托盘图标 id：语言切换时需要按 id 寻回托盘以重建菜单
+pub const TRAY_ID: &str = "main";
+
+fn build_tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    let show_item = MenuItemBuilder::with_id("show", i18n::t("tray.show", &[])).build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", i18n::t("tray.quit", &[])).build(app)?;
+    MenuBuilder::new(app).items(&[&show_item, &quit_item]).build()
+}
+
+/// 按当前语言重建托盘菜单（语言切换时调用）
+pub fn rebuild_tray_menu(app: &AppHandle) {
+    let menu = match build_tray_menu(app) {
+        Ok(menu) => menu,
+        Err(error) => {
+            tracing::warn!("Failed to build tray menu: {}", error);
+            return;
+        }
+    };
+
+    let id = tauri::tray::TrayIconId::from(TRAY_ID);
+    if let Some(tray) = app.tray_by_id(&id) {
+        if let Err(error) = tray.set_menu(Some(menu)) {
+            tracing::warn!("Failed to update tray menu: {}", error);
+        }
+    }
 }
 
 fn valid_window_logical_size(width: f64, height: f64) -> Option<(f64, f64)> {
@@ -225,6 +257,10 @@ pub fn run() {
                 app.manage(LogDb(log_db.clone()));
                 app.manage(StatsDb(stats_db.clone()));
 
+                // Resolve UI language from settings (auto → system locale) before
+                // anything user-visible is produced (tray menu, gateway errors).
+                crate::i18n::init_from_db(&db).await;
+
                 let startup_settings = sqlx::query_as::<_, db::models::GatewaySettings>(
                     "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, gateway_host, gateway_port, window_width, window_height FROM gateway_settings WHERE id = 1",
                 )
@@ -282,11 +318,10 @@ pub fn run() {
                             listener
                         }
                         Err(e) => {
-                            let message = format!("无法监听 {}：{}", addr, e);
-                            tracing::error!("{}", message);
+                            tracing::error!("Failed to listen on {}: {}", addr, e);
                             runtime_app_handle
                                 .state::<GatewayRuntimeState>()
-                                .set_error(message);
+                                .set_error("bind_failed", e.to_string());
                             if let Some(window) = runtime_app_handle.get_webview_window("main") {
                                 show_main_window(&window);
                             }
@@ -299,11 +334,10 @@ pub fn run() {
                         .set_running();
 
                     if let Err(e) = axum::serve(listener, router).await {
-                        let message = format!("网关服务异常停止：{}", e);
-                        tracing::error!("{}", message);
+                        tracing::error!("Gateway service stopped unexpectedly: {}", e);
                         runtime_app_handle
                             .state::<GatewayRuntimeState>()
-                            .set_error(message);
+                            .set_error("serve_stopped", e.to_string());
                         if let Some(window) = runtime_app_handle.get_webview_window("main") {
                             show_main_window(&window);
                         }
@@ -317,11 +351,7 @@ pub fn run() {
                 .set_minimize_to_tray_on_close(startup_settings.minimize_to_tray_on_close != 0);
 
             // Setup tray icon with menu
-            let show_item = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "退出").build(app)?;
-            let menu = MenuBuilder::new(app)
-                .items(&[&show_item, &quit_item])
-                .build()?;
+            let menu = build_tray_menu(app.handle())?;
 
             // Get default app icon for tray
             let icon = match app.default_window_icon().cloned() {
@@ -332,7 +362,7 @@ pub fn run() {
                 }
             };
 
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id(TRAY_ID)
                 .icon(icon)
                 .tooltip("CCG Gateway")
                 .menu(&menu)
@@ -477,6 +507,8 @@ pub fn run() {
             commands::settings_commands::get_profile_settings_status,
             commands::settings_commands::ensure_profile_settings,
             commands::settings_commands::update_cli_settings,
+            commands::settings_commands::get_ui_locale,
+            commands::settings_commands::set_ui_language,
             commands::log_commands::get_request_logs,
             commands::log_commands::get_request_log_detail,
             commands::log_commands::clear_request_logs,

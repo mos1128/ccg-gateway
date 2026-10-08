@@ -43,7 +43,7 @@ pub fn profile_template_context(
 ) -> Result<ProfileTemplateContext, String> {
     let profile = validate_provider_profile(Some(profile))?;
     if !resolved.features.profiles.enabled && profile != DEFAULT_PROFILE {
-        return Err(format!("Agent {} 不支持 Profile", resolved.name));
+        return Err(crate::tr!("err.agent_config.profile_unsupported", resolved.name));
     }
 
     let relative_path = (profile != DEFAULT_PROFILE)
@@ -68,18 +68,18 @@ fn replace_profile_placeholders(
         let value = context
             .relative_path
             .as_deref()
-            .ok_or_else(|| "当前 Profile 模板未提供 relative_path".to_string())?;
+            .ok_or_else(|| crate::tr!("err.agent_config.profile_relative_path_missing"))?;
         output = output.replace("{profile.relative_path}", value);
     }
     if output.contains("{profile.absolute_path}") {
         let value = context
             .absolute_path
             .as_deref()
-            .ok_or_else(|| "当前 Profile 未提供 absolute_path".to_string())?;
+            .ok_or_else(|| crate::tr!("err.agent_config.profile_absolute_path_missing"))?;
         output = output.replace("{profile.absolute_path}", value);
     }
     if output.contains("{profile") {
-        return Err(format!("未知 Profile 模板变量: {}", output));
+        return Err(crate::tr!("err.agent_config.unknown_template_variable", output));
     }
     Ok(output)
 }
@@ -148,7 +148,7 @@ fn operations_for_profile<'a>(
         return Ok(&resolved.features.provider_config.operations);
     }
     if !resolved.features.profiles.enabled {
-        return Err(format!("Agent {} 不支持 Profile", resolved.name));
+        return Err(crate::tr!("err.agent_config.profile_unsupported", resolved.name));
     }
     Ok(&resolved.features.profiles.operations)
 }
@@ -187,14 +187,14 @@ fn group_operations(
         let path = resolve_cli_config_file_from_dir(config_dir, &operation.file);
         if let Some(group) = groups.iter_mut().find(|group| group.path == path) {
             if group.format != operation.format {
-                return Err(format!(
-                    "Provider 配置文件 `{}` 不能同时使用不同 format",
+                return Err(crate::tr!(
+                    "err.agent_config.provider_file_format_conflict",
                     operation.file
                 ));
             }
             if group.private != operation.private {
-                return Err(format!(
-                    "Provider 配置文件 `{}` 不能同时使用不同 private 值",
+                return Err(crate::tr!(
+                    "err.agent_config.provider_file_private_conflict",
                     operation.file
                 ));
             }
@@ -218,10 +218,7 @@ fn ensure_group(
 ) -> Result<(), String> {
     if let Some(group) = groups.iter().find(|group| group.path == path) {
         if group.format != format {
-            return Err(format!(
-                "配置文件 `{}` 不能同时使用不同 format",
-                path.display()
-            ));
+            return Err(crate::tr!("err.agent_config.file_format_conflict", path.display()));
         }
     } else {
         groups.push(OperationGroup {
@@ -255,7 +252,7 @@ async fn resolved_agent(db: &SqlitePool, agent_id: &str) -> Result<AgentInfo, St
     agent::get_agent(db, agent_id)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("未知 Agent: {}", agent_id))
+        .ok_or_else(|| crate::tr!("err.agent.unknown_id", agent_id))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -356,7 +353,7 @@ pub async fn profile_settings_status(
 ) -> Result<ProfileSettingsStatus, String> {
     let profile = validate_provider_profile(Some(profile))?;
     let Some((filename, path)) = profile_file(db, agent_id, &profile).await? else {
-        return Err(format!("Agent {} 未声明 Profile 配置文件", agent_id));
+        return Err(crate::tr!("err.agent_config.profile_file_not_declared", agent_id));
     };
     let exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
     let launch_command = profile_launch_command(db, agent_id, &profile).await?;
@@ -420,12 +417,12 @@ fn preset_target(
         feature
             .file
             .as_deref()
-            .ok_or_else(|| "global_preset 缺少 file".to_string())?,
+            .ok_or_else(|| crate::tr!("err.agent_config.global_preset_file_missing"))?,
         &template,
     )?;
     let format = feature
         .format
-        .ok_or_else(|| "global_preset 缺少 format".to_string())?;
+        .ok_or_else(|| crate::tr!("err.agent_config.global_preset_format_missing"))?;
     Ok(Some(PresetTarget {
         path: resolve_cli_config_file_from_dir(config_dir, &file),
         format,
@@ -441,7 +438,7 @@ async fn read_optional(path: &Path) -> Result<Option<String>, String> {
     match tokio::fs::read_to_string(path).await {
         Ok(content) => Ok(Some(content)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!("读取 {} 失败: {}", path.display(), error)),
+        Err(error) => Err(crate::tr!("err.agent_config.read_file_failed", path.display(), error)),
     }
 }
 
@@ -452,7 +449,7 @@ async fn apply_enabled_groups(
     write_mode: &str,
 ) -> Result<Vec<PathBuf>, String> {
     if !matches!(write_mode, "merge" | "overwrite") {
-        return Err("config_write_mode 只能是 'overwrite' 或 'merge'".to_string());
+        return Err(crate::tr!("err.agent_config.write_mode_invalid"));
     }
 
     let mut prepared = Vec::with_capacity(groups.len());
@@ -589,7 +586,7 @@ pub async fn sync_global_preset(
     let resolved = resolved_agent(db, agent_id).await?;
     if !resolved.features.global_preset.enabled {
         return if enabled && !current_preset.trim().is_empty() {
-            Err(format!("Agent {} 未启用全局预设", resolved.name))
+            Err(crate::tr!("err.agent_config.global_preset_disabled", resolved.name))
         } else {
             Ok(Vec::new())
         };
@@ -645,7 +642,7 @@ pub async fn sync_proxy_route_config(
     let resolved = resolved_agent(db, agent_id).await?;
     let feature = &resolved.features.provider_config;
     if enabled && !feature.enabled {
-        return Err("Provider 配置功能未启用".to_string());
+        return Err(crate::tr!("err.agent_config.provider_config_disabled"));
     }
 
     let operations = resolve_profile_operations(&resolved, profile)?;
@@ -706,14 +703,18 @@ pub async fn migrate_gateway_endpoints(
             return Ok(());
         };
         if config_patch::operations_applied(group.format, &content, &group.operations, &new_context)
-            .map_err(|error| format!("解析 {} 失败: {}", group.path.display(), error))?
+            .map_err(|error| {
+                crate::tr!("err.agent_config.parse_file_failed", group.path.display(), error)
+            })?
         {
             continue;
         }
         let mut matches_old = false;
         for context in &old_contexts {
             if config_patch::operations_applied(group.format, &content, &group.operations, context)
-                .map_err(|error| format!("解析 {} 失败: {}", group.path.display(), error))?
+                .map_err(|error| {
+                    crate::tr!("err.agent_config.parse_file_failed", group.path.display(), error)
+                })?
             {
                 matches_old = true;
                 break;
@@ -772,7 +773,7 @@ async fn write_provider_direct_config_impl(
     let resolved = resolved_agent(db, &provider.cli_type).await?;
     let feature = &resolved.features.provider_config;
     if !feature.enabled {
-        return Err(format!("Agent {} 不支持服务商直连模式", resolved.name));
+        return Err(crate::tr!("err.agent_config.provider_direct_unsupported", resolved.name));
     }
     let operations = resolve_profile_operations(&resolved, &provider.profile)?;
     let config_dir = get_cli_config_dir_path(db, &provider.cli_type).await;

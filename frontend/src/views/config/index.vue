@@ -5,7 +5,7 @@
       <div class="cfg-col">
         <!-- CLI 运行配置 -->
         <div class="v2-card v2-card-pad cfg-cli">
-          <div class="cfg-head">Agent 运行配置</div>
+          <div class="cfg-head">{{ t('config.cli.title') }}</div>
           <V2Tabs class="cfg-tabs">
             <div v-for="cli in cliTabs" :key="cli.id" class="v2-tab" :class="{ active: activeCliTab === cli.id }" @click="activeCliTab = cli.id">
               <span class="tab-label-text">{{ cli.label }}</span>
@@ -13,17 +13,17 @@
           </V2Tabs>
 
           <div class="v2-field">
-            <label class="v2-label">Agent 目录</label>
+            <label class="v2-label">{{ t('config.cli.configDir') }}</label>
             <div class="cfg-dir">
-              <input v-model="cliForm.config_dir" class="v2-input mono" placeholder="Agent 配置目录" @blur="saveCliConfigDir">
-              <el-tooltip content="恢复默认" placement="top" effect="light" :show-after="250">
+              <input v-model="cliForm.config_dir" class="v2-input mono" :placeholder="t('config.cli.configDirPlaceholder')" @blur="saveCliConfigDir">
+              <el-tooltip :content="t('config.cli.restoreDefault')" placement="top" effect="light" :show-after="250">
                 <button class="v2-row-act" @click="handleRestoreDefault"><svg :class="{ 'spin-once': isRestoring }" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
               </el-tooltip>
             </div>
           </div>
 
           <div v-if="globalPresetEnabled" class="v2-field">
-            <label class="v2-label">全局预设</label>
+            <label class="v2-label">{{ t('config.preset.title') }}</label>
             <div class="cfg-preset-card" @click="openPresetDrawer">
               <div class="cfg-preset-body">
                 <pre class="cfg-preset-code mono"><code>{{ getPresetPreviewText(cliForm.default_json_config) }}</code></pre>
@@ -32,7 +32,7 @@
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                       <polygon points="5 3 19 12 5 21 5 3"/>
                     </svg>
-                    点击编辑配置
+                    {{ t('config.preset.clickToEdit') }}
                   </span>
                 </div>
               </div>
@@ -43,32 +43,32 @@
 
         <!-- 备份与同步 -->
         <div class="v2-card v2-card-pad">
-          <div class="cfg-head">备份与同步</div>
+          <div class="cfg-head">{{ t('config.backup.title') }}</div>
           <div class="cfg-backup">
             <div class="v2-seg">
               <div class="v2-seg-slider" :style="{ transform: `translateX(${activeBackupTab === 'local' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
-              <button class="v2-seg-btn" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">本地备份</button>
+              <button class="v2-seg-btn" :class="{ active: activeBackupTab === 'local' }" @click="activeBackupTab = 'local'">{{ t('config.backup.local') }}</button>
               <button class="v2-seg-btn" :class="{ active: activeBackupTab === 'webdav' }" @click="activeBackupTab = 'webdav'">WebDAV</button>
             </div>
             <div class="cfg-backup-acts">
               <template v-if="activeBackupTab === 'local'">
-                <el-tooltip content="导出" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="t('config.backup.export')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act" :class="{ off: exportingLocal }" @click="!exportingLocal && handleExportLocal()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
                 </el-tooltip>
                 <el-upload :show-file-list="false" :before-upload="handleImportLocal" accept=".db" :disabled="importingLocal">
-                  <el-tooltip content="导入" placement="top" effect="light" :show-after="250">
+                  <el-tooltip :content="t('config.backup.import')" placement="top" effect="light" :show-after="250">
                     <button class="v2-row-act" :class="{ off: importingLocal }"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
                   </el-tooltip>
                 </el-upload>
               </template>
               <template v-else>
-                <el-tooltip content="WebDAV 设置" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="t('config.backup.webdavSettings')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act" @click="webdavSettingsVisible = true"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
                 </el-tooltip>
-                <el-tooltip content="导出到 WebDAV" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="t('config.backup.exportToWebdav')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act" :class="{ off: exportingWebdav }" @click="!exportingWebdav && handleExportWebdav()"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
                 </el-tooltip>
-                <el-tooltip content="从 WebDAV 导入" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="t('config.backup.importFromWebdav')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act" @click="handleShowWebdavList"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
                 </el-tooltip>
               </template>
@@ -81,58 +81,58 @@
       <div class="cfg-col">
         <!-- 请求超时 -->
         <div class="v2-card v2-card-pad">
-          <div class="cfg-head">请求超时</div>
+          <div class="cfg-head">{{ t('config.timeout.title') }}</div>
           <div class="cfg-trow">
-            <span class="cfg-trow-l">流式首字节超时</span>
+            <span class="cfg-trow-l">{{ t('config.timeout.streamFirstByte') }}</span>
             <div class="cfg-input-wrapper">
               <input v-model.number="timeoutForm.stream_first_byte_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
-              <span class="cfg-input-unit">秒</span>
+              <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
             </div>
           </div>
           <div class="cfg-trow">
-            <span class="cfg-trow-l">流式空闲超时</span>
+            <span class="cfg-trow-l">{{ t('config.timeout.streamIdle') }}</span>
             <div class="cfg-input-wrapper">
               <input v-model.number="timeoutForm.stream_idle_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
-              <span class="cfg-input-unit">秒</span>
+              <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
             </div>
           </div>
           <div class="cfg-trow">
-            <span class="cfg-trow-l">非流式超时</span>
+            <span class="cfg-trow-l">{{ t('config.timeout.nonStream') }}</span>
             <div class="cfg-input-wrapper">
               <input v-model.number="timeoutForm.non_stream_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
-              <span class="cfg-input-unit">秒</span>
+              <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
             </div>
           </div>
         </div>
 
         <!-- 基础配置 -->
         <div class="v2-card v2-card-pad">
-          <div class="cfg-head">基础配置</div>
+          <div class="cfg-head">{{ t('config.basic.title') }}</div>
           <label class="cfg-toggle">
-            <span class="cfg-toggle-c"><span class="cfg-toggle-t">开机自启</span><span class="cfg-toggle-d">登录系统后自动启动 CCG Gateway</span></span>
+            <span class="cfg-toggle-c"><span class="cfg-toggle-t">{{ t('config.basic.launchOnStartup') }}</span><span class="cfg-toggle-d">{{ t('config.basic.launchOnStartupDesc') }}</span></span>
             <el-switch v-model="gatewayForm.launch_on_startup" :loading="gatewaySaving" @change="saveGateway" />
           </label>
           <label class="cfg-toggle">
-            <span class="cfg-toggle-c"><span class="cfg-toggle-t">静默启动</span><span class="cfg-toggle-d">启动时不显示主窗口，仅在托盘运行</span></span>
+            <span class="cfg-toggle-c"><span class="cfg-toggle-t">{{ t('config.basic.silentStartup') }}</span><span class="cfg-toggle-d">{{ t('config.basic.silentStartupDesc') }}</span></span>
             <el-switch v-model="gatewayForm.silent_startup" :loading="gatewaySaving" @change="saveGateway" />
           </label>
           <label class="cfg-toggle">
-            <span class="cfg-toggle-c"><span class="cfg-toggle-t">关闭时最小化到托盘</span><span class="cfg-toggle-d">点关闭按钮时隐藏窗口，应用继续后台运行</span></span>
+            <span class="cfg-toggle-c"><span class="cfg-toggle-t">{{ t('config.basic.minimizeToTray') }}</span><span class="cfg-toggle-d">{{ t('config.basic.minimizeToTrayDesc') }}</span></span>
             <el-switch v-model="gatewayForm.minimize_to_tray_on_close" :loading="gatewaySaving" @change="saveGateway" />
           </label>
         </div>
       </div>
     </div>
 
-    <V2Drawer v-model="webdavSettingsVisible" title="WebDAV 设置" @confirm="handleSaveWebdav">
-      <div class="v2-field"><label class="v2-label">服务器地址</label><input v-model="webdavForm.url" class="v2-input" placeholder="https://dav.jianguoyun.com/dav/"></div>
+    <V2Drawer v-model="webdavSettingsVisible" :title="t('config.backup.webdavSettings')" @confirm="handleSaveWebdav">
+      <div class="v2-field"><label class="v2-label">{{ t('config.webdav.url') }}</label><input v-model="webdavForm.url" class="v2-input" placeholder="https://dav.jianguoyun.com/dav/"></div>
       <div class="v2-grid-2">
-        <div class="v2-field"><label class="v2-label">用户名</label><input v-model="webdavForm.username" class="v2-input"></div>
+        <div class="v2-field"><label class="v2-label">{{ t('config.webdav.username') }}</label><input v-model="webdavForm.username" class="v2-input"></div>
         <div class="v2-field">
-          <label class="v2-label">密码</label>
+          <label class="v2-label">{{ t('config.webdav.password') }}</label>
           <div class="v2-input-wrapper">
             <input v-model="webdavForm.password" :type="showWebdavPassword ? 'text' : 'password'" class="v2-input">
-            <el-tooltip :content="showWebdavPassword ? '隐藏密码' : '显示密码'" placement="top" effect="light" :show-after="250">
+            <el-tooltip :content="showWebdavPassword ? t('config.webdav.hidePassword') : t('config.webdav.showPassword')" placement="top" effect="light" :show-after="250">
               <button type="button" class="v2-input-icon-btn" @click="showWebdavPassword = !showWebdavPassword">
                 <svg v-if="showWebdavPassword" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                 <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -142,18 +142,18 @@
         </div>
       </div>
       <template #footer>
-        <button class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="testingWebdav" style="margin-right:auto" @click="handleTestWebdav">{{ testingWebdav ? '测试中...' : '测试链接' }}</button>
-        <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="webdavSettingsVisible = false">取消</button>
-        <button class="v2-btn v2-btn-sm v2-btn-primary" :disabled="savingWebdav" @click="handleSaveWebdav">{{ savingWebdav ? '保存中...' : '保存' }}</button>
+        <button class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="testingWebdav" style="margin-right:auto" @click="handleTestWebdav">{{ testingWebdav ? t('config.webdav.testing') : t('config.webdav.testConnection') }}</button>
+        <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="webdavSettingsVisible = false">{{ t('common.cancel') }}</button>
+        <button class="v2-btn v2-btn-sm v2-btn-primary" :disabled="savingWebdav" @click="handleSaveWebdav">{{ savingWebdav ? t('config.webdav.saving') : t('common.save') }}</button>
       </template>
     </V2Drawer>
 
-    <V2Drawer v-model="webdavListVisible" title="管理 WebDAV 备份" width="60%" :show-footer="false">
+    <V2Drawer v-model="webdavListVisible" :title="t('config.webdavList.title')" width="60%" :show-footer="false">
       <div class="webdav-toolbar">
         <span class="webdav-status">{{ webdavStatusText }}</span>
         <button class="v2-btn v2-btn-sm v2-btn-outline" :disabled="loadingWebdavList" @click="loadWebdavBackups">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-          {{ loadingWebdavList ? '刷新中' : '刷新' }}
+          {{ loadingWebdavList ? t('config.webdavList.refreshing') : t('common.refresh') }}
         </button>
       </div>
 
@@ -162,10 +162,10 @@
           <table class="v2-table">
             <thead>
               <tr>
-                <th class="webdav-col-name">备份文件</th>
-                <th class="webdav-col-time">修改时间</th>
-                <th class="webdav-col-size">大小</th>
-                <th class="webdav-col-act">操作</th>
+                <th class="webdav-col-name">{{ t('config.webdavList.file') }}</th>
+                <th class="webdav-col-time">{{ t('config.webdavList.modified') }}</th>
+                <th class="webdav-col-size">{{ t('config.webdavList.size') }}</th>
+                <th class="webdav-col-act">{{ t('config.webdavList.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -177,27 +177,27 @@
                       <path d="M3 5V19A9 3 0 0 0 21 19V5"></path>
                       <path d="M3 12A9 3 0 0 0 21 12"></path>
                     </svg>
-                    <span class="filename-text mono" :title="backup.filename">{{ backup.filename }}</span>
+                    <span class="filename-text mono"><OverflowText :text="backup.filename" /></span>
                   </div>
                 </td>
                 <td class="webdav-col-time mono">{{ formatWebdavTime(backup.modified) }}</td>
                 <td class="webdav-col-size mono">{{ formatSize(backup.size) }}</td>
                 <td class="webdav-col-act">
                   <div class="webdav-row-actions">
-                    <a class="webdav-link" @click="handleImportWebdav(backup.filename)">恢复</a>
-                    <a class="webdav-link danger" @click="handleDeleteWebdav(backup.filename)">删除</a>
+                    <a class="webdav-link" @click="handleImportWebdav(backup.filename)">{{ t('config.webdavList.restore') }}</a>
+                    <a class="webdav-link danger" @click="handleDeleteWebdav(backup.filename)">{{ t('common.delete') }}</a>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
-          <div v-if="!loadingWebdavList && !webdavBackups.length" class="webdav-empty">暂无备份文件，请先执行「导出到 WebDAV」</div>
+          <div v-if="!loadingWebdavList && !webdavBackups.length" class="webdav-empty">{{ t('config.webdavList.emptyHint') }}</div>
         </div>
       </div>
     </V2Drawer>
 
     <!-- 全局预设编辑抽屉 -->
-    <V2Drawer v-model="presetDrawerVisible" :title="`编辑全局预设 - ${activeCliLabel}`" @confirm="handleSavePreset">
+    <V2Drawer v-model="presetDrawerVisible" :title="t('config.preset.editTitle', { name: activeCliLabel })" @confirm="handleSavePreset">
       <div class="preset-drawer-body">
         <div class="v2-field preset-editor-field">
           <div class="v2-file-editor preset-file-editor">
@@ -211,7 +211,7 @@
               </div>
               <button v-if="isJsonFormat" class="v2-file-editor-action" type="button" @click="formatPresetJson">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                <span>格式化</span>
+                <span>{{ t('config.preset.format') }}</span>
               </button>
             </div>
             <div class="v2-file-editor-body preset-editor-body">
@@ -230,8 +230,8 @@
           <div class="cfg-writemode-row">
             <div class="v2-seg" style="max-width: 200px;">
               <div class="v2-seg-slider" :style="{ transform: `translateX(${presetTempWriteMode === 'merge' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
-              <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'merge' }" type="button" @click="presetTempWriteMode = 'merge'">增量合并</button>
-              <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'overwrite' }" type="button" @click="presetTempWriteMode = 'overwrite'">全量写入</button>
+              <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'merge' }" type="button" @click="presetTempWriteMode = 'merge'">{{ t('config.preset.writeMode.merge') }}</button>
+              <button class="v2-seg-btn" :class="{ active: presetTempWriteMode === 'overwrite' }" type="button" @click="presetTempWriteMode = 'overwrite'">{{ t('config.preset.writeMode.overwrite') }}</button>
             </div>
             <el-tooltip
               effect="light"
@@ -243,14 +243,14 @@
             >
               <template #content>
                 <div class="write-mode-help-content">
-                  <div class="tooltip-title">配置写入模式</div>
+                  <div class="tooltip-title">{{ t('config.preset.writeModeTip.title') }}</div>
                   <div class="tooltip-item">
-                    <strong>增量合并</strong>
-                    <span>只写入需要变更的字段，保留配置文件中已有的其他配置（如 MCP / plugin 开关等配置）。</span>
+                    <strong>{{ t('config.preset.writeMode.merge') }}</strong>
+                    <span>{{ t('config.preset.writeModeTip.mergeDesc') }}</span>
                   </div>
                   <div class="tooltip-item">
-                    <strong>全量写入</strong>
-                    <span>每次写入时完全覆盖配置文件。中转路由会备份原始文件，关闭时自动恢复。保持配置干净。</span>
+                    <strong>{{ t('config.preset.writeMode.overwrite') }}</strong>
+                    <span>{{ t('config.preset.writeModeTip.overwriteDesc') }}</span>
                   </div>
                 </div>
               </template>
@@ -266,9 +266,11 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2CodeEditor from '@/components/V2CodeEditor.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
+import OverflowText from '@/components/OverflowText.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
@@ -285,6 +287,7 @@ import type { CliType } from '@/types/models'
 const settingsStore = useSettingsStore()
 const uiStore = useUiStore()
 const agentStore = useAgentStore()
+const { t } = useI18n()
 const cliTabs = computed(() => agentStore.tabs)
 
 const activeCliTab = computed<CliType>({
@@ -367,7 +370,7 @@ async function validatePresetConfig(): Promise<boolean> {
     } catch (error) {
       presetValidationError.value = getErrorMessage(
         error,
-        format === 'yaml' ? 'YAML 格式错误' : 'TOML 格式错误',
+        format === 'yaml' ? t('config.msg.yamlInvalid') : t('config.msg.tomlInvalid'),
       )
       return false
     }
@@ -387,17 +390,17 @@ function formatPresetJson() {
 
 async function handleSavePreset() {
   if (!await validatePresetConfig()) {
-    notify('配置格式错误，请修正后再保存', 'error')
+    notify(t('config.msg.presetInvalid'), 'error')
     return
   }
   try {
     cliForm.value.default_json_config = presetTempConfig.value
     cliForm.value.config_write_mode = presetTempWriteMode.value
     await settingsStore.updateCli(activeCliTab.value, { ...cliForm.value })
-    notify('预设配置已保存')
+    notify(t('config.msg.presetSaved'))
     presetDrawerVisible.value = false
   } catch (e: any) {
-    notify(getErrorMessage(e, '保存失败'), 'error')
+    notify(getErrorMessage(e, t('config.msg.saveFailed')), 'error')
   }
 }
 
@@ -420,9 +423,9 @@ async function saveCliConfigDir() {
   }
   try {
     await settingsStore.updateCli(activeCliTab.value, { ...cliForm.value })
-    notify('Agent 目录已更新')
+    notify(t('config.msg.configDirUpdated'))
   } catch (e: any) {
-    notify(getErrorMessage(e, '更新失败'), 'error')
+    notify(getErrorMessage(e, t('config.msg.updateFailed')), 'error')
   }
 }
 
@@ -457,18 +460,18 @@ watch(() => settingsStore.settings, (settings) => {
 async function saveTimeouts() {
   try {
     await settingsStore.updateTimeouts(timeoutForm.value)
-    notify('请求超时已保存')
+    notify(t('config.msg.timeoutsSaved'))
   } catch (e: any) {
-    notify(getErrorMessage(e, '保存失败'), 'error')
+    notify(getErrorMessage(e, t('config.msg.saveFailed')), 'error')
   }
 }
 async function saveGateway() {
   gatewaySaving.value = true
   try {
     await settingsStore.updateGateway(gatewayForm.value)
-    notify('基础配置已保存')
+    notify(t('config.msg.basicSaved'))
   } catch (e: any) {
-    notify(getErrorMessage(e, '保存失败'), 'error')
+    notify(getErrorMessage(e, t('config.msg.saveFailed')), 'error')
   } finally {
     gatewaySaving.value = false
   }
@@ -488,8 +491,9 @@ const webdavListVisible = ref(false)
 const webdavSettingsVisible = ref(false)
 const webdavBackups = ref<WebdavBackup[]>([])
 const webdavStatusText = computed(() => {
-  if (loadingWebdavList.value) return '读取中'
-  return webdavBackups.value.length ? `共 ${webdavBackups.value.length} 个备份文件` : '暂无备份文件'
+  if (loadingWebdavList.value) return t('config.webdavList.loading')
+  const count = webdavBackups.value.length
+  return count ? t('config.webdavList.count', { count }, count) : t('config.webdavList.empty')
 })
 
 watch(webdavSettingsVisible, (open) => {
@@ -508,19 +512,19 @@ async function handleExportLocal() {
   exportingLocal.value = true
   try {
     const success = await backupApi.exportToLocalWithDialog()
-    if (success) notify('导出成功')
+    if (success) notify(t('config.msg.exportSuccess'))
   } catch (error: any) {
-    notify(getErrorMessage(error, '导出失败'), 'error')
+    notify(getErrorMessage(error, t('config.msg.exportFailed')), 'error')
   } finally {
     exportingLocal.value = false
   }
 }
 async function handleImportLocal(file: File) {
   try {
-    await confirm('导入将覆盖当前所有数据，确定继续？', '警告')
+    await confirm(t('config.msg.importConfirm'), t('common.notify.warning'))
     importingLocal.value = true
     await backupApi.importFromLocal(file)
-    notify('导入成功，应用将自动退出，请重新打开应用')
+    notify(t('config.msg.importSuccess'))
   } catch { /* cancel */ } finally {
     importingLocal.value = false
   }
@@ -530,9 +534,9 @@ async function handleTestWebdav() {
   testingWebdav.value = true
   try {
     const { data } = await backupApi.testWebdavConnection(webdavForm.value)
-    notify(data.success ? '连接成功' : '连接失败', data.success ? 'success' : 'error')
+    notify(data.success ? t('config.msg.connectSuccess') : t('config.msg.connectFailed'), data.success ? 'success' : 'error')
   } catch (error: any) {
-    notify(getErrorMessage(error, '连接失败'), 'error')
+    notify(getErrorMessage(error, t('config.msg.connectFailed')), 'error')
   } finally {
     testingWebdav.value = false
   }
@@ -541,10 +545,10 @@ async function handleSaveWebdav() {
   savingWebdav.value = true
   try {
     await backupApi.updateWebdavSettings(webdavForm.value)
-    notify('WebDAV 配置已保存')
+    notify(t('config.msg.webdavSaved'))
     webdavSettingsVisible.value = false
   } catch (error: any) {
-    notify(getErrorMessage(error, '保存失败'), 'error')
+    notify(getErrorMessage(error, t('config.msg.saveFailed')), 'error')
   } finally {
     savingWebdav.value = false
   }
@@ -553,9 +557,9 @@ async function handleExportWebdav() {
   exportingWebdav.value = true
   try {
     const { data } = await backupApi.exportToWebdav()
-    notify(`同步成功: ${data.filename}`)
+    notify(t('config.msg.syncSuccess', { filename: data.filename }))
   } catch (error: any) {
-    notify(getErrorMessage(error, '同步失败'), 'error')
+    notify(getErrorMessage(error, t('config.msg.syncFailed')), 'error')
   } finally {
     exportingWebdav.value = false
   }
@@ -570,29 +574,29 @@ async function loadWebdavBackups() {
     const { data } = await backupApi.listWebdavBackups()
     webdavBackups.value = data.backups
   } catch (error: any) {
-    notify(getErrorMessage(error, '读取备份列表失败'), 'error')
+    notify(getErrorMessage(error, t('config.msg.listFailed')), 'error')
   } finally {
     loadingWebdavList.value = false
   }
 }
 async function handleImportWebdav(filename: string) {
   try {
-    await confirm('导入将覆盖当前所有数据，确定继续？', '警告')
+    await confirm(t('config.msg.importConfirm'), t('common.notify.warning'))
     await backupApi.importFromWebdav(filename)
-    notify('导入成功，应用将自动退出，请重新打开应用')
+    notify(t('config.msg.importSuccess'))
     webdavListVisible.value = false
   } catch (error: any) {
-    if (error !== 'cancel') notify(getErrorMessage(error, '导入失败'), 'error')
+    if (error !== 'cancel') notify(getErrorMessage(error, t('config.msg.importFailed')), 'error')
   }
 }
 async function handleDeleteWebdav(filename: string) {
   try {
-    await confirm(`确定要删除远程备份 ${filename} 吗？`, '警告')
+    await confirm(t('config.msg.deleteConfirm', { filename }), t('common.notify.warning'))
     await backupApi.deleteWebdavBackup(filename)
-    notify('已删除')
+    notify(t('config.msg.deleted'))
     await loadWebdavBackups()
   } catch (error: any) {
-    if (error !== 'cancel') notify(getErrorMessage(error, '删除失败'), 'error')
+    if (error !== 'cancel') notify(getErrorMessage(error, t('config.msg.deleteFailed')), 'error')
   }
 }
 function formatSize(bytes: number) {
@@ -813,7 +817,7 @@ onMounted(async () => {
 .webdav-table-scroll .v2-table td { padding: 12px 14px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .webdav-table-scroll .v2-table .webdav-col-time { width: 172px; }
 .webdav-table-scroll .v2-table .webdav-col-size { width: 96px; }
-.webdav-table-scroll .v2-table .webdav-col-act { width: 108px; }
+.webdav-table-scroll .v2-table .webdav-col-act { width: 140px; }
 .webdav-empty { padding: 28px 0; text-align: center; font-size: var(--v2-fs-sm); color: var(--v2-text-3); }
 .webdav-file-cell {
   display: flex;

@@ -4,7 +4,7 @@
       <!-- 顶部全局工具栏 -->
       <div class="dash-toolbar">
         <div class="toolbar-left">
-          <span class="v2-card-title toolbar-title">数据概览</span>
+          <span class="v2-card-title toolbar-title">{{ t('dashboard.title') }}</span>
           <span class="refresh-indicator" :class="{ refreshing: statsLoading, paused: isPaused }" @click="togglePause">
             <div class="indicator-ring-wrap">
               <svg class="indicator-ring" width="14" height="14" viewBox="0 0 16 16">
@@ -45,7 +45,7 @@
                 />
               </svg>
             </div>
-            <span class="indicator-text">{{ statsLoading ? '正在刷新' : (isPaused ? '已停止刷新' : '自动更新') }}</span>
+            <span class="indicator-text">{{ statsLoading ? t('dashboard.refresh.refreshing') : (isPaused ? t('dashboard.refresh.paused') : t('dashboard.refresh.auto')) }}</span>
           </span>
         </div>
         <div class="date-picker-wrap">
@@ -53,8 +53,8 @@
             v-model="dateRange"
             type="daterange"
             range-separator="~"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
+            :start-placeholder="t('dashboard.date.start')"
+            :end-placeholder="t('dashboard.date.end')"
             size="default"
             value-format="YYYY-MM-DD"
             :default-value="datePanelDefaultValue"
@@ -109,8 +109,8 @@
             <div class="rail-head">
               <span class="rail-title">Agent</span>
               <div class="rail-actions">
-                <el-tooltip content="管理 Agent 显示" effect="light" placement="top" :show-after="150">
-                  <button class="v2-help rail-help" type="button" aria-label="管理 Agent 显示" @click="agentVisibilityVisible = true">
+                <el-tooltip :content="t('dashboard.agent.manageTip')" effect="light" placement="top" :show-after="150">
+                  <button class="v2-help rail-help" type="button" :aria-label="t('dashboard.agent.manageTip')" @click="agentVisibilityVisible = true">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                       <line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>
                     </svg>
@@ -119,14 +119,14 @@
                 <el-tooltip effect="light" placement="top" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
                   <template #content>
                     <div class="profile-help">
-                      <div class="tooltip-title">模式说明</div>
-                      <div class="tooltip-item"><strong>路由：</strong><span>写入网关地址，Agent 请求会经过 CCG Gateway，并按服务商规则路由。</span></div>
-                      <div class="tooltip-item"><strong>直连：</strong><span>写入默认服务商配置，Agent 直接请求该服务商，不经过网关路由。</span></div>
-                      <div class="tooltip-item"><strong>官方：</strong><span>写入官方凭证，Agent 直接连接官方服务。</span></div>
-                      <div class="tooltip-item"><strong>停用：</strong><span>清除已写入的路由配置，Agent 不受 CCG Gateway 管理。</span></div>
+                      <div class="tooltip-title">{{ t('dashboard.agent.modeHelpTitle') }}</div>
+                      <div class="tooltip-item"><strong>{{ t('dashboard.agent.modeRouteTitle') }}</strong><span>{{ t('dashboard.agent.modeRoute') }}</span></div>
+                      <div class="tooltip-item"><strong>{{ t('dashboard.agent.modeDirectTitle') }}</strong><span>{{ t('dashboard.agent.modeDirect') }}</span></div>
+                      <div class="tooltip-item"><strong>{{ t('dashboard.agent.modeOfficialTitle') }}</strong><span>{{ t('dashboard.agent.modeOfficial') }}</span></div>
+                      <div class="tooltip-item"><strong>{{ t('dashboard.agent.modeDisabledTitle') }}</strong><span>{{ t('dashboard.agent.modeDisabled') }}</span></div>
                     </div>
                   </template>
-                  <button class="v2-help rail-help" type="button" aria-label="模式说明">
+                  <button class="v2-help rail-help" type="button" :aria-label="t('dashboard.agent.modeHelpTitle')">
                     <el-icon><InfoFilled /></el-icon>
                   </button>
                 </el-tooltip>
@@ -139,7 +139,7 @@
                     <CliBrandIcon :type="cli.type" width="14" height="14" />
                   </span>
                   <span class="cli-name">{{ cli.label }}</span>
-                  <button class="cli-info" type="button" :aria-label="`查看 ${cli.label} 能力`" @click="openAgentInfo(cli.type)">
+                  <button class="cli-info" type="button" :aria-label="t('dashboard.agent.abilitiesView', { name: cli.label })" @click="openAgentInfo(cli.type)">
                     <el-icon><InfoFilled /></el-icon>
                   </button>
                 </div>
@@ -178,7 +178,7 @@
 
     <V2Drawer
       v-model="agentInfoVisible"
-      :title="selectedAgent ? `${selectedAgent.name} 能力` : 'Agent 能力'"
+      :title="selectedAgent ? t('dashboard.agent.abilitiesTitle', { name: selectedAgent.name }) : t('dashboard.agent.abilitiesFallbackTitle')"
       :show-footer="false"
       width="min(440px, 94vw)"
     >
@@ -194,13 +194,13 @@
           <span class="v2-pill v2-pill-neutral mono">schema {{ selectedAgent.schema_version }}</span>
         </div>
 
-        <div v-if="selectedAgent.remark" class="agent-info-remark">
+        <div v-if="selectedAgentRemark" class="agent-info-remark">
           <el-icon><InfoFilled /></el-icon>
-          <span>{{ selectedAgent.remark }}</span>
+          <span>{{ selectedAgentRemark }}</span>
         </div>
 
         <div class="agent-info-section">
-          <div class="agent-info-label">支持协议</div>
+          <div class="agent-info-label">{{ t('dashboard.agent.protocols') }}</div>
           <div class="pill-row">
             <span v-for="protocol in selectedAgent.protocols" :key="protocol" class="v2-pill v2-pill-info mono">{{ protocolLabel(protocol) }}</span>
           </div>
@@ -216,7 +216,7 @@
         <div class="agent-feature-list">
           <div v-for="feature in displayFeatures(selectedAgent)" :key="feature.key" class="agent-feature-row">
             <span>{{ feature.label }}</span>
-            <span class="v2-pill" :class="feature.enabled ? 'v2-pill-success' : 'v2-pill-neutral'">{{ feature.enabled ? '可用' : '不可用' }}</span>
+            <span class="v2-pill" :class="feature.enabled ? 'v2-pill-success' : 'v2-pill-neutral'">{{ feature.enabled ? t('dashboard.agent.available') : t('dashboard.agent.unavailable') }}</span>
           </div>
         </div>
       </div>
@@ -224,11 +224,11 @@
 
     <V2Drawer
       v-model="agentVisibilityVisible"
-      title="Agent 显示"
+      :title="t('dashboard.agent.visibilityTitle')"
       :show-footer="false"
       width="min(420px, 94vw)"
     >
-      <p class="agent-visibility-hint">关闭后会从常用页面隐藏，不会修改 Agent 的路由或凭证配置。</p>
+      <p class="agent-visibility-hint">{{ t('dashboard.agent.visibilityHint') }}</p>
       <div class="agent-visibility-list">
         <div v-for="agent in agentStore.agents" :key="agent.id" class="agent-visibility-row">
           <div class="agent-visibility-main">
@@ -240,7 +240,7 @@
           </div>
           <el-switch
             :model-value="agentStore.isVisible(agent.id)"
-            :aria-label="`${agent.name} 显示开关`"
+            :aria-label="t('dashboard.agent.visibilitySwitch', { name: agent.name })"
             @change="setAgentVisible(agent.id, $event)"
           />
         </div>
@@ -260,6 +260,7 @@ import { statsApi } from '@/api/stats'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemeStore } from '@/stores/theme'
 import { useAgentStore } from '@/stores/agents'
+import { useLocaleStore } from '@/stores/locale'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import type { AutoRefreshTrigger } from '@/composables/useAutoRefresh'
 import { formatCost, formatTokens } from '@/utils/json'
@@ -269,12 +270,14 @@ import type { AgentFeatureName, AgentInfo, CliType, CliMode, AdvancedStatsRow, P
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
 import V2Drawer from '@/components/V2Drawer.vue'
 import { InfoFilled } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 
 use([LineChart, BarChart, TooltipComponent, GridComponent, DatasetComponent, TransformComponent, LegendComponent, CanvasRenderer, SVGRenderer])
 
 const settingsStore = useSettingsStore()
 const themeStore = useThemeStore()
 const agentStore = useAgentStore()
+const { t } = useI18n()
 const REFRESH_MS = 5000
 const refreshDuration = `${REFRESH_MS}ms`
 const CHART_FONT = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Microsoft YaHei UI', Arial, sans-serif"
@@ -296,27 +299,39 @@ const cliLoading = reactive<Record<CliType, boolean>>({})
 const agentInfoVisible = ref(false)
 const agentVisibilityVisible = ref(false)
 const selectedAgent = ref<AgentInfo | null>(null)
-const featureLabels: Record<AgentFeatureName, string> = {
-  provider_config: 'Provider 配置',
-  global_preset: '全局预设',
-  profiles: 'Profile',
-  official_login: '官方凭证',
-  model_mapping: '模型映射',
-  token_usage: 'Token 统计',
-  skills: 'Skill',
-  mcp: 'MCP',
-  sessions: 'Session',
-  plugins: 'Plugin',
-  prompts: '提示词',
-}
-const featureKeys = Object.keys(featureLabels) as AgentFeatureName[]
-const modeOptions: { id: CliMode; label: string }[] = [
-  { id: 'proxy_route', label: '路由' },
-  { id: 'provider_direct', label: '直连' },
-  { id: 'official_direct', label: '官方' },
-  { id: 'disabled', label: '停用' }
-]
-const modeLabels: Record<CliMode, string> = { proxy_route: '中转路由', provider_direct: '中转直连', official_direct: '官方直连', disabled: '停用' }
+const localeStore = useLocaleStore()
+const selectedAgentRemark = computed(() => {
+  const agent = selectedAgent.value
+  if (!agent) return ''
+  if (localeStore.locale === 'en') return agent.remark_en || agent.remark || ''
+  return agent.remark || ''
+})
+const featureLabels = computed(() => ({
+  provider_config: t('dict.feature.provider_config'),
+  global_preset: t('dict.feature.global_preset'),
+  profiles: t('dict.feature.profiles'),
+  official_login: t('dict.feature.official_login'),
+  model_mapping: t('dict.feature.model_mapping'),
+  token_usage: t('dict.feature.token_usage'),
+  skills: t('dict.feature.skills'),
+  mcp: t('dict.feature.mcp'),
+  sessions: t('dict.feature.sessions'),
+  plugins: t('dict.feature.plugins'),
+  prompts: t('dict.feature.prompts'),
+}) as Record<AgentFeatureName, string>)
+const featureKeys = Object.keys(featureLabels.value) as AgentFeatureName[]
+const modeOptions = computed<{ id: CliMode; label: string }[]>(() => [
+  { id: 'proxy_route', label: t('dict.cliMode.proxy_route') },
+  { id: 'provider_direct', label: t('dict.cliMode.provider_direct') },
+  { id: 'official_direct', label: t('dict.cliMode.official_direct') },
+  { id: 'disabled', label: t('dict.cliMode.disabled') }
+])
+const modeLabels = computed<Record<CliMode, string>>(() => ({
+  proxy_route: t('dict.cliModeFull.proxy_route'),
+  provider_direct: t('dict.cliModeFull.provider_direct'),
+  official_direct: t('dict.cliModeFull.official_direct'),
+  disabled: t('dict.cliModeFull.disabled')
+}))
 
 function openAgentInfo(cli: CliType) {
   selectedAgent.value = agentStore.get(cli) || null
@@ -325,14 +340,14 @@ function openAgentInfo(cli: CliType) {
 
 function setAgentVisible(agentId: string, visible: string | number | boolean) {
   if (!agentStore.setVisible(agentId, visible === true)) {
-    notify('至少保留一个 Agent 显示', 'warning')
+    notify(t('dashboard.agent.visibilityKeepOne'), 'warning')
   }
 }
 
 function displayFeatures(agent: AgentInfo) {
   return featureKeys.map((key) => ({
     key,
-    label: featureLabels[key],
+    label: featureLabels.value[key],
     enabled: agent.features[key].enabled,
   }))
 }
@@ -365,10 +380,10 @@ function isModeDisabled(cli: CliType, mode: CliMode) {
     || !agent.features.official_login.operations?.length
 }
 function disabledModeMessage(mode: CliMode) {
-  if (mode === 'proxy_route') return '该 Agent 不支持自动写入网关配置'
-  if (mode === 'provider_direct') return '该 Agent 不支持自动写入服务商直连配置'
-  if (mode === 'official_direct') return '该 Agent 不支持托管官方凭证'
-  return '该模式不可用'
+  if (mode === 'proxy_route') return t('dashboard.agent.unsupportedRoute')
+  if (mode === 'provider_direct') return t('dashboard.agent.unsupportedDirect')
+  if (mode === 'official_direct') return t('dashboard.agent.unsupportedOfficial')
+  return t('dashboard.agent.modeUnavailable')
 }
 async function setMode(cli: CliType, mode: CliMode) {
   if (getCliMode(cli) === mode || cliLoading[cli]) return
@@ -379,9 +394,12 @@ async function setMode(cli: CliType, mode: CliMode) {
   cliLoading[cli] = true
   try {
     await settingsStore.setDashboardCliMode(cli, mode)
-    notify(`${agentStore.get(cli)?.name || cli} 已切换至 ${modeLabels[mode]}`)
+    notify(t('dashboard.agent.switched', {
+      name: agentStore.get(cli)?.name || cli,
+      mode: modeLabels.value[mode]
+    }))
   } catch (e) {
-    notify(`切换失败: ${getErrorMessage(e)}`, 'error')
+    notify(t('dashboard.agent.switchFailed', { message: getErrorMessage(e) }), 'error')
   } finally {
     cliLoading[cli] = false
   }
@@ -400,9 +418,9 @@ const datePanelDefaultValue = computed<[Date, Date]>(() => {
   return [previousMonth, currentMonth]
 })
 
-const shortcuts = [
+const shortcuts = computed(() => [
   {
-    text: '近七天',
+    text: t('dashboard.date.last7'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -411,7 +429,7 @@ const shortcuts = [
     }
   },
   {
-    text: '近14天',
+    text: t('dashboard.date.last14'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -420,7 +438,7 @@ const shortcuts = [
     }
   },
   {
-    text: '本月',
+    text: t('dashboard.date.thisMonth'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -429,7 +447,7 @@ const shortcuts = [
     }
   },
   {
-    text: '上月',
+    text: t('dashboard.date.lastMonth'),
     value: () => {
       const start = new Date()
       const end = new Date()
@@ -440,7 +458,7 @@ const shortcuts = [
       return [start, end]
     }
   }
-]
+])
 
 function dateOnlyTimestamp(date: Date) {
   return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
@@ -473,7 +491,7 @@ function handleRangeChange(value: [string, string] | null) {
   pendingRangeStart.value = null
   if (value && rangeDays(value) > MAX_STATS_DAYS) {
     dateRange.value = null
-    notify(`日期范围最多 ${MAX_STATS_DAYS} 天`, 'warning')
+    notify(t('dashboard.date.maxDays', { days: MAX_STATS_DAYS }), 'warning')
     void refreshStatsNow()
     return
   }
@@ -496,7 +514,7 @@ function togglePause() {
 const kpis = computed(() => {
   const groupKey = dimMode.value === 'provider' ? 'provider_name' : 'model_id'
   const selectedMap = legendSelectedMap.value[dimMode.value] || {}
-  const s = advancedStats.value.filter((x) => selectedMap[x[groupKey]] !== false)
+  const s = advancedStats.value.filter((x) => selectedMap[displaySeriesName(x[groupKey])] !== false)
   const reqs = s.reduce((a, x) => a + x.total_requests, 0)
   const input = s.reduce((a, x) => a + (x.total_input_tokens || 0), 0)
   const output = s.reduce((a, x) => a + (x.total_output_tokens || 0), 0)
@@ -509,7 +527,7 @@ const kpis = computed(() => {
   return [
     {
       id: 'billable',
-      label: kpiFlipped.value ? '计费 Token · 输出' : '计费 Token · 输入',
+      label: kpiFlipped.value ? t('dashboard.kpi.billedOutput') : t('dashboard.kpi.billedInput'),
       value: formatTokens(kpiFlipped.value ? output : input),
       color: '',
       borderColor: 'var(--v2-accent)',
@@ -518,7 +536,7 @@ const kpis = computed(() => {
     },
     {
       id: 'cache',
-      label: kpiFlipped.value ? '缓存 Token · 创建' : '缓存 Token · 读取',
+      label: kpiFlipped.value ? t('dashboard.kpi.cacheCreate') : t('dashboard.kpi.cacheRead'),
       value: formatTokens(kpiFlipped.value ? cacheCreation : cacheRead),
       color: '',
       borderColor: 'var(--v2-chart-purple)',
@@ -527,7 +545,7 @@ const kpis = computed(() => {
     },
     {
       id: 'cache-rate',
-      label: '缓存命中率',
+      label: t('dashboard.kpi.cacheHitRate'),
       value: cacheInput > 0 ? `${((cacheRead / cacheInput) * 100).toFixed(1)}%` : '0%',
       color: 'var(--v2-success)',
       borderColor: 'var(--v2-success)',
@@ -536,7 +554,7 @@ const kpis = computed(() => {
     },
     {
       id: 'requests',
-      label: '全部请求数',
+      label: t('dashboard.kpi.requests'),
       value: reqs.toLocaleString(),
       color: '',
       borderColor: 'var(--v2-chart-cyan)',
@@ -545,7 +563,7 @@ const kpis = computed(() => {
     },
     {
       id: 'cost',
-      label: '费用',
+      label: t('dashboard.kpi.cost'),
       value: formatCost(cost),
       color: 'var(--v2-warning)',
       borderColor: 'var(--v2-warning)',
@@ -562,10 +580,22 @@ const chartHovering = ref(false)
 const legendSelectedMap = ref<Record<string, Record<string, boolean>>>({})
 const metricMode = ref<'tokens' | 'requests'>('tokens')
 const dimMode = ref<'provider' | 'model'>('provider')
-const metricTabs = [{ id: 'tokens', label: 'Token' }, { id: 'requests', label: '请求数' }] as const
-const dimTabs = [{ id: 'provider', label: '服务商' }, { id: 'model', label: '模型' }] as const
+const metricTabs = computed<{ id: 'tokens' | 'requests'; label: string }[]>(() => [
+  { id: 'tokens', label: t('dashboard.chart.tokens') },
+  { id: 'requests', label: t('dashboard.chart.requests') }
+])
+const dimTabs = computed<{ id: 'provider' | 'model'; label: string }[]>(() => [
+  { id: 'provider', label: t('dashboard.chart.provider') },
+  { id: 'model', label: t('dashboard.chart.model') }
+])
 
 const PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', 'var(--v2-chart-purple)', 'var(--v2-chart-cyan)', '#f97316', '#ec4899', '#14b8a6', '#6366f1']
+
+/** 后端统计里没有模型时的占位分组名（聚合键，固定在数据里），仅展示时翻译 */
+const UNKNOWN_MODEL_GROUP = '未知模型'
+function displaySeriesName(name: string): string {
+  return name === UNKNOWN_MODEL_GROUP ? t('common.unknownModel') : name
+}
 
 const isDark = computed(() => themeStore.theme === 'dark')
 function cssVar(name: string) {
@@ -699,7 +729,7 @@ const chartOption = computed(() => {
         })
         const minVal = dayTotals[di] * 0.035
         const val = (sum > 0 && sum < minVal) ? minVal : sum
-        return { value: val, actualValue: sum, input, output, cacheRead, cacheCreation, cost, name: g, color }
+        return { value: val, actualValue: sum, input, output, cacheRead, cacheCreation, cost, name: displaySeriesName(g), color }
       })
       const colorG = {
         type: 'linear',
@@ -713,7 +743,7 @@ const chartOption = computed(() => {
         ]
       }
       return {
-        name: g,
+        name: displaySeriesName(g),
         type: 'bar',
         stack: 'total',
         barWidth: '72%',
@@ -727,7 +757,7 @@ const chartOption = computed(() => {
       return sum
     })
     return {
-      name: g, type: 'line', smooth: true, showSymbol: false, itemStyle: { color },
+      name: displaySeriesName(g), type: 'line', smooth: true, showSymbol: false, itemStyle: { color },
       areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color }, { offset: 1, color: 'transparent' }] }, opacity: 0.18 },
       data
     }
@@ -833,14 +863,14 @@ const chartOption = computed(() => {
             ? 'margin-bottom:4px;'
             : `border-bottom:1px solid ${c.split};padding-bottom:6px;margin-bottom:8px;`
         }">
-          <span>${params[0].axisValue} 汇总</span>
+          <span>${params[0].axisValue} ${t('dashboard.chart.summary')}</span>
           <span style="font-size:12px;font-weight:normal;color:${c.tipText};">$${formatCost(dayCost)}</span>
         </div>`
 
         if (isBar) {
           // Add daily token usage details summary
           html += `<div style="margin-bottom:8px;border-bottom:1px solid ${c.split};padding-bottom:8px;font-size:12px;color:${c.tipText};">
-            输入 ${fmtToken(dayInput)} &nbsp;•&nbsp; 输出 ${fmtToken(dayOutput)} &nbsp;•&nbsp; 缓存读取 ${fmtToken(dayCacheRead)} &nbsp;•&nbsp; 缓存创建 ${fmtToken(dayCacheCreation)}
+            ${t('dashboard.chart.input')} ${fmtToken(dayInput)} &nbsp;•&nbsp; ${t('dashboard.chart.output')} ${fmtToken(dayOutput)} &nbsp;•&nbsp; ${t('dashboard.chart.cacheRead')} ${fmtToken(dayCacheRead)} &nbsp;•&nbsp; ${t('dashboard.chart.cacheCreate')} ${fmtToken(dayCacheCreation)}
           </div>`
 
           vis.forEach((p, i) => {
@@ -851,7 +881,7 @@ const chartOption = computed(() => {
                 <span style="font-size:12px;font-weight:normal;color:${c.tipText};">$${formatCost(d.cost)}</span>
               </div>
               <div style="font-size:12px;margin-top:1px;">
-                输入 ${fmtToken(d.input)} &nbsp;•&nbsp; 输出 ${fmtToken(d.output)} &nbsp;•&nbsp; 缓存读取 ${fmtToken(d.cacheRead)} &nbsp;•&nbsp; 缓存创建 ${fmtToken(d.cacheCreation)}
+                ${t('dashboard.chart.input')} ${fmtToken(d.input)} &nbsp;•&nbsp; ${t('dashboard.chart.output')} ${fmtToken(d.output)} &nbsp;•&nbsp; ${t('dashboard.chart.cacheRead')} ${fmtToken(d.cacheRead)} &nbsp;•&nbsp; ${t('dashboard.chart.cacheCreate')} ${fmtToken(d.cacheCreation)}
               </div></div>`
           })
         } else {
@@ -864,7 +894,7 @@ const chartOption = computed(() => {
       }
     },
     textStyle: { fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500 },
-    legend: { data: groups, bottom: 0, left: 'center', width: '96%', type: 'plain', icon: 'circle', itemWidth: 11, itemHeight: 11, itemGap: 8, selected: legendSelectedMap.value[dimMode.value], textStyle: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, lineHeight: 16 } },
+    legend: { data: groups.map(displaySeriesName), bottom: 0, left: 'center', width: '96%', type: 'plain', icon: 'circle', itemWidth: 11, itemHeight: 11, itemGap: 8, selected: legendSelectedMap.value[dimMode.value], textStyle: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, lineHeight: 16 } },
     grid: { top: 16, right: '1.5%', bottom: legendBottom, left: '1.5%', containLabel: true },
     xAxis: { type: 'category', data: dates, boundaryGap: isBar, axisLine: { lineStyle: { color: c.axis } }, axisTick: { show: false }, axisLabel: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, formatter: (v: string) => v.substring(5) } },
     yAxis: { type: 'value', splitNumber: 4, splitLine: { lineStyle: { type: 'dashed', color: c.split } }, axisLabel: { color: c.label, fontFamily: CHART_FONT, fontSize: 13, fontWeight: 500, formatter: (v: number) => fmtToken(v) } },
@@ -881,7 +911,7 @@ const { refresh: refreshStatsNow } = useAutoRefresh(refreshStatsAutomatically, {
   intervalMs: REFRESH_MS,
   immediate: true,
   paused: isPaused,
-  onError: (e) => notify(getErrorMessage(e, '数据刷新失败'), 'error')
+  onError: (e) => notify(getErrorMessage(e, t('dashboard.refreshFailed')), 'error')
 })
 
 onMounted(async () => {
@@ -1132,6 +1162,8 @@ onMounted(async () => {
   line-height: 20px;
   min-width: 0;
   text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cli-modes .v2-seg-btn.disabled {
   opacity: 0.42;

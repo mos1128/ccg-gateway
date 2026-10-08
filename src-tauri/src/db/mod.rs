@@ -144,11 +144,14 @@ async fn recover_unfinished_request_logs(pool: &SqlitePool) -> Result<(), sqlx::
     sqlx::query(
         "UPDATE request_logs
          SET finished_at = ?, elapsed_ms = MAX(0, (? - created_at) * 1000),
-             error_message = COALESCE(error_message, 'Gateway stopped before request completed')
+             error_message = COALESCE(error_message, ?),
+             error_source = COALESCE(error_source, 'gateway'),
+             error_code = COALESCE(error_code, 'gateway_restarted')
          WHERE finished_at IS NULL",
     )
     .bind(now)
     .bind(now)
+    .bind(crate::tr!("err.log.gateway_restarted"))
     .execute(pool)
     .await?;
     Ok(())

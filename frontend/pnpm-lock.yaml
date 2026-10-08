@@ -25,7 +25,7 @@ importers:
         version: 10.11.1(vue@3.5.34(typescript@5.9.3))
       axios:
         specifier: ^1.14.0
-        version: 1.16.0
+        version: 1.16.0(debug@4.4.3)
       echarts:
         specifier: ^5.6.0
         version: 5.6.0
@@ -44,6 +44,9 @@ importers:
       vue-echarts:
         specifier: ^6.7.3
         version: 6.7.3(@vue/runtime-core@3.5.34)(echarts@5.6.0)(vue@3.5.34(typescript@5.9.3))
+      vue-i18n:
+        specifier: ^11.4.13
+        version: 11.4.13(vue@3.5.34(typescript@5.9.3))
       vue-router:
         specifier: ^4.6.4
         version: 4.6.4(vue@3.5.34(typescript@5.9.3))
@@ -253,6 +256,22 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
+
+  '@intlify/core-base@11.4.13':
+    resolution: {integrity: sha512-3qGv1/j0fl6ZSeehGaznE78A4i3hCaOeOyDh7jq7SV6ch/XGoy96xIrYuALTV3xhIqj2rktsIKcwlLZ3CbOhkA==}
+    engines: {node: '>= 22'}
+
+  '@intlify/devtools-types@11.4.13':
+    resolution: {integrity: sha512-f38d2yvjNc1/c+BnTLsxTB0729clTtyy7kTxHu4FFlvI6FpmBOp7b9sLYtsKJpXSZ70kIEexvNwDSzLkIlYnlQ==}
+    engines: {node: '>= 22'}
+
+  '@intlify/message-compiler@11.4.13':
+    resolution: {integrity: sha512-cjKsDeWUD/i3mj0QtC8hydLCFP5mgZtTU1xZZaN9/O3FG94EXc0rTbecYpifglp26rpoJoIjSlW137VejLKsZw==}
+    engines: {node: '>= 22'}
+
+  '@intlify/shared@11.4.13':
+    resolution: {integrity: sha512-ZjcNgEED1FtTCFb+ohWBdR21k5kvleKtM9peobQtLB83mNIfEhJK86dEbhfk+OcUrybrEbc4eDeE9UbFUVHsjQ==}
+    engines: {node: '>= 22'}
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -1117,6 +1136,12 @@ packages:
       '@vue/runtime-core':
         optional: true
 
+  vue-i18n@11.4.13:
+    resolution: {integrity: sha512-2G7LC9XcdZ0IljFib7lKGHNiBBOTv6HO+2bnBaOiQgDYZ+uUnqSpuED5DbBo1t7su50o/WRGn+ZfDQTGd26xEw==}
+    engines: {node: '>= 22'}
+    peerDependencies:
+      vue: ^3.0.0
+
   vue-router@4.6.4:
     resolution: {integrity: sha512-Hz9q5sa33Yhduglwz6g9skT8OBPii+4bFn88w6J+J4MfEo4KRRpmiNG/hHHkdbRFlLBOqxN8y8gf2Fb0MTUgVg==}
     peerDependencies:
@@ -1256,6 +1281,24 @@ snapshots:
       '@floating-ui/utils': 0.2.11
 
   '@floating-ui/utils@0.2.11': {}
+
+  '@intlify/core-base@11.4.13':
+    dependencies:
+      '@intlify/devtools-types': 11.4.13
+      '@intlify/message-compiler': 11.4.13
+      '@intlify/shared': 11.4.13
+
+  '@intlify/devtools-types@11.4.13':
+    dependencies:
+      '@intlify/core-base': 11.4.13
+      '@intlify/shared': 11.4.13
+
+  '@intlify/message-compiler@11.4.13':
+    dependencies:
+      '@intlify/shared': 11.4.13
+      source-map-js: 1.2.1
+
+  '@intlify/shared@11.4.13': {}
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
@@ -1576,9 +1619,9 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  axios@1.16.0:
+  axios@1.16.0(debug@4.4.3):
     dependencies:
-      follow-redirects: 1.16.0
+      follow-redirects: 1.16.0(debug@4.4.3)
       form-data: 4.0.5
       proxy-from-env: 2.1.0
     transitivePeerDependencies:
@@ -1732,7 +1775,9 @@ snapshots:
     dependencies:
       to-regex-range: 5.0.1
 
-  follow-redirects@1.16.0: {}
+  follow-redirects@1.16.0(debug@4.4.3):
+    optionalDependencies:
+      debug: 4.4.3
 
   form-data@4.0.5:
     dependencies:
@@ -2097,6 +2142,14 @@ snapshots:
       vue-demi: 0.13.11(vue@3.5.34(typescript@5.9.3))
     optionalDependencies:
       '@vue/runtime-core': 3.5.34
+
+  vue-i18n@11.4.13(vue@3.5.34(typescript@5.9.3)):
+    dependencies:
+      '@intlify/core-base': 11.4.13
+      '@intlify/devtools-types': 11.4.13
+      '@intlify/shared': 11.4.13
+      '@vue/devtools-api': 6.6.4
+      vue: 3.5.34(typescript@5.9.3)
 
   vue-router@4.6.4(vue@3.5.34(typescript@5.9.3)):
     dependencies:

@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 42,
+            version: 43,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -106,7 +106,7 @@ impl DatabaseSchema {
     /// 获取日志数据库 Schema
     pub fn log_schema() -> Self {
         Self {
-            version: 19,
+            version: 20,
             tables: Self::define_log_tables(),
             indexes: Self::define_log_indexes(),
         }
@@ -809,6 +809,14 @@ impl DatabaseSchema {
                         nullable: false,
                         default_value: None,
                     },
+                    // 界面语言设置：auto / zh-CN / en（auto 时按系统语言解析）。
+                    // 老库靠 ALTER 追加，位置必须留在末尾。
+                    ColumnDefinition {
+                        name: "language".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'auto'".to_string()),
+                    },
                 ],
                 primary_key: vec!["id".to_string()],
                 unique_constraints: vec![],
@@ -1361,6 +1369,26 @@ impl DatabaseSchema {
                         nullable: true,
                         default_value: None,
                     },
+                    // 错误来源与结构化错误：gateway（网关生成）/ upstream（上游透传）。
+                    // error_message 为原始文本兜底，前端按 error_code + params 渲染。
+                    ColumnDefinition {
+                        name: "error_source".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "error_code".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "error_params".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
                 ],
                 primary_key: vec!["id".to_string()],
                 unique_constraints: vec![],
@@ -1395,6 +1423,20 @@ impl DatabaseSchema {
                         name: "message".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: false,
+                        default_value: None,
+                    },
+                    // 结构化消息：message_key 为前端词条键（systemLogs.*），
+                    // message_params 为 JSON 对象；message 列保留原始文本兜底。
+                    ColumnDefinition {
+                        name: "message_key".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "message_params".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
                         default_value: None,
                     },
                 ],

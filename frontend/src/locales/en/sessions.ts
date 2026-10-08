@@ -1,0 +1,23 @@
+export default {
+  emptyProjects: 'No projects yet',
+  emptyProjectsDesc: 'Sessions are grouped by project once an Agent produces conversations',
+  emptySessions: 'No sessions yet',
+  emptyMessages: 'No messages yet',
+  noMessageContent: 'No message content',
+  searchPlaceholder: 'Search sessions…',
+  sessionCount: '{count} sessions',
+  back: 'Back',
+  deleteProject: 'Delete project',
+  deleteSession: 'Delete session',
+  deleteProjectConfirm: 'Delete project "{name}" and all of its sessions? This action cannot be undone!',
+  deleteSessionConfirm: 'Delete session "{id}..."? This action cannot be undone!',
+  confirmDeleteTitle: 'Confirm delete',
+  projectDeleted: 'Project deleted',
+  sessionDeleted: 'Session deleted',
+  deleteFailed: 'Delete failed',
+  copied: 'Copied',
+  copyFailed: 'Copy failed',
+  drawerTitle: 'Session {id}',
+  expandAll: 'Show all',
+  collapse: 'Collapse'
+}

@@ -3,7 +3,7 @@
     <div v-loading="loading" class="v2-cardgrid">
       <div class="v2-addcard" @click="handleAdd">
         <svg width="22" height="22" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        <span>添加 MCP</span>
+        <span>{{ t('mcp.addMcp') }}</span>
       </div>
       <ConfigCard
         v-for="mcp in mcpList"
@@ -18,13 +18,13 @@
       />
     </div>
 
-    <V2Drawer v-model="showDialog" :title="editingMcp ? '编辑 MCP' : '添加 MCP'" @confirm="handleSave">
+    <V2Drawer v-model="showDialog" :title="editingMcp ? t('mcp.editMcp') : t('mcp.addMcp')" @confirm="handleSave">
       <div class="v2-field">
-        <label class="v2-label">MCP 名称 <span class="req">*</span></label>
-        <input v-model="form.name" type="text" class="v2-input" placeholder="例如：universal-db">
+        <label class="v2-label">{{ t('mcp.name') }} <span class="req">*</span></label>
+        <input v-model="form.name" type="text" class="v2-input" :placeholder="t('mcp.namePlaceholder')">
       </div>
       <div class="v2-field">
-        <label class="v2-label">配置 JSON <span class="req">*</span></label>
+        <label class="v2-label">{{ t('mcp.configJson') }} <span class="req">*</span></label>
         <div class="v2-file-editor">
           <div class="v2-file-editor-header">
             <div class="v2-file-editor-title">
@@ -36,7 +36,7 @@
             </div>
             <button class="v2-file-editor-action" type="button" @click="formatJson">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-              <span>格式化</span>
+              <span>{{ t('mcp.format') }}</span>
             </button>
           </div>
           <div class="v2-file-editor-body">
@@ -56,6 +56,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2CodeEditor from '@/components/V2CodeEditor.vue'
 import ConfigCard from '@/components/ConfigCard.vue'
@@ -65,6 +66,8 @@ import { getErrorMessage } from '@/utils/error'
 import { mcpApi } from '@/api/mcp'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 import type { CliType, Mcp } from '@/types/models'
+
+const { t } = useI18n()
 
 const mcpList = ref<Mcp[]>([])
 const loading = ref(false)
@@ -135,28 +138,28 @@ function formatJson() {
 
 async function handleSave() {
   if (!form.value.name.trim()) {
-    notify('请输入 MCP 名称', 'error')
+    notify(t('mcp.nameRequired'), 'error')
     return
   }
   if (!validateConfig()) {
-    notify('JSON 格式错误，请修正后再保存', 'error')
+    notify(t('mcp.jsonInvalid'), 'error')
     return
   }
   try {
     const data = { name: form.value.name.trim(), config_json: form.value.config_json.trim() }
     if (editingMcp.value) {
       await mcpApi.update(editingMcp.value.id, data)
-      notify('更新成功')
+      notify(t('mcp.updateSuccess'))
     } else {
       await mcpApi.create(data)
-      notify('添加成功')
+      notify(t('mcp.addSuccess'))
     }
     showDialog.value = false
     form.value = { name: '', config_json: '' }
     validationError.value = ''
     await fetchList()
   } catch (error: any) {
-    notify(getErrorMessage(error, '操作失败'), 'error')
+    notify(getErrorMessage(error, t('common.operationFailed')), 'error')
   }
 }
 
@@ -164,21 +167,21 @@ async function handleCliToggle(mcp: Mcp, cliType: CliType, enabled: boolean) {
   try {
     const { data } = await mcpApi.toggleCli(mcp.id, cliType, enabled)
     mcp.cli_flags = data.cli_flags
-    notify('已更新')
+    notify(t('mcp.updated'))
   } catch (error: any) {
-    notify(getErrorMessage(error, '更新失败'), 'error')
+    notify(getErrorMessage(error, t('mcp.updateFailed')), 'error')
     await fetchList()
   }
 }
 
 async function handleDelete(mcp: Mcp) {
   try {
-    await confirm(`确定删除 MCP 服务器 "${mcp.name}"?`, '确认删除')
+    await confirm(t('mcp.deleteConfirm', { name: mcp.name }), t('mcp.deleteConfirmTitle'))
     await mcpApi.delete(mcp.id)
-    notify('已删除')
+    notify(t('mcp.deleted'))
     await fetchList()
   } catch (error: any) {
-    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, '删除失败'), 'error')
+    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, t('mcp.deleteFailed')), 'error')
   }
 }
 

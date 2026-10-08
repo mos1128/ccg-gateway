@@ -260,8 +260,8 @@ pub async fn record_request_log(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, upstream_protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, source_model, target_model, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO request_logs (created_at, finished_at, cli_type, protocol, upstream_protocol, provider_id, profile, provider_name, model_id, status_code, elapsed_ms, first_byte_ms, input_tokens, cache_read_input_tokens, cache_creation_input_tokens, output_tokens, client_method, client_path, forward_url, error_message, error_source, error_code, error_params, source_model, target_model, price_input_per_m, price_output_per_m, price_cache_read_per_m, price_cache_creation_per_m, price_multiplier, price_tier_threshold, price_source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
@@ -284,6 +284,9 @@ pub async fn record_request_log(
     .bind(client_path)
     .bind(&info.forward_url)
     .bind(&info.error_message)
+    .bind(&info.error_source)
+    .bind(&info.error_code)
+    .bind(&info.error_params)
     .bind(source_model)
     .bind(target_model)
     .bind(price.price_input_per_m)
@@ -382,7 +385,8 @@ pub async fn finish_request_log(
             provider_name = ?, model_id = ?, status_code = ?,
             elapsed_ms = ?, first_byte_ms = ?, input_tokens = ?, cache_read_input_tokens = ?,
             cache_creation_input_tokens = ?, output_tokens = ?, client_method = ?, client_path = ?,
-            forward_url = ?, error_message = ?, source_model = ?, target_model = ?,
+            forward_url = ?, error_message = ?, error_source = ?, error_code = ?, error_params = ?,
+            source_model = ?, target_model = ?,
             price_input_per_m = ?, price_output_per_m = ?, price_cache_read_per_m = ?,
             price_cache_creation_per_m = ?, price_multiplier = ?, price_tier_threshold = ?,
             price_source = ?
@@ -408,6 +412,9 @@ pub async fn finish_request_log(
     .bind(client_path)
     .bind(&info.forward_url)
     .bind(&info.error_message)
+    .bind(&info.error_source)
+    .bind(&info.error_code)
+    .bind(&info.error_params)
     .bind(source_model)
     .bind(target_model)
     .bind(price.price_input_per_m)
@@ -445,6 +452,7 @@ pub async fn cancel_request_log(
     elapsed_ms: i64,
     first_byte_ms: i64,
     error_message: &str,
+    error_code: &str,
 ) -> Result<bool, sqlx::Error> {
     let finished_at = now_timestamp();
     let result = sqlx::query(
@@ -452,7 +460,9 @@ pub async fn cancel_request_log(
         UPDATE request_logs
         SET finished_at = ?, status_code = ?, elapsed_ms = ?,
             first_byte_ms = CASE WHEN first_byte_ms > 0 THEN first_byte_ms ELSE ? END,
-            error_message = COALESCE(error_message, ?)
+            error_message = COALESCE(error_message, ?),
+            error_source = COALESCE(error_source, 'gateway'),
+            error_code = COALESCE(error_code, ?)
         WHERE id = ? AND finished_at IS NULL
         "#,
     )
@@ -461,6 +471,7 @@ pub async fn cancel_request_log(
     .bind(elapsed_ms)
     .bind(first_byte_ms)
     .bind(error_message)
+    .bind(error_code)
     .bind(log_id)
     .execute(log_db)
     .await?;
@@ -468,49 +479,56 @@ pub async fn cancel_request_log(
     Ok(result.rows_affected() > 0)
 }
 
-/// Record a system log entry
-pub async fn record_system_log(
+/// 记录一条结构化系统日志：`message` 列存 key 作为兜底文本，
+/// 前端按 `message_key` + `message_params` 用当前语言渲染。
+pub async fn record_system_log_event(
     log_db: &SqlitePool,
     event_type: &str,
-    message: &str,
+    message_key: &str,
+    params: serde_json::Value,
 ) -> Result<(), sqlx::Error> {
     let now = now_timestamp();
 
     sqlx::query(
         r#"
-        INSERT INTO system_logs (created_at, event_type, message)
-        VALUES (?, ?, ?)
+        INSERT INTO system_logs (created_at, event_type, message, message_key, message_params)
+        VALUES (?, ?, ?, ?, ?)
         "#,
     )
     .bind(now)
     .bind(event_type)
-    .bind(message)
+    .bind(message_key)
+    .bind(message_key)
+    .bind(params.to_string())
     .execute(log_db)
     .await?;
 
     Ok(())
 }
 
-pub async fn record_system_log_dedup(
+pub async fn record_system_log_event_dedup(
     log_db: &SqlitePool,
     event_type: &str,
-    message: &str,
+    message_key: &str,
+    params: serde_json::Value,
     window_seconds: i64,
 ) -> Result<bool, sqlx::Error> {
     let now = now_timestamp();
+    let params_text = params.to_string();
     let duplicate: Option<(i64,)> = sqlx::query_as(
         "SELECT id FROM system_logs
-         WHERE event_type = ? AND message = ? AND created_at >= ?
+         WHERE event_type = ? AND message_key = ? AND message_params = ? AND created_at >= ?
          ORDER BY id DESC LIMIT 1",
     )
     .bind(event_type)
-    .bind(message)
+    .bind(message_key)
+    .bind(&params_text)
     .bind(now - window_seconds.max(0))
     .fetch_optional(log_db)
     .await?;
     if duplicate.is_some() {
         return Ok(false);
     }
-    record_system_log(log_db, event_type, message).await?;
+    record_system_log_event(log_db, event_type, message_key, params).await?;
     Ok(true)
 }

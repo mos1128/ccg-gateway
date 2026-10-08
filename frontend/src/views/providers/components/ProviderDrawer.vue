@@ -6,39 +6,39 @@
     </div>
 
     <V2Tabs>
-      <div v-for="t in tabs" :key="t.id" class="v2-tab" :class="{ active: tab === t.id }" @click="tab = t.id">{{ t.label }}</div>
+      <div v-for="item in tabs" :key="item.id" class="v2-tab" :class="{ active: tab === item.id }" @click="tab = item.id">{{ item.label }}</div>
     </V2Tabs>
 
     <div v-show="tab === 'basic'">
       <div v-if="protocols.length > 1" class="v2-field">
-        <label class="v2-label">端点类型 <span class="req">*</span></label>
+        <label class="v2-label">{{ t('providers.form.protocolLabel') }} <span class="req">*</span></label>
         <AppSelect
           :model-value="form.protocol"
           :options="protocolOptions"
           width="100%"
           @change="value => form.protocol = value as Protocol"
         />
-        <div v-if="translated" class="dr-translate-note">该端点类型与 Agent 协议不同，转发时自动转换。转换后模型的思考内容只能在本服务商内延续，一旦故障转移到别的服务商，历史思考链会被丢弃（对话本身不受影响）。</div>
+        <div v-if="translated" class="dr-translate-note">{{ t('providers.form.translateNote') }}</div>
       </div>
       <!-- 选了带 [转换] 标记的端点类型才真走转换，也才用得上这个兜底值 -->
       <div v-if="translated" class="v2-field">
-        <label class="v2-label">转换默认 max_tokens</label>
+        <label class="v2-label">{{ t('providers.form.translateMaxTokensLabel') }}</label>
         <input v-model.number="form.translate_max_tokens" type="number" min="1024" step="1024" class="v2-input">
-        <div class="v2-hint">转协议时源请求没带 max_tokens 就用该值</div>
+        <div class="v2-hint">{{ t('providers.form.translateMaxTokensHint') }}</div>
       </div>
       <div class="v2-field">
-        <label class="v2-label">服务商名称 <span class="req">*</span></label>
-        <input v-model="form.name" type="text" class="v2-input" placeholder="例如：OpenAI 官方">
+        <label class="v2-label">{{ t('providers.form.nameLabel') }} <span class="req">*</span></label>
+        <input v-model="form.name" type="text" class="v2-input" :placeholder="t('providers.form.namePlaceholder')">
       </div>
       <div class="v2-field">
-        <label class="v2-label">服务地址 <span class="req">*</span></label>
+        <label class="v2-label">{{ t('providers.form.baseUrlLabel') }} <span class="req">*</span></label>
         <input v-model="form.base_url" type="text" class="v2-input" :placeholder="baseUrlPlaceholder">
       </div>
       <div class="v2-field">
-        <label class="v2-label">API 密钥 <span class="req">*</span></label>
+        <label class="v2-label">{{ t('providers.form.apiKeyLabel') }} <span class="req">*</span></label>
         <div class="v2-input-wrapper">
           <input v-model="form.api_key" :type="showApiKey ? 'text' : 'password'" class="v2-input" placeholder="sk-...">
-          <el-tooltip :content="showApiKey ? '隐藏 Token' : '显示 Token'" placement="top" effect="light" :show-after="250">
+          <el-tooltip :content="showApiKey ? t('providers.form.hideToken') : t('providers.form.showToken')" placement="top" effect="light" :show-after="250">
             <button type="button" class="v2-input-icon-btn" @click="showApiKey = !showApiKey">
               <svg v-if="showApiKey" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
               <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -47,8 +47,8 @@
         </div>
       </div>
       <div class="v2-field">
-        <label class="v2-label">自定义 User-Agent</label>
-        <input v-model="form.custom_useragent" type="text" class="v2-input" placeholder="留空则使用原始 UA">
+        <label class="v2-label">{{ t('providers.form.userAgentLabel') }}</label>
+        <input v-model="form.custom_useragent" type="text" class="v2-input" :placeholder="t('providers.form.userAgentPlaceholder')">
       </div>
     </div>
 
@@ -56,18 +56,26 @@
       <div class="dr-group-card">
         <div class="dr-group-header">
           <div>
-            <div class="dr-group-title">可用模型</div>
-            <div class="dr-group-hint">{{ modelSyncHint }}</div>
+            <div class="dr-group-title">{{ t('providers.models.available') }}</div>
+            <el-tooltip v-if="modelSyncError" placement="top" effect="light" :show-after="250" :enterable="true" popper-class="v2-profile-pop v2-scope">
+              <template #content>
+                <div class="profile-help">
+                  <div class="tooltip-item dr-sync-error-text">{{ modelSyncHint }}</div>
+                </div>
+              </template>
+              <div class="dr-group-hint is-error">{{ modelSyncHint }}</div>
+            </el-tooltip>
+            <div v-else class="dr-group-hint">{{ modelSyncHint }}</div>
           </div>
           <button class="v2-btn v2-btn-sm v2-btn-outline" :disabled="!canSyncModels || modelSyncLoading" @click="emit('sync-models')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-            {{ modelSyncLoading ? '同步中' : '同步' }}
+            {{ modelSyncLoading ? t('providers.models.syncing') : t('providers.models.sync') }}
           </button>
         </div>
         <div class="dr-group-body">
           <div v-if="providerModels.length" class="dr-model-list">
             <div v-for="model in providerModels" :key="model.id" class="dr-model-row">
-              <el-tooltip :content="model.source === 'manual' ? '手动添加，同步时保留' : '自动同步'" placement="top" effect="light" :show-after="250">
+              <el-tooltip :content="model.source === 'manual' ? t('providers.models.tipManual') : t('providers.models.tipAuto')" placement="top" effect="light" :show-after="250">
                 <span class="dr-model-dot" :class="{ manual: model.source === 'manual' }"></span>
               </el-tooltip>
               <span class="dr-model-name mono">{{ model.model_name }}</span>
@@ -75,20 +83,20 @@
             </div>
           </div>
           <div v-if="providerModels.length" class="dr-model-legend">
-            <span class="dr-model-dot manual"></span>手动（同步时保留）
-            <span class="dr-model-dot"></span>自动同步
+            <span class="dr-model-dot manual"></span>{{ t('providers.models.legendManual') }}
+            <span class="dr-model-dot"></span>{{ t('providers.models.legendAuto') }}
           </div>
           <div v-else class="dr-empty">
-            <span>{{ canSyncModels ? '暂无可用模型，点击同步或手动添加' : '暂无可用模型，可先手动添加' }}</span>
+            <span>{{ canSyncModels ? t('providers.models.emptySyncable') : t('providers.models.emptyManual') }}</span>
           </div>
           <div class="dr-map dr-map-single dr-model-add">
             <input
               v-model="manualModel"
               class="v2-input"
-              placeholder="手动输入模型名称，回车添加"
+              :placeholder="t('providers.models.addPlaceholder')"
               @keydown.enter.prevent="submitManualModel"
             >
-            <button class="v2-btn v2-btn-sm v2-btn-outline" :disabled="!manualModel.trim()" @click="submitManualModel">添加</button>
+            <button class="v2-btn v2-btn-sm v2-btn-outline" :disabled="!manualModel.trim()" @click="submitManualModel">{{ t('common.add') }}</button>
           </div>
         </div>
       </div>
@@ -97,16 +105,16 @@
         <div class="dr-group-header">
           <div>
             <div class="dr-group-title-wrapper">
-              <span class="dr-group-title">模型映射</span>
+              <span class="dr-group-title">{{ t('providers.modelMap.title') }}</span>
               <el-tooltip effect="light" placement="top" :show-after="150" popper-class="v2-profile-pop v2-scope">
                 <template #content>
                   <div class="profile-help">
-                    <div class="tooltip-title">模型映射通配符规则</div>
-                    <div class="tooltip-item" style="margin-bottom: 4px;"><strong>*</strong> ：匹配任意长度的字符</div>
-                    <div class="tooltip-item" style="margin-bottom: 8px;"><strong>?</strong> ：匹配单个字符</div>
+                    <div class="tooltip-title">{{ t('providers.modelMap.wildcardTitle') }}</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;"><strong>*</strong>{{ t('providers.modelMap.wildcardAny') }}</div>
+                    <div class="tooltip-item" style="margin-bottom: 8px;"><strong>?</strong>{{ t('providers.modelMap.wildcardOne') }}</div>
                     <div class="tooltip-item" style="border-top: 1px solid var(--v2-surface-2); padding-top: 8px; margin-top: 8px;">
-                      <strong>示例</strong>：<code>*opus*</code> → <code>gml-5</code>
-                      <div class="v2-hint" style="margin-top: 4px; line-height: 1.4;">表示将名称中包含 opus 的模型映射到服务商的 gml-5 模型。</div>
+                      <strong>{{ t('providers.modelMap.wildcardExample') }}</strong><code>*opus*</code> → <code>gml-5</code>
+                      <div class="v2-hint" style="margin-top: 4px; line-height: 1.4;">{{ t('providers.modelMap.wildcardExampleDesc') }}</div>
                     </div>
                   </div>
                 </template>
@@ -115,16 +123,16 @@
                 </span>
               </el-tooltip>
             </div>
-            <div class="dr-group-hint">将 Agent 请求的源模型名映射为服务商模型，候选模型来自上方「可用模型」</div>
+            <div class="dr-group-hint">{{ t('providers.modelMap.hint') }}</div>
           </div>
           <button class="v2-btn v2-btn-sm v2-btn-outline" @click="emit('add-model-map')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            添加
+            {{ t('common.add') }}
           </button>
         </div>
         <div class="dr-group-body">
           <div v-for="(map, index) in form.model_maps" :key="'m' + index" class="dr-map">
-            <input v-model="map.source_model" class="v2-input" placeholder="Agent 源模型">
+            <input v-model="map.source_model" class="v2-input" :placeholder="t('providers.modelMap.sourcePlaceholder')">
             <span class="dr-arrow">→</span>
             <el-autocomplete
               v-model="map.target_model"
@@ -134,14 +142,14 @@
               fit-input-width
               highlight-first-item
               class="dr-model-target"
-              placeholder="选择或输入服务商模型"
+              :placeholder="t('providers.modelMap.targetPlaceholder')"
             />
-            <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
+            <el-tooltip :content="t('common.delete')" placement="top" effect="light" :show-after="250">
               <button class="v2-x" @click="emit('remove-model-map', index)"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             </el-tooltip>
           </div>
           <div v-if="!form.model_maps.length" class="dr-empty">
-            <span>暂无模型映射</span>
+            <span>{{ t('providers.modelMap.empty') }}</span>
           </div>
         </div>
       </div>
@@ -149,23 +157,23 @@
       <div class="dr-group-card">
         <div class="dr-group-header">
           <div>
-            <div class="dr-group-title">模型黑名单</div>
-            <div class="dr-group-hint">配置服务商不支持的模型，请求时自动跳过</div>
+            <div class="dr-group-title">{{ t('providers.modelBlacklist.title') }}</div>
+            <div class="dr-group-hint">{{ t('providers.modelBlacklist.hint') }}</div>
           </div>
           <button class="v2-btn v2-btn-sm v2-btn-outline" @click="emit('add-model-blacklist')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            添加
+            {{ t('common.add') }}
           </button>
         </div>
         <div class="dr-group-body">
           <div v-for="(item, index) in form.model_blacklist" :key="'b' + index" class="dr-map dr-map-single">
-            <input v-model="item.model_pattern" class="v2-input" placeholder="模型名称（支持 * ?）">
-            <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
+            <input v-model="item.model_pattern" class="v2-input" :placeholder="t('providers.modelBlacklist.patternPlaceholder')">
+            <el-tooltip :content="t('common.delete')" placement="top" effect="light" :show-after="250">
               <button class="v2-x" @click="emit('remove-model-blacklist', index)"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             </el-tooltip>
           </div>
           <div v-if="!form.model_blacklist.length" class="dr-empty">
-            <span>暂无黑名单模型</span>
+            <span>{{ t('providers.modelBlacklist.empty') }}</span>
           </div>
         </div>
       </div>
@@ -176,17 +184,17 @@
         <div class="dr-group-header">
           <div>
             <div class="dr-group-title-wrapper">
-              <span class="dr-group-title">容错配置</span>
+              <span class="dr-group-title">{{ t('providers.tiers.title') }}</span>
               <el-tooltip effect="light" placement="top" :show-after="150" popper-class="v2-profile-pop v2-scope">
                 <template #content>
                   <div class="profile-help">
-                    <div class="tooltip-title">阶梯熔断规则</div>
-                    <div class="tooltip-item" style="margin-bottom: 4px;">渠道失败（超时、5xx、429 等）在网关内重试，每次失败计入连续失败计数</div>
-                    <div class="tooltip-item" style="margin-bottom: 4px;">连续失败命中某档的次数后，服务商按该档时长熔断，请求自动切换下一个服务商</div>
-                    <div class="tooltip-item" style="margin-bottom: 4px;"><strong>401/403/404</strong>（密钥错误、模型不存在等）不会自愈，不重试，直接按最小档熔断</div>
-                    <div class="tooltip-item" style="margin-bottom: 4px;"><strong>400/413/422</strong>（请求本身错误）直接返回客户端，不重试也不熔断</div>
+                    <div class="tooltip-title">{{ t('providers.tiers.tipTitle') }}</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;">{{ t('providers.tiers.tipRetry') }}</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;">{{ t('providers.tiers.tipReach') }}</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;"><strong>401/403/404</strong>{{ t('providers.tiers.tipAuthCode') }}</div>
+                    <div class="tooltip-item" style="margin-bottom: 4px;"><strong>400/413/422</strong>{{ t('providers.tiers.tipClientCode') }}</div>
                     <div class="tooltip-item" style="border-top: 1px solid var(--v2-surface-2); padding-top: 8px; margin-top: 8px;">
-                      失败计数跨冷却期保留：熔断到期后自动放行试探流量，<strong>成功一次即清零</strong>；反复故障会命中更高档、冷却更久
+                      {{ t('providers.tiers.tipKeepPrefix') }}<strong>{{ t('providers.tiers.tipClear') }}</strong>{{ t('providers.tiers.tipRepeatSuffix') }}
                     </div>
                   </div>
                 </template>
@@ -195,43 +203,43 @@
                 </span>
               </el-tooltip>
             </div>
-            <div class="dr-group-hint">连续失败达到某档次数后，按该档时长熔断，可配置多档递进</div>
+            <div class="dr-group-hint">{{ t('providers.tiers.hint') }}</div>
           </div>
           <button class="v2-btn v2-btn-sm v2-btn-outline" @click="emit('add-blacklist-tier')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            添加
+            {{ t('common.add') }}
           </button>
         </div>
         <div class="dr-group-body">
           <div v-for="(tier, index) in form.blacklist_tiers" :key="'t' + index" class="dr-map dr-tier-row">
-            <span class="dr-tier-label">连续失败</span>
+            <span class="dr-tier-label">{{ t('providers.tiers.failureLabel') }}</span>
             <div class="v2-input-wrapper">
               <input v-model.number="tier.failure_count" type="number" min="1" max="50" class="v2-input">
-              <span class="v2-input-unit">次</span>
+              <span class="v2-input-unit">{{ t('providers.tiers.failureUnit') }}</span>
             </div>
             <span class="dr-arrow">→</span>
-            <span class="dr-tier-label">拉黑</span>
+            <span class="dr-tier-label">{{ t('providers.tiers.blacklistLabel') }}</span>
             <div class="v2-input-wrapper">
               <input v-model.number="tier.blacklist_minutes" type="number" min="1" max="10080" class="v2-input">
-              <span class="v2-input-unit">分钟</span>
+              <span class="v2-input-unit">{{ t('providers.tiers.minutesUnit') }}</span>
             </div>
-            <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
+            <el-tooltip :content="t('common.delete')" placement="top" effect="light" :show-after="250">
               <button class="v2-x" @click="emit('remove-blacklist-tier', index)"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
             </el-tooltip>
           </div>
           <div v-if="!form.blacklist_tiers.length" class="dr-empty">
-            <span>暂无熔断档位</span>
+            <span>{{ t('providers.tiers.empty') }}</span>
           </div>
         </div>
       </div>
-      <div class="dr-sec-title dr-price-title">计费配置</div>
+      <div class="dr-sec-title dr-price-title">{{ t('providers.billing.title') }}</div>
       <div class="v2-field dr-multiplier-field">
-        <label class="v2-label">模型倍率</label>
+        <label class="v2-label">{{ t('providers.billing.multiplierLabel') }}</label>
         <div class="v2-input-wrapper">
           <input v-model.number="form.price_multiplier" type="number" min="0.01" step="0.01" class="v2-input">
           <span class="v2-input-unit">×</span>
         </div>
-        <div class="v2-hint">实际价格 = 全局价目表价格 × 倍率，留空按官方价（1×）计；价目表在列表页「价格」中同步</div>
+        <div class="v2-hint">{{ t('providers.billing.multiplierHint') }}</div>
       </div>
     </div>
   </V2Drawer>
@@ -241,6 +249,7 @@
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
 import AppSelect from '@/components/AppSelect.vue'
+import { useI18n } from 'vue-i18n'
 import { ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import { CONVERTIBLE_PROTOCOLS, PROTOCOL_LABELS } from '@/types/models'
 import type { Protocol, ProviderModelsResponse } from '@/types/models'
@@ -285,11 +294,13 @@ const emit = defineEmits<{
   'remove-model': [modelId: number]
 }>()
 
-const tabs = [
-  { id: 'basic', label: '基本' },
-  { id: 'model', label: '模型配置' },
-  { id: 'advanced', label: '容错/计费' }
-]
+const { t } = useI18n()
+
+const tabs = computed(() => [
+  { id: 'basic', label: t('providers.tabs.basic') },
+  { id: 'model', label: t('providers.tabs.model') },
+  { id: 'advanced', label: t('providers.tabs.advanced') }
+])
 const tab = ref('basic')
 const showApiKey = ref(false)
 const manualModel = ref('')
@@ -301,7 +312,7 @@ function needsTranslate(protocol: Protocol): boolean {
 }
 const protocolOptions = computed(() => props.protocols.map((protocol) => ({
   value: protocol,
-  label: needsTranslate(protocol) ? `[转换]${PROTOCOL_LABELS[protocol]}` : PROTOCOL_LABELS[protocol],
+  label: needsTranslate(protocol) ? `${t('providers.form.convertTag')}${PROTOCOL_LABELS[protocol]}` : PROTOCOL_LABELS[protocol],
 })))
 const translated = computed(() => needsTranslate(props.form.protocol as Protocol))
 
@@ -314,12 +325,13 @@ function modelSuggestions(queryString: string) {
   return modelOptions.value.filter((option) => option.value.toLowerCase().includes(keyword))
 }
 const modelSyncHint = computed(() => {
-  if (!props.canSyncModels) return '可先手动添加，保存服务商后能从接口同步'
+  if (!props.canSyncModels) return t('providers.models.hintAfterSave')
   const state = props.modelSync?.sync_state
-  if (state?.last_error) return `上次同步失败：${state.last_error}`
-  if (state?.last_success_at) return `上次同步：${new Date(state.last_success_at * 1000).toLocaleString()}`
-  return '从服务商接口拉取可用模型，也可手动添加'
+  if (state?.last_error) return t('providers.models.hintLastSyncFailed', { error: state.last_error })
+  if (state?.last_success_at) return t('providers.models.hintLastSync', { time: new Date(state.last_success_at * 1000).toLocaleString() })
+  return t('providers.models.hintSync')
 })
+const modelSyncError = computed(() => props.canSyncModels && !!props.modelSync?.sync_state?.last_error)
 
 function submitManualModel() {
   const modelName = manualModel.value.trim()
@@ -419,6 +431,8 @@ html.dark .dr-group-card {
   background: var(--v2-surface-2);
   border-bottom: 1px solid var(--v2-surface-3);
 }
+.dr-group-header > div:first-child { min-width: 0; }
+.dr-group-header > button { flex-shrink: 0; }
 .dr-group-title-wrapper {
   display: flex;
   align-items: center;
@@ -434,6 +448,19 @@ html.dark .dr-group-card {
   font-size: var(--v2-fs-xs);
   color: var(--v2-text-3);
   margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.dr-group-hint.is-error {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: help;
+}
+.dr-sync-error-text {
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
 }
 .dr-group-body {
   padding: 16px;

@@ -36,8 +36,7 @@ async fn run_dsh(args: &[&str]) -> Result<String> {
     #[cfg(not(windows))]
     let output = Command::new("dsh").args(args).output().await;
 
-    let output = output
-        .map_err(|e| format!("执行 dsh 命令遇到错误：{}（请确认已安装 dsh 且在 PATH 上）", e))?;
+    let output = output.map_err(|e| crate::tr!("err.plugin.dsh_spawn_failed", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -51,11 +50,11 @@ async fn run_dsh(args: &[&str]) -> Result<String> {
 
     if !output.status.success() {
         let detail = if combined.is_empty() {
-            format!("退出码 {}", output.status.code().unwrap_or(-1))
+            crate::tr!("err.plugin.exit_code", output.status.code().unwrap_or(-1))
         } else {
             combined
         };
-        return Err(format!("dsh 命令执行失败：\n{}", detail));
+        return Err(crate::tr!("err.plugin.dsh_failed", detail));
     }
 
     Ok(combined)
@@ -74,7 +73,7 @@ fn validate_profile(profile: &str) -> Result<()> {
         || profile.contains('\\')
         || profile.chars().any(|c| "&|^<>%\"".contains(c));
     if invalid {
-        return Err(format!("非法 profile 名: {}", profile));
+        return Err(crate::tr!("err.plugin.invalid_profile", profile));
     }
     Ok(())
 }
@@ -110,10 +109,10 @@ pub async fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<P
     let mut result: Vec<PluginItem> = Vec::new();
 
     let entries = std::fs::read_dir(&profiles_dir)
-        .map_err(|e| format!("读取 profiles 目录失败: {}", e))?;
+        .map_err(|e| crate::tr!("err.plugin.read_profiles_dir_failed", e))?;
 
     for entry in entries {
-        let entry = entry.map_err(|e| format!("读取 profiles 目录条目失败: {}", e))?;
+        let entry = entry.map_err(|e| crate::tr!("err.plugin.read_profiles_entry_failed", e))?;
         let profile_name = entry.file_name().to_string_lossy().to_string();
 
         // node_modules 是 profiles 下的共享模块 fallback，不是 profile
@@ -129,9 +128,9 @@ pub async fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<P
         }
 
         let content = std::fs::read_to_string(&manifest_path)
-            .map_err(|e| format!("读取 profile package.json 失败: {}", e))?;
+            .map_err(|e| crate::tr!("err.plugin.read_profile_manifest_failed", e))?;
         let manifest: ProfileManifest = serde_json::from_str(&content)
-            .map_err(|e| format!("解析 profile package.json 失败: {}", e))?;
+            .map_err(|e| crate::tr!("err.plugin.parse_profile_manifest_failed", e))?;
 
         for name in manifest
             .dependencies
@@ -179,18 +178,18 @@ pub async fn plugin_action(action: &str, profile: &str, param: &str) -> Result<P
 
     let param = param.trim();
     if param.is_empty() {
-        return Err("参数不能为空".to_string());
+        return Err(crate::tr!("err.plugin.param_required"));
     }
     // Windows 上经 cmd /c 执行，元字符会被 shell 重解析，直接拒绝
     if param.chars().any(|c| "&|^<>%\"".contains(c)) || param.contains("  ") {
-        return Err("参数包含非法字符".to_string());
+        return Err(crate::tr!("err.plugin.param_invalid_chars"));
     }
 
     let subcommand = match action {
         "install" => "add",
         "uninstall" => "remove",
         "update" => "update",
-        _ => return Err(format!("未知操作: {}", action)),
+        _ => return Err(crate::tr!("err.plugin.unknown_action", action)),
     };
 
     let cli_output = run_dsh(&["plugin", "--profile", profile, subcommand, param]).await?;

@@ -709,7 +709,8 @@ pub fn build_probe_request(
     let text = test_text
         .map(str::trim)
         .filter(|t| !t.is_empty())
-        .unwrap_or("今天天气不错");
+        .map(str::to_string)
+        .unwrap_or_else(|| crate::tr!("test.default_probe_text"));
     match protocol {
         Protocol::AnthropicMessages => {
             let body = serde_json::json!({

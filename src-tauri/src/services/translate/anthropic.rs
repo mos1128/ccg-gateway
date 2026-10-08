@@ -595,9 +595,9 @@ fn native_output_format(format: &Value) -> Option<Value> {
 /// 写不成原生 `output_config.format` 的类型，约束只能写进 system，否则会被静默丢掉。
 fn schema_instruction(format: &Value) -> Option<String> {
     match str_field(format, "type").as_str() {
-        "json_object" => Some("只输出一个 JSON 对象，不要带解释文字或代码块围栏。".to_string()),
-        "json_schema" => Some(format!(
-            "只输出符合以下 JSON Schema 的 JSON，不要带解释文字或代码块围栏：\n{}",
+        "json_object" => Some(crate::tr!("translate.json_object_only")),
+        "json_schema" => Some(crate::tr!(
+            "translate.json_schema_only",
             format.get("schema").unwrap_or(&Value::Null)
         )),
         _ => None,
@@ -645,8 +645,9 @@ fn flatten_tool_blocks(messages: &[Message], tools: &[Tool]) -> Option<Vec<Messa
                     .iter()
                     .flat_map(|block| match block {
                         Block::ToolUse { id, name, input } if stale.contains(id.as_str()) => {
-                            vec![Block::Text(format!(
-                                "[ccg: 调用工具 {name}]\n{}",
+                            vec![Block::Text(crate::tr!(
+                                "translate.tool_call_flattened",
+                                name,
                                 tool_input_string(input)
                             ))]
                         }
@@ -656,13 +657,21 @@ fn flatten_tool_blocks(messages: &[Message], tools: &[Tool]) -> Option<Vec<Messa
                             is_error,
                             media,
                         } if stale.contains(id.as_str()) => {
-                            let label = if *is_error { "工具报错" } else { "工具结果" };
+                            let label = if *is_error {
+                                crate::tr!("translate.tool_error_label")
+                            } else {
+                                crate::tr!("translate.tool_result_label")
+                            };
                             let body = if text.trim().is_empty() {
                                 TOOL_NO_OUTPUT
                             } else {
                                 text.as_str()
                             };
-                            let mut blocks = vec![Block::Text(format!("[ccg: {label}]\n{body}"))];
+                            let mut blocks = vec![Block::Text(crate::tr!(
+                                "translate.tool_labeled",
+                                label,
+                                body
+                            ))];
                             blocks.extend(media.iter().cloned().map(Block::Image));
                             blocks
                         }

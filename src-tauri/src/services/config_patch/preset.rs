@@ -7,11 +7,11 @@ fn parse_json(content: &str, label: &str) -> Result<Value, String> {
         return Ok(Value::Object(Map::new()));
     }
     let value = serde_json::from_str::<Value>(content)
-        .map_err(|error| format!("{} JSON 解析失败: {}", label, error))?;
+        .map_err(|error| crate::tr!("err.patch.json_parse_failed", label, error))?;
     value
         .is_object()
         .then_some(value)
-        .ok_or_else(|| format!("{} JSON 顶层必须是对象", label))
+        .ok_or_else(|| crate::tr!("err.patch.json_object_required", label))
 }
 
 fn merge_json(base: &mut Value, incoming: &Value) {
@@ -54,7 +54,7 @@ fn parse_toml(content: &str, label: &str) -> Result<DocumentMut, String> {
     } else {
         content
             .parse::<DocumentMut>()
-            .map_err(|error| format!("{} TOML 解析失败: {}", label, error))
+            .map_err(|error| crate::tr!("err.patch.toml_parse_failed", label, error))
     }
 }
 
@@ -113,25 +113,25 @@ pub(super) fn apply(
 ) -> Result<String, String> {
     match format {
         ConfigFormat::Json => {
-            let mut current = parse_json(content, "目标配置")?;
-            let preset = parse_json(preset_content, "全局预设")?;
+            let mut current = parse_json(content, &crate::tr!("patch.label.target"))?;
+            let preset = parse_json(preset_content, &crate::tr!("patch.label.preset"))?;
             merge_json(&mut current, &preset);
             serde_json::to_string_pretty(&current).map_err(|error| error.to_string())
         }
         ConfigFormat::Yaml => {
-            let mut current = super::yaml::parse_object(content, "目标配置")?;
-            let preset = super::yaml::parse_object(preset_content, "全局预设")?;
+            let mut current = super::yaml::parse_object(content, &crate::tr!("patch.label.target"))?;
+            let preset = super::yaml::parse_object(preset_content, &crate::tr!("patch.label.preset"))?;
             merge_json(&mut current, &preset);
             super::yaml::to_string(&current)
         }
         ConfigFormat::Toml => {
-            let mut current = parse_toml(content, "目标配置")?;
-            let preset = parse_toml(preset_content, "全局预设")?;
+            let mut current = parse_toml(content, &crate::tr!("patch.label.target"))?;
+            let preset = parse_toml(preset_content, &crate::tr!("patch.label.preset"))?;
             merge_toml(current.as_table_mut(), preset.as_table());
             Ok(current.to_string())
         }
         ConfigFormat::Jsonc | ConfigFormat::Env => {
-            Err("global_preset 只支持 JSON、TOML 或 YAML".to_string())
+            Err(crate::tr!("err.patch.preset_format_unsupported"))
         }
     }
 }
@@ -146,25 +146,25 @@ pub(super) fn remove(
     }
     match format {
         ConfigFormat::Json => {
-            let mut current = parse_json(content, "目标配置")?;
-            let preset = parse_json(preset_content, "全局预设")?;
+            let mut current = parse_json(content, &crate::tr!("patch.label.target"))?;
+            let preset = parse_json(preset_content, &crate::tr!("patch.label.preset"))?;
             remove_matching_json(&mut current, &preset);
             serde_json::to_string_pretty(&current).map_err(|error| error.to_string())
         }
         ConfigFormat::Yaml => {
-            let mut current = super::yaml::parse_object(content, "目标配置")?;
-            let preset = super::yaml::parse_object(preset_content, "全局预设")?;
+            let mut current = super::yaml::parse_object(content, &crate::tr!("patch.label.target"))?;
+            let preset = super::yaml::parse_object(preset_content, &crate::tr!("patch.label.preset"))?;
             remove_matching_json(&mut current, &preset);
             super::yaml::to_string(&current)
         }
         ConfigFormat::Toml => {
-            let mut current = parse_toml(content, "目标配置")?;
-            let preset = parse_toml(preset_content, "全局预设")?;
+            let mut current = parse_toml(content, &crate::tr!("patch.label.target"))?;
+            let preset = parse_toml(preset_content, &crate::tr!("patch.label.preset"))?;
             remove_matching_toml(current.as_table_mut(), preset.as_table());
             Ok(current.to_string())
         }
         ConfigFormat::Jsonc | ConfigFormat::Env => {
-            Err("global_preset 只支持 JSON、TOML 或 YAML".to_string())
+            Err(crate::tr!("err.patch.preset_format_unsupported"))
         }
     }
 }

@@ -432,7 +432,7 @@ pub async fn test_provider_model(
                 actual_model,
                 status_code: None,
                 elapsed_ms: start.elapsed().as_millis() as u64,
-                response_text: "Request timeout".to_string(),
+                response_text: crate::tr!("test.timeout"),
                 request_url: url,
                 request_headers,
                 request_body,
@@ -461,11 +461,11 @@ pub async fn test_provider_model(
                 let (response_text, raw_chunk) = match first_chunk {
                     Ok(Some(Ok(bytes))) => {
                         let text = String::from_utf8_lossy(&bytes).to_string();
-                        ("请求成功".to_string(), text)
+                        (crate::tr!("test.success"), text)
                     }
-                    Ok(Some(Err(e))) => (format!("Stream error: {}", e), String::new()),
-                    Ok(None) => ("Empty stream".to_string(), String::new()),
-                    Err(_) => ("Stream timeout".to_string(), String::new()),
+                    Ok(Some(Err(e))) => (crate::tr!("test.stream_error", e), String::new()),
+                    Ok(None) => (crate::tr!("test.empty_stream"), String::new()),
+                    Err(_) => (crate::tr!("test.stream_timeout"), String::new()),
                 };
 
                 TestProviderResult {
@@ -491,7 +491,7 @@ pub async fn test_provider_model(
                     status_code: Some(status_code),
                     elapsed_ms,
                     response_text: if success {
-                        "请求成功".to_string()
+                        crate::tr!("test.success")
                     } else {
                         body_text.clone()
                     },

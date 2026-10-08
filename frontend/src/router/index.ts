@@ -9,15 +9,15 @@ const router = createRouter({
       component: V2Layout,
       children: [
         { path: '', name: 'Dashboard', component: () => import('@/views/dashboard/index.vue') },
-        { path: 'providers', name: 'Providers', meta: { label: '服务商' }, component: () => import('@/views/providers/index.vue') },
-        { path: 'config', name: 'Config', meta: { label: '全局设置' }, component: () => import('@/views/config/index.vue') },
-        { path: 'logs', name: 'Logs', meta: { label: '日志记录' }, component: () => import('@/views/logs/index.vue') },
-        { path: 'scheduled-tasks', name: 'ScheduledTasks', meta: { label: '定时任务' }, component: () => import('@/views/scheduled-tasks/index.vue') },
-        { path: 'sessions', name: 'Sessions', meta: { label: '会话记录' }, component: () => import('@/views/sessions/index.vue') },
-        { path: 'mcp', name: 'MCP', meta: { label: 'MCP' }, component: () => import('@/views/mcp/index.vue') },
-        { path: 'prompts', name: 'Prompts', meta: { label: '提示词' }, component: () => import('@/views/prompts/index.vue') },
-        { path: 'skills', name: 'Skills', meta: { label: 'Skill' }, component: () => import('@/views/skills/index.vue') },
-        { path: 'plugins', name: 'Plugins', meta: { label: 'Plugin' }, component: () => import('@/views/plugins/index.vue') },
+        { path: 'providers', name: 'Providers', component: () => import('@/views/providers/index.vue') },
+        { path: 'config', name: 'Config', component: () => import('@/views/config/index.vue') },
+        { path: 'logs', name: 'Logs', component: () => import('@/views/logs/index.vue') },
+        { path: 'scheduled-tasks', name: 'ScheduledTasks', component: () => import('@/views/scheduled-tasks/index.vue') },
+        { path: 'sessions', name: 'Sessions', component: () => import('@/views/sessions/index.vue') },
+        { path: 'mcp', name: 'MCP', component: () => import('@/views/mcp/index.vue') },
+        { path: 'prompts', name: 'Prompts', component: () => import('@/views/prompts/index.vue') },
+        { path: 'skills', name: 'Skills', component: () => import('@/views/skills/index.vue') },
+        { path: 'plugins', name: 'Plugins', component: () => import('@/views/plugins/index.vue') },
         { path: ':pathMatch(.*)*', redirect: { name: 'Dashboard' } }
       ]
     }

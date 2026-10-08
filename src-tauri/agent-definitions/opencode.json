@@ -4,6 +4,7 @@
   "sort_order": 40,
   "name": "OpenCode",
   "remark": "网关会接管 OpenCode 内置的 anthropic 与 openai 服务商；在 OpenCode 中选择 anthropic 与 openai 的模型即可。",
+  "remark_en": "The gateway takes over OpenCode's built-in anthropic and openai providers; just pick anthropic and openai models in OpenCode.",
   "icon": {
     "view_box": "0 0 512 512",
     "paths": [

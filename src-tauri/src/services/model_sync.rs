@@ -44,7 +44,7 @@ pub async fn sync_provider(
         .fetch_optional(db)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "服务商不存在".to_string())?;
+        .ok_or_else(|| crate::tr!("err.model_sync.provider_not_found"))?;
     let client = reqwest::Client::builder()
         .timeout(MODEL_REQUEST_TIMEOUT)
         .build()
@@ -108,14 +108,14 @@ pub async fn add_manual_model(
 ) -> Result<ProviderModelsResponse, String> {
     let model_name = model_name.trim();
     if model_name.is_empty() {
-        return Err("模型名称不能为空".to_string());
+        return Err(crate::tr!("err.model_sync.model_name_required"));
     }
     sqlx::query_as::<_, (i64,)>("SELECT id FROM providers WHERE id = ?")
         .bind(provider_id)
         .fetch_optional(db)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "服务商不存在".to_string())?;
+        .ok_or_else(|| crate::tr!("err.model_sync.provider_not_found"))?;
 
     let now = now_timestamp();
     // The unique index is case sensitive while sync dedupes case insensitively,
@@ -165,7 +165,7 @@ pub async fn delete_model(
         .await
         .map_err(|error| error.to_string())?;
     if deleted.rows_affected() == 0 {
-        return Err("模型不存在".to_string());
+        return Err(crate::tr!("err.model_sync.model_not_found"));
     }
     refresh_model_count(db, provider_id).await?;
     list_provider_models(db, provider_id).await
@@ -208,12 +208,15 @@ async fn sync_provider_with_client(
     let protocol = match provider.protocol.parse::<Protocol>() {
         Ok(protocol) => protocol,
         Err(error) => {
-            return mark_failed(db, provider, format!("协议无效: {}", error)).await;
+            return mark_failed(db, provider, crate::tr!("err.model_sync.protocol_invalid", error))
+                .await;
         }
     };
     let fetched = match fetch_models(client, provider, protocol).await {
         Ok(models) if !models.is_empty() => models,
-        Ok(_) => return mark_failed(db, provider, "上游返回空模型列表".to_string()).await,
+        Ok(_) => {
+            return mark_failed(db, provider, crate::tr!("err.model_sync.upstream_empty")).await;
+        }
         Err(error) => return mark_failed(db, provider, error).await,
     };
 
@@ -297,7 +300,7 @@ async fn sync_provider_with_client(
     .await
     .map_err(|error| error.to_string())?;
     if state_update.rows_affected() == 0 {
-        return Err("服务商配置已变更，已丢弃过期模型列表".to_string());
+        return Err(crate::tr!("err.model_sync.stale_snapshot"));
     }
     tx.commit().await.map_err(|error| error.to_string())?;
 
@@ -339,18 +342,19 @@ async fn fetch_openai_models(
         let response = request
             .send()
             .await
-            .map_err(|error| format!("请求模型列表失败: {}", error))?;
+            .map_err(|error| crate::tr!("err.model_sync.request_failed", error))?;
         let status = response.status();
         let body = response
             .text()
             .await
-            .map_err(|error| format!("读取模型列表失败: {}", error))?;
+            .map_err(|error| crate::tr!("err.model_sync.read_failed", error))?;
         if !status.is_success() {
             return Err(format!("{}: {}", status, truncate_error(&body)));
         }
 
         let value: Value =
-            serde_json::from_str(&body).map_err(|error| format!("解析模型列表失败: {}", error))?;
+            serde_json::from_str(&body)
+                .map_err(|error| crate::tr!("err.model_sync.parse_failed", error))?;
         models.extend(read_ids(&value, "data"));
         let has_more = value
             .get("has_more")
@@ -371,11 +375,11 @@ async fn fetch_openai_models(
             .map(str::to_string)
             .filter(|value| !value.is_empty());
         if next.is_none() || next == after {
-            return Err("OpenAI 分页响应缺少有效游标".to_string());
+            return Err(crate::tr!("err.model_sync.openai_cursor_missing"));
         }
         after = next;
     }
-    Err("OpenAI 模型列表分页超过上限".to_string())
+    Err(crate::tr!("err.model_sync.openai_page_limit"))
 }
 
 async fn fetch_anthropic_models(
@@ -394,17 +398,17 @@ async fn fetch_anthropic_models(
         let response = request
             .send()
             .await
-            .map_err(|error| format!("请求 Anthropic 模型列表失败: {}", error))?;
+            .map_err(|error| crate::tr!("err.model_sync.anthropic_request_failed", error))?;
         let status = response.status();
         let body = response
             .text()
             .await
-            .map_err(|error| format!("读取 Anthropic 模型列表失败: {}", error))?;
+            .map_err(|error| crate::tr!("err.model_sync.anthropic_read_failed", error))?;
         if !status.is_success() {
             return Err(format!("{}: {}", status, truncate_error(&body)));
         }
         let value: Value = serde_json::from_str(&body)
-            .map_err(|error| format!("解析 Anthropic 模型列表失败: {}", error))?;
+            .map_err(|error| crate::tr!("err.model_sync.anthropic_parse_failed", error))?;
         result.extend(read_ids(&value, "data"));
         let has_more = value
             .get("has_more")
@@ -419,11 +423,11 @@ async fn fetch_anthropic_models(
             .map(str::to_string)
             .filter(|value| !value.is_empty());
         if next.is_none() || next == after_id {
-            return Err("Anthropic 分页响应缺少有效 last_id".to_string());
+            return Err(crate::tr!("err.model_sync.anthropic_last_id_missing"));
         }
         after_id = next;
     }
-    Err("Anthropic 模型列表分页超过上限".to_string())
+    Err(crate::tr!("err.model_sync.anthropic_page_limit"))
 }
 
 async fn fetch_gemini_models(
@@ -443,17 +447,17 @@ async fn fetch_gemini_models(
         let response = request
             .send()
             .await
-            .map_err(|error| format!("请求 Gemini 模型列表失败: {}", error))?;
+            .map_err(|error| crate::tr!("err.model_sync.gemini_request_failed", error))?;
         let status = response.status();
         let body = response
             .text()
             .await
-            .map_err(|error| format!("读取 Gemini 模型列表失败: {}", error))?;
+            .map_err(|error| crate::tr!("err.model_sync.gemini_read_failed", error))?;
         if !status.is_success() {
             return Err(format!("{}: {}", status, truncate_error(&body)));
         }
         let value: Value = serde_json::from_str(&body)
-            .map_err(|error| format!("解析 Gemini 模型列表失败: {}", error))?;
+            .map_err(|error| crate::tr!("err.model_sync.gemini_parse_failed", error))?;
         result.extend(read_gemini_model_names(&value));
         let next = value
             .get("nextPageToken")
@@ -464,11 +468,11 @@ async fn fetch_gemini_models(
             return normalize_models(result);
         }
         if next == page_token {
-            return Err("Gemini 分页响应包含重复 page token".to_string());
+            return Err(crate::tr!("err.model_sync.gemini_page_token_repeated"));
         }
         page_token = next;
     }
-    Err("Gemini 模型列表分页超过上限".to_string())
+    Err(crate::tr!("err.model_sync.gemini_page_limit"))
 }
 
 fn build_model_request<'a>(
@@ -568,7 +572,7 @@ fn normalize_models(models: Vec<String>) -> Result<Vec<String>, String> {
         result.push(model);
     }
     if result.is_empty() {
-        return Err("模型列表为空".to_string());
+        return Err(crate::tr!("err.model_sync.empty_list"));
     }
     Ok(result)
 }
@@ -620,7 +624,7 @@ async fn mark_failed(
     .bind(provider.enabled)
     .execute(db)
     .await
-    .map_err(|error| format!("{}; 写入同步状态失败: {}", message, error))?;
+    .map_err(|error| crate::tr!("err.model_sync.write_state_failed", message, error))?;
     Err(message)
 }
 

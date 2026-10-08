@@ -4,15 +4,15 @@ async fn resolve_prompt_file(db: &SqlitePool, agent_id: &str) -> Result<std::pat
     let agent = crate::services::agent::get_agent(db, agent_id)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.prompt.agent_unknown", agent_id))?;
     let feature = agent.features.prompts;
     if !feature.enabled {
-        return Err(format!("Agent {} 的 Prompt 功能不可用", agent_id));
+        return Err(crate::tr!("err.prompt.agent_unsupported", agent_id));
     }
     let file = feature
         .file
         .as_deref()
-        .ok_or_else(|| format!("Agent {} 的 Prompt 缺少 file", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.prompt.missing_file", agent_id))?;
     Ok(crate::services::cli_config::resolve_cli_config_file(db, agent_id, file).await)
 }
 
@@ -74,7 +74,7 @@ pub async fn get_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<PromptResp
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Prompt not found".to_string())?;
+        .ok_or_else(|| crate::tr!("err.prompt.not_found"))?;
 
     let mut cli_flags = Vec::new();
     for cli_type in crate::services::agent::agent_ids_for_feature("prompts") {
@@ -135,7 +135,7 @@ pub async fn update_prompt(
                 .fetch_optional(db.inner())
                 .await
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| "Prompt not found".to_string())?;
+                .ok_or_else(|| crate::tr!("err.prompt.not_found"))?;
 
         let new_name = input.name.unwrap_or(current.name.clone());
         let new_content = input.content.unwrap_or(current.content.clone());
@@ -158,7 +158,7 @@ pub async fn update_prompt(
                 .fetch_optional(db.inner())
                 .await
                 .map_err(|e| e.to_string())?
-                .ok_or_else(|| "Prompt not found".to_string())?;
+                .ok_or_else(|| crate::tr!("err.prompt.not_found"))?;
         current.content
     };
 
@@ -182,7 +182,7 @@ pub async fn toggle_prompt_cli(
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Prompt not found".to_string())?;
+        .ok_or_else(|| crate::tr!("err.prompt.not_found"))?;
 
     sync_prompt_to_cli_async(db.inner(), &prompt.content, &cli_type, enabled).await?;
 
@@ -196,7 +196,7 @@ pub async fn delete_prompt(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
         .fetch_optional(db.inner())
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| "Prompt not found".to_string())?;
+        .ok_or_else(|| crate::tr!("err.prompt.not_found"))?;
 
     sqlx::query("DELETE FROM prompt_presets WHERE id = ?")
         .bind(id)

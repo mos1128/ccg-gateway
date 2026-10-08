@@ -20,16 +20,16 @@ fn operation_format(operation: &OfficialLoginOperation) -> ConfigFormat {
 }
 
 pub fn parse_payload(json: &str) -> Result<OfficialCredentialPayload, String> {
-    let payload: OfficialCredentialPayload =
-        serde_json::from_str(json).map_err(|error| format!("凭证 JSON 格式无效: {}", error))?;
+    let payload: OfficialCredentialPayload = serde_json::from_str(json)
+        .map_err(|error| crate::tr!("err.official_credential.payload_json_invalid", error))?;
     if payload.schema_version != 1 {
-        return Err(format!(
-            "不支持凭证 schema_version {}",
+        return Err(crate::tr!(
+            "err.official_credential.schema_version_unsupported",
             payload.schema_version
         ));
     }
     if payload.files.is_empty() {
-        return Err("凭证 files 不能为空".to_string());
+        return Err(crate::tr!("err.official_credential.files_empty"));
     }
     Ok(payload)
 }
@@ -40,7 +40,7 @@ pub fn validate_payload(agent_id: &str, json: &str) -> Result<(), String> {
     let definition = agent::get_definition(agent_id).expect("validated Agent");
     let feature = &definition.features.official_login;
     if !feature.enabled {
-        return Err(format!("Agent {} 的官方凭证功能未启用", agent_id));
+        return Err(crate::tr!("err.official_credential.feature_disabled_for_agent", agent_id));
     }
     for operation in &feature.operations {
         let source = match operation.op {
@@ -51,18 +51,21 @@ pub fn validate_payload(agent_id: &str, json: &str) -> Result<(), String> {
             let file = payload
                 .files
                 .get(&source.file_id)
-                .ok_or_else(|| format!("凭证缺少逻辑文件 `{}`", source.file_id))?;
+                .ok_or_else(|| {
+                    crate::tr!("err.official_credential.missing_logical_file", source.file_id)
+                })?;
             let expected_format = operation_format(operation);
             if file.format != expected_format {
-                return Err(format!(
-                    "逻辑文件 `{}` 应为 {:?} 格式",
-                    source.file_id, expected_format
+                return Err(crate::tr!(
+                    "err.official_credential.logical_file_format_expected",
+                    source.file_id,
+                    format!("{:?}", expected_format)
                 ));
             }
             if file.format == ConfigFormat::Json && value_at(&file.content, &source.path).is_none()
             {
-                return Err(format!(
-                    "逻辑文件 `{}` 缺少来源路径 `{}`",
+                return Err(crate::tr!(
+                    "err.official_credential.missing_source_path",
                     source.file_id,
                     source.path.join(".")
                 ));
@@ -70,8 +73,8 @@ pub fn validate_payload(agent_id: &str, json: &str) -> Result<(), String> {
             if file.format != ConfigFormat::Json
                 && (!source.path.is_empty() || !file.content.is_string())
             {
-                return Err(format!(
-                    "非 JSON 逻辑文件 `{}` 必须使用原始文本且不能配置来源路径",
+                return Err(crate::tr!(
+                    "err.official_credential.non_json_requires_raw_text",
                     source.file_id
                 ));
             }
@@ -99,19 +102,19 @@ fn set_value_at(
         if current.get(key).is_none() {
             current
                 .as_object_mut()
-                .ok_or_else(|| format!("{} 路径结构冲突", context))?
+                .ok_or_else(|| crate::tr!("err.official_credential.path_conflict", context))?
                 .insert(key.clone(), Value::Object(Map::new()));
         }
         current = current
             .get_mut(key)
-            .ok_or_else(|| format!("{} 路径不存在", context))?;
+            .ok_or_else(|| crate::tr!("err.official_credential.path_missing", context))?;
         if !current.is_object() {
-            return Err(format!("{} 路径结构冲突", context));
+            return Err(crate::tr!("err.official_credential.path_conflict", context));
         }
     }
     current
         .as_object_mut()
-        .ok_or_else(|| format!("{} 目标不是对象", context))?
+        .ok_or_else(|| crate::tr!("err.official_credential.target_not_object", context))?
         .insert(path[path.len() - 1].clone(), next);
     Ok(())
 }
@@ -124,23 +127,28 @@ fn source_value(
         OfficialLoginOperationKind::ReplaceFile => operation.content_from.as_ref(),
         OfficialLoginOperationKind::SetField => operation.value_from.as_ref(),
     }
-    .ok_or_else(|| format!("operation `{}` 缺少凭证来源", operation.id))?;
+    .ok_or_else(|| crate::tr!("err.official_credential.missing_source", operation.id))?;
     let file = payload
         .files
         .get(&source.file_id)
-        .ok_or_else(|| format!("逻辑文件 `{}` 不存在", source.file_id))?;
+        .ok_or_else(|| {
+            crate::tr!("err.official_credential.logical_file_not_found", source.file_id)
+        })?;
     if file.format != operation_format(operation) {
-        return Err(format!("逻辑文件 `{}` 格式与模板不一致", source.file_id));
+        return Err(crate::tr!(
+            "err.official_credential.logical_file_format_mismatch",
+            source.file_id
+        ));
     }
     if file.format != ConfigFormat::Json && !source.path.is_empty() {
-        return Err(format!(
-            "非 JSON 逻辑文件 `{}` 不支持来源路径",
+        return Err(crate::tr!(
+            "err.official_credential.non_json_no_source_path",
             source.file_id
         ));
     }
     value_at(&file.content, &source.path)
         .cloned()
-        .ok_or_else(|| format!("逻辑文件 `{}` 中的来源路径不存在", source.file_id))
+        .ok_or_else(|| crate::tr!("err.official_credential.source_path_not_found", source.file_id))
 }
 
 fn prepared_replacement(
@@ -153,7 +161,9 @@ fn prepared_replacement(
         ConfigFormat::Jsonc | ConfigFormat::Toml | ConfigFormat::Yaml | ConfigFormat::Env => value
             .as_str()
             .map(|content| PreparedFile::Text(content.to_string()))
-            .ok_or_else(|| format!("operation `{}` 的凭证内容必须是文本", operation.id)),
+            .ok_or_else(|| {
+                crate::tr!("err.official_credential.content_must_be_text", operation.id)
+            }),
     }
 }
 
@@ -164,8 +174,8 @@ fn operation_value(
     match (&operation.value, &operation.value_from) {
         (Some(value), None) => Ok(value.clone()),
         (None, Some(_)) => source_value(payload, operation),
-        _ => Err(format!(
-            "operation `{}` 的 value 和 value_from 必须二选一",
+        _ => Err(crate::tr!(
+            "err.official_credential.value_exclusive",
             operation.id
         )),
     }
@@ -178,7 +188,7 @@ fn remove_matching_value(
     context: &str,
 ) -> Result<bool, String> {
     let Some((key, remaining)) = path.split_first() else {
-        return Err(format!("{} path 不能为空", context));
+        return Err(crate::tr!("err.official_credential.path_required", context));
     };
     let Some(object) = current.as_object_mut() else {
         return Ok(false);
@@ -203,9 +213,19 @@ fn remove_matching_value(
 async fn read_target_json(path: &Path) -> Result<Value, String> {
     match tokio::fs::read_to_string(path).await {
         Ok(content) => serde_json::from_str(&content)
-            .map_err(|error| format!("目标文件 {} 不是合法 JSON: {}", path.display(), error)),
+            .map_err(|error| {
+                crate::tr!(
+                    "err.official_credential.target_file_invalid_json",
+                    path.display(),
+                    error
+                )
+            }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Value::Object(Map::new())),
-        Err(error) => Err(format!("读取目标文件 {} 失败: {}", path.display(), error)),
+        Err(error) => Err(crate::tr!(
+            "err.official_credential.read_target_file_failed",
+            path.display(),
+            error
+        )),
     }
 }
 
@@ -216,21 +236,21 @@ async fn resolved_operations(
     let resolved = agent::get_agent(db, agent_id)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.official_credential.unknown_agent", agent_id))?;
     let feature = resolved.features.official_login;
     if feature.enabled {
         Ok(feature.operations)
     } else {
-        Err("该 Agent 的官方凭证功能未启用".to_string())
+        Err(crate::tr!("err.official_credential.feature_disabled"))
     }
 }
 
 fn builtin_operations(agent_id: &str) -> Result<Vec<OfficialLoginOperation>, String> {
-    let definition =
-        agent::get_definition(agent_id).ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+    let definition = agent::get_definition(agent_id)
+        .ok_or_else(|| crate::tr!("err.official_credential.unknown_agent", agent_id))?;
     let feature = &definition.features.official_login;
     if feature.operations.is_empty() {
-        return Err(format!("Agent {} 没有官方凭证写入规则", agent_id));
+        return Err(crate::tr!("err.official_credential.no_operations", agent_id));
     }
     Ok(feature.operations.clone())
 }
@@ -253,8 +273,8 @@ pub async fn apply_payload(
             }
             OfficialLoginOperationKind::SetField => {
                 if operation.format != Some(ConfigFormat::Json) {
-                    return Err(format!(
-                        "operation `{}` 的 set_field 只支持 JSON",
+                    return Err(crate::tr!(
+                        "err.official_credential.set_field_json_only",
                         operation.id
                     ));
                 }
@@ -267,8 +287,8 @@ pub async fn apply_payload(
                 }
                 let PreparedFile::Json(target) = prepared.get_mut(&path).expect("prepared target")
                 else {
-                    return Err(format!(
-                        "operation `{}` 与同一目标文件的原文替换规则冲突",
+                    return Err(crate::tr!(
+                        "err.official_credential.replace_conflict",
                         operation.id
                     ));
                 };
@@ -320,8 +340,8 @@ pub async fn remove_payload(
             }
             OfficialLoginOperationKind::SetField => {
                 if operation.format != Some(ConfigFormat::Json) {
-                    return Err(format!(
-                        "operation `{}` 的 set_field 只支持 JSON",
+                    return Err(crate::tr!(
+                        "err.official_credential.set_field_json_only",
                         operation.id
                     ));
                 }
@@ -354,7 +374,13 @@ pub async fn remove_payload(
         match tokio::fs::remove_file(&path).await {
             Ok(()) => touched.push(path),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("删除 {} 失败: {}", path.display(), error)),
+            Err(error) => {
+                return Err(crate::tr!(
+                    "err.official_credential.remove_file_failed",
+                    path.display(),
+                    error
+                ));
+            }
         }
     }
     Ok(touched)
@@ -391,7 +417,11 @@ pub async fn payload_matches(db: &SqlitePool, agent_id: &str, json: &str) -> Res
             OfficialLoginOperationKind::SetField => {
                 let actual = match tokio::fs::read_to_string(&path).await {
                     Ok(content) => serde_json::from_str::<Value>(&content).map_err(|error| {
-                        format!("目标文件 {} 不是合法 JSON: {}", path.display(), error)
+                        crate::tr!(
+                            "err.official_credential.target_file_invalid_json",
+                            path.display(),
+                            error
+                        )
                     })?,
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
                     Err(error) => return Err(error.to_string()),
@@ -417,13 +447,19 @@ pub async fn read_current_payload(db: &SqlitePool, agent_id: &str) -> Result<Str
                 let source = operation
                     .content_from
                     .as_ref()
-                    .ok_or_else(|| format!("operation `{}` 缺少 content_from", operation.id))?;
+                    .ok_or_else(|| {
+                        crate::tr!("err.official_credential.missing_content_from", operation.id)
+                    })?;
                 let format = operation_format(operation);
                 let raw = match tokio::fs::read_to_string(&path).await {
                     Ok(content) => content,
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
                     Err(error) => {
-                        return Err(format!("读取目标文件 {} 失败: {}", path.display(), error))
+                        return Err(crate::tr!(
+                            "err.official_credential.read_target_file_failed",
+                            path.display(),
+                            error
+                        ))
                     }
                 };
                 let content = if format == ConfigFormat::Json {
@@ -431,7 +467,11 @@ pub async fn read_current_payload(db: &SqlitePool, agent_id: &str) -> Result<Str
                         Value::Object(Map::new())
                     } else {
                         serde_json::from_str(&raw).map_err(|error| {
-                            format!("目标文件 {} 不是合法 JSON: {}", path.display(), error)
+                            crate::tr!(
+                                "err.official_credential.target_file_invalid_json",
+                                path.display(),
+                                error
+                            )
                         })?
                     }
                 } else {
@@ -490,7 +530,9 @@ pub fn display_info(json: &str) -> String {
             .files
             .values()
             .find_map(|file| find_display_value(&file.content))
-            .unwrap_or_else(|| format!("已保存 {} 个文件", payload.files.len())),
-        Err(_) => "无效凭证格式".to_string(),
+            .unwrap_or_else(|| {
+                crate::tr!("err.official_credential.saved_files", payload.files.len())
+            }),
+        Err(_) => crate::tr!("err.official_credential.invalid_format"),
     }
 }

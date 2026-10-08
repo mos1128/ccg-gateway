@@ -4,7 +4,7 @@
       <div class="confirm-content" :class="{ 'confirm-content--markdown': renderMarkdown }">
         <div class="confirm-header">
           <div class="confirm-title">{{ title }}</div>
-          <button class="confirm-close" type="button" aria-label="关闭" @click="handleCancel">
+          <button class="confirm-close" type="button" :aria-label="t('common.close')" @click="handleCancel">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
           </button>
         </div>
@@ -22,6 +22,7 @@
 <script setup lang="ts">
 import MarkdownIt from 'markdown-it'
 import { computed, ref, watch, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 interface ConfirmOptions {
   confirmText?: string
@@ -38,18 +39,19 @@ const markdown = new MarkdownIt({
 const visible = ref(false)
 const title = ref('')
 const message = ref('')
-const confirmText = ref('确定')
-const cancelText = ref('取消')
+const confirmText = ref('')
+const cancelText = ref('')
 const renderMarkdown = ref(false)
 const renderedMessage = computed(() => markdown.render(message.value))
+const { t } = useI18n()
 
 let resolvePromise: ((value: boolean) => void) | null = null
 
-function open(msg: string, t?: string, options?: ConfirmOptions) {
+function open(msg: string, titleText?: string, options?: ConfirmOptions) {
   message.value = msg
-  title.value = t || '提示'
-  confirmText.value = options?.confirmText || '确定'
-  cancelText.value = options?.cancelText || '取消'
+  title.value = titleText || t('common.confirmTitle')
+  confirmText.value = options?.confirmText || t('common.ok')
+  cancelText.value = options?.cancelText || t('common.cancel')
   renderMarkdown.value = options?.markdown || false
   visible.value = true
   return new Promise<boolean>((resolve) => {

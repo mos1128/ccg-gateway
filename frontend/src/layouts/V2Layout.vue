@@ -29,7 +29,7 @@
 
           <el-dropdown v-if="overflowNav.length" trigger="click" placement="bottom-end" popper-class="v2-more-pop">
             <button :ref="(el) => setNavItemRef(MORE_NAV_KEY, el)" class="v2-nav-item v2-nav-more" :class="{ active: overflowActive }">
-              更多
+              {{ t('layout.more') }}
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
             <template #dropdown>
@@ -47,23 +47,37 @@
 
         <div class="v2-topbar-right">
           <div class="v2-util">
-            <el-tooltip :content="themeStore.theme === 'light' ? '切换暗色' : '切换亮色'" placement="bottom" effect="light" :show-after="250">
+            <el-tooltip :content="themeStore.theme === 'light' ? t('layout.theme.toDark') : t('layout.theme.toLight')" placement="bottom" effect="light" :show-after="250">
               <button class="v2-icon-btn" @click="themeStore.toggleTheme()">
                 <svg v-if="themeStore.theme === 'light'" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                 <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
               </button>
             </el-tooltip>
-            <el-tooltip content="开发者工具" placement="bottom" effect="light" :show-after="250">
+            <el-tooltip :content="t('layout.language.tooltip')" placement="bottom" effect="light" :show-after="250">
+              <el-dropdown trigger="click" placement="bottom-end" popper-class="v2-more-pop" @command="handleLanguageCommand">
+                <button class="v2-icon-btn">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="auto" :class="{ active: localeStore.language === 'auto' }">{{ t('layout.language.auto') }}</el-dropdown-item>
+                    <el-dropdown-item command="zh-CN" :class="{ active: localeStore.language === 'zh-CN' }">{{ t('layout.language.zhCN') }}</el-dropdown-item>
+                    <el-dropdown-item command="en" :class="{ active: localeStore.language === 'en' }">{{ t('layout.language.en') }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </el-tooltip>
+            <el-tooltip :content="t('layout.devtools')" placement="bottom" effect="light" :show-after="250">
               <button class="v2-icon-btn" @click="toggleDevtools">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
               </button>
             </el-tooltip>
-            <el-tooltip content="GitHub 仓库" placement="bottom" effect="light" :show-after="250">
+            <el-tooltip :content="t('layout.github')" placement="bottom" effect="light" :show-after="250">
               <button class="v2-icon-btn" @click="openGithubRepo">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
               </button>
             </el-tooltip>
-            <el-tooltip content="检查更新" placement="bottom" effect="light" :show-after="250">
+            <el-tooltip :content="t('layout.checkUpdate')" placement="bottom" effect="light" :show-after="250">
               <button class="v2-version mono" :disabled="checkingUpdate" @click="handleCheckUpdate">
                 <svg v-if="checkingUpdate" class="spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                 v{{ appVersion }}
@@ -82,7 +96,7 @@
 
     <V2Drawer
       v-model="gatewayDialogVisible"
-      title="网关设置"
+      :title="t('layout.gateway.drawerTitle')"
       width="560px"
       :closable="!gatewayEndpointSaving"
     >
@@ -101,9 +115,9 @@
       <div class="gateway-settings-section">
         <div class="gateway-endpoint-grid">
           <div class="v2-field">
-            <label class="v2-label">监听地址</label>
+            <label class="v2-label">{{ t('layout.gateway.hostLabel') }}</label>
             <el-tooltip
-              content="已被环境变量 CCG_GATEWAY_HOST 覆盖，无法编辑"
+              :content="t('layout.gateway.envOverrideHost')"
               placement="top"
               effect="light"
               :show-after="250"
@@ -118,7 +132,7 @@
                   class="gateway-host-autocomplete mono"
                   popper-class="gateway-host-popper v2-scope"
                   :disabled="hostEnvOverride || dataDirChanging"
-                  placeholder="选择或输入监听地址"
+                  :placeholder="t('layout.gateway.hostPlaceholder')"
                 >
                   <template #default="{ item }">
                     <div class="gateway-host-option">
@@ -131,9 +145,9 @@
             </el-tooltip>
           </div>
           <div class="v2-field">
-            <label class="v2-label">监听端口</label>
+            <label class="v2-label">{{ t('layout.gateway.portLabel') }}</label>
             <el-tooltip
-              content="已被环境变量 CCG_GATEWAY_PORT 覆盖，无法编辑"
+              :content="t('layout.gateway.envOverridePort')"
               placement="top"
               effect="light"
               :show-after="250"
@@ -156,15 +170,15 @@
         </div>
         <div v-if="exposesGateway" class="gateway-endpoint-warning">
           <el-icon><WarningFilled /></el-icon>
-          <span>当前地址允许其他设备访问，请仅在可信网络中使用。</span>
+          <span>{{ t('layout.gateway.exposeWarning') }}</span>
         </div>
       </div>
 
       <div class="gateway-settings-section">
         <div class="v2-field">
-          <label class="v2-label">数据目录</label>
+          <label class="v2-label">{{ t('layout.gateway.dataDirLabel') }}</label>
           <el-tooltip
-            content="已被环境变量 CCG_DATA_DIR 覆盖，无法编辑"
+            :content="t('layout.gateway.envOverrideDataDir')"
             placement="top"
             effect="light"
             :show-after="250"
@@ -175,9 +189,9 @@
                 v-model="gatewayEndpointForm.data_dir"
                 class="v2-input mono"
                 :disabled="dataDirEnvOverride"
-                placeholder="输入数据目录"
+                :placeholder="t('layout.gateway.dataDirPlaceholder')"
               >
-              <el-tooltip content="恢复默认" placement="top" effect="light" :show-after="250" :disabled="dataDirEnvOverride">
+              <el-tooltip :content="t('layout.gateway.resetDefault')" placement="top" effect="light" :show-after="250" :disabled="dataDirEnvOverride">
                 <button
                   type="button"
                   class="v2-row-act gateway-path-reset"
@@ -189,17 +203,17 @@
               </el-tooltip>
             </div>
           </el-tooltip>
-          <div v-if="!dataDirEnvOverride && dataDirChanging" class="v2-hint">数据目录需单独保存并关闭应用后，再调整监听地址和端口。</div>
-          <div v-else-if="!dataDirEnvOverride" class="v2-hint">修改后重启生效，原目录的数据库、日志和用户配置不会自动迁移。</div>
+          <div v-if="!dataDirEnvOverride && dataDirChanging" class="v2-hint">{{ t('layout.gateway.dataDirHintChanging') }}</div>
+          <div v-else-if="!dataDirEnvOverride" class="v2-hint">{{ t('layout.gateway.dataDirHint') }}</div>
         </div>
 
         <div class="gateway-toggle-row">
           <span class="gateway-toggle-copy">
-            <span class="gateway-toggle-title">文件日志</span>
-            <span class="gateway-toggle-desc">运行日志写入数据目录</span>
+            <span class="gateway-toggle-title">{{ t('layout.gateway.fileLog') }}</span>
+            <span class="gateway-toggle-desc">{{ t('layout.gateway.fileLogDesc') }}</span>
           </span>
           <el-tooltip
-            content="已被环境变量 CCG_LOG_FILE 覆盖，无法编辑"
+            :content="t('layout.gateway.envOverrideLogFile')"
             placement="top"
             effect="light"
             :show-after="250"
@@ -211,9 +225,9 @@
           </el-tooltip>
         </div>
         <div class="v2-field gateway-log-level-field">
-          <label class="v2-label">日志级别</label>
+          <label class="v2-label">{{ t('layout.gateway.logLevelLabel') }}</label>
           <el-tooltip
-            content="已被环境变量 CCG_LOG_LEVEL 覆盖，无法编辑"
+            :content="t('layout.gateway.envOverrideLogLevel')"
             placement="top"
             effect="light"
             :show-after="250"
@@ -232,12 +246,12 @@
       </div>
 
       <template #footer>
-        <button class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="gatewayEndpointSaving" @click="gatewayDialogVisible = false">取消</button>
+        <button class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="gatewayEndpointSaving" @click="gatewayDialogVisible = false">{{ t('common.cancel') }}</button>
         <button
           class="v2-btn v2-btn-sm v2-btn-primary"
           :disabled="gatewayEndpointSaving || !canSaveGatewayEndpoint"
           @click="saveGatewayEndpoint"
-        >{{ gatewayEndpointSaving ? '处理中...' : gatewayEndpointActionText }}</button>
+        >{{ gatewayEndpointSaving ? t('layout.gateway.processing') : gatewayEndpointActionText }}</button>
       </template>
     </V2Drawer>
   </div>
@@ -249,9 +263,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-shell'
 import { useWindowSize } from '@vueuse/core'
 import { checkForUpdates } from '@/utils/updater'
+import { translate } from '@/locales'
+import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
 import { useSettingsStore } from '@/stores/settings'
 import { useAgentStore } from '@/stores/agents'
+import { useLocaleStore } from '@/stores/locale'
 import { settingsApi } from '@/api/settings'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
@@ -266,32 +283,38 @@ const router = useRouter()
 const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 const agentStore = useAgentStore()
+const localeStore = useLocaleStore()
+const { t } = useI18n()
 
-const nav = [
-  { label: '仪表盘', path: '/' },
-  { label: '服务商', path: '/providers' },
-  { label: '全局设置', path: '/config' },
-  { label: '日志记录', path: '/logs' },
-  { label: '定时任务', path: '/scheduled-tasks' },
-  { label: '会话记录', path: '/sessions' },
-  { label: 'MCP', path: '/mcp' },
-  { label: '提示词', path: '/prompts' },
-  { label: 'Skill', path: '/skills' },
-  { label: 'Plugin', path: '/plugins' }
-]
+function handleLanguageCommand(command: string | number | object) {
+  localeStore.setLanguage(command as 'auto' | 'zh-CN' | 'en')
+}
+
+const nav = computed(() => [
+  { label: t('layout.nav.dashboard'), path: '/' },
+  { label: t('layout.nav.providers'), path: '/providers' },
+  { label: t('layout.nav.config'), path: '/config' },
+  { label: t('layout.nav.logs'), path: '/logs' },
+  { label: t('layout.nav.scheduledTasks'), path: '/scheduled-tasks' },
+  { label: t('layout.nav.sessions'), path: '/sessions' },
+  { label: t('layout.nav.mcp'), path: '/mcp' },
+  { label: t('layout.nav.prompts'), path: '/prompts' },
+  { label: t('layout.nav.skills'), path: '/skills' },
+  { label: t('layout.nav.plugins'), path: '/plugins' }
+])
 const MORE_NAV_KEY = '__more'
 
 const { width } = useWindowSize()
 const maxVisible = computed(() => {
   const w = width.value
-  if (w >= 1180) return nav.length
+  if (w >= 1180) return nav.value.length
   if (w >= 1040) return 8
   if (w >= 900) return 6
   if (w >= 780) return 4
   return 3
 })
-const visibleNav = computed(() => nav.slice(0, maxVisible.value))
-const overflowNav = computed(() => nav.slice(maxVisible.value))
+const visibleNav = computed(() => nav.value.slice(0, maxVisible.value))
+const overflowNav = computed(() => nav.value.slice(maxVisible.value))
 const overflowActive = computed(() => overflowNav.value.some(it => isActive(it.path)))
 const activeNavKey = computed(() => visibleNav.value.find(it => isActive(it.path))?.path || (overflowActive.value ? MORE_NAV_KEY : ''))
 const navEl = ref<HTMLElement | null>(null)
@@ -362,10 +385,10 @@ const gatewayEndpointForm = ref({
   log_file: false,
   log_level: 'info',
 })
-const gatewayHostSuggestions = [
-  { value: '127.0.0.1', label: '仅本机' },
-  { value: '0.0.0.0', label: '局域网' },
-]
+const gatewayHostSuggestions = computed(() => [
+  { value: '127.0.0.1', label: t('layout.gateway.hostSuggestionLocal') },
+  { value: '0.0.0.0', label: t('layout.gateway.hostSuggestionLan') },
+])
 const gatewayEndpointSaving = ref(false)
 const gatewayDataDirResetting = ref(false)
 const gatewayStatus = computed(() => settingsStore.gatewayStatus)
@@ -377,28 +400,45 @@ function formatGatewayEndpoint(host: string, port: number) {
   return `${normalizedHost}:${port}`
 }
 const gatewayListenStatusTitle = computed(() => {
-  if (gatewayIsRunning.value) return '监听正常'
-  if (gatewayIsError.value) return '监听失败'
-  return '正在启动监听'
+  if (gatewayIsRunning.value) return t('layout.gateway.listenOk')
+  if (gatewayIsError.value) return t('layout.gateway.listenFailed')
+  return t('layout.gateway.listenStarting')
+})
+const gatewayErrorDetail = computed(() => {
+  const status = gatewayStatus.value
+  if (!status || status.status !== 'error') return ''
+  const detail = status.error_message || ''
+  if (status.error_code === 'bind_failed') {
+    return t('layout.gateway.bindFailed', { endpoint: formatGatewayEndpoint(status.host, status.port), detail })
+  }
+  if (status.error_code === 'serve_stopped') {
+    return t('layout.gateway.serveStopped', { detail })
+  }
+  return detail || t('layout.gateway.startFailed')
 })
 const gatewayListenStatusDetail = computed(() => {
   const status = gatewayStatus.value
-  if (!status) return '正在获取监听状态...'
+  if (!status) return t('layout.gateway.statusLoading')
   if (status.status === 'error') {
-    return status.error_message || `无法监听 ${formatGatewayEndpoint(status.host, status.port)}`
+    return gatewayErrorDetail.value || t('layout.gateway.bindFailed', { endpoint: formatGatewayEndpoint(status.host, status.port), detail: '' })
   }
   const endpoint = formatGatewayEndpoint(status.host, status.port)
-  return status.status === 'running' ? `已监听 ${endpoint}` : `正在尝试监听 ${endpoint}`
+  return status.status === 'running'
+    ? t('layout.gateway.listened', { endpoint })
+    : t('layout.gateway.listening', { endpoint })
 })
 const gatewayStatusText = computed(() => {
   const status = settingsStore.gatewayStatus
-  const action = gatewayDialogSeen.value ? '点击修改网关配置' : '点击查看网关配置'
-  if (!status || status.status === 'starting') return `网关启动中 · ${action}`
+  const action = gatewayDialogSeen.value ? t('layout.gateway.actionEdit') : t('layout.gateway.actionView')
+  if (!status || status.status === 'starting') return t('layout.gateway.startingWithAction', { action })
   if (status.status === 'running') {
     const host = status.host.includes(':') && !status.host.startsWith('[') ? `[${status.host}]` : status.host
-    return `网关运行中 · 监听于 ${host}:${status.port} · ${action}`
+    return t('layout.gateway.runningWithAction', { host: `${host}:${status.port}`, action })
   }
-  return `${status.error_message || '网关启动失败'} · ${action}`
+  return t('layout.gateway.failedWithAction', {
+    message: gatewayErrorDetail.value || t('layout.gateway.startFailed'),
+    action
+  })
 })
 const hostEnvOverride = computed(() => gatewayStatus.value?.host_env_override === true)
 const portEnvOverride = computed(() => gatewayStatus.value?.port_env_override === true)
@@ -433,9 +473,9 @@ const gatewayEndpointDirty = computed(() => (
 const canSaveGatewayEndpoint = computed(() => gatewayEndpointDirty.value || gatewayStatus.value?.status === 'error')
 const gatewayEndpointActionText = computed(() => {
   if (!gatewayEndpointDirty.value) {
-    return gatewayStatus.value?.status === 'error' ? '关闭应用' : '无更改'
+    return gatewayStatus.value?.status === 'error' ? t('layout.gateway.actionClose') : t('layout.gateway.actionNoChange')
   }
-  return '保存并关闭'
+  return t('layout.gateway.actionSaveClose')
 })
 const exposesGateway = computed(() => {
   const host = (hostEnvOverride.value
@@ -471,7 +511,7 @@ async function openGatewayDialog() {
     markGatewayDialogSeen()
     void settingsStore.fetchGatewayStatus().catch(() => undefined)
   } catch (error) {
-    notify(getErrorMessage(error, '网关设置加载失败'), 'error')
+    notify(getErrorMessage(error, t('layout.gateway.notify.loadFailed')), 'error')
   }
 }
 
@@ -492,14 +532,14 @@ async function closeGatewayApp(message: string) {
     notify(message)
   } catch (error) {
     gatewayEndpointSaving.value = false
-    notify(getErrorMessage(error, '应用关闭失败'), 'error')
+    notify(getErrorMessage(error, t('layout.gateway.notify.closeFailed')), 'error')
   }
 }
 
 async function saveGatewayEndpoint() {
   if (!gatewayEndpointDirty.value) {
     if (gatewayStatus.value?.status !== 'error') return
-    await closeGatewayApp('应用将关闭，请手动重新启动')
+    await closeGatewayApp(t('layout.gateway.notify.appWillClose'))
     return
   }
 
@@ -510,24 +550,24 @@ async function saveGatewayEndpoint() {
 
   if (gatewayListenerDirty.value) {
     if (!host) {
-      notify('监听地址不能为空', 'error')
+      notify(t('layout.gateway.notify.hostRequired'), 'error')
       return
     }
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      notify('监听端口必须是 1 到 65535 之间的整数', 'error')
+      notify(t('layout.gateway.notify.portInvalid'), 'error')
       return
     }
   }
   if (bootstrapDirty.value && !dataDirEnvOverride.value && !dataDir) {
-    notify('数据目录不能为空', 'error')
+    notify(t('layout.gateway.notify.dataDirRequired'), 'error')
     return
   }
   if (dataDirChanging.value && gatewayListenerDirty.value) {
-    notify('修改数据目录时请先单独保存并关闭应用，再调整监听地址和端口', 'error')
+    notify(t('layout.gateway.notify.dataDirChanging'), 'error')
     return
   }
   if (bootstrapDirty.value && !logLevelEnvOverride.value && !logLevel) {
-    notify('日志级别不能为空', 'error')
+    notify(t('layout.gateway.notify.logLevelRequired'), 'error')
     return
   }
 
@@ -539,9 +579,9 @@ async function saveGatewayEndpoint() {
     } catch (error) {
       try {
         await confirm(
-          `当前监听地址暂时无法绑定：${getErrorMessage(error, '未知错误')}\n\n这可能由旧监听仍被当前进程占用、端口冲突或地址尚不可用导致。仍可继续保存；保存后应用会关闭，请确认端口可用后手动重新启动。`,
-          '监听地址检查失败',
-          { confirmText: '继续保存' },
+          t('layout.gateway.notify.bindUnavailable', { detail: getErrorMessage(error, translate('common.operationFailed')) }),
+          t('layout.gateway.notify.bindCheckTitle'),
+          { confirmText: t('layout.gateway.notify.continueSave') },
         )
       } catch (confirmError) {
         if (confirmError === 'cancel') return
@@ -566,10 +606,10 @@ async function saveGatewayEndpoint() {
       await settingsStore.updateGateway(listenerUpdate)
     }
     await settingsApi.closeApp()
-    notify('配置已保存，应用将关闭，请手动重新启动')
+    notify(t('layout.gateway.notify.saved'))
   } catch (error) {
     gatewayEndpointSaving.value = false
-    notify(getErrorMessage(error, '网关设置保存失败'), 'error')
+    notify(getErrorMessage(error, t('layout.gateway.notify.saveFailed')), 'error')
   }
 }
 

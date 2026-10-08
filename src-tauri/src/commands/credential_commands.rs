@@ -276,10 +276,11 @@ pub async fn create_credential(
 
     let id = result.last_insert_rowid();
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "credential_created",
-        &format!("凭证 {} 已创建", input.name),
+        "logs.sysLog.credential_created",
+        serde_json::json!({ "name": input.name }),
     )
     .await;
 
@@ -306,7 +307,7 @@ pub async fn get_credential(
             .fetch_optional(db.inner())
             .await
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "凭证不存在".to_string())?;
+            .ok_or_else(|| crate::tr!("err.credential.not_found"))?;
 
     let gateway_url = config.gateway_base_url();
     let is_written = detect_cli_mode_from_url(db.inner(), &gateway_url, &cred.cli_type).await
@@ -335,7 +336,7 @@ pub async fn update_credential(
             .fetch_optional(db.inner())
             .await
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "凭证不存在".to_string())?;
+            .ok_or_else(|| crate::tr!("err.credential.not_found"))?;
 
     let cred_name = old_cred.name.clone();
     let gateway_url = config.gateway_base_url();
@@ -371,10 +372,11 @@ pub async fn update_credential(
     }
     q.bind(id).execute(db.inner()).await.map_err(map_db_error)?;
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "credential_updated",
-        &format!("凭证 {} 已更新", cred_name),
+        "logs.sysLog.credential_updated",
+        serde_json::json!({ "name": cred_name }),
     )
     .await;
 
@@ -415,7 +417,7 @@ pub async fn delete_credential(
             .fetch_optional(db.inner())
             .await
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "凭证不存在".to_string())?;
+            .ok_or_else(|| crate::tr!("err.credential.not_found"))?;
 
     let active_cli_type = (old_cred.sort_order == 0).then(|| old_cred.cli_type.clone());
     let gateway_url = config.gateway_base_url();
@@ -423,10 +425,11 @@ pub async fn delete_credential(
         official_direct_written_credential_id(db.inner(), &gateway_url, &old_cred.cli_type).await?
             == Some(old_cred.id);
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "credential_deleted",
-        &format!("凭证 {} 已删除", old_cred.name),
+        "logs.sysLog.credential_deleted",
+        serde_json::json!({ "name": old_cred.name }),
     )
     .await;
 
@@ -543,7 +546,7 @@ pub async fn write_credential_config(
             .fetch_optional(db.inner())
             .await
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "凭证不存在".to_string())?;
+            .ok_or_else(|| crate::tr!("err.credential.not_found"))?;
 
     let gateway_url = config.gateway_base_url();
     let current_mode = detect_cli_mode_from_url(db.inner(), &gateway_url, &cred.cli_type).await;
@@ -579,10 +582,11 @@ pub async fn write_credential_config(
     )
     .await
     {
-        let _ = crate::services::stats::record_system_log(
+        let _ = crate::services::stats::record_system_log_event(
             &log_db.0,
             "official_credential_write_failed",
-            &format!("Agent {} 官方凭证写入失败: {}", cred.cli_type, error),
+            "logs.sysLog.official_credential_write_failed",
+            serde_json::json!({ "agent_id": cred.cli_type, "error": error }),
         )
         .await;
         return Err(error);
@@ -591,10 +595,11 @@ pub async fn write_credential_config(
     remember_last_official_credential_id(db.inner(), &cred.cli_type, cred.id, now_timestamp())
         .await?;
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "credential_written",
-        &format!("凭证 {} 已写入 CLI 配置", cred.name),
+        "logs.sysLog.credential_written",
+        serde_json::json!({ "name": cred.name }),
     )
     .await;
 
@@ -609,7 +614,7 @@ async fn dashboard_provider_direct_provider(db: &SqlitePool, cli_type: &str) -> 
     )
     .await
     .map_err(|e| e.to_string())?
-    .ok_or_else(|| "default Profile 下没有已启用的服务商，请先启用服务商".to_string())
+    .ok_or_else(|| crate::tr!("err.credential.no_enabled_provider"))
 }
 
 async fn first_official_credential(db: &SqlitePool, cli_type: &str) -> Result<OfficialCredential> {
@@ -620,7 +625,7 @@ async fn first_official_credential(db: &SqlitePool, cli_type: &str) -> Result<Of
     .fetch_optional(db)
     .await
     .map_err(|e| e.to_string())?
-    .ok_or_else(|| "没有可用官方凭证，请先添加凭证".to_string())
+    .ok_or_else(|| crate::tr!("err.credential.no_official_credential"))
 }
 
 async fn preferred_default_credential(
@@ -696,10 +701,11 @@ async fn write_dashboard_proxy_route(
     )
     .await?;
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "cli_mode_changed",
-        &format!("{} 已切换到中转路由", cli_type),
+        "logs.sysLog.cli_mode_changed_route",
+        serde_json::json!({ "cli_type": cli_type }),
     )
     .await;
 
@@ -735,10 +741,11 @@ async fn write_dashboard_provider_direct(
     let now = now_timestamp();
     remember_default_provider_direct_provider(db, &provider, now).await?;
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "cli_mode_changed",
-        &format!("{} 已切换到中转直连：{}", cli_type, provider.name),
+        "logs.sysLog.cli_mode_changed_direct",
+        serde_json::json!({ "cli_type": cli_type, "provider": provider.name }),
     )
     .await;
 
@@ -778,20 +785,22 @@ async fn write_dashboard_official_direct(
         sync_credential_to_cli_async(db, cli_type, &cred.credential_json, &default_config, None)
             .await
     {
-        let _ = crate::services::stats::record_system_log(
+        let _ = crate::services::stats::record_system_log_event(
             &log_db.0,
             "official_credential_write_failed",
-            &format!("Agent {} 官方凭证写入失败: {}", cli_type, error),
+            "logs.sysLog.official_credential_write_failed",
+            serde_json::json!({ "agent_id": cli_type, "error": error }),
         )
         .await;
         return Err(error);
     }
     remember_last_official_credential_id(db, cli_type, cred.id, now_timestamp()).await?;
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "cli_mode_changed",
-        &format!("{} 已切换到官方直连：{}", cli_type, cred.name),
+        "logs.sysLog.cli_mode_changed_official",
+        serde_json::json!({ "cli_type": cli_type, "credential": cred.name }),
     )
     .await;
 
@@ -845,10 +854,11 @@ async fn write_dashboard_disabled(
         _ => {}
     }
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "cli_mode_changed",
-        &format!("{} 已停用路由", cli_type),
+        "logs.sysLog.cli_mode_changed_disabled",
+        serde_json::json!({ "cli_type": cli_type }),
     )
     .await;
 
@@ -865,7 +875,7 @@ async fn apply_dashboard_cli_mode(
     let agent = crate::services::agent::get_agent(db, cli_type)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("未知 Agent: {}", cli_type))?;
+        .ok_or_else(|| crate::tr!("err.credential.agent_unknown", cli_type))?;
     validate_dashboard_mode_capability(&agent, mode)?;
 
     let gateway_url = config.gateway_base_url();
@@ -887,7 +897,7 @@ async fn apply_dashboard_cli_mode(
         CLI_MODE_DISABLED => {
             write_dashboard_disabled(db, config, log_db, cli_type, current_mode).await
         }
-        _ => Err("不支持的 CLI 模式".to_string()),
+        _ => Err(crate::tr!("err.credential.cli_mode_unsupported")),
     }
 }
 
@@ -899,24 +909,33 @@ fn validate_dashboard_mode_capability(
         CLI_MODE_PROXY_ROUTE => {
             let feature = &agent.features.provider_config;
             if !feature.enabled || feature.operations.is_empty() {
-                return Err(format!("Agent {} 不支持自动写入网关配置", agent.name));
+                return Err(crate::tr!(
+                    "err.credential.agent_gateway_unsupported",
+                    agent.name
+                ));
             }
         }
         CLI_MODE_PROVIDER_DIRECT => {
             let feature = &agent.features.provider_config;
             if !feature.enabled || feature.operations.is_empty() {
-                return Err(format!("Agent {} 不支持服务商直连模式", agent.name));
+                return Err(crate::tr!(
+                    "err.credential.agent_direct_unsupported",
+                    agent.name
+                ));
             }
         }
         CLI_MODE_OFFICIAL_DIRECT => {
             let feature = &agent.features.official_login;
             let supported = feature.enabled && !feature.operations.is_empty();
             if !supported {
-                return Err(format!("Agent {} 不支持托管官方凭证", agent.name));
+                return Err(crate::tr!(
+                    "err.credential.agent_official_unsupported",
+                    agent.name
+                ));
             }
         }
         CLI_MODE_DISABLED => {}
-        _ => return Err("不支持的 CLI 模式".to_string()),
+        _ => return Err(crate::tr!("err.credential.cli_mode_unsupported")),
     }
     Ok(())
 }
@@ -929,9 +948,8 @@ pub async fn set_dashboard_cli_mode(
     cli_type: String,
     mode: String,
 ) -> Result<()> {
-    let mode = normalize_cli_mode(&mode).ok_or_else(|| {
-        "cli_mode 只能是 proxy_route / provider_direct / official_direct / disabled".to_string()
-    })?;
+    let mode =
+        normalize_cli_mode(&mode).ok_or_else(|| crate::tr!("err.credential.cli_mode_invalid"))?;
 
     apply_dashboard_cli_mode(db.inner(), config.inner(), log_db.inner(), &cli_type, mode).await
 }
@@ -958,9 +976,8 @@ pub async fn set_cli_mode(
     cli_type: String,
     mode: String,
 ) -> Result<()> {
-    let mode = normalize_cli_mode(&mode).ok_or_else(|| {
-        "cli_mode 只能是 proxy_route / provider_direct / official_direct / disabled".to_string()
-    })?;
+    let mode =
+        normalize_cli_mode(&mode).ok_or_else(|| crate::tr!("err.credential.cli_mode_invalid"))?;
 
     apply_dashboard_cli_mode(db.inner(), config.inner(), log_db.inner(), &cli_type, mode).await
 }

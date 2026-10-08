@@ -13,7 +13,7 @@ pub(super) fn write_atomic_with_privacy(
 ) -> Result<(), String> {
     let parent = path
         .parent()
-        .ok_or_else(|| format!("配置路径 {} 没有父目录", path.display()))?;
+        .ok_or_else(|| crate::tr!("err.patch.parent_missing", path.display()))?;
     create_parent(parent, private)?;
     #[cfg(unix)]
     let mut options = AtomicWriteFile::options();
@@ -28,11 +28,11 @@ pub(super) fn write_atomic_with_privacy(
     }
     let mut file = options
         .open(path)
-        .map_err(|error| format!("创建临时配置文件失败: {}", error))?;
+        .map_err(|error| crate::tr!("err.patch.temp_create_failed", error))?;
     file.write_all(bytes)
-        .map_err(|error| format!("写入临时配置文件失败: {}", error))?;
+        .map_err(|error| crate::tr!("err.patch.temp_write_failed", error))?;
     file.commit()
-        .map_err(|error| format!("替换配置文件 {} 失败: {}", path.display(), error))
+        .map_err(|error| crate::tr!("err.patch.replace_failed", path.display(), error))
 }
 
 fn create_parent(parent: &Path, private: bool) -> Result<(), String> {
@@ -44,10 +44,10 @@ fn create_parent(parent: &Path, private: bool) -> Result<(), String> {
             .recursive(true)
             .mode(0o700)
             .create(parent)
-            .map_err(|error| format!("创建目录 {} 失败: {}", parent.display(), error));
+            .map_err(|error| crate::tr!("err.patch.dir_create_failed", parent.display(), error));
     }
     #[cfg(not(unix))]
     let _ = private;
     std::fs::create_dir_all(parent)
-        .map_err(|error| format!("创建目录 {} 失败: {}", parent.display(), error))
+        .map_err(|error| crate::tr!("err.patch.dir_create_failed", parent.display(), error))
 }

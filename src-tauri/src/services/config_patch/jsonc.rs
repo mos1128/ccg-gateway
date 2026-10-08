@@ -11,7 +11,7 @@ fn convert(value: &Value) -> Result<EdiktValue, String> {
             .as_i64()
             .map(EdiktValue::Int)
             .or_else(|| value.as_f64().map(EdiktValue::Float))
-            .ok_or_else(|| "JSON 数字超出支持范围".to_string()),
+            .ok_or_else(|| crate::tr!("err.patch.json_number_out_of_range")),
         Value::String(value) => Ok(EdiktValue::Str(value.clone())),
         Value::Array(values) => values
             .iter()

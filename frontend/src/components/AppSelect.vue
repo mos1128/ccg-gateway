@@ -4,7 +4,7 @@
     @update:model-value="onSelectChange"
     :disabled="disabled"
     :size="size"
-    :placeholder="placeholder"
+    :placeholder="placeholder || t('common.pleaseSelect')"
     :empty-values="[undefined, null]"
     :filterable="filterable || allowCreate"
     :allow-create="allowCreate"
@@ -32,6 +32,8 @@ export interface AppSelectOption {
 </script>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 withDefaults(defineProps<{
   modelValue?: string | number
   options: AppSelectOption[]
@@ -44,12 +46,13 @@ withDefaults(defineProps<{
 }>(), {
   modelValue: '',
   width: '160px',
-  placeholder: '请选择',
   disabled: false,
   size: 'default',
   filterable: false,
   allowCreate: false
 })
+
+const { t } = useI18n()
 
 const emit = defineEmits<{
   'update:modelValue': [value: string | number]

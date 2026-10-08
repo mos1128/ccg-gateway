@@ -9,7 +9,7 @@ pub fn adapt(name: &str, config: Value) -> Result<Value, String> {
     validate_name(name)?;
     let server = config
         .as_object()
-        .ok_or_else(|| "DeepSeek Harness MCP 配置必须是 JSON object".to_string())?;
+        .ok_or_else(|| crate::tr!("err.dsh_mcp.config_must_be_object"))?;
     let transport = transport(server)?;
     let mut adapted = Map::new();
     adapted.insert("serverName".to_string(), serde_json::json!(name));
@@ -20,21 +20,21 @@ pub fn adapt(name: &str, config: Value) -> Result<Value, String> {
             .get("command")
             .and_then(Value::as_str)
             .filter(|command| !command.trim().is_empty())
-            .ok_or_else(|| "stdio MCP 必须提供非空 command".to_string())?;
+            .ok_or_else(|| crate::tr!("err.dsh_mcp.stdio_command_required"))?;
         adapted.insert("command".to_string(), serde_json::json!(command));
         if let Some(args) = server.get("args") {
             if !args
                 .as_array()
                 .is_some_and(|args| args.iter().all(Value::is_string))
             {
-                return Err("MCP args 必须是字符串数组".to_string());
+                return Err(crate::tr!("err.dsh_mcp.args_must_be_string_array"));
             }
             adapted.insert("args".to_string(), args.clone());
         }
         copy_string_map(server, &mut adapted, "env")?;
         if let Some(cwd) = server.get("cwd") {
             if !cwd.is_string() {
-                return Err("MCP cwd 必须是字符串".to_string());
+                return Err(crate::tr!("err.dsh_mcp.cwd_must_be_string"));
             }
             adapted.insert("cwd".to_string(), cwd.clone());
         }
@@ -43,7 +43,7 @@ pub fn adapt(name: &str, config: Value) -> Result<Value, String> {
             .get("url")
             .and_then(Value::as_str)
             .filter(|url| !url.trim().is_empty())
-            .ok_or_else(|| "streamable-http MCP 必须提供非空 url".to_string())?;
+            .ok_or_else(|| crate::tr!("err.dsh_mcp.streamable_http_url_required"))?;
         adapted.insert("url".to_string(), serde_json::json!(url));
         copy_string_map(server, &mut adapted, "headers")?;
     }
@@ -63,12 +63,18 @@ pub async fn sync(path: &Path, name: &str, adapted_config: Option<&str>) -> Resu
     let content = match tokio::fs::read_to_string(path).await {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(format!("读取 {} 失败: {}", path.display(), error)),
+        Err(error) => {
+            return Err(crate::tr!(
+                "err.dsh_mcp.patch_read_failed",
+                path.display(),
+                error
+            ))
+        }
     };
     let config = adapted_config
         .map(|config| {
             serde_json::from_str(config)
-                .map_err(|error| format!("DeepSeek Harness MCP JSON 格式错误: {}", error))
+                .map_err(|error| crate::tr!("err.dsh_mcp.json_invalid", error))
         })
         .transpose()?;
     let next = patch_content(&content, name, config)?;
@@ -86,21 +92,18 @@ fn validate_name(name: &str) -> Result<(), String> {
     {
         return Ok(());
     }
-    Err("DeepSeek Harness MCP 名称必须匹配 [A-Za-z0-9_-]{1,32}".to_string())
+    Err(crate::tr!("err.dsh_mcp.name_invalid"))
 }
 
 fn normalize_transport(value: &Value) -> Result<&'static str, String> {
     match value
         .as_str()
-        .ok_or_else(|| "MCP transport/type 必须是字符串".to_string())?
+        .ok_or_else(|| crate::tr!("err.dsh_mcp.transport_must_be_string"))?
     {
         "stdio" => Ok("stdio"),
         "http" | "streamable-http" => Ok("streamable-http"),
-        "sse" => Err("DeepSeek Harness 不支持旧式 SSE MCP，请使用 streamable-http".to_string()),
-        value => Err(format!(
-            "DeepSeek Harness MCP 不支持 transport/type: {}",
-            value
-        )),
+        "sse" => Err(crate::tr!("err.dsh_mcp.legacy_sse_unsupported")),
+        value => Err(crate::tr!("err.dsh_mcp.transport_unsupported", value)),
     }
 }
 
@@ -111,12 +114,14 @@ fn transport(server: &Map<String, Value>) -> Result<&'static str, String> {
         .transpose()?;
     let server_type = server.get("type").map(normalize_transport).transpose()?;
     match (transport, server_type) {
-        (Some(left), Some(right)) if left != right => Err("MCP transport 与 type 冲突".to_string()),
+        (Some(left), Some(right)) if left != right => {
+            Err(crate::tr!("err.dsh_mcp.transport_conflict"))
+        }
         (Some(value), _) | (_, Some(value)) => Ok(value),
         (None, None) => match (server.contains_key("command"), server.contains_key("url")) {
             (true, false) => Ok("stdio"),
             (false, true) => Ok("streamable-http"),
-            _ => Err("MCP 配置必须通过 command 或 url 明确传输类型".to_string()),
+            _ => Err(crate::tr!("err.dsh_mcp.transport_ambiguous")),
         },
     }
 }
@@ -133,7 +138,7 @@ fn copy_string_map(
         .as_object()
         .is_some_and(|map| map.values().all(Value::is_string))
     {
-        return Err(format!("MCP {} 必须是字符串值 JSON object", key));
+        return Err(crate::tr!("err.dsh_mcp.string_map_required", key));
     }
     target.insert(key.to_string(), value.clone());
     Ok(())
@@ -145,19 +150,19 @@ fn copy_common_fields(
 ) -> Result<(), String> {
     if let Some(value) = source.get("toolCallTimeoutMs") {
         if !value.is_number() {
-            return Err("MCP toolCallTimeoutMs 必须是数字".to_string());
+            return Err(crate::tr!("err.dsh_mcp.tool_call_timeout_must_be_number"));
         }
         target.insert("toolCallTimeoutMs".to_string(), value.clone());
     }
     if let Some(value) = source.get("failOnStartupError") {
         if !value.is_boolean() {
-            return Err("MCP failOnStartupError 必须是布尔值".to_string());
+            return Err(crate::tr!("err.dsh_mcp.fail_on_startup_error_must_be_bool"));
         }
         target.insert("failOnStartupError".to_string(), value.clone());
     }
     if let Some(value) = source.get("reconnect") {
         if !value.is_object() {
-            return Err("MCP reconnect 必须是 JSON object".to_string());
+            return Err(crate::tr!("err.dsh_mcp.reconnect_must_be_object"));
         }
         target.insert("reconnect".to_string(), value.clone());
     }
@@ -184,7 +189,7 @@ fn managed_block(content: &str) -> Result<Option<(Range<usize>, &str)>, String> 
                     )
             };
             if !marker_on_own_line(*start, BLOCK_START) || !marker_on_own_line(*end, BLOCK_END) {
-                return Err("DeepSeek Harness MCP 管理标记必须独占一行".to_string());
+                return Err(crate::tr!("err.dsh_mcp.marker_must_be_own_line"));
             }
             let body_start = start + BLOCK_START.len();
             Ok(Some((
@@ -192,19 +197,19 @@ fn managed_block(content: &str) -> Result<Option<(Range<usize>, &str)>, String> 
                 &content[body_start..*end],
             )))
         }
-        _ => Err("DeepSeek Harness MCP 管理标记缺失、重复或顺序错误".to_string()),
+        _ => Err(crate::tr!("err.dsh_mcp.marker_invalid")),
     }
 }
 
 fn entry_name(entry: &Value) -> Result<&str, String> {
     if entry.get("name").and_then(Value::as_str) != Some(MCP_PLUGIN) {
-        return Err("DeepSeek Harness MCP 管理块包含未知插件".to_string());
+        return Err(crate::tr!("err.dsh_mcp.block_unknown_plugin"));
     }
     entry
         .get("config")
         .and_then(|config| config.get("serverName"))
         .and_then(Value::as_str)
-        .ok_or_else(|| "DeepSeek Harness MCP 管理项缺少 serverName".to_string())
+        .ok_or_else(|| crate::tr!("err.dsh_mcp.entry_missing_server_name"))
 }
 
 fn entries(content: &str) -> Result<Vec<Value>, String> {
@@ -212,16 +217,16 @@ fn entries(content: &str) -> Result<Vec<Value>, String> {
         return Ok(Vec::new());
     };
     let patches = serde_yaml::from_str::<Value>(body)
-        .map_err(|error| format!("DeepSeek Harness MCP 管理块解析失败: {}", error))?;
+        .map_err(|error| crate::tr!("err.dsh_mcp.block_parse_failed", error))?;
     let patches = patches
         .as_array()
-        .ok_or_else(|| "DeepSeek Harness MCP 管理块必须是 YAML 数组".to_string())?;
+        .ok_or_else(|| crate::tr!("err.dsh_mcp.block_must_be_yaml_array"))?;
     let mut entries = Vec::new();
     for patch in patches {
         let insert = patch
             .get("insert")
             .and_then(Value::as_array)
-            .ok_or_else(|| "DeepSeek Harness MCP 管理块只能包含 insert".to_string())?;
+            .ok_or_else(|| crate::tr!("err.dsh_mcp.block_insert_only"))?;
         for entry in insert {
             let name = entry_name(entry)?;
             validate_name(name)?;
@@ -229,7 +234,7 @@ fn entries(content: &str) -> Result<Vec<Value>, String> {
                 .iter()
                 .any(|current| entry_name(current).ok() == Some(name))
             {
-                return Err(format!("DeepSeek Harness MCP 管理块包含重复项: {}", name));
+                return Err(crate::tr!("err.dsh_mcp.block_duplicate_entry", name));
             }
             entries.push(entry.clone());
         }
@@ -252,10 +257,10 @@ fn patch_state(content: &str) -> Result<PatchState, String> {
         return Ok(PatchState::Blank);
     }
     let root = serde_yaml::from_str::<serde_yaml::Value>(content)
-        .map_err(|error| format!("DeepSeek Harness cordis.patch.yml 解析失败: {}", error))?;
+        .map_err(|error| crate::tr!("err.dsh_mcp.patch_parse_failed", error))?;
     let sequence = root
         .as_sequence()
-        .ok_or_else(|| "DeepSeek Harness cordis.patch.yml 顶层必须是 YAML 数组".to_string())?;
+        .ok_or_else(|| crate::tr!("err.dsh_mcp.patch_must_be_yaml_array"))?;
     Ok(if sequence.is_empty() {
         PatchState::Empty
     } else {
@@ -273,10 +278,10 @@ fn replace_empty_sequence(content: &str, replacement: &str) -> Result<String, St
         (starts_line && ends_line).then_some(index)
     });
     let Some(index) = matches.next() else {
-        return Err("DeepSeek Harness 空 MCP patch 必须使用独占一行的 []".to_string());
+        return Err(crate::tr!("err.dsh_mcp.empty_patch_single_brackets"));
     };
     if matches.next().is_some() {
-        return Err("DeepSeek Harness 空 MCP patch 包含多个 []".to_string());
+        return Err(crate::tr!("err.dsh_mcp.empty_patch_multiple_brackets"));
     }
     Ok(format!(
         "{}{}{}",
@@ -289,7 +294,7 @@ fn replace_empty_sequence(content: &str, replacement: &str) -> Result<String, St
 fn render_block(entries: Vec<Value>, newline: &str) -> Result<String, String> {
     let patch = serde_json::json!([{ "insert": entries }]);
     let yaml = serde_yaml::to_string(&patch)
-        .map_err(|error| format!("DeepSeek Harness MCP 配置序列化失败: {}", error))?;
+        .map_err(|error| crate::tr!("err.dsh_mcp.serialize_failed", error))?;
     Ok(format!(
         "{}{}{}{}{}",
         BLOCK_START,

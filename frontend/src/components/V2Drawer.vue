@@ -11,15 +11,15 @@
         <div class="v2dr" :style="{ width: props.width }" role="dialog">
           <div class="v2dr-head">
             <div class="v2dr-title">{{ title }}</div>
-            <button class="v2dr-close" type="button" aria-label="关闭" :disabled="!closable" @click="close">
+            <button class="v2dr-close" type="button" :aria-label="t('common.close')" :disabled="!closable" @click="close">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
             </button>
           </div>
           <div class="v2dr-body"><slot /></div>
           <div v-if="showFooter" class="v2dr-foot">
             <slot name="footer">
-              <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="close">{{ cancelText }}</button>
-              <button class="v2-btn v2-btn-sm v2-btn-primary" :disabled="confirmDisabled" @click="emit('confirm')">{{ confirmText }}</button>
+              <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="close">{{ cancelText || t('common.cancel') }}</button>
+              <button class="v2-btn v2-btn-sm v2-btn-primary" :disabled="confirmDisabled" @click="emit('confirm')">{{ confirmText || t('common.save') }}</button>
             </slot>
           </div>
         </div>
@@ -29,6 +29,8 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 const props = withDefaults(defineProps<{
   modelValue: boolean
   title: string
@@ -42,12 +44,12 @@ const props = withDefaults(defineProps<{
 }>(), {
   width: '50%',
   showFooter: true,
-  cancelText: '取消',
-  confirmText: '保存',
   confirmDisabled: false,
   closeOnMask: true,
   closable: true
 })
+
+const { t } = useI18n()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]

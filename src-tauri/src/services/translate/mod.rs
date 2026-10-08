@@ -344,7 +344,7 @@ impl StreamTranslator {
         }
         if self.buffer.len() > MAX_BUFFER_BYTES {
             self.buffer.clear();
-            out.push_str(&self.error("上游流超过缓冲上限且没有可解析的帧边界"));
+            out.push_str(&self.error(&crate::tr!("translate.stream_buffer_overflow")));
         }
         out
     }
@@ -383,7 +383,7 @@ impl StreamTranslator {
                 // 一个内容块都没有：错误体或空壳。摊出去就是一次「空内容 + 正常结束」，
                 // 客户端和网关双双当成功。宁可让客户端看到错误，也不能把失败记成成功。
                 if response.blocks.is_empty() {
-                    out.push_str(&self.error("上游在流式请求下返回了没有内容的响应体"));
+                    out.push_str(&self.error(&crate::tr!("translate.empty_stream_body")));
                     return out;
                 }
                 let events = ir::response_to_events(&response);

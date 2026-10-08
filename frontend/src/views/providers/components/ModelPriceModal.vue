@@ -1,39 +1,39 @@
 <template>
-  <V2Drawer v-model="visible" title="模型价格" width="72%" :show-footer="false">
+  <V2Drawer v-model="visible" :title="t('providers.price.title')" width="72%" :show-footer="false">
     <div class="mp-toolbar">
       <div class="mp-status">
         <span :class="{ error: !!syncState?.last_error }">{{ statusText }}</span>
         <span v-if="syncState?.last_success_at" class="mp-status-time">{{ new Date(syncState.last_success_at * 1000).toLocaleString() }}</span>
       </div>
       <div class="mp-actions">
-        <input v-model="keyword" class="v2-input mp-search" placeholder="搜索模型名称">
+        <input v-model="keyword" class="v2-input mp-search" :placeholder="t('providers.price.searchPlaceholder')">
         <button class="v2-btn v2-btn-sm v2-btn-outline" :disabled="syncLoading" @click="emit('sync')">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-          {{ syncLoading ? '同步中' : '重新同步' }}
+          {{ syncLoading ? t('providers.price.syncing') : t('providers.price.sync') }}
         </button>
       </div>
     </div>
 
-    <div class="mp-hint">价格来自 models.dev，只收录官方厂商价目（不含第三方转售渠道），单位为每百万 Token 的美元价格；实际计费价格 = 此处价格 × 服务商倍率。带阈值的行是长上下文分层价，单次请求的上下文超过阈值后整组价格换成该档。</div>
+    <div class="mp-hint">{{ t('providers.price.hint') }}</div>
 
     <div v-loading="loading" class="mp-table-card">
       <div class="mp-table-scroll">
         <table class="v2-table">
           <thead>
             <tr>
-              <th class="mp-col-name">模型</th>
-              <th class="mp-col-src">来源</th>
-              <th class="mp-col-tier">阈值</th>
-              <th class="mp-col-price">输入</th>
-              <th class="mp-col-price">输出</th>
-              <th class="mp-col-price">缓存读取</th>
-              <th class="mp-col-price">缓存创建</th>
+              <th class="mp-col-name">{{ t('providers.price.colModel') }}</th>
+              <th class="mp-col-src">{{ t('providers.price.colSource') }}</th>
+              <th class="mp-col-tier">{{ t('providers.price.colThreshold') }}</th>
+              <th class="mp-col-price">{{ t('providers.price.colInput') }}</th>
+              <th class="mp-col-price">{{ t('providers.price.colOutput') }}</th>
+              <th class="mp-col-price">{{ t('providers.price.colCacheRead') }}</th>
+              <th class="mp-col-price">{{ t('providers.price.colCacheCreation') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in rows" :key="row.entry.model_key">
-              <td class="mp-col-name mono" :title="row.entry.model_key">{{ row.entry.model_key }}</td>
-              <td :title="row.entry.source_provider || ''">{{ row.entry.source_provider || '—' }}</td>
+              <td class="mp-col-name mono"><OverflowText :text="row.entry.model_key" /></td>
+              <td><OverflowText :text="row.entry.source_provider || '—'" /></td>
               <td class="mp-col-tier">
                 <div v-for="line in row.lines" :key="line.label" class="mp-line" :class="{ 'mp-line-tier': line.tier }">{{ line.label }}</div>
               </td>
@@ -53,7 +53,7 @@
           </tbody>
         </table>
         <div v-if="!loading && !entries.length" class="mp-empty">
-          {{ keyword.trim() ? '没有匹配的模型' : '价目表为空，点击「重新同步」拉取' }}
+          {{ keyword.trim() ? t('providers.price.noMatch') : t('providers.price.emptyCatalog') }}
         </div>
       </div>
     </div>
@@ -61,12 +61,15 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import V2Drawer from '@/components/V2Drawer.vue'
+import OverflowText from '@/components/OverflowText.vue'
 import { providersApi } from '@/api/providers'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import type { ModelPriceCatalogEntry, ModelPriceTier, PriceSyncState } from '@/types/models'
 
+const { t } = useI18n()
 const CATALOG_LIMIT = 4000
 
 interface PriceLine {
@@ -101,17 +104,19 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null
 let requestVersion = 0
 
 const statusText = computed(() => {
-  if (props.syncState?.last_error) return `上次同步失败：${props.syncState.last_error}`
+  if (props.syncState?.last_error) return t('providers.price.lastSyncFailed', { error: props.syncState.last_error })
   const total = props.syncState?.model_count ?? 0
   const shown = entries.value.length
-  if (!total) return '价目表为空，成本一律按 0 计'
-  return shown === total ? `共 ${total} 个模型` : `共 ${total} 个模型 · 当前显示 ${shown} 个`
+  if (!total) return t('providers.price.emptyStatus')
+  return shown === total
+    ? t('providers.price.total', { total })
+    : t('providers.price.totalShown', { total, shown })
 })
 
 const rows = computed(() => entries.value.map((entry) => {
   const tiers = parseTiers(entry.tiers)
   const lines: PriceLine[] = [{
-    label: tiers.length ? '基准' : '—',
+    label: tiers.length ? t('providers.price.baseline') : '—',
     tier: false,
     input: entry.input_price_per_m,
     output: entry.output_price_per_m,
@@ -158,7 +163,7 @@ async function loadCatalog() {
     if (version !== requestVersion) return
     entries.value = data
   } catch (e: any) {
-    if (version === requestVersion) notify(getErrorMessage(e, '读取价目表失败'), 'error')
+    if (version === requestVersion) notify(getErrorMessage(e, t('providers.price.loadFailed')), 'error')
   } finally {
     if (version === requestVersion) loading.value = false
   }
@@ -198,8 +203,8 @@ onUnmounted(() => {
 .mp-table-scroll .v2-table td { padding: 12px 14px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mp-table-scroll .v2-table .mp-col-name { text-align: left; }
 .mp-table-scroll .v2-table .mp-col-src { width: 136px; }
-.mp-table-scroll .v2-table .mp-col-tier { width: 78px; }
-.mp-table-scroll .v2-table .mp-col-price { width: 82px; }
+.mp-table-scroll .v2-table .mp-col-tier { width: 92px; }
+.mp-table-scroll .v2-table .mp-col-price { width: 100px; }
 .mp-line + .mp-line { margin-top: 4px; }
 .mp-line-tier { color: var(--v2-text-3); font-size: var(--v2-fs-xs); }
 .mp-empty { padding: 28px 0; text-align: center; font-size: var(--v2-fs-sm); color: var(--v2-text-3); }

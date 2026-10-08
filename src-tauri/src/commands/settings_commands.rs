@@ -35,7 +35,7 @@ pub async fn update_gateway_settings(
         .transpose()?;
     let normalized_port = match gateway_port {
         Some(port) if (1..=u16::MAX as i64).contains(&port) => Some(port),
-        Some(_) => return Err("监听端口必须是 1 到 65535 之间的整数".to_string()),
+        Some(_) => return Err(crate::tr!("err.settings.port_invalid")),
         None => None,
     };
     let next_host = normalized_host
@@ -165,10 +165,11 @@ pub async fn update_gateway_settings(
         }
 
         if !migration_failures.is_empty() {
-            let _ = crate::services::stats::record_system_log(
+            let _ = crate::services::stats::record_system_log_event(
                 &log_db.0,
                 "gateway_endpoint_migration_failed",
-                &migration_failures.join("; "),
+                "logs.sysLog.gateway_endpoint_migration_failed",
+                serde_json::json!({ "failures": migration_failures.join("; ") }),
             )
             .await;
         }
@@ -183,12 +184,12 @@ pub async fn validate_gateway_bind(host: String, port: i64) -> Result<()> {
     let port = u16::try_from(port)
         .ok()
         .filter(|port| *port > 0)
-        .ok_or_else(|| "监听端口必须是 1 到 65535 之间的整数".to_string())?;
+        .ok_or_else(|| crate::tr!("err.settings.port_invalid"))?;
     let addr = crate::config::bind_addr_for(&host, port);
 
     tokio::net::TcpListener::bind(addr.as_str())
         .await
-        .map_err(|error| format!("无法监听 {}：{}", addr, error))?;
+        .map_err(|error| crate::tr!("err.settings.bind_failed", addr, error))?;
     Ok(())
 }
 
@@ -352,7 +353,7 @@ async fn provider_direct_rewrite_providers(
     )
     .await
     .map_err(|e| e.to_string())?
-    .ok_or_else(|| "default Profile 下没有已启用的服务商，请先启用服务商".to_string())?;
+    .ok_or_else(|| crate::tr!("err.settings.no_provider_in_default_profile"))?;
 
     Ok(vec![provider])
 }
@@ -403,10 +404,11 @@ async fn rewrite_cli_config_for_current_mode(
             )
             .await
             {
-                let _ = crate::services::stats::record_system_log(
+                let _ = crate::services::stats::record_system_log_event(
                     log_db,
                     "official_credential_write_failed",
-                    &format!("Agent {} 官方凭证写入失败: {}", cli_type, error),
+                    "logs.sysLog.official_credential_write_failed",
+                    serde_json::json!({ "agent_id": cli_type, "error": error }),
                 )
                 .await;
                 return Err(error);
@@ -431,7 +433,7 @@ pub async fn update_cli_settings(
     if !global_preset_enabled
         && (input.default_json_config.is_some() || input.config_write_mode.is_some())
     {
-        return Err(format!("Agent {} 的全局预设功能不可用", cli_type));
+        return Err(crate::tr!("err.settings.preset_disabled", cli_type));
     }
     let now = now_timestamp();
     let gateway_url = config.gateway_base_url();
@@ -445,7 +447,7 @@ pub async fn update_cli_settings(
         .map(|config_dir| config_dir.trim().to_string());
 
     if normalized_config_dir.as_deref() == Some("") {
-        return Err("Agent 配置目录不能为空".to_string());
+        return Err(crate::tr!("err.settings.config_dir_required"));
     }
 
     if let Some(ref config_trimmed) = config_trimmed {
@@ -456,7 +458,7 @@ pub async fn update_cli_settings(
 
     if let Some(ref write_mode) = input.config_write_mode {
         if write_mode != "overwrite" && write_mode != "merge" {
-            return Err("config_write_mode 只能是 'overwrite' 或 'merge'".to_string());
+            return Err(crate::tr!("err.settings.write_mode_invalid"));
         }
     }
 
@@ -608,4 +610,48 @@ pub async fn update_cli_settings(
     }
 
     Ok(())
+}
+
+/// 界面语言状态：language 为设置值（auto / zh-CN / en），locale 为解析后的实际语言
+#[derive(Debug, Serialize)]
+pub struct UiLocale {
+    pub language: String,
+    pub locale: String,
+}
+
+#[tauri::command]
+pub async fn get_ui_locale(db: State<'_, SqlitePool>) -> Result<UiLocale> {
+    let language = crate::i18n::language_setting(db.inner()).await;
+    let locale = crate::i18n::resolve_lang(&language).code().to_string();
+    Ok(UiLocale { language, locale })
+}
+
+#[tauri::command]
+pub async fn set_ui_language(
+    app: tauri::AppHandle,
+    db: State<'_, SqlitePool>,
+    language: String,
+) -> Result<UiLocale> {
+    let language = match language.trim() {
+        "auto" => "auto",
+        "zh-CN" => "zh-CN",
+        "en" => "en",
+        _ => return Err(crate::tr!("err.settings.unsupported_language", language)),
+    };
+
+    sqlx::query("UPDATE gateway_settings SET language = ?, updated_at = ? WHERE id = 1")
+        .bind(language)
+        .bind(now_timestamp())
+        .execute(db.inner())
+        .await
+        .map_err(map_db_error)?;
+
+    let lang = crate::i18n::resolve_lang(language);
+    crate::i18n::set_current_lang(lang);
+    crate::rebuild_tray_menu(&app);
+
+    Ok(UiLocale {
+        language: language.to_string(),
+        locale: lang.code().to_string(),
+    })
 }

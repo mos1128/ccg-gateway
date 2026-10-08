@@ -9,7 +9,7 @@ where
 {
     tokio::task::spawn_blocking(task)
         .await
-        .map_err(|e| format!("Skill file task failed: {}", e))?
+        .map_err(|e| crate::tr!("err.skill.file_task_failed", e))?
 }
 
 async fn load_skill_repos_async() -> Result<Vec<SkillRepo>> {
@@ -204,13 +204,13 @@ async fn sync_skill_to_cli_async(db: &SqlitePool, directory: &str, cli_type: &st
     let source = ssot_dir.join(directory);
     let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
         Some(d) => d,
-        None => return Err(format!("Agent {} 的 Skill 功能未启用", cli_type)),
+        None => return Err(crate::tr!("err.skill.agent_unsupported", cli_type)),
     };
 
     let dest = cli_dir.join(directory);
     run_skill_blocking(move || {
         if !source.exists() {
-            return Err(format!("Skill directory not found: {}", source.display()));
+            return Err(crate::tr!("err.skill.directory_not_found", source.display()));
         }
         copy_dir_recursive(&source, &dest)
     })
@@ -292,7 +292,7 @@ async fn uninstall_skill_directory_async(
 
     if !manifest_exists && !skill_exists {
         if error_if_missing {
-            return Err("Skill not found".to_string());
+            return Err(crate::tr!("err.skill.not_found"));
         }
         return Ok(());
     }
@@ -536,11 +536,11 @@ async fn git_clone_repo(source: &str) -> Result<std::path::PathBuf> {
         ])
         .output()
         .await
-        .map_err(|e| format!("git clone 执行失败: {}", e))?;
+        .map_err(|e| crate::tr!("err.skill.git_spawn_failed", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git clone 失败: {}", stderr));
+        return Err(crate::tr!("err.skill.git_clone_failed", stderr));
     }
 
     tracing::info!("git clone 成功: {} -> {}", git_url, cache_dir.display());
@@ -620,7 +620,7 @@ pub async fn discover_repo_skills(
 ) -> Result<Vec<DiscoverableSkill>> {
     let repo = get_skill_repo_async(&name)
         .await?
-        .ok_or_else(|| format!("未找到仓库 '{}'", name))?;
+        .ok_or_else(|| crate::tr!("err.skill.repo_not_found", name))?;
 
     let favorite_keys = get_skill_favorite_keys(db.inner()).await?;
 
@@ -641,7 +641,7 @@ pub async fn reinstall_skill_repo(
 ) -> Result<Vec<DiscoverableSkill>> {
     let repo = get_skill_repo_async(&name)
         .await?
-        .ok_or_else(|| format!("未找到仓库 '{}'", name))?;
+        .ok_or_else(|| crate::tr!("err.skill.repo_not_found", name))?;
 
     let favorite_keys = get_skill_favorite_keys(db.inner()).await?;
 
@@ -762,7 +762,7 @@ async fn scan_local_repo_skills(
         .map(|metadata| metadata.is_dir())
         .unwrap_or(false)
     {
-        return Err(format!("本地目录 {} 不存在", repo.source));
+        return Err(crate::tr!("err.skill.local_dir_missing", repo.source));
     }
 
     scan_cached_repo_skills_async(root_path.to_path_buf(), repo.clone(), favorite_keys.clone())
@@ -791,13 +791,10 @@ async fn install_skill_inner(
         installed_entry_matches_skill(entry, &skill_item.repo, &skill_item.directory)
     });
     if (existing.is_some() || skill_exists) && !existing_matches {
-        return Err(format!(
-            "Skill 安装目录 '{}' 已被其他来源占用，请先卸载现有 Skill",
-            directory_name
-        ));
+        return Err(crate::tr!("err.skill.install_dir_taken", directory_name));
     }
     if (existing.is_some() || skill_exists) && !reinstall {
-        return Err(format!("Skill '{}' is already installed", directory_name));
+        return Err(crate::tr!("err.skill.already_installed", directory_name));
     }
 
     // 如果是重装，先删除旧的 SSOT 目录
@@ -831,7 +828,7 @@ async fn install_skill_inner(
     let dest_path = ssot_dir.join(&directory_name);
     run_skill_blocking(move || {
         if !skill_source_path.exists() {
-            return Err(format!("技能目录不存在: {}", skill_source_path.display()));
+            return Err(crate::tr!("err.skill.source_dir_missing", skill_source_path.display()));
         }
         copy_dir_recursive(&skill_source_path, &dest_path)
     })
@@ -895,12 +892,12 @@ async fn reinstall_skill_impl(
     let entry = manifest_entries
         .iter()
         .find(|e| e.directory == directory)
-        .ok_or_else(|| format!("Skill '{}' not found in manifest", directory))?;
+        .ok_or_else(|| crate::tr!("err.skill.not_in_manifest", directory))?;
 
     let repo = entry
         .repo
         .as_ref()
-        .ok_or_else(|| "Skill missing repo info, cannot reinstall".to_string())?;
+        .ok_or_else(|| crate::tr!("err.skill.reinstall_repo_info_missing"))?;
 
     let source_dir = entry
         .source_directory
@@ -938,7 +935,7 @@ async fn reinstall_skill_impl(
 
     run_skill_blocking(move || {
         if !skill_source_path.exists() {
-            return Err(format!("技能目录不存在: {}", skill_source_path.display()));
+            return Err(crate::tr!("err.skill.source_dir_missing", skill_source_path.display()));
         }
 
         if let Err(e) = copy_dir_recursive(&skill_source_path, &temp_path) {
@@ -950,7 +947,7 @@ async fn reinstall_skill_impl(
         if had_existing {
             if let Err(e) = std::fs::rename(&skill_path, &backup_path) {
                 let _ = std::fs::remove_dir_all(&temp_path);
-                return Err(format!("Skill 备份失败: {}", e));
+                return Err(crate::tr!("err.skill.backup_failed", e));
             }
         }
 
@@ -958,13 +955,10 @@ async fn reinstall_skill_impl(
             let _ = std::fs::remove_dir_all(&temp_path);
             if had_existing {
                 if let Err(restore_err) = std::fs::rename(&backup_path, &skill_path) {
-                    return Err(format!(
-                        "Skill 替换失败: {}; 旧版本恢复失败: {}",
-                        e, restore_err
-                    ));
+                    return Err(crate::tr!("err.skill.replace_restore_failed", e, restore_err));
                 }
             }
-            return Err(format!("Skill 替换失败: {}", e));
+            return Err(crate::tr!("err.skill.replace_failed", e));
         }
 
         if had_existing {
@@ -1123,7 +1117,7 @@ pub async fn toggle_installed_skill_favorite(
     let entry = manifest_entries
         .iter()
         .find(|e| e.directory == directory)
-        .ok_or_else(|| format!("Skill '{}' not found in manifest", directory))?;
+        .ok_or_else(|| crate::tr!("err.skill.not_in_manifest", directory))?;
 
     let (repo, source_dir) = match (&entry.repo, &entry.source_directory) {
         (Some(r), Some(s)) => (r, s),
@@ -1133,10 +1127,10 @@ pub async fn toggle_installed_skill_favorite(
                 static DOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
                 (r, DOT.get_or_init(|| ".".to_string()))
             } else {
-                return Err("Skill missing source_directory info".to_string());
+                return Err(crate::tr!("err.skill.source_directory_missing"));
             }
         }
-        _ => return Err("Skill missing repo info".to_string()),
+        _ => return Err(crate::tr!("err.skill.repo_info_missing")),
     };
 
     let key = format!("{}:{}", repo.name, source_dir);
@@ -1199,7 +1193,7 @@ pub async fn install_favorite_skill(
             .fetch_optional(db.inner())
             .await
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Skill favorite not found".to_string())?;
+            .ok_or_else(|| crate::tr!("err.skill.favorite_not_found"))?;
 
     let repo = SkillRepo {
         name: favorite.repo_name.clone(),
@@ -1217,7 +1211,7 @@ pub async fn install_favorite_skill(
                 .map(|metadata| metadata.is_dir())
                 .unwrap_or(false)
             {
-                return Err(format!("本地目录 {} 不存在", repo.source));
+                return Err(crate::tr!("err.skill.local_dir_missing", repo.source));
             }
             upsert_skill_repo_async(repo.clone()).await?;
         } else {
@@ -1250,7 +1244,7 @@ pub async fn install_favorite_skill(
         let skill = skills
             .iter()
             .find(|s| s.name == favorite.name)
-            .ok_or_else(|| format!("未在仓库中找到技能: {}", favorite.name))?;
+            .ok_or_else(|| crate::tr!("err.skill.not_in_repo", favorite.name))?;
 
         // 更新数据库中的 directory 和 key
         sqlx::query("UPDATE skill_favorites SET directory = ?, skill_key = ? WHERE skill_key = ?")
@@ -1296,7 +1290,7 @@ pub async fn reinstall_favorite_skill(
             .fetch_optional(db.inner())
             .await
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Skill favorite not found".to_string())?;
+            .ok_or_else(|| crate::tr!("err.skill.favorite_not_found"))?;
 
     // 计算安装目录
     let directory =
@@ -1315,10 +1309,7 @@ pub async fn reinstall_favorite_skill(
                 && installed_entry_matches_skill(entry, &repo, &favorite.directory)
         });
     if !is_installed {
-        return Err(format!(
-            "Skill '{}' is not installed, cannot reinstall",
-            directory
-        ));
+        return Err(crate::tr!("err.skill.not_installed_reinstall", directory));
     }
 
     reinstall_skill_impl(db.inner(), directory).await

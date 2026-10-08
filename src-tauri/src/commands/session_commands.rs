@@ -9,7 +9,7 @@ where
 {
     tokio::task::spawn_blocking(task)
         .await
-        .map_err(|e| format!("Session file task failed: {}", e))?
+        .map_err(|e| crate::tr!("err.session.file_task_failed", e))?
 }
 
 /// Parse Claude Code session file to extract info (first_message, git_branch, summary)
@@ -867,10 +867,10 @@ async fn get_codex_messages_async(
         }
 
         let session_file =
-            session_file_path.ok_or_else(|| format!("Session file not found: {}", session_id))?;
+            session_file_path.ok_or_else(|| crate::tr!("err.session.file_not_found", session_id))?;
 
         let file = std::fs::File::open(&session_file)
-            .map_err(|e| format!("Failed to open session file: {}", e))?;
+            .map_err(|e| crate::tr!("err.session.file_open_failed", e))?;
         let reader = BufReader::new(file);
 
         let mut messages = Vec::new();
@@ -964,7 +964,7 @@ async fn get_codex_messages_async(
                                 if !text_parts.is_empty() {
                                     messages.push(SessionMessage {
                                         role: "assistant".to_string(),
-                                        content: format!("**[推理]**\n{}", text_parts.join("\n")),
+                                        content: crate::tr!("session.reasoning", text_parts.join("\n")),
                                         timestamp,
                                     });
                                 }
@@ -988,10 +988,7 @@ async fn get_codex_messages_async(
                                 };
                             messages.push(SessionMessage {
                                 role: "assistant".to_string(),
-                                content: format!(
-                                    "**[调用工具: {}]**\n```json\n{}\n```",
-                                    name, args_str
-                                ),
+                                content: crate::tr!("session.tool_call", name, args_str),
                                 timestamp,
                             });
                         }
@@ -1002,7 +999,7 @@ async fn get_codex_messages_async(
                             if !output.is_empty() {
                                 messages.push(SessionMessage {
                                     role: "user".to_string(),
-                                    content: format!("**[工具结果]**\n```\n{}\n```", output),
+                                    content: crate::tr!("session.tool_result", output),
                                     timestamp,
                                 });
                             }
@@ -1064,10 +1061,7 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                                         } else {
                                             "{}".to_string()
                                         };
-                                        text_parts.push(format!(
-                                            "**[调用工具: {}]**\n```json\n{}\n```",
-                                            tool_name, input_str
-                                        ));
+                                        text_parts.push(crate::tr!("session.tool_call", tool_name, input_str));
                                     }
                                     "tool_result" if role == "user" => {
                                         // Tool result from user
@@ -1083,10 +1077,7 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                                             String::new()
                                         };
                                         if !result_str.is_empty() {
-                                            text_parts.push(format!(
-                                                "**[工具结果]**\n```\n{}\n```",
-                                                result_str
-                                            ));
+                                            text_parts.push(crate::tr!("session.tool_result", result_str));
                                         }
                                     }
                                     "thinking" if role == "assistant" => {
@@ -1096,12 +1087,12 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                                         {
                                             if !thinking.is_empty() {
                                                 text_parts
-                                                    .push(format!("**[思考]**\n{}", thinking));
+                                                    .push(crate::tr!("session.thinking", thinking));
                                             }
                                         }
                                     }
                                     "image" => {
-                                        text_parts.push("[图片]".to_string());
+                                        text_parts.push(crate::tr!("session.image"));
                                     }
                                     _ => {}
                                 }
@@ -1134,7 +1125,7 @@ fn get_session_messages_from_file(
     session_file: std::path::PathBuf,
 ) -> Result<Vec<SessionMessage>> {
     let content = std::fs::read_to_string(&session_file)
-        .map_err(|e| format!("Failed to read session file: {}", e))?;
+        .map_err(|e| crate::tr!("err.session.file_read_failed", e))?;
 
     parse_session_messages_content(cli_type, &content)
 }
@@ -1147,7 +1138,7 @@ fn parse_session_messages_content(cli_type: &str, content: &str) -> Result<Vec<S
 
     // For Gemini JSON format
     let json: serde_json::Value = serde_json::from_str(content)
-        .map_err(|e| format!("Failed to parse session JSON: {}", e))?;
+        .map_err(|e| crate::tr!("err.session.json_parse_failed", e))?;
 
     let mut messages = Vec::new();
 
@@ -1209,7 +1200,7 @@ fn parse_session_messages_content(cli_type: &str, content: &str) -> Result<Vec<S
                     for thought in thoughts {
                         if let Some(desc) = thought.get("description").and_then(|d| d.as_str()) {
                             if !desc.is_empty() {
-                                text_parts.push(format!("**[思考]**\n{}", desc));
+                                text_parts.push(crate::tr!("session.thinking", desc));
                             }
                         }
                     }
@@ -1229,7 +1220,7 @@ fn parse_session_messages_content(cli_type: &str, content: &str) -> Result<Vec<S
                             .unwrap_or("");
                         if !result_display.is_empty() {
                             text_parts
-                                .push(format!("**[工具: {}]**\n{}", tool_name, result_display));
+                                .push(crate::tr!("session.tool", tool_name, result_display));
                         }
                     }
                 }
@@ -1280,7 +1271,7 @@ fn opencode_data_dir() -> Result<std::path::PathBuf> {
 
     dirs::home_dir()
         .map(|home| home.join(".local").join("share").join("opencode"))
-        .ok_or_else(|| "Failed to determine home directory for OpenCode sessions".to_string())
+        .ok_or_else(|| crate::tr!("err.session.home_dir_missing"))
 }
 
 fn opencode_db_path() -> Result<std::path::PathBuf> {
@@ -1301,10 +1292,7 @@ fn opencode_db_path() -> Result<std::path::PathBuf> {
 async fn open_opencode_db() -> Result<SqliteConnection> {
     let path = opencode_db_path()?;
     if !path.is_file() {
-        return Err(format!(
-            "OpenCode session database not found: {}",
-            path.display()
-        ));
+        return Err(crate::tr!("err.session.opencode_db_not_found", path.display()));
     }
 
     let options = SqliteConnectOptions::new()
@@ -1313,7 +1301,7 @@ async fn open_opencode_db() -> Result<SqliteConnection> {
         .create_if_missing(false);
     SqliteConnection::connect_with(&options)
         .await
-        .map_err(|error| format!("Failed to open OpenCode session database: {}", error))
+        .map_err(|error| crate::tr!("err.session.opencode_db_open_failed", error))
 }
 
 async fn query_opencode_projects(
@@ -1324,7 +1312,7 @@ async fn query_opencode_projects(
     let total = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM project")
         .fetch_one(&mut *connection)
         .await
-        .map_err(|error| format!("Failed to count OpenCode projects: {}", error))?;
+        .map_err(|error| crate::tr!("err.session.opencode_count_projects_failed", error))?;
     let offset = (page - 1) * page_size;
     let rows = sqlx::query_as::<_, (String, String, Option<String>, i64, i64, i64)>(
         r#"
@@ -1356,7 +1344,7 @@ async fn query_opencode_projects(
     .bind(offset)
     .fetch_all(&mut *connection)
     .await
-    .map_err(|error| format!("Failed to query OpenCode projects: {}", error))?;
+    .map_err(|error| crate::tr!("err.session.opencode_query_projects_failed", error))?;
 
     let items = rows
         .into_iter()
@@ -1407,7 +1395,7 @@ async fn opencode_first_user_text(
     .bind(session_id)
     .fetch_optional(&mut *connection)
     .await
-    .map_err(|error| format!("Failed to query OpenCode session preview: {}", error))?;
+    .map_err(|error| crate::tr!("err.session.opencode_query_preview_failed", error))?;
 
     Ok(row
         .and_then(|(data,)| serde_json::from_str::<serde_json::Value>(&data).ok())
@@ -1434,7 +1422,7 @@ async fn query_opencode_sessions(
     .bind(project_id)
     .fetch_one(&mut *connection)
     .await
-    .map_err(|error| format!("Failed to count OpenCode sessions: {}", error))?;
+    .map_err(|error| crate::tr!("err.session.opencode_count_sessions_failed", error))?;
     let offset = (page - 1) * page_size;
     let rows = sqlx::query_as::<_, (String, String, i64, i64)>(
         r#"
@@ -1457,7 +1445,7 @@ async fn query_opencode_sessions(
     .bind(offset)
     .fetch_all(&mut *connection)
     .await
-    .map_err(|error| format!("Failed to query OpenCode sessions: {}", error))?;
+    .map_err(|error| crate::tr!("err.session.opencode_query_sessions_failed", error))?;
 
     let mut items = Vec::with_capacity(rows.len());
     for (session_id, title, time_updated, size) in rows {
@@ -1511,7 +1499,7 @@ async fn query_opencode_messages(
     .bind(project_id)
     .fetch_all(&mut *connection)
     .await
-    .map_err(|error| format!("Failed to query OpenCode messages: {}", error))?;
+    .map_err(|error| crate::tr!("err.session.opencode_query_messages_failed", error))?;
     let part_rows = sqlx::query_as::<_, (String, String)>(
         r#"
         SELECT pt.message_id, pt.data
@@ -1525,7 +1513,7 @@ async fn query_opencode_messages(
     .bind(project_id)
     .fetch_all(&mut *connection)
     .await
-    .map_err(|error| format!("Failed to query OpenCode message parts: {}", error))?;
+    .map_err(|error| crate::tr!("err.session.opencode_query_parts_failed", error))?;
 
     let mut parts_by_message: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
@@ -1578,14 +1566,14 @@ async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
     let resolved = crate::services::agent::get_agent(db, agent_id)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.session.agent_unknown", agent_id))?;
     let feature = resolved.features.sessions;
     if !feature.enabled {
-        return Err(format!("Agent {} 的 Session 功能未启用", agent_id));
+        return Err(crate::tr!("err.session.agent_unsupported", agent_id));
     }
     let adapter = feature
         .adapter
-        .ok_or_else(|| format!("Agent {} 的 Session 缺少 adapter", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.session.missing_adapter", agent_id))?;
     if !matches!(
         adapter.as_str(),
         "claude_code"
@@ -1598,7 +1586,7 @@ async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
             | "pi"
             | "omp"
     ) {
-        return Err(format!("Session adapter `{}` 不存在", adapter));
+        return Err(crate::tr!("err.session.adapter_unsupported", adapter));
     }
     Ok(adapter)
 }
@@ -1932,10 +1920,10 @@ fn render_kimi_content_part(part: &serde_json::Value) -> Option<String> {
             .get("think")
             .and_then(|t| t.as_str())
             .filter(|s| !s.is_empty())
-            .map(|s| format!("**[思考]**\n{}", s)),
-        "image_url" => Some("[图片]".to_string()),
-        "audio_url" => Some("[音频]".to_string()),
-        "video_url" => Some("[视频]".to_string()),
+            .map(|s| crate::tr!("session.thinking", s)),
+        "image_url" => Some(crate::tr!("session.image")),
+        "audio_url" => Some(crate::tr!("session.audio")),
+        "video_url" => Some(crate::tr!("session.video")),
         _ => None,
     }
 }
@@ -1981,10 +1969,7 @@ fn parse_kimi_append_message(
                 } else {
                     "{}".to_string()
                 };
-                parts.push(format!(
-                    "**[调用工具: {}]**\n```json\n{}\n```",
-                    name, args_str
-                ));
+                parts.push(crate::tr!("session.tool_call", name, args_str));
             }
         }
     }
@@ -2006,7 +1991,7 @@ fn parse_kimi_append_message(
             String::new()
         };
         if !result_str.is_empty() {
-            parts.push(format!("**[工具结果]**\n```\n{}\n```", result_str));
+            parts.push(crate::tr!("session.tool_result", result_str));
         }
     }
 
@@ -2077,15 +2062,11 @@ fn get_kimi_messages(
             }
             None
         })
-        .ok_or_else(|| format!("Session directory not found: {}", session_id))?;
+        .ok_or_else(|| crate::tr!("err.session.directory_not_found", session_id))?;
 
     let wire_path = session_dir.join("agents").join("main").join("wire.jsonl");
-    let content = std::fs::read_to_string(&wire_path).map_err(|e| {
-        format!(
-            "Failed to read wire.jsonl for session '{}': {}",
-            session_id, e
-        )
-    })?;
+    let content = std::fs::read_to_string(&wire_path)
+        .map_err(|e| crate::tr!("err.session.wire_read_failed", session_id, e))?;
     parse_kimi_wire_jsonl(&content)
 }
 
@@ -2114,10 +2095,7 @@ fn zcode_rollout_path(home_dir: &std::path::Path, session_id: &str) -> std::path
 async fn open_zcode_db(home_dir: &std::path::Path) -> Result<SqliteConnection> {
     let path = zcode_db_path(home_dir);
     if !path.is_file() {
-        return Err(format!(
-            "zcode session database not found: {}",
-            path.display()
-        ));
+        return Err(crate::tr!("err.session.zcode_db_not_found", path.display()));
     }
     let options = SqliteConnectOptions::new()
         .filename(&path)
@@ -2125,7 +2103,7 @@ async fn open_zcode_db(home_dir: &std::path::Path) -> Result<SqliteConnection> {
         .create_if_missing(false);
     SqliteConnection::connect_with(&options)
         .await
-        .map_err(|error| format!("Failed to open zcode session database: {}", error))
+        .map_err(|error| crate::tr!("err.session.zcode_db_open_failed", error))
 }
 
 /// zcode 项目列表：按 workspace_path 分组 tasks 表。
@@ -2145,7 +2123,7 @@ async fn get_zcode_projects(
     )
     .fetch_all(&mut connection)
     .await
-    .map_err(|error| format!("Failed to query zcode tasks: {}", error))?;
+    .map_err(|error| crate::tr!("err.session.zcode_query_tasks_failed", error))?;
 
     let mut groups: std::collections::HashMap<String, Vec<(String, i64, i64)>> =
         std::collections::HashMap::new();
@@ -2237,7 +2215,7 @@ async fn get_zcode_sessions(
     .bind(project_name.as_str())
     .fetch_all(&mut connection)
     .await
-    .map_err(|error| format!("Failed to query zcode sessions: {}", error))?;
+    .map_err(|error| crate::tr!("err.session.zcode_query_sessions_failed", error))?;
 
     let mut sessions: Vec<SessionInfo> = Vec::new();
     for (task_id, title, created_at, updated_at) in rows {
@@ -2397,7 +2375,7 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
                     };
                     messages.push(SessionMessage {
                         role: "assistant".to_string(),
-                        content: format!("**[调用工具: {}]**\n```json\n{}\n```", name, args_str),
+                        content: crate::tr!("session.tool_call", name, args_str),
                         timestamp,
                     });
                 }
@@ -2412,7 +2390,7 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
 fn get_zcode_messages(home_dir: &std::path::Path, session_id: &str) -> Result<Vec<SessionMessage>> {
     let rollout = zcode_rollout_path(home_dir, session_id);
     let content = std::fs::read_to_string(&rollout)
-        .map_err(|e| format!("Failed to read rollout for session '{}': {}", session_id, e))?;
+        .map_err(|e| crate::tr!("err.session.rollout_read_failed", session_id, e))?;
     parse_zcode_rollout(&content)
 }
 
@@ -2523,7 +2501,7 @@ fn grok_extract_text(content: Option<&serde_json::Value>) -> Option<String> {
                         parts.push(t.to_string());
                     }
                 }
-                Some("image") | Some("image_url") => parts.push("[图片]".to_string()),
+                Some("image") | Some("image_url") => parts.push(crate::tr!("session.image")),
                 _ => {}
             }
         }
@@ -2646,10 +2624,7 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
                             .ok()
                             .and_then(|p| serde_json::to_string_pretty(&p).ok())
                             .unwrap_or_else(|| args_str.clone());
-                        parts.push(format!(
-                            "**[调用工具: {}]**\n```json\n{}\n```",
-                            name, pretty
-                        ));
+                        parts.push(crate::tr!("session.tool_call", name, pretty));
                     }
                 }
                 if parts.is_empty() {
@@ -2674,7 +2649,7 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
                 }
                 messages.push(SessionMessage {
                     role: "user".to_string(),
-                    content: format!("**[工具结果]**\n```\n{}\n```", text),
+                    content: crate::tr!("session.tool_result", text),
                     timestamp: None,
                 });
             }
@@ -2865,15 +2840,11 @@ fn get_grok_messages(
         .join(project_name)
         .join(session_id);
     if !session_dir.exists() {
-        return Err(format!("Session directory not found: {}", session_id));
+        return Err(crate::tr!("err.session.directory_not_found", session_id));
     }
     let chat_path = session_dir.join("chat_history.jsonl");
-    let content = std::fs::read_to_string(&chat_path).map_err(|e| {
-        format!(
-            "Failed to read chat_history.jsonl for session '{}': {}",
-            session_id, e
-        )
-    })?;
+    let content = std::fs::read_to_string(&chat_path)
+        .map_err(|e| crate::tr!("err.session.chat_history_read_failed", session_id, e))?;
     parse_grok_chat_history(&content)
 }
 
@@ -2921,14 +2892,14 @@ fn pi_family_extract_text(content: &serde_json::Value) -> Option<String> {
                     parts.push(text.to_string());
                 }
             }
-            Some("image") | Some("image_url") => parts.push("[图片]".to_string()),
+            Some("image") | Some("image_url") => parts.push(crate::tr!("session.image")),
             Some("thinking") => {
                 if let Some(thinking) = item
                     .get("thinking")
                     .and_then(|value| value.as_str())
                     .filter(|text| !text.is_empty())
                 {
-                    parts.push(format!("**[思考]**\n{}", thinking));
+                    parts.push(crate::tr!("session.thinking", thinking));
                 }
             }
             Some("toolCall") | Some("tool_use") => {
@@ -2943,10 +2914,7 @@ fn pi_family_extract_text(content: &serde_json::Value) -> Option<String> {
                     .unwrap_or_else(|| serde_json::json!({}));
                 let pretty =
                     serde_json::to_string_pretty(&args).unwrap_or_else(|_| args.to_string());
-                parts.push(format!(
-                    "**[调用工具: {}]**\n```json\n{}\n```",
-                    name, pretty
-                ));
+                parts.push(crate::tr!("session.tool_call", name, pretty));
             }
             _ => {}
         }
@@ -2995,7 +2963,7 @@ fn pi_family_format_message(message: &serde_json::Value) -> Option<(String, Stri
                 .unwrap_or("tool");
             Some((
                 "user".to_string(),
-                format!("**[工具结果: {}]**\n```\n{}\n```", tool_name, text),
+                crate::tr!("session.tool_result_named", tool_name, text),
                 timestamp,
             ))
         }
@@ -3420,9 +3388,9 @@ fn get_pi_family_messages(
     session_id: &str,
 ) -> Result<Vec<SessionMessage>> {
     let path = pi_family_resolve_session_file(base_dir, project_name, session_id)
-        .ok_or_else(|| format!("Session file not found: {}", session_id))?;
+        .ok_or_else(|| crate::tr!("err.session.file_not_found", session_id))?;
     let content = std::fs::read_to_string(&path)
-        .map_err(|error| format!("Failed to read session '{}': {}", path.display(), error))?;
+        .map_err(|error| crate::tr!("err.session.read_failed", path.display(), error))?;
     parse_pi_family_session_messages(&content)
 }
 
@@ -3432,8 +3400,8 @@ fn delete_pi_family_session(
     session_id: &str,
 ) -> Result<()> {
     let path = pi_family_resolve_session_file(base_dir, project_name, session_id)
-        .ok_or_else(|| format!("Session file not found: {}", session_id))?;
-    std::fs::remove_file(&path).map_err(|error| format!("Failed to delete session: {}", error))?;
+        .ok_or_else(|| crate::tr!("err.session.file_not_found", session_id))?;
+    std::fs::remove_file(&path).map_err(|error| crate::tr!("err.session.delete_failed", error))?;
     Ok(())
 }
 
@@ -3441,7 +3409,7 @@ fn delete_pi_family_project(base_dir: &std::path::Path, project_name: &str) -> R
     let project_dir = pi_family_sessions_root(base_dir).join(project_name);
     if project_dir.exists() {
         std::fs::remove_dir_all(&project_dir)
-            .map_err(|error| format!("Failed to delete project: {}", error))?;
+            .map_err(|error| crate::tr!("err.session.delete_project_failed", error))?;
     }
     Ok(())
 }
@@ -3824,11 +3792,11 @@ pub async fn delete_session(
 ) -> Result<()> {
     let adapter = session_adapter(db.inner(), &cli_type).await?;
     if adapter == "opencode" {
-        return Err("OpenCode 会话管理为只读，不支持删除会话".to_string());
+        return Err(crate::tr!("err.session.opencode_readonly_session"));
     }
 
     if adapter == "zcode" {
-        return Err("ZCode 会话管理为只读，不支持删除会话".to_string());
+        return Err(crate::tr!("err.session.zcode_readonly_session"));
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
@@ -3843,10 +3811,10 @@ pub async fn delete_session(
                 .join(&project_name)
                 .join(&session_id);
             if !session_dir.exists() {
-                return Err(format!("Session directory not found: {}", session_id));
+                return Err(crate::tr!("err.session.directory_not_found", session_id));
             }
             std::fs::remove_dir_all(&session_dir)
-                .map_err(|e| format!("Failed to delete session: {}", e))?;
+                .map_err(|e| crate::tr!("err.session.delete_failed", e))?;
             Ok(())
         })
         .await;
@@ -3872,16 +3840,13 @@ pub async fn delete_session(
                 .find(|(id, _, work_dir)| *id == session_id && *work_dir == project_name)
                 .map(|(_, dir, _)| dir);
             let Some(session_dir) = session_dir else {
-                return Err(format!("Session directory not found: {}", session_id));
+                return Err(crate::tr!("err.session.directory_not_found", session_id));
             };
             if !session_dir.exists() {
-                return Err(format!(
-                    "Session directory not found: {}",
-                    session_dir.display()
-                ));
+                return Err(crate::tr!("err.session.directory_not_found", session_dir.display()));
             }
             std::fs::remove_dir_all(&session_dir)
-                .map_err(|e| format!("Failed to delete session: {}", e))?;
+                .map_err(|e| crate::tr!("err.session.delete_failed", e))?;
             Ok(())
         })
         .await;
@@ -3906,7 +3871,7 @@ pub async fn delete_session(
                             if let Some(cwd) = extract_codex_cwd(path) {
                                 if cwd == project_name {
                                     std::fs::remove_file(path)
-                                        .map_err(|e| format!("Failed to delete session: {}", e))?;
+                                        .map_err(|e| crate::tr!("err.session.delete_failed", e))?;
                                     return Ok(());
                                 }
                             }
@@ -3914,7 +3879,7 @@ pub async fn delete_session(
                     }
                 }
             }
-            Err("Session file not found".to_string())
+            Err(crate::tr!("err.session.file_not_found_plain"))
         })
         .await;
     }
@@ -3923,19 +3888,12 @@ pub async fn delete_session(
         cli_helpers::session_file_path(&base_dir, &adapter, &project_name, &session_id);
 
     if tokio::fs::metadata(&session_file).await.is_err() {
-        return Err(format!(
-            "Session file not found: {}",
-            session_file.display()
-        ));
+        return Err(crate::tr!("err.session.file_not_found", session_file.display()));
     }
 
-    tokio::fs::remove_file(&session_file).await.map_err(|e| {
-        format!(
-            "Failed to delete session '{}': {}",
-            session_file.display(),
-            e
-        )
-    })?;
+    tokio::fs::remove_file(&session_file)
+        .await
+        .map_err(|e| crate::tr!("err.session.delete_named_failed", session_file.display(), e))?;
 
     Ok(())
 }
@@ -3948,11 +3906,11 @@ pub async fn delete_project(
 ) -> Result<()> {
     let adapter = session_adapter(db.inner(), &cli_type).await?;
     if adapter == "opencode" {
-        return Err("OpenCode 会话管理为只读，不支持删除项目".to_string());
+        return Err(crate::tr!("err.session.opencode_readonly_project"));
     }
 
     if adapter == "zcode" {
-        return Err("ZCode 会话管理为只读，不支持删除项目".to_string());
+        return Err(crate::tr!("err.session.zcode_readonly_project"));
     }
 
     let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
@@ -4027,7 +3985,7 @@ pub async fn delete_project(
 
     tokio::fs::remove_dir_all(&project_dir)
         .await
-        .map_err(|e| format!("Failed to delete project: {}", e))?;
+        .map_err(|e| crate::tr!("err.session.delete_project_failed", e))?;
 
     Ok(())
 }

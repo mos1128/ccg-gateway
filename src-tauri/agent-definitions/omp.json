@@ -4,6 +4,7 @@
   "sort_order": 85,
   "name": "Oh My Pi",
   "remark": "网关会接管 OMP 内置的 anthropic 与 openai 服务商；在 OMP 中选择 anthropic 与 openai 的模型即可。",
+  "remark_en": "The gateway takes over OMP's built-in anthropic and openai providers; just pick anthropic and openai models in OMP.",
   "icon": {
     "view_box": "0 0 64 64",
     "linear_gradient": [

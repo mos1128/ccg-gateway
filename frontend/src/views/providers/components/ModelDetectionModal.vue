@@ -1,43 +1,43 @@
 <template>
   <V2Drawer
     v-model="visible"
-    title="检测模型可用性"
+    :title="t('providers.detect.title')"
     width="60%"
     :show-footer="true"
-    confirm-text="开始检测"
+    :confirm-text="t('providers.detect.start')"
     :confirm-disabled="loading"
     @confirm="$emit('confirm')"
   >
     <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px;">
       <div style="flex: 1;">
-        <label class="c-label">检测模型</label>
-        <input type="text" :value="model" class="v2-input" placeholder="输入模型名称" @input="handleModelInput">
+        <label class="c-label">{{ t('providers.detect.modelLabel') }}</label>
+        <input type="text" :value="model" class="v2-input" :placeholder="t('providers.detect.modelPlaceholder')" @input="handleModelInput">
       </div>
       <div style="flex: 1;">
-        <label class="c-label">测试文本</label>
-        <input type="text" :value="testText" class="v2-input" placeholder="输入测试文本" @input="handleTestTextInput">
+        <label class="c-label">{{ t('providers.detect.testTextLabel') }}</label>
+        <input type="text" :value="testText" class="v2-input" :placeholder="t('providers.detect.testTextPlaceholder')" @input="handleTestTextInput">
       </div>
     </div>
 
     <div style="margin-bottom: 24px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <label class="c-label" style="margin-bottom: 0;">选择服务商</label>
+        <label class="c-label" style="margin-bottom: 0;">{{ t('providers.detect.selectProviders') }}</label>
       </div>
       <div v-if="providers.length > 0" class="det-provider-groups">
-        <section v-for="group in providerGroups" :key="String(group.enabled)" class="det-provider-group" :aria-label="`${group.label}服务商`">
+        <section v-for="group in providerGroups" :key="String(group.enabled)" class="det-provider-group" :aria-label="t('providers.detect.groupAria', { label: group.label })">
           <div class="det-provider-group-head">
             <div class="det-provider-group-title">
               <span class="v2-pill dot" :class="group.enabled ? 'v2-pill-success' : 'v2-pill-neutral'">{{ group.label }}</span>
-              <span class="text-muted">已选 {{ group.selectedCount }} / {{ group.providers.length }}</span>
+              <span class="text-muted">{{ t('providers.detect.selectedCount', { selected: group.selectedCount, total: group.providers.length }) }}</span>
             </div>
             <button
               type="button"
               class="v2-btn v2-btn-sm v2-btn-ghost"
               :disabled="group.providers.length === 0"
-              :aria-label="`${group.allSelected ? '取消全选' : '全选'}${group.label}服务商`"
+              :aria-label="group.allSelected ? t('providers.detect.deselectAllAria', { label: group.label }) : t('providers.detect.selectAllAria', { label: group.label })"
               @click="$emit('toggle-group', group.enabled)"
             >
-              {{ group.allSelected ? '取消全选' : '全选' }}
+              {{ group.allSelected ? t('providers.detect.deselectAll') : t('providers.detect.selectAll') }}
             </button>
           </div>
           <div v-if="group.providers.length > 0" class="v2-chip-row">
@@ -53,26 +53,26 @@
               <span class="v2-chip-dot"></span>{{ provider.name }}
             </button>
           </div>
-          <div v-else class="text-muted text-14">暂无{{ group.label }}的服务商</div>
+          <div v-else class="text-muted text-14">{{ t('providers.detect.noGroupProviders', { label: group.label }) }}</div>
         </section>
       </div>
       <div v-else class="text-muted text-14" style="padding: 8px 0;">
-        当前 Agent 类型暂无服务商
+        {{ t('providers.detect.noProviders') }}
       </div>
     </div>
 
     <div v-if="results.length > 0 || loading" class="det-results">
-      <div class="det-subtitle">检测结果</div>
+      <div class="det-subtitle">{{ t('providers.detect.results') }}</div>
       <div class="st-table-wrap">
         <table class="v2-table">
           <thead>
             <tr>
-              <th>服务商</th>
-              <th>测试模型</th>
-              <th>状态</th>
-              <th>状态码</th>
-              <th>耗时</th>
-              <th>响应</th>
+              <th>{{ t('providers.table.provider') }}</th>
+              <th>{{ t('providers.detect.colModel') }}</th>
+              <th>{{ t('providers.table.status') }}</th>
+              <th>{{ t('providers.detect.colStatusCode') }}</th>
+              <th>{{ t('providers.detect.colElapsed') }}</th>
+              <th>{{ t('providers.detect.colResponse') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -107,9 +107,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import V2Drawer from '@/components/V2Drawer.vue'
 import type { Provider, TestProviderResult } from '@/types/models'
 
+const { t } = useI18n()
 const props = defineProps<{
   modelValue: boolean
   model: string
@@ -140,7 +142,7 @@ const providerGroups = computed(() => [true, false].map((enabled) => {
   const selectedCount = providers.filter((provider) => props.selectedIds.includes(provider.id)).length
   return {
     enabled,
-    label: enabled ? '已启用' : '未启用',
+    label: enabled ? t('providers.detect.enabled') : t('providers.detect.disabled'),
     providers,
     selectedCount,
     allSelected: providers.length > 0 && selectedCount === providers.length
@@ -162,8 +164,12 @@ function getResultStatus(result: TestProviderResult): 'pending' | 'success' | 'f
 }
 
 function statusLabel(status: 'pending' | 'success' | 'failed'): string {
-  const labels = { pending: '检测中', success: '成功', failed: '失败' }
-  return labels[status]
+  const keys = {
+    pending: 'providers.detect.statusPending',
+    success: 'providers.detect.statusSuccess',
+    failed: 'providers.detect.statusFailed'
+  }
+  return t(keys[status])
 }
 
 function statusClass(status: 'pending' | 'success' | 'failed'): string {

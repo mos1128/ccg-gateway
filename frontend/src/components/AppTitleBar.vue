@@ -4,17 +4,17 @@
       <span class="titlebar-title">CCG Gateway</span>
     </div>
     <div class="titlebar-controls">
-      <button class="titlebar-button" type="button" title="最小化" @click="minimizeWindow">
+      <button class="titlebar-button" type="button" :title="t('common.minimize')" @click="minimizeWindow">
         <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 12h14" />
         </svg>
       </button>
-      <button class="titlebar-button" type="button" title="最大化" @click="toggleMaximize">
+      <button class="titlebar-button" type="button" :title="t('common.maximize')" @click="toggleMaximize">
         <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
           <rect x="5" y="5" width="14" height="14" rx="2" />
         </svg>
       </button>
-      <button class="titlebar-button close" type="button" title="关闭" @click="closeWindow">
+      <button class="titlebar-button close" type="button" :title="t('common.close')" @click="closeWindow">
         <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M6 6l12 12M18 6L6 18" />
         </svg>
@@ -25,7 +25,9 @@
 
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const isLinux = /Linux/i.test(navigator.userAgent)
 const currentWindow = getCurrentWindow()
 

@@ -4,6 +4,7 @@
   "sort_order": 80,
   "name": "Pi",
   "remark": "网关会接管 Pi 内置的 anthropic 与 openai 服务商；在 Pi 中选择 anthropic 与 openai 的模型即可。\n使用 MCP 需先运行 pi install npm:pi-mcp-adapter 安装适配器。",
+  "remark_en": "The gateway takes over Pi's built-in anthropic and openai providers; just pick anthropic and openai models in Pi.\nTo use MCP, first run pi install npm:pi-mcp-adapter to install the adapter.",
   "icon": {
     "view_box": "140 140 520 520",
     "paths": [

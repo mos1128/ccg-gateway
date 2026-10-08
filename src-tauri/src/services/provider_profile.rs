@@ -37,7 +37,7 @@ async fn active_profile_mode(
         .fetch_optional(db)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("直连服务商 {} 不存在", provider_id))?;
+        .ok_or_else(|| crate::tr!("err.provider_profile.direct_provider_missing", provider_id))?;
     Ok(ActiveProfileMode::ProviderDirect(provider))
 }
 
@@ -120,7 +120,7 @@ async fn rollback_renamed_profile(
 ) -> Result<()> {
     let mut recovery_errors = Vec::new();
     if let Err(error) = remove_profile_mode(db, cli_type, new_profile, gateway_url, mode).await {
-        recovery_errors.push(format!("清理新 Profile 配置失败: {}", error));
+        recovery_errors.push(crate::tr!("err.provider_profile.cleanup_new_config_failed", error));
     }
 
     let reverse_rename = config_rename.map(|rename| ProfileConfigRename {
@@ -136,12 +136,12 @@ async fn rollback_renamed_profile(
     )
     .await
     {
-        recovery_errors.push(format!("恢复 Profile 名称失败: {}", error));
+        recovery_errors.push(crate::tr!("err.provider_profile.restore_name_failed", error));
         return Err(recovery_errors.join("; "));
     }
 
     if let Err(error) = apply_profile_mode(db, cli_type, old_profile, gateway_url, mode).await {
-        recovery_errors.push(format!("恢复旧 Profile 配置失败: {}", error));
+        recovery_errors.push(crate::tr!("err.provider_profile.restore_old_config_failed", error));
     }
 
     if recovery_errors.is_empty() {
@@ -152,7 +152,7 @@ async fn rollback_renamed_profile(
 }
 
 pub fn invalid_profile_message() -> String {
-    "Profile 名称仅支持英文、数字、空格、下划线和短横线".to_string()
+    crate::tr!("err.provider_profile.invalid_name")
 }
 
 pub fn validate_provider_profile(profile: Option<&str>) -> Result<String> {
@@ -171,7 +171,7 @@ pub async fn validate_profile_cli_type(db: &SqlitePool, cli_type: &str) -> Resul
         .is_some_and(|resolved| resolved.features.profiles.enabled);
     supports_profiles
         .then_some(cli_type)
-        .ok_or_else(|| "该 Agent 不支持 Profile".to_string())
+        .ok_or_else(|| crate::tr!("err.provider_profile.agent_profile_unsupported"))
 }
 
 pub async fn provider_profile_exists(
@@ -273,7 +273,7 @@ pub async fn create_profile(
     .map_err(map_db_error)?;
 
     if result.rows_affected() == 0 {
-        return Err("Profile 创建失败".to_string());
+        return Err(crate::tr!("err.provider_profile.create_failed"));
     }
 
     let (sort_order,): (i64,) =
@@ -297,7 +297,7 @@ pub async fn rename_profile(
     let old_profile = validate_provider_profile(Some(profile))?;
     let new_profile = unique_profile_name(db, &cli_type, &input.name, Some(&old_profile)).await?;
     if old_profile == DEFAULT_PROFILE {
-        return Err("默认 Profile 不能重命名".to_string());
+        return Err(crate::tr!("err.provider_profile.default_rename_forbidden"));
     }
     if old_profile == new_profile {
         let (sort_order,): (i64,) = sqlx::query_as(
@@ -308,7 +308,7 @@ pub async fn rename_profile(
         .fetch_optional(db)
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Profile 不存在".to_string())?;
+        .ok_or_else(|| crate::tr!("err.provider_profile.not_found"))?;
         return Ok(provider_profile_response(cli_type, new_profile, sort_order));
     }
 
@@ -319,16 +319,13 @@ pub async fn rename_profile(
             .fetch_optional(db)
             .await
             .map_err(|e| e.to_string())?
-            .ok_or_else(|| "Profile 不存在".to_string())?;
+            .ok_or_else(|| crate::tr!("err.provider_profile.not_found"))?;
     let config_rename = profile_config_rename(db, &cli_type, &old_profile, &new_profile).await?;
     let active_mode = active_profile_mode(db, &cli_type, &old_profile, gateway_url).await?;
     if matches!(&active_mode, ActiveProfileMode::None)
         && profile_config_files_exist(db, &cli_type, &old_profile).await?
     {
-        return Err(format!(
-            "Profile `{}` 的现有配置无法匹配 Gateway 或服务商，不能安全重命名",
-            old_profile
-        ));
+        return Err(crate::tr!("err.provider_profile.rename_config_mismatch", old_profile));
     }
     if let Err(error) =
         remove_profile_mode(db, &cli_type, &old_profile, gateway_url, &active_mode).await
@@ -338,8 +335,8 @@ pub async fn rename_profile(
                 .await
                 .err();
         return Err(match restore_error {
-            Some(restore_error) => format!(
-                "清理旧 Profile 模板配置失败: {}; 恢复旧配置也失败: {}",
+            Some(restore_error) => crate::tr!(
+                "err.provider_profile.cleanup_old_config_failed",
                 error, restore_error
             ),
             None => error,
@@ -360,8 +357,8 @@ pub async fn rename_profile(
                 .await
                 .err();
         return Err(match restore_error {
-            Some(restore_error) => format!(
-                "Profile 重命名失败: {}; 恢复旧模板配置也失败: {}",
+            Some(restore_error) => crate::tr!(
+                "err.provider_profile.rename_failed_with_restore",
                 error, restore_error
             ),
             None => error,
@@ -383,11 +380,11 @@ pub async fn rename_profile(
         .await
         .err();
         return Err(match recovery_error {
-            Some(recovery_error) => format!(
-                "按新 Profile 模板重写配置失败: {}; 回滚也未完全成功: {}",
+            Some(recovery_error) => crate::tr!(
+                "err.provider_profile.rewrite_failed_with_rollback",
                 error, recovery_error
             ),
-            None => format!("按新 Profile 模板重写配置失败，已恢复原 Profile: {}", error),
+            None => crate::tr!("err.provider_profile.rewrite_failed_restored", error),
         });
     }
 
@@ -404,7 +401,7 @@ pub async fn delete_profile(
     let cli_type = validate_profile_cli_type(db, cli_type).await?;
     let profile = validate_provider_profile(Some(profile))?;
     if profile == DEFAULT_PROFILE {
-        return Err("默认 Profile 不能删除".to_string());
+        return Err(crate::tr!("err.provider_profile.default_delete_forbidden"));
     }
 
     let exists: Option<(String,)> =
@@ -415,17 +412,14 @@ pub async fn delete_profile(
             .await
             .map_err(|e| e.to_string())?;
     if exists.is_none() {
-        return Err("Profile 不存在".to_string());
+        return Err(crate::tr!("err.provider_profile.not_found"));
     }
 
     let active_mode = active_profile_mode(db, &cli_type, &profile, gateway_url).await?;
     if matches!(&active_mode, ActiveProfileMode::None)
         && profile_config_files_exist(db, &cli_type, &profile).await?
     {
-        return Err(format!(
-            "Profile `{}` 的现有配置无法匹配 Gateway 或服务商，不能安全删除",
-            profile
-        ));
+        return Err(crate::tr!("err.provider_profile.delete_config_mismatch", profile));
     }
     remove_profile_mode(db, &cli_type, &profile, gateway_url, &active_mode).await?;
 
@@ -490,8 +484,8 @@ pub async fn delete_profile(
             .await
             .err();
         return Err(match restore_error {
-            Some(restore_error) => format!(
-                "删除 Profile 数据失败: {}; 恢复配置也失败: {}",
+            Some(restore_error) => crate::tr!(
+                "err.provider_profile.delete_data_failed",
                 error, restore_error
             ),
             None => error,
@@ -525,7 +519,7 @@ async fn unique_profile_name(
         .is_some();
 
     if exists {
-        return Err("名称已存在".to_string());
+        return Err(crate::tr!("err.provider_profile.name_exists"));
     }
 
     Ok(base)
@@ -540,7 +534,7 @@ fn provider_profile_response(
     ProviderProfileResponse {
         cli_type,
         label: if is_default {
-            "默认".to_string()
+            crate::tr!("profile.label.default")
         } else {
             name.clone()
         },
@@ -560,7 +554,9 @@ async fn profile_config_files_exist(
     {
         if tokio::fs::try_exists(&path)
             .await
-            .map_err(|error| format!("检查 {} 失败: {}", path.display(), error))?
+            .map_err(|error| {
+                crate::tr!("err.provider_profile.check_failed", path.display(), error)
+            })?
         {
             return Ok(true);
         }
@@ -570,7 +566,9 @@ async fn profile_config_files_exist(
     {
         return tokio::fs::try_exists(&path)
             .await
-            .map_err(|error| format!("检查 {} 失败: {}", path.display(), error));
+            .map_err(|error| {
+                crate::tr!("err.provider_profile.check_failed", path.display(), error)
+            });
     }
     Ok(false)
 }
@@ -639,8 +637,8 @@ async fn rename_profile_records_and_file(
         tokio::fs::rename(&rename.old_path, &rename.new_path)
             .await
             .map_err(|error| {
-                format!(
-                    "Profile 配置文件从 {} 重命名到 {} 失败: {}",
+                crate::tr!(
+                    "err.provider_profile.rename_file_failed",
                     rename.old_path.display(),
                     rename.new_path.display(),
                     error
@@ -651,8 +649,8 @@ async fn rename_profile_records_and_file(
         if let Some(rename) = config_rename {
             if let Err(rollback_error) = tokio::fs::rename(&rename.new_path, &rename.old_path).await
             {
-                return Err(format!(
-                    "Profile 数据库重命名提交失败: {}; 配置文件回滚也失败: {}",
+                return Err(crate::tr!(
+                    "err.provider_profile.rename_commit_failed",
                     error, rollback_error
                 ));
             }
@@ -686,10 +684,7 @@ async fn profile_config_rename(
         return Ok(None);
     }
     if tokio::fs::try_exists(&new_path).await.unwrap_or(false) {
-        return Err(format!(
-            "目标 Profile 配置文件已存在: {}",
-            new_path.display()
-        ));
+        return Err(crate::tr!("err.provider_profile.target_file_exists", new_path.display()));
     }
     if !tokio::fs::try_exists(&old_path).await.unwrap_or(false) {
         return Ok(None);
@@ -788,7 +783,7 @@ async fn delete_profile_tasks_tx(
             continue;
         }
         if last_status == "running" {
-            return Err("该 Profile 关联的定时任务正在执行，请稍后再删除".to_string());
+            return Err(crate::tr!("err.provider_profile.task_running"));
         }
         task_ids.push(id);
     }
@@ -808,9 +803,9 @@ fn map_db_error(e: sqlx::Error) -> String {
     let err_str = e.to_string();
     if err_str.contains("code: 2067") || err_str.contains("UNIQUE constraint failed") {
         if err_str.contains("provider_profiles") {
-            return "名称已存在".to_string();
+            return crate::tr!("err.provider_profile.name_exists");
         }
-        return "数据已存在，请勿重复添加".to_string();
+        return crate::tr!("err.provider_profile.duplicate_data");
     }
     err_str
 }

@@ -1,5 +1,5 @@
 <template>
-  <el-tooltip effect="light" placement="top" :content="String(text)" :disabled="!overflow" :show-after="300" :enterable="true">
+  <el-tooltip effect="light" placement="top" :content="String(text)" :disabled="!overflow" :show-after="300" :enterable="true" popper-class="v2-of-pop">
     <span ref="el" class="of-text">{{ text }}</span>
   </el-tooltip>
 </template>
@@ -26,5 +26,13 @@ onBeforeUnmount(() => ro?.disconnect())
 </script>
 
 <style scoped>
-.of-text { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.of-text { display: block; max-width: 100%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+
+<style>
+/* 溢出提示的 popper：限宽并允许长路径/URL 折行 */
+.v2-of-pop.el-popper {
+  max-width: 480px;
+  overflow-wrap: anywhere;
+}
 </style>

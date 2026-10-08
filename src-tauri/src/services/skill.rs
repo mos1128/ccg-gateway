@@ -201,8 +201,8 @@ pub fn upsert_skill_repo(repo: SkillRepo) -> Result<()> {
 
     if let Some(existing) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
         if !repo_sources_equal(&existing.source, &repo.source) {
-            return Err(format!(
-                "仓库名称 '{}' 已被来源 '{}' 使用",
+            return Err(crate::tr!(
+                "err.skill.repo_name_used",
                 repo.name, existing.source
             ));
         }
@@ -250,8 +250,8 @@ pub fn upsert_installed_skill_manifest_entry(entry: InstalledSkillManifestEntry)
 
     if let Some(repo_entry) = storage.repos.iter().find(|item| item.name == repo.name) {
         if !repo_sources_equal(&repo_entry.source, &repo.source) {
-            return Err(format!(
-                "仓库名称 '{}' 已被来源 '{}' 使用",
+            return Err(crate::tr!(
+                "err.skill.repo_name_used",
                 repo.name, repo_entry.source
             ));
         }
@@ -389,8 +389,8 @@ pub fn ensure_repo_exists(repo: &SkillRepo) -> Result<()> {
 
     if let Some(existing) = storage.repos.iter_mut().find(|item| item.name == repo.name) {
         if !repo_sources_equal(&existing.source, &repo.source) {
-            return Err(format!(
-                "仓库名称 '{}' 已被来源 '{}' 使用",
+            return Err(crate::tr!(
+                "err.skill.repo_name_used",
                 repo.name, existing.source
             ));
         }

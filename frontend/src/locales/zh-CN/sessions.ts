@@ -1,0 +1,23 @@
+export default {
+  emptyProjects: '暂无项目',
+  emptyProjectsDesc: '使用 Agent 产生会话后，会按项目分组显示',
+  emptySessions: '暂无会话',
+  emptyMessages: '暂无消息',
+  noMessageContent: '无消息内容',
+  searchPlaceholder: '搜索会话…',
+  sessionCount: '{count} 个会话',
+  back: '返回',
+  deleteProject: '删除项目',
+  deleteSession: '删除会话',
+  deleteProjectConfirm: '确定删除项目 "{name}" 及其所有会话吗？此操作不可恢复！',
+  deleteSessionConfirm: '确定删除会话 "{id}..." 吗？此操作不可恢复！',
+  confirmDeleteTitle: '确认删除',
+  projectDeleted: '项目已删除',
+  sessionDeleted: '会话已删除',
+  deleteFailed: '删除失败',
+  copied: '已复制',
+  copyFailed: '复制失败',
+  drawerTitle: '会话 {id}',
+  expandAll: '展开全部',
+  collapse: '收起'
+}

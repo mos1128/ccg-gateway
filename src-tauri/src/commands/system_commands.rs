@@ -12,6 +12,7 @@ pub async fn get_system_status(
         port: config.server.port,
         gateway_url: config.gateway_base_url(),
         error_message: snapshot.error_message,
+        error_code: snapshot.error_code.map(|code| code.to_string()),
         host_env_override: crate::config::gateway_host_env_override().is_some(),
         port_env_override: crate::config::gateway_port_env_override().is_some(),
         data_dir: crate::config::get_data_dir().to_string_lossy().to_string(),

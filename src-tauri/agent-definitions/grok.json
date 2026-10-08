@@ -4,6 +4,7 @@
   "sort_order": 70,
   "name": "Grok Build",
   "remark": "网关会添加两个自定义服务商，分别预置了 gpt-latest 和 claude-latest 模型。\n需要配置模型映射将其映射到实际上游模型，启动 Grok 即走网关，无需登录。",
+  "remark_en": "The gateway adds two custom providers, preconfigured with the gpt-latest and claude-latest models.\nConfigure model mapping to map them to the actual upstream models; Grok then goes through the gateway on startup without login.",
   "icon": {
     "view_box": "0 0 34 32",
     "paths": [

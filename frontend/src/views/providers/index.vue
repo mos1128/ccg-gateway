@@ -28,8 +28,8 @@
       <div class="toolbar-left">
         <div class="v2-seg">
           <div class="v2-seg-slider" :style="{ transform: `translateX(${viewMode === 'relay' ? 0 : 1}00%)`, width: 'calc((100% - 8px) / 2)' }"></div>
-          <button class="v2-seg-btn" :class="{ active: viewMode === 'relay' }" type="button" @click="handleSwitchRelay">中转</button>
-          <button class="v2-seg-btn" :class="{ active: viewMode === 'official' }" type="button" @click="handleSwitchOfficial">官方</button>
+          <button class="v2-seg-btn" :class="{ active: viewMode === 'relay' }" type="button" @click="handleSwitchRelay">{{ t('providers.view.relay') }}</button>
+          <button class="v2-seg-btn" :class="{ active: viewMode === 'official' }" type="button" @click="handleSwitchOfficial">{{ t('providers.view.official') }}</button>
         </div>
 
         <div v-if="showProfileControls" class="v2-seg profile-tabs">
@@ -67,7 +67,7 @@
                 v-if="activeProfile === profile.name && !profile.is_default && editingProfileName !== profile.name"
                 class="profile-tab-delete"
                 type="button"
-                aria-label="删除 Profile"
+                :aria-label="t('providers.profile.deleteAria')"
                 :disabled="profileLoading"
                 @click.stop="handleDeleteProfile(profile)"
               >
@@ -79,7 +79,7 @@
             <button
               class="v2-seg-btn profile-add-tab"
               type="button"
-              aria-label="添加 Profile"
+              :aria-label="t('providers.profile.addAria')"
               :disabled="profileLoading || !canCreateProfile"
               @click.stop="handleAddProfile"
             >
@@ -98,18 +98,18 @@
         >
           <template #content>
             <div class="profile-help">
-              <div class="tooltip-title">Profile 用法</div>
+              <div class="tooltip-title">{{ t('providers.profile.usageTitle') }}</div>
               <div class="tooltip-item"><span>{{ profileUsageText }}</span></div>
               <div class="profile-cmd">
                 <div class="profile-cmd-head">
-                  <strong>{{ currentProfileLabel }} 启动命令</strong>
-                  <el-tooltip content="复制启动命令" placement="top" effect="light" :show-after="250">
+                  <strong>{{ t('providers.profile.launchCommandTitle', { name: currentProfileLabel }) }}</strong>
+                  <el-tooltip :content="t('providers.profile.copyLaunchCommandTip')" placement="top" effect="light" :show-after="250">
                     <button class="profile-cmd-copy" type="button" :disabled="isCurrentProfileCommandLoading" @click.stop="copyCurrentProfileLaunchCommand">
                       <svg width="14" height="14"><use href="#v2i-copy"/></svg>
                     </button>
                   </el-tooltip>
                 </div>
-                <div class="profile-cmd-text mono" @click.stop="copyCurrentProfileLaunchCommand">{{ currentProfileLaunchCommand || '正在获取启动命令...' }}</div>
+                <div class="profile-cmd-text mono" @click.stop="copyCurrentProfileLaunchCommand">{{ currentProfileLaunchCommand || t('providers.profile.loadingLaunchCommand') }}</div>
               </div>
             </div>
           </template>
@@ -123,44 +123,44 @@
         <template v-if="viewMode === 'relay'">
           <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="showPriceDialog = true">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-            价格
+            {{ t('providers.actions.price') }}
           </button>
           <button class="v2-btn v2-btn-sm v2-btn-ghost" @click="showDetectDialog = true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            检测
+            {{ t('providers.actions.detect') }}
           </button>
           <button v-if="copiedProvider" class="v2-btn v2-btn-sm v2-btn-ghost" :disabled="pasteLoading" @click="handlePasteProvider">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#v2i-copy"/></svg>
-            粘贴
+            {{ t('providers.actions.paste') }}
           </button>
           <button class="v2-btn v2-btn-sm v2-btn-primary" @click="handleAddProvider">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-            添加
+            {{ t('common.add') }}
           </button>
         </template>
         <button v-else class="v2-btn v2-btn-sm v2-btn-primary" @click="handleAddCredential">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-          添加
+          {{ t('common.add') }}
         </button>
       </div>
     </div>
 
     <template v-if="viewMode === 'relay'">
-      <V2Empty v-if="providerStore.providers.length === 0" v-loading="providerStore.loading" title="还没有服务商" description="添加服务商，网关会自动路由、负载均衡与故障转移">
+      <V2Empty v-if="providerStore.providers.length === 0" v-loading="providerStore.loading" :title="t('providers.empty.providerTitle')" :description="t('providers.empty.providerDescription')">
         <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg></template>
       </V2Empty>
       <div v-else class="prov-body" v-loading="providerStore.loading">
         <div class="pt-head">
           <div class="pt-cols m-route">
-            <div>启用</div>
-            <div>服务商</div>
-            <div class="pt-col-protocol">端点类型</div>
-            <div>状态</div>
-            <el-tooltip content="连续失败次数 / 熔断阈值" placement="top" effect="light" :show-after="250">
-              <div>容错</div>
+            <div>{{ t('providers.table.enabled') }}</div>
+            <div>{{ t('providers.table.provider') }}</div>
+            <div class="pt-col-protocol">{{ t('providers.table.protocol') }}</div>
+            <div>{{ t('providers.table.status') }}</div>
+            <el-tooltip :content="t('providers.table.faultTip')" placement="top" effect="light" :show-after="250">
+              <div>{{ t('providers.table.fault') }}</div>
             </el-tooltip>
-            <div class="pt-col-map">模型映射</div>
-            <div>操作</div>
+            <div class="pt-col-map">{{ t('providers.table.modelMap') }}</div>
+            <div>{{ t('providers.table.actions') }}</div>
           </div>
         </div>
         <draggable v-model="providerStore.providers" item-key="id" handle=".pt-drag" @end="handleDragEnd">
@@ -182,17 +182,17 @@
     </template>
 
     <template v-else>
-      <V2Empty v-if="credentialStore.credentials.length === 0" v-loading="credentialStore.loading" title="还没有凭证" description="添加官方账号凭证，可快速写入对应 Agent 配置">
+      <V2Empty v-if="credentialStore.credentials.length === 0" v-loading="credentialStore.loading" :title="t('providers.empty.credentialTitle')" :description="t('providers.empty.credentialDescription')">
         <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></template>
       </V2Empty>
       <div v-else class="prov-body" v-loading="credentialStore.loading">
         <div class="pt-head">
           <div class="pt-cols m-cred">
-            <div>启用</div>
-            <div>凭证</div>
-            <div>信息</div>
-            <div>状态</div>
-            <div>操作</div>
+            <div>{{ t('providers.table.enabled') }}</div>
+            <div>{{ t('providers.table.credential') }}</div>
+            <div>{{ t('providers.table.info') }}</div>
+            <div>{{ t('providers.table.status') }}</div>
+            <div>{{ t('providers.table.actions') }}</div>
           </div>
         </div>
         <draggable v-model="credentialStore.credentials" item-key="id" handle=".pt-drag" @end="handleCredentialDragEnd">
@@ -212,12 +212,12 @@
 
     <ProviderDrawer
       v-model="showDialog"
-      :title="editingProvider ? '编辑服务商' : '添加服务商'"
+      :title="editingProvider ? t('providers.drawer.editTitle') : t('providers.drawer.addTitle')"
       :form="form"
       :base-url-placeholder="baseUrlPlaceholder"
       :protocols="activeProtocols"
       :declared-protocols="declaredProtocols"
-      :remark="activeAgent?.remark"
+      :remark="activeAgentRemark"
       :model-sync="editingProviderModelSync"
       :model-sync-loading="!!editingProvider && modelSyncLoadingId === editingProvider.id"
       :can-sync-models="!!editingProvider"
@@ -234,7 +234,7 @@
     />
     <CredentialDrawer
       v-model="showCredentialDialog"
-      :title="editingCredential ? '编辑凭证' : '添加凭证'"
+      :title="editingCredential ? t('providers.credential.editTitle') : t('providers.credential.addTitle')"
       :form="credentialForm"
       :file-definitions="credentialFileDefinitions"
       @confirm="handleSaveCredential"
@@ -264,6 +264,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import draggable from 'vuedraggable'
 import ProviderRow from './components/ProviderRow.vue'
 import CredentialRow from './components/CredentialRow.vue'
@@ -281,6 +282,7 @@ import { useCredentialStore } from '@/stores/credentials'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore } from '@/stores/settings'
 import { useAgentStore } from '@/stores/agents'
+import { useLocaleStore } from '@/stores/locale'
 import { credentialsApi } from '@/api/credentials'
 import { providersApi } from '@/api/providers'
 import { settingsApi } from '@/api/settings'
@@ -295,12 +297,14 @@ const uiStore = useUiStore()
 const settingsStore = useSettingsStore()
 const agentStore = useAgentStore()
 
+const { t } = useI18n()
+
 const cliTabs = computed(() => agentStore.visibleAgents
   .filter((agent) => agent.features.provider_config.enabled)
   .map((agent) => ({ id: agent.id, label: agent.name })))
 
 const profileTabs = ref<ProviderProfileItem[]>([
-  { cli_type: 'claude_code', name: 'default', label: '默认', is_default: true, sort_order: 0 }
+  { cli_type: 'claude_code', name: 'default', label: t('providers.profile.default'), is_default: true, sort_order: 0 }
 ])
 const profileLoading = ref(false)
 const editingProfileName = ref<ProviderProfile | null>(null)
@@ -311,7 +315,7 @@ const profileErrorTooltipRefs = new Map<ProviderProfile, { updatePopper?: () => 
 const draftProfileName: ProviderProfile = '__draft_profile__:new'
 const profileMaxCustomCount = 4
 const profileNameMaxLength = 10
-const profileNameRuleText = `仅支持英文、数字、空格、下划线和短横线，最多 ${profileNameMaxLength} 个字符`
+const profileNameRuleText = computed(() => t('providers.profile.nameRule', { max: profileNameMaxLength }))
 
 const activeCliType = computed({
   get: () => uiStore.providersActiveCliType,
@@ -325,6 +329,13 @@ const activeProfile = computed({
 type ViewMode = 'relay' | 'official'
 const viewMode = ref<ViewMode>('relay')
 const activeAgent = computed(() => agentStore.get(activeCliType.value))
+const localeStore = useLocaleStore()
+const activeAgentRemark = computed(() => {
+  const agent = activeAgent.value
+  if (!agent) return ''
+  if (localeStore.locale === 'en') return agent.remark_en || agent.remark || ''
+  return agent.remark || ''
+})
 const declaredProtocols = computed<Protocol[]>(() => activeAgent.value?.protocols ?? [])
 // 端点类型可以和 Agent 声明的协议不同，网关转发时自动转换协议；Gemini 不参与转换。
 const activeProtocols = computed<Protocol[]>(() => {
@@ -377,7 +388,7 @@ function profileStatusKey(cliType: CliType, profile: ProviderProfile) {
 const currentProfileSettingsStatus = computed(() => profileSettingsStatusMap.value[profileStatusKey(activeCliType.value, activeProfile.value)])
 const currentProfileLaunchCommand = computed(() => currentProfileSettingsStatus.value?.launch_command || '')
 const isCurrentProfileCommandLoading = computed(() => profileCommandLoading.value === profileStatusKey(activeCliType.value, activeProfile.value))
-const profileUsageText = '切换到 Profile 时会自动生成对应配置文件，通过对应启动命令启动的 Agent 会路由到对应 Profile 配置的服务商'
+const profileUsageText = computed(() => t('providers.profile.usageText'))
 
 function profileDisplayLabel(profile?: ProviderProfileItem) {
   if (!profile) return ''
@@ -396,9 +407,9 @@ function removeDraftProfile() {
 
 function profileNameError(input: string) {
   const trimmed = input.trim()
-  if (!trimmed) return '不能为空'
-  if (!/^[A-Za-z0-9 _-]+$/.test(trimmed)) return profileNameRuleText
-  if (profileNameFromInput(trimmed).length > profileNameMaxLength) return profileNameRuleText
+  if (!trimmed) return t('providers.profile.nameEmpty')
+  if (!/^[A-Za-z0-9 _-]+$/.test(trimmed)) return profileNameRuleText.value
+  if (profileNameFromInput(trimmed).length > profileNameMaxLength) return profileNameRuleText.value
   return ''
 }
 
@@ -453,7 +464,7 @@ async function focusProfileRenameInput() {
 
 async function loadProfiles() {
   if (!supportsProfiles.value) {
-    profileTabs.value = [{ cli_type: activeCliType.value, name: 'default', label: '默认', is_default: true, sort_order: 0 }]
+    profileTabs.value = [{ cli_type: activeCliType.value, name: 'default', label: t('providers.profile.default'), is_default: true, sort_order: 0 }]
     activeProfile.value = 'default'
     return
   }
@@ -466,7 +477,7 @@ async function loadProfiles() {
       activeProfile.value = 'default'
     }
   } catch (e: any) {
-    notify(getErrorMessage(e, '加载 Profile 失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.loadProfilesFailed')), 'error')
   } finally {
     profileLoading.value = false
   }
@@ -474,7 +485,7 @@ async function loadProfiles() {
 
 async function handleAddProfile() {
   if (!canCreateProfile.value) {
-    notify(`最多创建 ${profileMaxCustomCount} 个 Profile`, 'warning')
+    notify(t('providers.notify.profileLimit', { max: profileMaxCustomCount }), 'warning')
     return
   }
   removeDraftProfile()
@@ -524,7 +535,7 @@ async function commitProfileRename(profile: ProviderProfileItem) {
   }
 
   if (profileNameExists(name, profile.name)) {
-    profileRenameError.value = '名称已存在'
+    profileRenameError.value = t('providers.profile.nameExists')
     await focusProfileRenameInput()
     return
   }
@@ -538,7 +549,7 @@ async function commitProfileRename(profile: ProviderProfileItem) {
       if (ok) activeProfile.value = data.name
       await providerStore.fetchProviders(activeCliType.value as CliType, data.name)
       cancelProfileRename()
-      notify('Profile 已创建')
+      notify(t('providers.notify.profileCreated'))
       return
     }
 
@@ -556,9 +567,9 @@ async function commitProfileRename(profile: ProviderProfileItem) {
     await ensureProfileReady(data.name)
     await providerStore.fetchProviders(activeCliType.value as CliType, data.name)
     cancelProfileRename()
-    notify('Profile 已重命名')
+    notify(t('providers.notify.profileRenamed'))
   } catch (e: any) {
-    notify(getErrorMessage(e, creatingProfile ? '创建 Profile 失败' : '重命名 Profile 失败'), 'error')
+    notify(getErrorMessage(e, creatingProfile ? t('providers.notify.createProfileFailed') : t('providers.notify.renameProfileFailed')), 'error')
     await focusProfileRenameInput()
   } finally {
     profileLoading.value = false
@@ -568,7 +579,7 @@ async function commitProfileRename(profile: ProviderProfileItem) {
 async function handleDeleteProfile(profile: ProviderProfileItem) {
   if (profile.is_default) return
   try {
-    await confirm(`确定删除 Profile「${profileDisplayLabel(profile)}」？该 Profile 下的服务商和定时任务会一并删除。`, '确认')
+    await confirm(t('providers.confirm.deleteProfile', { name: profileDisplayLabel(profile) }), t('providers.confirm.title'))
     profileLoading.value = true
     const deletedIndex = profileTabs.value.findIndex(item => item.name === profile.name)
     const previousProfile = profileTabs.value[deletedIndex - 1].name
@@ -579,7 +590,7 @@ async function handleDeleteProfile(profile: ProviderProfileItem) {
     await loadProfiles()
     await providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
   } catch (e: any) {
-    if (e !== 'cancel') notify(getErrorMessage(e, '删除 Profile 失败'), 'error')
+    if (e !== 'cancel') notify(getErrorMessage(e, t('providers.notify.deleteProfileFailed')), 'error')
   } finally {
     profileLoading.value = false
   }
@@ -597,7 +608,7 @@ async function handleSwitchRelay() {
 function handleSwitchOfficial() {
   if (viewMode.value === 'official') return
   if (!canUseOfficialCredentials.value) {
-    notify('该 Agent 不支持托管官方凭证', 'warning')
+    notify(t('providers.notify.officialUnsupported'), 'warning')
     return
   }
   viewMode.value = 'official'
@@ -723,7 +734,7 @@ const credentialFileDefinitions = computed<CredentialFileDefinition[]>(() => {
   const compact = targets.size > 1
   return Array.from(targets, ([key, target]) => ({
     key,
-    name: Array.from(target.names).join('、'),
+    name: Array.from(target.names).join(t('providers.listSeparator')),
     format: target.format,
     placeholder: target.format === 'json' ? '{}' : '',
     compact,
@@ -784,10 +795,10 @@ function createProviderDraft(provider: Provider): ProviderDraft {
   }
 }
 function makeUniqueProviderName(name: string): string {
-  const trimmedName = name.trim() || '未命名服务商'
+  const trimmedName = name.trim() || t('providers.provider.unnamed')
   const existingNames = new Set(providerStore.providers.map((p) => p.name.trim().toLowerCase()))
   if (!existingNames.has(trimmedName.toLowerCase())) return trimmedName
-  const baseName = `${trimmedName} 副本`
+  const baseName = t('providers.provider.copySuffix', { name: trimmedName })
   let candidate = baseName
   let index = 2
   while (existingNames.has(candidate.toLowerCase())) {
@@ -837,11 +848,11 @@ watch(showDetectDialog, (open) => {
 
 async function handleStartDetect() {
   if (!detectModel.value.trim()) {
-    notify('请输入检测模型名称', 'error')
+    notify(t('providers.notify.detectModelRequired'), 'error')
     return
   }
   if (detectSelectedIds.value.length === 0) {
-    notify('请至少选择一个服务商', 'error')
+    notify(t('providers.notify.detectProviderRequired'), 'error')
     return
   }
   saveReusableModelName(activeCliType.value, detectModel.value)
@@ -866,7 +877,7 @@ async function handleStartDetect() {
   try {
     await providersApi.startTestModels(detectModel.value.trim(), detectSelectedIds.value, detectTestText.value.trim())
   } catch (e: any) {
-    notify(getErrorMessage(e, '检测失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.detectFailed')), 'error')
     detectLoading.value = false
   }
 }
@@ -874,9 +885,9 @@ async function copyResponseText(text: string) {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
-    notify('响应已复制到剪贴板')
+    notify(t('providers.notify.responseCopied'))
   } catch {
-    notify('复制失败', 'error')
+    notify(t('providers.notify.copyFailed'), 'error')
   }
 }
 
@@ -891,7 +902,7 @@ async function loadProfileSettingsStatus(cliType: CliType, profile: ProviderProf
     cacheProfileSettingsStatus(cliType, data)
     return data
   } catch (e: any) {
-    if (!silent) notify(getErrorMessage(e, '获取启动命令失败'), 'error')
+    if (!silent) notify(getErrorMessage(e, t('providers.notify.launchCommandFailed')), 'error')
     return null
   } finally {
     if (requestId === profileCommandRequestId) profileCommandLoading.value = null
@@ -908,9 +919,9 @@ async function copyCurrentProfileLaunchCommand() {
   try {
     await navigator.clipboard.writeText(command)
     const label = profileDisplayLabel(profileTabs.value.find(item => item.name === profile)) || profile
-    notify(`已复制 ${label} 启动命令`)
+    notify(t('providers.notify.launchCommandCopied', { name: label }))
   } catch {
-    notify('复制失败', 'error')
+    notify(t('providers.notify.copyFailed'), 'error')
   }
 }
 
@@ -979,7 +990,7 @@ async function loadProviderModels(
     modelSyncMap.value = { ...modelSyncMap.value, [provider.id]: data }
   } catch (e: any) {
     if (!silent && isCurrentModelSyncRequest(provider.id, signature, requestVersion)) {
-      notify(getErrorMessage(e, '获取模型列表失败'), 'error')
+      notify(getErrorMessage(e, t('providers.notify.loadModelsFailed')), 'error')
     }
   }
 }
@@ -1010,8 +1021,8 @@ async function applyModelMutation(
 
 async function syncProviderModels(provider: Provider) {
   if (modelSyncLoadingId.value !== null) return
-  const ok = await applyModelMutation(provider, () => providersApi.syncModels(provider.id), '同步模型列表失败')
-  if (ok) notify(`已同步 ${provider.name} 的模型列表`)
+  const ok = await applyModelMutation(provider, () => providersApi.syncModels(provider.id), t('providers.notify.syncModelsFailed'))
+  if (ok) notify(t('providers.notify.modelsSynced', { name: provider.name }))
 }
 
 // The backend syncs against the saved endpoint, so unsaved credential edits
@@ -1023,7 +1034,7 @@ function handleSyncEditingModels() {
     || form.value.base_url.trim() !== provider.base_url.trim()
     || form.value.api_key.trim() !== provider.api_key.trim()
   if (endpointEdited) {
-    notify('端点配置已修改，请先保存后再同步', 'warning')
+    notify(t('providers.notify.endpointEdited'), 'warning')
     return
   }
   void syncProviderModels(provider)
@@ -1037,7 +1048,7 @@ async function handleAddEditingModel(modelName: string) {
     return
   }
   if (modelSyncLoadingId.value !== null) return
-  await applyModelMutation(provider, () => providersApi.addManualModel(provider.id, modelName), '添加模型失败')
+  await applyModelMutation(provider, () => providersApi.addManualModel(provider.id, modelName), t('providers.notify.addModelFailed'))
 }
 async function handleRemoveEditingModel(modelId: number) {
   const provider = editingProvider.value
@@ -1047,7 +1058,7 @@ async function handleRemoveEditingModel(modelId: number) {
     return
   }
   if (modelSyncLoadingId.value !== null) return
-  await applyModelMutation(provider, () => providersApi.deleteModel(provider.id, modelId), '移除模型失败')
+  await applyModelMutation(provider, () => providersApi.deleteModel(provider.id, modelId), t('providers.notify.removeModelFailed'))
 }
 
 async function flushPendingManualModels(providerId: number) {
@@ -1059,7 +1070,7 @@ async function flushPendingManualModels(providerId: number) {
       failed.push(modelName)
     }
   }
-  if (failed.length) notify(`以下模型未能添加：${failed.join('、')}`, 'warning')
+  if (failed.length) notify(t('providers.notify.addModelsFailed', { names: failed.join(t('providers.listSeparator')) }), 'warning')
 }
 
 async function refreshPriceCatalog() {
@@ -1068,9 +1079,9 @@ async function refreshPriceCatalog() {
   try {
     const { data } = await providersApi.syncPrices()
     priceSyncStatus.value = data
-    notify(`价格目录已更新（${data.model_count} 个模型）`)
+    notify(t('providers.notify.priceCatalogUpdated', { count: data.model_count }))
   } catch (e: any) {
-    notify(getErrorMessage(e, '更新价格目录失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.updatePriceCatalogFailed')), 'error')
     try {
       const { data } = await providersApi.getPriceSyncStatus()
       priceSyncStatus.value = data
@@ -1098,13 +1109,13 @@ async function ensureProfileReady(profile: ProviderProfile): Promise<boolean> {
     const { data: ensured } = await settingsApi.ensureProfileSettings(cliType, profile)
     cacheProfileSettingsStatus(cliType, ensured)
     if (!ensured.uses_gateway) {
-      notify(`写入后仍未检测到有效配置：${ensured.path}`, 'error')
+      notify(t('providers.notify.profileConfigInvalid', { path: ensured.path }), 'error')
       return false
     }
 
     return true
   } catch (e: any) {
-    notify(getErrorMessage(e, '写入 Profile 配置失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.writeProfileConfigFailed')), 'error')
     return false
   } finally {
     profileSwitching.value = null
@@ -1193,7 +1204,7 @@ function handleAddProvider() {
 }
 function handleCopyProvider(provider: Provider) {
   copiedProvider.value = createProviderDraft(provider)
-  notify(`已复制服务商：${provider.name}`)
+  notify(t('providers.notify.providerCopied', { name: provider.name }))
 }
 async function handlePasteProvider() {
   if (!copiedProvider.value || pasteLoading.value) return
@@ -1204,7 +1215,7 @@ async function handlePasteProvider() {
     await providerStore.fetchProviders(targetCliType, targetProfile)
     const draft = cloneProviderDraft(copiedProvider.value)
     if (!activeProtocols.value.includes(draft.protocol)) {
-      notify('复制的端点类型不受当前 Agent 支持，请通过编辑服务商重新选择', 'error')
+      notify(t('providers.notify.protocolUnsupported'), 'error')
       return
     }
     const data: ProviderCreate = {
@@ -1214,9 +1225,9 @@ async function handlePasteProvider() {
       model_blacklist: draft.model_blacklist.filter((b) => b.model_pattern)
     }
     await providerStore.createProvider(data)
-    notify(`已粘贴服务商：${data.name}`)
+    notify(t('providers.notify.providerPasted', { name: data.name }))
   } catch (e: any) {
-    notify(getErrorMessage(e, '粘贴失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.pasteFailed')), 'error')
   } finally {
     pasteLoading.value = false
   }
@@ -1235,11 +1246,11 @@ function handleEdit(provider: Provider) {
 async function handleSave() {
   const protocol = form.value.protocol
   if (!protocol || !activeProtocols.value.includes(protocol)) {
-    notify('请选择当前 Agent 支持的端点类型', 'error')
+    notify(t('providers.notify.selectProtocol'), 'error')
     return
   }
   if (!form.value.name.trim() || !form.value.base_url.trim() || !form.value.api_key.trim()) {
-    notify('请填写完整的必填项', 'error')
+    notify(t('providers.notify.requiredFields'), 'error')
     return
   }
   const data = {
@@ -1258,17 +1269,17 @@ async function handleSave() {
   try {
     if (editingProvider.value) {
       await providerStore.updateProvider(editingProvider.value.id, data)
-      notify('更新成功')
+      notify(t('providers.notify.updated'))
     } else {
       const created = await providerStore.createProvider({ cli_type: activeCliType.value, ...data })
-      notify('添加成功')
+      notify(t('providers.notify.created'))
       await flushPendingManualModels(created.id)
     }
     showDialog.value = false
     resetForm()
     providerStore.fetchProviders(activeCliType.value as CliType, currentProviderProfile.value)
   } catch (e: any) {
-    notify(getErrorMessage(e, '保存失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.saveFailed')), 'error')
   }
 }
 async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
@@ -1276,9 +1287,9 @@ async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
   try {
     await providerStore.updateProvider(provider.id, { enabled })
     await settingsStore.fetchSettings()
-    notify(enabled ? '已启用' : '已停用')
+    notify(enabled ? t('providers.notify.enabled') : t('providers.notify.disabled'))
   } catch (e: any) {
-    notify(getErrorMessage(e, '切换失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.toggleFailed')), 'error')
   } finally {
     toggleLoadingId.value = null
   }
@@ -1286,29 +1297,29 @@ async function handleToggle({ provider, enabled }: ProviderTogglePayload) {
 async function handleDragEnd() {
   const ids = providerStore.providers.map((p) => p.id)
   await providerStore.reorderProviders(ids)
-  notify('排序已保存')
+  notify(t('providers.notify.orderSaved'))
 }
 async function handleReset(provider: Provider) {
   await providerStore.resetFailures(provider.id)
-  notify('重置成功')
+  notify(t('providers.notify.resetSuccess'))
 }
 async function handleCommand(command: string, provider: Provider) {
   if (command === 'delete') {
     try {
-      await confirm('确定删除该服务商？', '确认')
+      await confirm(t('providers.confirm.deleteProvider'), t('providers.confirm.title'))
       await providerStore.deleteProvider(provider.id)
       await settingsStore.fetchSettings()
       clearModelSyncEntry(provider.id)
-      notify('已删除')
+      notify(t('providers.notify.deleted'))
     } catch (e) {
-      if (e !== 'cancel') notify(getErrorMessage(e, '删除失败'), 'error')
+      if (e !== 'cancel') notify(getErrorMessage(e, t('providers.notify.deleteFailed')), 'error')
     }
   }
 }
 function applyCredentialPayload(raw: string) {
   const payload = JSON.parse(raw) as OfficialCredentialPayload
   if (payload.schema_version !== 1 || !payload.files || Array.isArray(payload.files)) {
-    throw new Error('凭证格式无效')
+    throw new Error(t('providers.credential.invalidFormat'))
   }
   for (const definition of credentialFileDefinitions.value) {
     const file = payload.files[definition.key]
@@ -1327,16 +1338,16 @@ function handleEditCredential(credential: OfficialCredential) {
   try {
     applyCredentialPayload(credential.credential_json)
   } catch (error) {
-    notify(getErrorMessage(error, '凭证格式无效'), 'error')
+    notify(getErrorMessage(error, t('providers.credential.invalidFormat')), 'error')
   }
 }
 async function handleDeleteCredential(credential: OfficialCredential) {
   try {
-    await confirm('确定删除该凭证？', '确认')
+    await confirm(t('providers.confirm.deleteCredential'), t('providers.confirm.title'))
     await credentialStore.deleteCredential(credential.id)
-    notify('已删除')
+    notify(t('providers.notify.deleted'))
   } catch (e) {
-    if (e !== 'cancel') notify(getErrorMessage(e, '删除失败'), 'error')
+    if (e !== 'cancel') notify(getErrorMessage(e, t('providers.notify.deleteFailed')), 'error')
   }
 }
 async function handleWriteCredential(credential: OfficialCredential) {
@@ -1345,9 +1356,9 @@ async function handleWriteCredential(credential: OfficialCredential) {
     await credentialsApi.writeConfig(credential.id)
     await settingsStore.fetchSettings()
     await credentialStore.fetchCredentials(activeCliType.value as CliType)
-    notify(`已写入凭证：${credential.name}`)
+    notify(t('providers.notify.credentialWritten', { name: credential.name }))
   } catch (e: any) {
-    notify(getErrorMessage(e, '写入失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.writeFailed')), 'error')
   } finally {
     writeCredentialLoadingId.value = null
   }
@@ -1356,32 +1367,32 @@ async function handleReadFromCli() {
   try {
     const { data } = await credentialsApi.readCliCredential(activeCliType.value as CliType)
     applyCredentialPayload(data)
-    notify('读取成功')
+    notify(t('providers.notify.readSuccess'))
   } catch (e: any) {
-    notify(getErrorMessage(e, '读取失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.readFailed')), 'error')
   }
 }
 async function handleSaveCredential() {
   if (!credentialForm.value.name) {
-    notify('请输入凭证名称', 'error')
+    notify(t('providers.notify.credentialNameRequired'), 'error')
     return
   }
   if (!canUseOfficialCredentials.value || credentialFileDefinitions.value.length === 0) {
-    notify('该 Agent 没有可用的官方凭证写入规则', 'error')
+    notify(t('providers.notify.noCredentialRules'), 'error')
     return
   }
   const files: OfficialCredentialPayload['files'] = {}
   for (const definition of credentialFileDefinitions.value) {
     const raw = credentialForm.value.files[definition.key]?.trim()
     if (!raw) {
-      notify(`请填写 ${definition.key}`, 'error')
+      notify(t('providers.notify.fileRequired', { key: definition.key }), 'error')
       return
     }
     if (definition.format === 'json') {
       try {
         files[definition.key] = { format: definition.format, content: JSON.parse(raw) }
       } catch {
-        notify(`${definition.name} 不是有效 JSON`, 'error')
+        notify(t('providers.notify.fileNotJson', { name: definition.name }), 'error')
         return
       }
     } else {
@@ -1397,22 +1408,22 @@ async function handleSaveCredential() {
   try {
     if (editingCredential.value) {
       await credentialStore.updateCredential(editingCredential.value.id, { name: data.name, credential_json: data.credential_json })
-      notify('更新成功')
+      notify(t('providers.notify.updated'))
     } else {
       await credentialStore.createCredential(data)
-      notify('添加成功')
+      notify(t('providers.notify.created'))
     }
     showCredentialDialog.value = false
     resetCredentialForm()
     credentialStore.fetchCredentials(activeCliType.value as CliType)
   } catch (e: any) {
-    notify(getErrorMessage(e, '保存失败'), 'error')
+    notify(getErrorMessage(e, t('providers.notify.saveFailed')), 'error')
   }
 }
 async function handleCredentialDragEnd() {
   const ids = credentialStore.credentials.map((c) => c.id)
   await credentialStore.reorderCredentials(ids, activeCliType.value)
-  notify('排序已保存')
+  notify(t('providers.notify.orderSaved'))
 }
 
 const now = ref(Date.now())
@@ -1424,11 +1435,11 @@ function handleVisibilityChange() {
   providerStore.expireBlacklists(now.value / 1000)
 }
 function getUnblacklistTime(provider: Provider): string {
-  if (!provider.is_blacklisted || !provider.blacklisted_until) return '已熔断'
+  if (!provider.is_blacklisted || !provider.blacklisted_until) return t('providers.status.blacklisted')
   const diffSeconds = provider.blacklisted_until - (now.value / 1000)
-  if (diffSeconds <= 0) return '已解除'
+  if (diffSeconds <= 0) return t('providers.status.released')
   const mins = Math.floor(diffSeconds / 60)
-  return mins === 0 ? `${Math.ceil(diffSeconds)}秒后解除` : `${mins}分${Math.ceil(diffSeconds % 60)}秒后解除`
+  return mins === 0 ? t('providers.status.releaseInSeconds', { seconds: Math.ceil(diffSeconds) }) : t('providers.status.releaseInMinutes', { minutes: mins, seconds: Math.ceil(diffSeconds % 60) })
 }
 
 onMounted(async () => {

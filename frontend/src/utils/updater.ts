@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-shell'
 import { ElNotification } from 'element-plus'
 import { notify } from '@/utils/notification'
 import { confirm } from '@/utils/confirm'
+import { translate } from '@/locales'
 
 // GitHub 仓库配置
 const GITHUB_OWNER = 'mos1128'
@@ -60,7 +61,7 @@ export async function checkForUpdates(silent: boolean = true): Promise<void> {
     if (!latestRelease) {
       // 仓库没有发布任何 release
       if (!silent) {
-        notify('当前没有发布的版本', 'info')
+        notify(translate('updater.noRelease'), 'info')
       }
       return
     }
@@ -69,29 +70,32 @@ export async function checkForUpdates(silent: boolean = true): Promise<void> {
     
     if (compareVersions(latestVersion, currentVersion) > 0) {
       // 有新版本
-      const updateTitle = `发现新版本 ${latestVersion}（当前版本: v${currentVersion}）`
+      const updateTitle = translate('updater.newVersionTitle', {
+        version: latestVersion,
+        current: currentVersion
+      })
       const releaseBody = latestRelease.body?.trim()
       const releaseNotes = releaseBody
         ? releaseBody
-        : '暂无更新日志。'
+        : translate('updater.noReleaseNotes')
 
       confirm(
         releaseNotes,
         updateTitle,
-        { confirmText: '前往下载', cancelText: '稍后再说', markdown: true }
+        { confirmText: translate('updater.download'), cancelText: translate('updater.later'), markdown: true }
       ).then(() => {
         open(latestRelease.html_url)
       }).catch(() => {})
     } else if (!silent) {
-      notify(`当前已是最新版本 v${currentVersion}`)
+      notify(translate('updater.upToDate', { version: currentVersion }))
     }
   } catch (error) {
     console.error('检查更新失败:', error)
     if (!silent) {
       confirm(
-        '无法获取更新信息，可能是网络问题。您可以手动访问发布页面查看最新版本。',
-        '检查更新',
-        { confirmText: '前往发布页面', cancelText: '取消' }
+        translate('updater.fetchFailed'),
+        translate('updater.checkUpdate'),
+        { confirmText: translate('updater.releasePage'), cancelText: translate('common.cancel') }
       ).then(() => {
         open(`https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`)
       }).catch(() => {})
@@ -113,8 +117,8 @@ export async function checkForUpdatesNotification(): Promise<void> {
     
     if (compareVersions(latestVersion, currentVersion) > 0) {
       ElNotification({
-        title: '发现新版本',
-        message: `新版本 ${latestVersion} 已发布，点击查看更新`,
+        title: translate('updater.foundTitle'),
+        message: translate('updater.foundMessage', { version: latestVersion }),
         type: 'info',
         duration: 0,
         onClick: () => {

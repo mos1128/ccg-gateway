@@ -3,10 +3,10 @@
     <section>
       <div class="section-head">
         <div>
-          <h2>内置 Agent</h2>
+          <h2>{{ t('agents.builtinTitle') }}</h2>
           <span class="section-count mono">{{ agentStore.agents.length }}</span>
         </div>
-        <el-tooltip content="刷新" placement="top" effect="light" :show-after="250">
+        <el-tooltip :content="t('common.refresh')" placement="top" effect="light" :show-after="250">
           <button class="v2-row-act" type="button" @click="refresh">
             <el-icon><Refresh /></el-icon>
           </button>
@@ -26,9 +26,9 @@
             <span class="v2-pill v2-pill-neutral mono">schema {{ agent.schema_version }}</span>
           </header>
 
-          <div v-if="agent.remark" class="agent-remark">
+          <div v-if="displayRemark(agent)" class="agent-remark">
             <el-icon><InfoFilled /></el-icon>
-            <span>{{ agent.remark }}</span>
+            <span>{{ displayRemark(agent) }}</span>
           </div>
 
           <div class="agent-meta">
@@ -36,7 +36,7 @@
             <div class="pill-row">
               <span v-for="pattern in agent.user_agent" :key="pattern" class="v2-pill v2-pill-neutral mono">{{ pattern }}</span>
             </div>
-            <div class="meta-label">端点类型</div>
+            <div class="meta-label">{{ t('agents.endpointType') }}</div>
             <div class="pill-row">
               <span v-for="protocol in agent.protocols" :key="protocol" class="v2-pill v2-pill-info mono">{{ protocolLabel(protocol) }}</span>
             </div>
@@ -57,7 +57,7 @@
 
     <section v-if="agentStore.definitionErrors.length" class="v2-card diagnostic-block error-block">
       <div class="block-head">
-        <h2>定义加载错误</h2>
+        <h2>{{ t('agents.definitionErrors') }}</h2>
         <span class="v2-pill v2-pill-danger mono">{{ agentStore.definitionErrors.length }}</span>
       </div>
       <div v-for="error in agentStore.definitionErrors" :key="error.source" class="error-row">
@@ -68,17 +68,17 @@
 
     <section class="v2-card diagnostic-block">
       <div class="block-head">
-        <h2>最近未知 User-Agent</h2>
+        <h2>{{ t('agents.unknownUserAgents') }}</h2>
         <span class="v2-pill v2-pill-neutral mono">{{ unknownDiagnostics.length }}</span>
       </div>
-      <V2Empty v-if="unknownDiagnostics.length === 0" title="暂无未知 Agent" />
+      <V2Empty v-if="unknownDiagnostics.length === 0" :title="t('agents.noUnknownAgents')" />
       <div v-else class="diagnostic-table-wrap">
         <table class="v2-table diagnostic-table">
           <thead>
             <tr>
               <th>User-Agent</th>
-              <th>最近出现</th>
-              <th>次数</th>
+              <th>{{ t('agents.lastSeen') }}</th>
+              <th>{{ t('agents.count') }}</th>
               <th></th>
             </tr>
           </thead>
@@ -88,7 +88,7 @@
               <td class="mono">{{ formatTime(item.last_seen) }}</td>
               <td class="mono">{{ item.occurrence_count }}</td>
               <td>
-                <el-tooltip content="复制 User-Agent" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="t('agents.copyUserAgent')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act" type="button" @click="copyUa(item)">
                     <el-icon><CopyDocument /></el-icon>
                   </button>
@@ -103,10 +103,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { CopyDocument, InfoFilled, Refresh } from '@element-plus/icons-vue'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
 import V2Empty from '@/components/V2Empty.vue'
 import { useAgentStore } from '@/stores/agents'
+import { useLocaleStore } from '@/stores/locale'
 import { notify } from '@/utils/notification'
 import type {
   AgentDiagnostic,
@@ -115,21 +117,40 @@ import type {
   Protocol,
 } from '@/types/models'
 
+const { t } = useI18n()
 const agentStore = useAgentStore()
-const featureLabels: Record<AgentFeatureName, string> = {
-  provider_config: 'Provider 配置',
-  global_preset: '全局预设',
-  profiles: 'Profile',
-  official_login: '官方凭证',
-  model_mapping: '模型映射',
-  token_usage: 'Token 统计',
-  skills: 'Skill',
-  mcp: 'MCP',
-  sessions: 'Session',
-  plugins: 'Plugin',
-  prompts: '提示词',
+const localeStore = useLocaleStore()
+
+function displayRemark(agent: AgentInfo): string {
+  if (localeStore.locale === 'en') return agent.remark_en || agent.remark || ''
+  return agent.remark || ''
 }
-const featureKeys = Object.keys(featureLabels) as AgentFeatureName[]
+const featureKeys: AgentFeatureName[] = [
+  'provider_config',
+  'global_preset',
+  'profiles',
+  'official_login',
+  'model_mapping',
+  'token_usage',
+  'skills',
+  'mcp',
+  'sessions',
+  'plugins',
+  'prompts',
+]
+const featureLabels = computed<Record<AgentFeatureName, string>>(() => ({
+  provider_config: t('agents.features.providerConfig'),
+  global_preset: t('agents.features.globalPreset'),
+  profiles: t('agents.features.profiles'),
+  official_login: t('agents.features.officialLogin'),
+  model_mapping: t('agents.features.modelMapping'),
+  token_usage: t('agents.features.tokenUsage'),
+  skills: t('agents.features.skills'),
+  mcp: t('agents.features.mcp'),
+  sessions: t('agents.features.sessions'),
+  plugins: t('agents.features.plugins'),
+  prompts: t('agents.features.prompts'),
+}))
 
 interface DisplayFeature {
   key: AgentFeatureName
@@ -141,26 +162,27 @@ const unknownDiagnostics = computed(() =>
   agentStore.diagnostics.filter((item) => item.kind === 'unknown_agent'),
 )
 
+const protocolLabels = computed<Record<Protocol, string>>(() => ({
+  anthropic_messages: t('agents.protocols.anthropicMessages'),
+  openai_chat: t('agents.protocols.openaiChat'),
+  openai_responses: t('agents.protocols.openaiResponses'),
+  gemini_generate_content: t('agents.protocols.geminiGenerateContent'),
+}))
+
 function protocolLabel(protocol: Protocol) {
-  const labels: Record<Protocol, string> = {
-    anthropic_messages: 'Anthropic Messages',
-    openai_chat: 'OpenAI Chat',
-    openai_responses: 'OpenAI Responses',
-    gemini_generate_content: 'Gemini GenerateContent',
-  }
-  return labels[protocol]
+  return protocolLabels.value[protocol]
 }
 
 function displayFeatures(agent: AgentInfo): DisplayFeature[] {
   return featureKeys.map((key) => ({
     key,
-    label: featureLabels[key],
+    label: featureLabels.value[key],
     enabled: agent.features[key].enabled,
   }))
 }
 
 function featureStatusLabel(feature: DisplayFeature) {
-  return feature.enabled ? '可用' : '不可用'
+  return feature.enabled ? t('agents.available') : t('agents.unavailable')
 }
 
 function featureStatusClass(feature: DisplayFeature) {
@@ -182,7 +204,7 @@ function formatTime(timestamp: number) {
 
 async function copyUa(item: AgentDiagnostic) {
   await navigator.clipboard.writeText(diagnosticUserAgent(item))
-  notify('已复制 User-Agent')
+  notify(t('agents.userAgentCopied'))
 }
 
 async function refresh() {

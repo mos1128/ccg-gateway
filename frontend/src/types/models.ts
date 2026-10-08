@@ -124,6 +124,8 @@ export interface AgentInfo {
   id: CliType
   name: string
   remark?: string | null
+  /** 英文界面下的备注，缺省时回退到 remark */
+  remark_en?: string | null
   icon?: AgentIcon | null
   config_dir: string
   user_agent: string[]
@@ -523,6 +525,7 @@ export interface SystemStatus {
   port: number
   gateway_url: string
   error_message: string | null
+  error_code: string | null
   host_env_override: boolean
   port_env_override: boolean
   data_dir: string
@@ -716,6 +719,10 @@ export interface RequestLogDetail extends RequestLogListItem {
   provider_headers: string | null
   provider_body: string | null
   error_message: string | null
+  /** gateway = 网关生成（error_code 可翻译）；upstream = 上游透传原文；旧数据为 null */
+  error_source: string | null
+  error_code: string | null
+  error_params: string | null
 }
 
 export interface RequestLogListResponse {
@@ -730,6 +737,10 @@ export interface SystemLogItem {
   created_at: number
   event_type: string
   message: string
+  /** 结构化消息键（logs.sysLog.*），旧数据为 null */
+  message_key: string | null
+  /** 结构化消息参数（JSON 对象字符串），旧数据为 null */
+  message_params: string | null
 }
 
 export interface SystemLogListResponse {

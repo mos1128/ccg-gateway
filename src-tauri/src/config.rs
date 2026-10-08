@@ -70,7 +70,7 @@ pub fn gateway_host_env_override() -> Option<String> {
 pub fn validate_gateway_host(host: &str) -> Result<String, String> {
     let host = host.trim();
     if host.is_empty() {
-        return Err("监听地址不能为空".to_string());
+        return Err(crate::tr!("err.cfg.host_required"));
     }
     if host.parse::<IpAddr>().is_ok() || host.eq_ignore_ascii_case("localhost") {
         return Ok(host.to_string());
@@ -87,7 +87,7 @@ pub fn validate_gateway_host(host: &str) -> Result<String, String> {
                     .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
         })
     {
-        return Err("监听地址必须是有效的 IP 地址或主机名".to_string());
+        return Err(crate::tr!("err.cfg.host_invalid"));
     }
     Ok(host.to_string())
 }
@@ -187,48 +187,48 @@ pub fn update_bootstrap_config(
     let path = bootstrap_config_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
-            .map_err(|error| format!("无法创建配置目录 {}：{}", parent.display(), error))?;
+            .map_err(|error| crate::tr!("err.cfg.config_dir_create_failed", parent.display(), error))?;
     }
     let content = serde_json::to_string_pretty(&config)
-        .map_err(|error| format!("无法序列化启动配置：{}", error))?;
+        .map_err(|error| crate::tr!("err.cfg.bootstrap_serialize_failed", error))?;
     let mut file = AtomicWriteFile::options()
         .open(&path)
-        .map_err(|error| format!("无法创建启动配置 {}：{}", path.display(), error))?;
+        .map_err(|error| crate::tr!("err.cfg.bootstrap_create_failed", path.display(), error))?;
     file.write_all(content.as_bytes())
-        .map_err(|error| format!("无法写入启动配置 {}：{}", path.display(), error))?;
+        .map_err(|error| crate::tr!("err.cfg.bootstrap_write_failed", path.display(), error))?;
     file.commit()
-        .map_err(|error| format!("无法替换启动配置 {}：{}", path.display(), error))
+        .map_err(|error| crate::tr!("err.cfg.bootstrap_replace_failed", path.display(), error))
 }
 
 pub fn validate_log_level(log_level: &str) -> Result<String, String> {
     let log_level = log_level.trim();
     if log_level.is_empty() {
-        return Err("日志级别不能为空".to_string());
+        return Err(crate::tr!("err.cfg.log_level_required"));
     }
     tracing_subscriber::EnvFilter::try_new(log_level)
-        .map_err(|error| format!("日志级别格式无效：{}", error))?;
+        .map_err(|error| crate::tr!("err.cfg.log_level_invalid", error))?;
     Ok(log_level.to_string())
 }
 
 fn validate_data_dir(data_dir: &str) -> Result<String, String> {
     let data_dir = data_dir.trim();
     if data_dir.is_empty() {
-        return Err("数据目录不能为空".to_string());
+        return Err(crate::tr!("err.cfg.data_dir_required"));
     }
 
     let path = PathBuf::from(expand_home_path(data_dir));
     if !path.is_absolute() {
-        return Err("数据目录必须使用绝对路径".to_string());
+        return Err(crate::tr!("err.cfg.data_dir_absolute_required"));
     }
     fs::create_dir_all(&path)
-        .map_err(|error| format!("无法创建数据目录 {}：{}", path.display(), error))?;
+        .map_err(|error| crate::tr!("err.cfg.data_dir_create_failed", path.display(), error))?;
 
     let probe_path = path.join(format!(".ccg-gateway-write-test-{}", std::process::id()));
     fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&probe_path)
-        .map_err(|error| format!("数据目录不可写 {}：{}", path.display(), error))?;
+        .map_err(|error| crate::tr!("err.cfg.data_dir_not_writable", path.display(), error))?;
     let _ = fs::remove_file(&probe_path);
 
     Ok(path.to_string_lossy().to_string())

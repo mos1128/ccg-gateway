@@ -21,13 +21,13 @@ pub fn validate_config_content(format: ConfigFormat, content: String) -> Result<
     match format {
         ConfigFormat::Json => serde_json::from_str::<serde_json::Value>(&content)
             .map(|_| ())
-            .map_err(|error| format!("JSON 格式错误: {error}")),
+            .map_err(|error| crate::tr!("err.agent_cmd.json_format_invalid", error)),
         ConfigFormat::Toml => toml::from_str::<toml::Value>(&content)
             .map(|_| ())
-            .map_err(|error| format!("TOML 格式错误: {error}")),
+            .map_err(|error| crate::tr!("err.agent_cmd.toml_format_invalid", error)),
         ConfigFormat::Yaml => serde_yaml::from_str::<serde_json::Value>(&content)
             .map(|_| ())
-            .map_err(|error| format!("YAML 格式错误: {error}")),
+            .map_err(|error| crate::tr!("err.agent_cmd.yaml_format_invalid", error)),
         ConfigFormat::Jsonc | ConfigFormat::Env => Ok(()),
     }
 }

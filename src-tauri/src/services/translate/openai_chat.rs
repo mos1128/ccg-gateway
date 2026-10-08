@@ -344,7 +344,7 @@ fn build_user(blocks: &[Block], messages: &mut Vec<Value>) {
     }
     // tool 消息只收文本，图片挪到紧随其后的这条 user 消息里，并说明来处。
     if !media.is_empty() {
-        let mut moved = vec![json!({"type": "text", "text": TOOL_MEDIA_MOVED})];
+        let mut moved = vec![json!({"type": "text", "text": tool_media_moved()})];
         moved.extend(
             media
                 .iter()

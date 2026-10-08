@@ -30,20 +30,20 @@ pub async fn check_for_updates() -> Result<Option<GitHubRelease>> {
         .header("User-Agent", "ccg-gateway")
         .send()
         .await
-        .map_err(|e| format!("网络请求失败: {}", e))?;
+        .map_err(|e| crate::tr!("err.update.network_failed", e))?;
 
     if response.status() == 404 {
         return Ok(None);
     }
 
     if !response.status().is_success() {
-        return Err(format!("GitHub API 错误: {}", response.status()));
+        return Err(crate::tr!("err.update.github_api_error", response.status()));
     }
 
     let release: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| format!("解析响应失败: {}", e))?;
+        .map_err(|e| crate::tr!("err.update.response_parse_failed", e))?;
 
     Ok(Some(GitHubRelease {
         tag_name: release["tag_name"].as_str().unwrap_or("").to_string(),

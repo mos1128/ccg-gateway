@@ -2,8 +2,8 @@
   <div class="logs-page">
     <div class="logs-bar">
       <V2Tabs class="logs-tabs">
-        <div class="v2-tab" :class="{ active: activeTab === 'request' }" @click="activeTab = 'request'">请求日志</div>
-        <div class="v2-tab" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">系统日志</div>
+        <div class="v2-tab" :class="{ active: activeTab === 'request' }" @click="activeTab = 'request'">{{ t('logs.tabs.request') }}</div>
+        <div class="v2-tab" :class="{ active: activeTab === 'system' }" @click="activeTab = 'system'">{{ t('logs.tabs.system') }}</div>
       </V2Tabs>
     </div>
 
@@ -14,15 +14,15 @@
           <AppSelect :model-value="requestFilters.cli_type" :options="cliFilterOptions" width="120px" @change="handleRequestCliChange" />
           <AppSelect :model-value="requestFilters.provider_name" :options="providerFilterOptions" width="160px" @change="handleRequestProviderChange" />
           <div style="flex:1"></div>
-          <span class="logs-flabel">日志级别</span>
+          <span class="logs-flabel">{{ t('logs.filters.logLevel') }}</span>
           <AppSelect :model-value="logRecordMode" :options="logModeOptions" width="140px" @change="v => setLogMode(v as LogRecordMode)" />
-          <el-tooltip content="查询" placement="top" effect="light" :show-after="250">
+          <el-tooltip :content="t('logs.filters.query')" placement="top" effect="light" :show-after="250">
             <button class="v2-row-act" @click="fetchRequestLogs"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
           </el-tooltip>
-          <el-tooltip content="重置" placement="top" effect="light" :show-after="250">
+          <el-tooltip :content="t('logs.filters.reset')" placement="top" effect="light" :show-after="250">
             <button class="v2-row-act" @click="resetRequestFilters"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button>
           </el-tooltip>
-          <el-tooltip content="清理" placement="top" effect="light" :show-after="250">
+          <el-tooltip :content="t('logs.filters.clean')" placement="top" effect="light" :show-after="250">
             <el-dropdown trigger="click" placement="bottom-end" @command="handleClean">
               <button class="v2-row-act danger"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
               <template #dropdown>
@@ -38,28 +38,28 @@
           <table class="v2-table logs-request-table">
             <thead>
               <tr>
-                <th>ID</th><th>Agent</th><th>服务商</th><th>状态</th>
+                <th>ID</th><th>Agent</th><th>{{ t('logs.table.provider') }}</th><th>{{ t('logs.table.status') }}</th>
                 <th>
-                  <el-tooltip content="首字节耗时 / 总耗时" placement="top" effect="light" :show-after="250">
-                    <span>耗时</span>
+                  <el-tooltip :content="t('logs.table.durationTip')" placement="top" effect="light" :show-after="250">
+                    <span>{{ t('logs.table.duration') }}</span>
                   </el-tooltip>
                 </th>
                 <th>
-                  <el-tooltip content="生成速度：输出 Token ÷（总耗时 − 首字节耗时）" placement="top" effect="light" :show-after="250">
-                    <span>速度</span>
+                  <el-tooltip :content="t('logs.table.speedTip')" placement="top" effect="light" :show-after="250">
+                    <span>{{ t('logs.table.speed') }}</span>
                   </el-tooltip>
                 </th>
                 <th>
-                  <el-tooltip content="输入 Token / 输出 Token" placement="top" effect="light" :show-after="250">
-                    <span>Token</span>
+                  <el-tooltip :content="t('logs.table.tokensTip')" placement="top" effect="light" :show-after="250">
+                    <span>{{ t('logs.table.tokens') }}</span>
                   </el-tooltip>
                 </th>
                 <th>
-                  <el-tooltip content="缓存读取 /（输入 + 缓存读取 + 缓存写入）" placement="top" effect="light" :show-after="250">
-                    <span>缓存命中率</span>
+                  <el-tooltip :content="t('logs.table.cacheHitRateTip')" placement="top" effect="light" :show-after="250">
+                    <span>{{ t('logs.table.cacheHitRate') }}</span>
                   </el-tooltip>
                 </th>
-                <th>费用</th><th>时间</th><th>模型映射</th><th class="logs-sticky-col">操作</th>
+                <th>{{ t('logs.table.cost') }}</th><th>{{ t('logs.table.time') }}</th><th>{{ t('logs.table.modelMap') }}</th><th class="logs-sticky-col">{{ t('logs.table.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -76,7 +76,7 @@
                 </td>
                 <td>{{ row.provider_name || '-' }}</td>
                 <td>
-                  <el-tooltip v-if="!row.finished_at" content="请求进行中" placement="top" effect="light" :show-after="250">
+                  <el-tooltip v-if="!row.finished_at" :content="t('logs.table.running')" placement="top" effect="light" :show-after="250">
                     <span class="v2-pill dot v2-pill-info logs-running">Run</span>
                   </el-tooltip>
                   <span v-else-if="row.status_code" class="v2-pill dot" :class="statusPill(row.status_code)">{{ row.status_code }}</span>
@@ -84,8 +84,8 @@
                 </td>
                 <td class="mono" :class="elapsedTimeClass(row)">
                   <div class="logs-cell-stack logs-metric-stack">
-                    <span class="logs-cell-line"><span class="logs-cell-label">首</span><span>{{ formatDuration(row.first_byte_ms) }}</span></span>
-                    <span class="logs-cell-line"><span class="logs-cell-label">总</span><span>{{ formatDuration(requestElapsedMs(row)) }}</span></span>
+                    <span class="logs-cell-line"><span class="logs-cell-label">{{ t('logs.table.firstByte') }}</span><span>{{ formatDuration(row.first_byte_ms) }}</span></span>
+                    <span class="logs-cell-line"><span class="logs-cell-label">{{ t('logs.table.total') }}</span><span>{{ formatDuration(requestElapsedMs(row)) }}</span></span>
                   </div>
                 </td>
                 <td class="mono">
@@ -93,8 +93,8 @@
                 </td>
                 <td class="mono">
                   <div class="logs-cell-stack logs-metric-stack">
-                    <span class="logs-cell-line"><span class="logs-cell-label">入</span><span>{{ formatTokens(row.input_tokens) }}</span></span>
-                    <span class="logs-cell-line"><span class="logs-cell-label">出</span><span>{{ formatTokens(row.output_tokens) }}</span></span>
+                    <span class="logs-cell-line"><span class="logs-cell-label">{{ t('logs.table.input') }}</span><span>{{ formatTokens(row.input_tokens) }}</span></span>
+                    <span class="logs-cell-line"><span class="logs-cell-label">{{ t('logs.table.output') }}</span><span>{{ formatTokens(row.output_tokens) }}</span></span>
                   </div>
                 </td>
                 <td class="mono">{{ formatCacheHitRate(row) }}</td>
@@ -103,10 +103,10 @@
                   <el-tooltip placement="top" effect="light" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
                     <template #content>
                       <div class="profile-help logs-cost-tooltip">
-                        <div class="tooltip-title">费用计算</div>
+                        <div class="tooltip-title">{{ t('logs.cost.title') }}</div>
                         <div class="logs-cost-line">
-                          <span class="logs-cost-label">使用模型</span>
-                          <span class="logs-cost-expr logs-cost-model" :title="costModel(row)">{{ costModel(row) }}</span>
+                          <span class="logs-cost-label">{{ t('logs.cost.model') }}</span>
+                          <span class="logs-cost-expr logs-cost-model"><OverflowText :text="costModel(row)" /></span>
                         </div>
                         <div v-for="line in costLines(row)" :key="line.label" class="logs-cost-line">
                           <span class="logs-cost-label">{{ line.label }}</span>
@@ -114,15 +114,15 @@
                           <span class="logs-cost-amount">${{ line.amount }}</span>
                         </div>
                         <div class="logs-cost-line logs-cost-total">
-                          <span class="logs-cost-label">合计</span>
-                          <span class="logs-cost-expr">{{ row.cost?.matched ? `× ${formatPrice(row.cost.multiplier)}` : '模型未命中，费用按 0 计' }}</span>
+                          <span class="logs-cost-label">{{ t('logs.cost.total') }}</span>
+                          <span class="logs-cost-expr">{{ row.cost?.matched ? `× ${formatPrice(row.cost.multiplier)}` : t('logs.cost.notMatched') }}</span>
                           <span class="logs-cost-amount">${{ formatCost(row.total_cost) }}</span>
                         </div>
-                        <div v-if="row.cost?.source" class="logs-cost-note">价格来源：{{ formatCostSource(row.cost.source) }}</div>
+                        <div v-if="row.cost?.source" class="logs-cost-note">{{ t('logs.cost.source', { source: formatCostSource(row.cost.source) }) }}</div>
                         <div v-if="costNote(row)" class="logs-cost-note">{{ costNote(row) }}</div>
                       </div>
                     </template>
-                    <span class="logs-cost-info" tabindex="0" aria-label="查看费用计算"><el-icon><InfoFilled /></el-icon></span>
+                    <span class="logs-cost-info" tabindex="0" :aria-label="t('logs.cost.viewDetail')"><el-icon><InfoFilled /></el-icon></span>
                   </el-tooltip>
                 </td>
                 <td class="mono">
@@ -136,18 +136,14 @@
                 <td class="mono logs-map">
                   <div v-if="requestModel(row)" class="logs-cell-stack logs-model-stack">
                     <span class="logs-cell-line logs-model-line">
-                      <span class="logs-cell-label">请求</span>
-                      <el-tooltip :content="requestModel(row)" placement="top" effect="light" :show-after="400">
-                        <span class="logs-model-badge">{{ requestModel(row) }}</span>
-                      </el-tooltip>
+                      <span class="logs-cell-label">{{ t('logs.table.request') }}</span>
+                      <span class="logs-model-badge"><OverflowText :text="requestModel(row)" /></span>
                     </span>
                     <span class="logs-cell-line logs-model-line">
-                      <span class="logs-cell-label">上游</span>
-                      <el-tooltip v-if="row.target_model" :content="row.target_model" placement="top" effect="light" :show-after="400">
-                        <span class="logs-model-badge">{{ row.target_model }}</span>
-                      </el-tooltip>
-                      <span v-else class="logs-model-badge logs-model-direct">直传</span>
-                      <el-tooltip v-if="row.upstream_protocol" :content="`协议转换：${formatProtocolLabel(row.protocol)} → ${formatProtocolLabel(row.upstream_protocol)}`" placement="top" effect="light" :show-after="250">
+                      <span class="logs-cell-label">{{ t('logs.table.upstream') }}</span>
+                      <span v-if="row.target_model" class="logs-model-badge"><OverflowText :text="row.target_model" /></span>
+                      <span v-else class="logs-model-badge logs-model-direct">{{ t('logs.table.direct') }}</span>
+                      <el-tooltip v-if="row.upstream_protocol" :content="t('logs.table.protocolConvert', { from: formatProtocolLabel(row.protocol), to: formatProtocolLabel(row.upstream_protocol) })" placement="top" effect="light" :show-after="250">
                         <span class="logs-model-protocol">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
                         </span>
@@ -156,14 +152,14 @@
                   </div>
                   <span v-else class="logs-model-empty">-</span>
                 </td>
-                <td class="logs-sticky-col"><a v-if="row.finished_at" class="logs-link" @click="showRequestDetail(row.id)">详情</a><span v-else class="v2-hint">-</span></td>
+                <td class="logs-sticky-col"><a v-if="row.finished_at" class="logs-link" @click="showRequestDetail(row.id)">{{ t('logs.table.detail') }}</a><span v-else class="v2-hint">-</span></td>
               </tr>
-              <tr v-if="requestLogs.length === 0"><td colspan="12" class="logs-empty">暂无日志记录</td></tr>
+              <tr v-if="requestLogs.length === 0"><td colspan="12" class="logs-empty">{{ t('logs.table.empty') }}</td></tr>
             </tbody>
           </table>
         </div>
         <div class="logs-pager">
-          <span class="v2-hint">总计 {{ requestTotal }}</span>
+          <span class="v2-hint">{{ t('logs.table.totalCount', { total: requestTotal }) }}</span>
           <el-pagination size="small" v-model:current-page="requestPage" v-model:page-size="requestPageSize" :page-sizes="[20, 50, 100]" :total="requestTotal" layout="sizes, prev, pager, next" @size-change="fetchRequestLogs" @current-change="fetchRequestLogs" />
         </div>
       </div>
@@ -175,48 +171,48 @@
         <div class="logs-filters">
           <AppSelect :model-value="systemFilters.event_type" :options="eventTypeOptions" width="140px" @change="handleSystemEventTypeChange" />
           <div style="flex:1"></div>
-          <el-tooltip content="查询" placement="top" effect="light" :show-after="250">
+          <el-tooltip :content="t('logs.filters.query')" placement="top" effect="light" :show-after="250">
             <button class="v2-row-act" @click="fetchSystemLogs"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button>
           </el-tooltip>
-          <el-tooltip content="重置" placement="top" effect="light" :show-after="250">
+          <el-tooltip :content="t('logs.filters.reset')" placement="top" effect="light" :show-after="250">
             <button class="v2-row-act" @click="resetSystemFilters"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg></button>
           </el-tooltip>
-          <el-tooltip content="清空" placement="top" effect="light" :show-after="250">
+          <el-tooltip :content="t('logs.filters.clear')" placement="top" effect="light" :show-after="250">
             <button class="v2-row-act danger" @click="clearSystemLogs"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
           </el-tooltip>
         </div>
 
         <div class="logs-scroll">
           <table class="v2-table">
-            <thead><tr><th>ID</th><th>时间</th><th>事件类型</th><th>事件消息</th></tr></thead>
+            <thead><tr><th>ID</th><th>{{ t('logs.table.time') }}</th><th>{{ t('logs.table.eventType') }}</th><th>{{ t('logs.table.message') }}</th></tr></thead>
             <tbody>
               <tr v-for="row in systemLogs" :key="row.id">
                 <td class="mono">{{ row.id }}</td>
                 <td class="mono">{{ formatTime(row.created_at) }}</td>
                 <td>{{ formatEventType(row.event_type) }}</td>
-                <td>{{ row.message }}</td>
+                <td>{{ formatSystemLogMessage(row) }}</td>
               </tr>
-              <tr v-if="systemLogs.length === 0"><td colspan="4" class="logs-empty">暂无日志记录</td></tr>
+              <tr v-if="systemLogs.length === 0"><td colspan="4" class="logs-empty">{{ t('logs.table.empty') }}</td></tr>
             </tbody>
           </table>
         </div>
         <div class="logs-pager">
-          <span class="v2-hint">总计 {{ systemTotal }}</span>
+          <span class="v2-hint">{{ t('logs.table.totalCount', { total: systemTotal }) }}</span>
           <el-pagination size="small" v-model:current-page="systemPage" v-model:page-size="systemPageSize" :page-sizes="[20, 50, 100]" :total="systemTotal" layout="sizes, prev, pager, next" @size-change="fetchSystemLogs" @current-change="fetchSystemLogs" />
         </div>
       </div>
     </template>
 
-    <V2Drawer v-model="requestDetailVisible" title="请求详情" :show-footer="false" width="80%">
+    <V2Drawer v-model="requestDetailVisible" :title="t('logs.detail.title')" :show-footer="false" width="80%">
       <div v-if="requestDetail" class="logs-detail">
         <div class="logs-detail-meta">
           <span class="v2-pill v2-pill-neutral">{{ formatCliLabel(requestDetail.cli_type) }}</span>
           <span class="v2-pill v2-pill-neutral mono">{{ requestDetail.profile || 'default' }}</span>
           <span class="v2-pill v2-pill-info mono">{{ formatProtocolLabel(requestDetail.protocol) }}<template v-if="requestDetail.upstream_protocol"> → {{ formatProtocolLabel(requestDetail.upstream_protocol) }}</template></span>
-          <span class="v2-pill v2-pill-neutral">{{ requestDetail.provider_name || '未选择服务商' }}</span>
+          <span class="v2-pill v2-pill-neutral">{{ requestDetail.provider_name || t('logs.detail.noProvider') }}</span>
         </div>
         <div v-if="requestDetail.error_message" class="logs-detail-err" :class="errorMessageClass(requestDetail)">
-          <span class="logs-err-prefix">{{ errorMessagePrefix(requestDetail) }}</span>{{ requestDetail.error_message }}
+          <span class="logs-err-prefix">{{ errorMessagePrefix(requestDetail) }}</span>{{ errorMessageText(requestDetail) }}
         </div>
         <div class="logs-detail-list">
           <section v-for="section in detailSections" :key="section.group" class="logs-sec" :class="{ open: expandedDetailGroups[section.group] }">
@@ -257,6 +253,7 @@
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
 import AppSelect, { type AppSelectOption } from '@/components/AppSelect.vue'
+import OverflowText from '@/components/OverflowText.vue'
 import CliBrandIcon from '@/components/CliBrandIcon.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
@@ -269,11 +266,11 @@ import { useAgentStore } from '@/stores/agents'
 import { getErrorMessage } from '@/utils/error'
 import { formatCost, formatJson as formatJsonUtil, formatTokens } from '@/utils/json'
 import { InfoFilled } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
 import { PROTOCOL_LABELS } from '@/types/models'
 import type { Protocol, RequestLogListItem, RequestLogDetail, SystemLogItem } from '@/types/models'
 
 type LogRecordMode = 'full' | 'failure_only' | 'disabled'
-const logModeMap: Record<LogRecordMode, string> = { full: '全量记录', failure_only: '失败时记录详情', disabled: '停用日志' }
 type DetailBlockGroup = 'client' | 'forward' | 'provider'
 type DetailBlockKey = 'client_headers' | 'client_body' | 'forward_headers' | 'forward_body' | 'provider_headers' | 'provider_body'
 interface DetailBlock {
@@ -305,18 +302,19 @@ const DETAIL_PREVIEW_CHARS = 32 * 1024
 
 const uiStore = useUiStore()
 const agentStore = useAgentStore()
+const { t } = useI18n()
 const activeTab = computed({
   get: () => uiStore.logsActiveTab,
   set: (v) => uiStore.setLogsActiveTab(v as 'request' | 'system')
 })
 const logRecordMode = ref<LogRecordMode>('failure_only')
-const cleanMenuItems: AppSelectOption[] = [
-  { label: '清理全部日志', value: 'all_logs' },
-  { label: '清理全部详情', value: 'all_details' },
-  { label: '清理统计数据', value: 'stats_data' },
-  { label: '清理30天前日志', value: 'old_logs' },
-  { label: '清理30天前详情', value: 'old_details' }
-]
+const cleanMenuItems = computed<AppSelectOption[]>(() => [
+  { label: t('logs.clean.allLogs'), value: 'all_logs' },
+  { label: t('logs.clean.allDetails'), value: 'all_details' },
+  { label: t('logs.clean.statsData'), value: 'stats_data' },
+  { label: t('logs.clean.oldLogs'), value: 'old_logs' },
+  { label: t('logs.clean.oldDetails'), value: 'old_details' }
+])
 const gatewayUrl = ref('')
 const providerOptions = ref<string[]>([])
 let requestLogListener: (() => void) | null = null
@@ -324,11 +322,15 @@ let requestLogUpdateListener: (() => void) | null = null
 let requestElapsedTimer: ReturnType<typeof setInterval> | null = null
 
 const cliFilterOptions = computed<AppSelectOption[]>(() => [
-  { label: '全部 Agent', value: '' },
+  { label: t('logs.filters.allAgents'), value: '' },
   ...agentStore.agents.map((agent) => ({ label: agent.name, value: agent.id })),
 ])
-const providerFilterOptions = computed<AppSelectOption[]>(() => [{ label: '全部服务商', value: '' }, ...providerOptions.value.map(p => ({ label: p, value: p }))])
-const logModeOptions = computed<AppSelectOption[]>(() => Object.entries(logModeMap).map(([value, label]) => ({ value, label })))
+const providerFilterOptions = computed<AppSelectOption[]>(() => [{ label: t('logs.filters.allProviders'), value: '' }, ...providerOptions.value.map(p => ({ label: p, value: p }))])
+const logModeOptions = computed<AppSelectOption[]>(() => [
+  { value: 'full', label: t('logs.mode.full') },
+  { value: 'failure_only', label: t('logs.mode.failure_only') },
+  { value: 'disabled', label: t('logs.mode.disabled') }
+])
 
 const requestLogs = ref<RequestLogListItem[]>([])
 const requestLoading = ref(false)
@@ -351,7 +353,7 @@ const detailSections = computed<DetailSection[]>(() => {
   return [
     {
       group: 'client',
-      title: 'Agent请求',
+      title: t('logs.detail.sectionClient'),
       subtitle: getFullClientUrl(),
       badge: requestDetail.value.client_method,
       badgeClass: 'v2-pill-neutral',
@@ -360,7 +362,7 @@ const detailSections = computed<DetailSection[]>(() => {
     },
     {
       group: 'forward',
-      title: '网关路由转发',
+      title: t('logs.detail.sectionForward'),
       subtitle: requestDetail.value.forward_url || '-',
       badge: requestDetail.value.client_method,
       badgeClass: 'v2-pill-neutral',
@@ -369,7 +371,7 @@ const detailSections = computed<DetailSection[]>(() => {
     },
     {
       group: 'provider',
-      title: '服务商响应',
+      title: t('logs.detail.sectionProvider'),
       subtitle: requestDetail.value.error_message || formatProviderSubtitle(),
       badge: requestDetail.value.status_code || '-',
       badgeClass: statusPill(requestDetail.value.status_code),
@@ -459,28 +461,31 @@ function replaceRequestLog(log: RequestLogListItem): boolean {
   return true
 }
 type CleanAction = 'all_logs' | 'all_details' | 'stats_data' | 'old_logs' | 'old_details'
+const CLEAN_CONFIRM_KEYS: Record<CleanAction, string> = {
+  all_logs: 'logs.clean.confirmAllLogs',
+  all_details: 'logs.clean.confirmAllDetails',
+  stats_data: 'logs.clean.confirmStats',
+  old_logs: 'logs.clean.confirmOldLogs',
+  old_details: 'logs.clean.confirmOldDetails'
+}
 async function handleClean(action: string | number) {
-  const confirmMap: Record<CleanAction, string> = {
-    all_logs: '确定要清空所有请求日志吗？', all_details: '确定要清空所有请求详情文件吗？', stats_data: '确定要清空所有统计数据吗？',
-    old_logs: '确定要清理30天前的请求日志吗？', old_details: '确定要清理30天前的请求详情文件吗？'
-  }
   try {
-    await confirm(confirmMap[action as CleanAction], '清理确认')
+    await confirm(t(CLEAN_CONFIRM_KEYS[action as CleanAction]), t('logs.clean.title'))
   } catch {
     return
   }
   requestLoading.value = true
   try {
     switch (action as CleanAction) {
-      case 'all_logs': await logsApi.clearRequestLogs(); notify('请求日志已清空'); break
-      case 'all_details': await logsApi.clearRequestDetailFiles(); notify('请求详情文件已清空'); break
-      case 'stats_data': await statsApi.clearStatsData(); notify('统计数据已清空'); break
-      case 'old_logs': await logsApi.clearOldRequestLogs(30); notify('30天前的请求日志已清理'); break
-      case 'old_details': await logsApi.clearOldRequestDetailFiles(30); notify('30天前的请求详情文件已清理'); break
+      case 'all_logs': await logsApi.clearRequestLogs(); notify(t('logs.clean.logsCleared')); break
+      case 'all_details': await logsApi.clearRequestDetailFiles(); notify(t('logs.clean.detailsCleared')); break
+      case 'stats_data': await statsApi.clearStatsData(); notify(t('logs.clean.statsCleared')); break
+      case 'old_logs': await logsApi.clearOldRequestLogs(30); notify(t('logs.clean.oldLogsCleared')); break
+      case 'old_details': await logsApi.clearOldRequestDetailFiles(30); notify(t('logs.clean.oldDetailsCleared')); break
     }
     await fetchRequestLogs()
   } catch (e: any) {
-    notify(getErrorMessage(e, '清理失败'), 'error')
+    notify(getErrorMessage(e, t('logs.clean.cleanFailed')), 'error')
     requestLoading.value = false
   }
 }
@@ -514,17 +519,17 @@ function resetSystemFilters() {
 }
 async function clearSystemLogs() {
   try {
-    await confirm('确定要清空所有系统日志吗？', '清理确认')
+    await confirm(t('logs.clean.confirmSystem'), t('logs.clean.title'))
   } catch {
     return
   }
   systemLoading.value = true
   try {
     await logsApi.clearSystemLogs()
-    notify('系统日志已清空')
+    notify(t('logs.clean.systemCleared'))
     await fetchSystemLogs()
   } catch (e: any) {
-    notify(getErrorMessage(e, '清空失败'), 'error')
+    notify(getErrorMessage(e, t('logs.clean.clearFailed')), 'error')
     systemLoading.value = false
   }
 }
@@ -610,10 +615,10 @@ function formatPrice(price: number): string {
 function costLines(row: RequestLogListItem): CostLine[] {
   const multiplier = row.cost.multiplier > 0 ? row.cost.multiplier : 1
   const items: Array<[string, number, number]> = [
-    ['输入', row.input_tokens, row.cost.input_price_per_m],
-    ['输出', row.output_tokens, row.cost.output_price_per_m],
-    ['缓存命中', row.cache_read_input_tokens, row.cost.cache_read_price_per_m],
-    ['缓存创建', row.cache_creation_input_tokens, row.cost.cache_creation_price_per_m]
+    [t('logs.cost.input'), row.input_tokens, row.cost.input_price_per_m],
+    [t('logs.cost.output'), row.output_tokens, row.cost.output_price_per_m],
+    [t('logs.cost.cacheRead'), row.cache_read_input_tokens, row.cost.cache_read_price_per_m],
+    [t('logs.cost.cacheCreate'), row.cache_creation_input_tokens, row.cost.cache_creation_price_per_m]
   ]
   return items.map(([label, tokens, billedPrice]) => {
     const catalogPrice = billedPrice / multiplier
@@ -631,49 +636,24 @@ function costModel(row: RequestLogListItem): string {
 }
 
 /** models.dev 厂商渠道 id 的展示名，未收录的 id 原样显示。 */
-const PROVIDER_SOURCE_LABELS: Record<string, string> = {
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  google: 'Google',
-  xai: 'xAI',
-  deepseek: 'DeepSeek',
-  moonshotai: '月之暗面',
-  'moonshotai-cn': '月之暗面',
-  zai: '智谱',
-  zhipuai: '智谱',
-  minimax: 'MiniMax',
-  'minimax-cn': 'MiniMax',
-  mistral: 'Mistral',
-  cohere: 'Cohere',
-  meta: 'Meta',
-  llama: 'Meta',
-  perplexity: 'Perplexity',
-  upstage: 'Upstage',
-  inception: 'Inception',
-  'stepfun-ai': '阶跃星辰',
-  stepfun: '阶跃星辰',
-  sensenova: '商汤',
-  longcat: 'LongCat',
-  xiaomi: '小米',
-  volcengine: '火山引擎',
-  alibaba: '阿里云百炼',
-  'alibaba-cn': '阿里云百炼',
-}
-
 function formatCostSource(source: string | null | undefined): string {
   if (!source) return ''
-  const label = PROVIDER_SOURCE_LABELS[source]
-  return label && label !== source ? `${label}（${source}）` : source
+  const key = `logs.costSource.${source}`
+  const label = t(key)
+  if (!label || label === key) return source
+  return label === source ? source : `${label}（${source}）`
 }
 
 function costNote(row: RequestLogListItem): string {
   const threshold = row.cost.tier_threshold_tokens
-  return threshold ? `命中长上下文档 >${formatTokens(threshold)}` : ''
+  return threshold ? t('logs.cost.longContext', { threshold: formatTokens(threshold) }) : ''
 }
 
-/** 网关自己生成的错误消息都是固定的中文短语（请求超时、流中断等）；
- * 上游透传的错误内容来自上游响应体，文本不定。靠前缀区分两者。 */
-const GATEWAY_ERROR_PREFIXES = [
+/** 网关生成的错误体（透传给客户端时）带这些 error.type。 */
+const GATEWAY_ERROR_TYPES = ['upstream_error', 'upstream_http_error', 'upstream_stream_error', 'upstream_timeout', 'upstream_unavailable', 'upstream_body_error']
+
+/** 旧数据（无 error_source）的兜底判定：网关自己生成的错误消息都是固定的中文短语。 */
+const LEGACY_GATEWAY_ERROR_PREFIXES = [
   '上游请求失败',
   '首字节超时',
   '请求超时',
@@ -693,42 +673,91 @@ const GATEWAY_ERROR_PREFIXES = [
   '客户端在完成前断开了连接',
 ]
 
-/** 网关生成的错误体（透传给客户端时）带这些 error.type。 */
-const GATEWAY_ERROR_TYPES = ['upstream_error', 'upstream_http_error', 'upstream_stream_error', 'upstream_timeout', 'upstream_unavailable', 'upstream_body_error']
-
-function errorMessagePrefix(detail: RequestLogDetail): string {
+function isLegacyGatewayError(detail: RequestLogDetail): boolean {
   const msg = detail.error_message || ''
-
-  if (GATEWAY_ERROR_PREFIXES.some((prefix) => msg.startsWith(prefix))) {
-    return '网关捕获：'
+  if (LEGACY_GATEWAY_ERROR_PREFIXES.some((prefix) => msg.startsWith(prefix))) {
+    return true
   }
-
-  // provider_body 里带网关错误类型的 JSON，说明是网关生成的错误体
   try {
     const parsed = JSON.parse(detail.provider_body || '')
     if (parsed?.error?.type && GATEWAY_ERROR_TYPES.includes(parsed.error.type)) {
-      return '网关捕获：'
+      return true
     }
   } catch {
     // 非 JSON，继续
   }
+  return false
+}
 
-  return '上游错误：'
+function errorSource(detail: RequestLogDetail): 'gateway' | 'upstream' {
+  if (detail.error_source === 'gateway' || detail.error_source === 'upstream') {
+    return detail.error_source
+  }
+  return isLegacyGatewayError(detail) ? 'gateway' : 'upstream'
+}
+
+function errorMessagePrefix(detail: RequestLogDetail): string {
+  return errorSource(detail) === 'gateway' ? t('logs.errorSource.gateway') : t('logs.errorSource.upstream')
 }
 
 function errorMessageClass(detail: RequestLogDetail): string {
-  const prefix = errorMessagePrefix(detail)
-  return prefix.startsWith('网关') ? 'logs-detail-err-gateway' : 'logs-detail-err-upstream'
+  return errorSource(detail) === 'gateway' ? 'logs-detail-err-gateway' : 'logs-detail-err-upstream'
+}
+
+/** 网关生成的错误按 error_code + params 用当前语言渲染，其余（上游原文/旧数据）原样显示。 */
+function errorMessageText(detail: RequestLogDetail): string {
+  const raw = detail.error_message || ''
+  if (detail.error_source === 'gateway' && detail.error_code) {
+    const key = `logs.logErrors.${detail.error_code}`
+    const label = t(key, parseMessageParams(detail.error_params))
+    if (label && label !== key) return label
+  }
+  return raw
+}
+
+function parseMessageParams(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+      return normalizeMessageParams(parsed as Record<string, unknown>)
+    }
+  } catch {
+    // 参数不是合法 JSON 时按无参数处理
+  }
+  return {}
+}
+
+function normalizeMessageParams(params: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(params)) {
+    normalized[key] = Array.isArray(value) ? value.join(', ') : value
+  }
+  return normalized
+}
+
+/** 系统日志：结构化数据显示为当前语言；旧数据原样显示保存时的文本。 */
+function formatSystemLogMessage(row: SystemLogItem): string {
+  if (!row.message_key) return row.message
+  const params = parseMessageParams(row.message_params)
+  if (typeof params.reason_code === 'string') {
+    const reasonKey = `logs.logErrors.${params.reason_code}`
+    const reasonParams = normalizeMessageParams((params.reason_params as Record<string, unknown>) || {})
+    const reason = t(reasonKey, reasonParams)
+    params.reason = reason !== reasonKey ? reason : String(params.reason ?? '')
+  }
+  const label = t(row.message_key, params)
+  return label && label !== row.message_key ? label : row.message
 }
 
 function buildDetailBlocks(detail: RequestLogDetail): DetailBlock[] {
   return [
-    createDetailBlock('client_headers', 'client', '请求头', detail.client_headers),
-    createDetailBlock('client_body', 'client', '请求体', detail.client_body),
-    createDetailBlock('forward_headers', 'forward', '转发头', detail.forward_headers),
-    createDetailBlock('forward_body', 'forward', '转发体', detail.forward_body),
-    createDetailBlock('provider_headers', 'provider', '响应头', detail.provider_headers),
-    createDetailBlock('provider_body', 'provider', '响应体', detail.provider_body)
+    createDetailBlock('client_headers', 'client', t('logs.detail.blockClientHeaders'), detail.client_headers),
+    createDetailBlock('client_body', 'client', t('logs.detail.blockClientBody'), detail.client_body),
+    createDetailBlock('forward_headers', 'forward', t('logs.detail.blockForwardHeaders'), detail.forward_headers),
+    createDetailBlock('forward_body', 'forward', t('logs.detail.blockForwardBody'), detail.forward_body),
+    createDetailBlock('provider_headers', 'provider', t('logs.detail.blockProviderHeaders'), detail.provider_headers),
+    createDetailBlock('provider_body', 'provider', t('logs.detail.blockProviderBody'), detail.provider_body)
   ]
 }
 function createDetailBlock(key: DetailBlockKey, group: DetailBlockGroup, label: string, raw: string | null | undefined): DetailBlock {
@@ -747,7 +776,7 @@ function formatDetailText(raw: string | null | undefined): string {
   return raw.length <= DETAIL_FORMAT_CHARS ? formatJsonUtil(raw) : raw
 }
 function formatDetailMeta(text: string): string {
-  if (!text || text === '—') return '无内容'
+  if (!text || text === '—') return t('logs.detail.noContent')
   return formatDetailLength(text.length)
 }
 function formatDetailPreview(text: string): string {
@@ -755,9 +784,9 @@ function formatDetailPreview(text: string): string {
   return `${text.slice(0, DETAIL_PREVIEW_CHARS)}\n...`
 }
 function formatDetailLength(chars: number): string {
-  if (chars < 1000) return `${chars} 字符`
-  if (chars < 1000000) return `${(chars / 1000).toFixed(1)}K 字符`
-  return `${(chars / 1000000).toFixed(1)}M 字符`
+  if (chars < 1000) return t('logs.detail.chars', { count: chars })
+  if (chars < 1000000) return t('logs.detail.chars', { count: `${(chars / 1000).toFixed(1)}K` })
+  return t('logs.detail.chars', { count: `${(chars / 1000000).toFixed(1)}M` })
 }
 function createCollapsedDetailGroups(): Record<DetailBlockGroup, boolean> {
   return { client: false, forward: false, provider: false }
@@ -773,20 +802,26 @@ function formatDetailGroupSummary(blocks: DetailBlock[]): string {
 function formatProviderSubtitle(): string {
   if (!requestDetail.value) return ''
   const model = requestDetail.value.target_model || requestDetail.value.source_model
-  return model ? `模型 ${model}` : '响应头 / 响应体'
+  return model ? t('logs.detail.providerSubtitleModel', { model }) : t('logs.detail.providerSubtitleFallback')
 }
-const eventTypeMap: Record<string, string> = {
-  no_provider_available: '无可用服务商', provider_blacklisted: '服务商黑名单', provider_recovered: '服务商恢复',
-  provider_created: '服务商创建', provider_updated: '服务商更新', provider_deleted: '服务商删除',
-  provider_reset: '状态重置', scheduled_task_failed: '定时任务失败',
-  config_conflict: 'Agent 配置冲突', unknown_agent: '未知 Agent',
-  protocol_conflict: '端点类型冲突', protocol_not_matched: '端点类型未匹配', passthrough_failed: '透传失败',
-  config_patch_failed: '配置写入失败', official_credential_write_failed: '官方凭证写入失败',
-  gateway_endpoint_migration_failed: '网关地址同步失败',
-}
-const eventTypeOptions = computed<AppSelectOption[]>(() => [{ label: '全部事件', value: '' }, ...Object.entries(eventTypeMap).map(([value, label]) => ({ value, label }))])
+const EVENT_TYPE_KEYS = [
+  'no_provider_available', 'provider_blacklisted', 'provider_recovered',
+  'provider_created', 'provider_updated', 'provider_deleted',
+  'provider_reset', 'scheduled_task_failed',
+  'config_conflict', 'unknown_agent',
+  'protocol_conflict', 'protocol_not_matched', 'passthrough_failed',
+  'config_patch_failed', 'official_credential_write_failed',
+  'gateway_endpoint_migration_failed',
+]
+const eventTypeOptions = computed<AppSelectOption[]>(() => [
+  { label: t('logs.filters.allEvents'), value: '' },
+  ...EVENT_TYPE_KEYS.map((value) => ({ value, label: t(`logs.eventType.${value}`) }))
+])
 function formatEventType(eventType: string): string {
-  return eventType ? (eventTypeMap[eventType] || eventType) : ''
+  if (!eventType) return ''
+  const key = `logs.eventType.${eventType}`
+  const label = t(key)
+  return label !== key ? label : eventType
 }
 function statusPill(code: number | null): string {
   if (!code) return 'v2-pill-neutral'
@@ -804,9 +839,9 @@ async function copyDetailBlock(block: DetailBlock) {
   if (!block.fullText || block.fullText === '—') return
   try {
     await navigator.clipboard.writeText(block.fullText)
-    notify('已复制到剪贴板')
+    notify(t('logs.detail.copied'))
   } catch {
-    notify('复制失败', 'error')
+    notify(t('logs.detail.copyFailed'), 'error')
   }
 }
 

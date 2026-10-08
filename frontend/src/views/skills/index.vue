@@ -1,15 +1,15 @@
 <template>
   <div class="sk-page">
     <V2Tabs class="sk-tabs">
-      <div class="v2-tab" :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">技能</div>
-      <div class="v2-tab" :class="{ active: activeTab === 'repos' }" @click="activeTab = 'repos'">仓库</div>
-      <div class="v2-tab" :class="{ active: activeTab === 'favorites' }" @click="activeTab = 'favorites'">收藏</div>
+      <div class="v2-tab" :class="{ active: activeTab === 'skills' }" @click="activeTab = 'skills'">{{ t('skills.tabs.skills') }}</div>
+      <div class="v2-tab" :class="{ active: activeTab === 'repos' }" @click="activeTab = 'repos'">{{ t('skills.tabs.repos') }}</div>
+      <div class="v2-tab" :class="{ active: activeTab === 'favorites' }" @click="activeTab = 'favorites'">{{ t('skills.tabs.favorites') }}</div>
     </V2Tabs>
 
     <!-- 技能 -->
     <template v-if="activeTab === 'skills'">
       <div v-loading="loadingInstalled || loadingInstalledOperation" class="sk-body">
-        <V2Empty class="v2-card" v-if="installedList.length === 0" title="还没有已安装技能" description="到「仓库」或「收藏」里安装技能，启用后即可应用到各 Agent">
+        <V2Empty class="v2-card" v-if="installedList.length === 0" :title="t('skills.empty.installedTitle')" :description="t('skills.empty.installedDesc')">
           <template #icon><SkillIcon :size="40" :stroke-width="1.6" /></template>
         </V2Empty>
         <div v-else class="v2-cardgrid">
@@ -17,17 +17,17 @@
             <div class="v2-ccard-head">
               <div class="v2-ccard-icon"><SkillIcon /></div>
               <div class="v2-ccard-tt">
-                <div class="v2-ccard-name">{{ skill.name }}<span v-if="!skill.exists_on_disk" class="v2-pill v2-pill-warn sk-inline">失效</span></div>
+                <div class="v2-ccard-name">{{ skill.name }}<span v-if="!skill.exists_on_disk" class="v2-pill v2-pill-warn sk-inline">{{ t('skills.invalid') }}</span></div>
                 <div class="v2-ccard-sub mono">{{ skill.market_display }}</div>
               </div>
               <div class="v2-ccard-acts">
-                <el-tooltip :content="skill.is_favorited ? '取消收藏' : '收藏'" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="skill.is_favorited ? t('skills.unfavorite') : t('skills.favorite')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act" :class="{ 'sk-star-on': skill.is_favorited }" @click="toggleInstalledFavorite(skill)"><svg width="16" height="16" viewBox="0 0 24 24" :fill="skill.is_favorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></button>
                 </el-tooltip>
-                <el-tooltip content="重装" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="t('skills.reinstall')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act" :class="{ off: installingSkillId === `installed-${skill.id}` }" @click="handleReinstallFromInstalled(skill)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
                 </el-tooltip>
-                <el-tooltip content="卸载" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="t('skills.uninstall')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act danger" @click="handleUninstall(skill)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
                 </el-tooltip>
               </div>
@@ -45,17 +45,17 @@
           <div class="v2-cardgrid">
             <div class="v2-addcard v2-addcard-row" @click="showAddRepoDialog = true">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-              <span>添加仓库</span>
+              <span>{{ t('skills.repo.add') }}</span>
             </div>
             <div v-for="repo in repoList" :key="repo.name" class="v2-card v2-ccard sk-repocard" @click="handleRepoClick(repo)">
               <div class="v2-ccard-head">
                 <div class="v2-ccard-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 12 3l9 6v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
                 <div class="v2-ccard-tt"><div class="v2-ccard-name">{{ repo.name }}</div><div class="v2-ccard-sub mono">{{ repo.source }}</div></div>
                 <div class="v2-ccard-acts">
-                  <el-tooltip content="重装" placement="top" effect="light" :show-after="250">
+                  <el-tooltip :content="t('skills.reinstall')" placement="top" effect="light" :show-after="250">
                     <button class="v2-row-act" @click.stop="handleReinstallRepo(repo)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
                   </el-tooltip>
-                  <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
+                  <el-tooltip :content="t('common.delete')" placement="top" effect="light" :show-after="250">
                     <button class="v2-row-act danger" @click.stop="handleRemoveRepo(repo)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
                   </el-tooltip>
                 </div>
@@ -67,20 +67,20 @@
       <template v-else>
         <div class="sk-repohead">
           <div class="sk-repohead-l">
-            <el-tooltip content="返回" placement="top" effect="light" :show-after="250">
+            <el-tooltip :content="t('skills.repo.back')" placement="top" effect="light" :show-after="250">
               <button class="v2-row-act" @click="handleBackToRepos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
             </el-tooltip>
             <div><div class="sk-repohead-t">{{ currentRepo.name }}</div><div class="v2-hint mono">{{ currentRepo.source }}</div></div>
           </div>
           <div class="sk-repohead-r">
-            <input v-model="skillSearchQuery" class="v2-input v2-input-surface sk-search" placeholder="搜索…">
-            <el-tooltip content="刷新" placement="top" effect="light" :show-after="250">
+            <input v-model="skillSearchQuery" class="v2-input v2-input-surface sk-search" :placeholder="t('skills.searchPlaceholder')">
+            <el-tooltip :content="t('common.refresh')" placement="top" effect="light" :show-after="250">
               <button class="v2-row-act" :disabled="loadingSkills" @click="refreshRepoSkills"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></button>
             </el-tooltip>
           </div>
         </div>
         <div v-loading="loadingSkills || loadingSkillsOperation" class="sk-body">
-          <V2Empty class="v2-card" v-if="filteredSkillList.length === 0" :title="skillSearchQuery ? '无匹配结果' : '该仓库暂无 Skills'" />
+          <V2Empty class="v2-card" v-if="filteredSkillList.length === 0" :title="skillSearchQuery ? t('skills.empty.noMatch') : t('skills.empty.repoEmpty')" />
           <div v-else class="v2-card sk-dlist">
             <div v-for="skill in filteredSkillList" :key="skill.key" class="sk-drow">
               <div class="sk-drow-icon">
@@ -90,7 +90,7 @@
                 <div class="sk-dname">{{ skill.name }}</div>
                 <div v-if="skill.description" class="sk-ddesc" @click="copyDescription(skill.description)">{{ skill.description }}</div>
               </div>
-              <button class="v2-btn v2-btn-sm sk-install" :class="skill.is_installed ? 'v2-btn-outline' : 'v2-btn-primary'" :disabled="installingSkillId === skill.key" @click="handleInstall(skill, skill.is_installed)">{{ installingSkillId === skill.key ? '安装中…' : (skill.is_installed ? '重装' : '安装') }}</button>
+              <button class="v2-btn v2-btn-sm sk-install" :class="skill.is_installed ? 'v2-btn-outline' : 'v2-btn-primary'" :disabled="installingSkillId === skill.key" @click="handleInstall(skill, skill.is_installed)">{{ installingSkillId === skill.key ? t('skills.installing') : (skill.is_installed ? t('skills.reinstall') : t('skills.install')) }}</button>
             </div>
           </div>
         </div>
@@ -100,7 +100,7 @@
     <!-- 收藏 -->
     <template v-else>
       <div v-loading="loadingFavorites || loadingFavoritesOperation" class="sk-body">
-        <V2Empty class="v2-card" v-if="favoriteList.length === 0" title="还没有收藏技能" description="收藏会保留来源仓库，方便随时一键安装">
+        <V2Empty class="v2-card" v-if="favoriteList.length === 0" :title="t('skills.empty.favoritesTitle')" :description="t('skills.empty.favoritesDesc')">
           <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></template>
         </V2Empty>
         <div v-else class="v2-cardgrid">
@@ -109,13 +109,13 @@
               <div class="v2-ccard-icon"><SkillIcon /></div>
               <div class="v2-ccard-tt"><div class="v2-ccard-name">{{ favorite.name }}</div><div class="v2-ccard-sub mono">{{ favorite.repo.name }}</div></div>
               <div class="v2-ccard-acts">
-                <el-tooltip :content="favorite.is_installed ? '重装' : '安装'" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="favorite.is_installed ? t('skills.reinstall') : t('skills.install')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act" :class="{ off: installingSkillId === favorite.key }" @click="handleInstallFavorite(favorite, favorite.is_installed)">
                     <svg v-if="favorite.is_installed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
                     <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   </button>
                 </el-tooltip>
-                <el-tooltip content="移除收藏" placement="top" effect="light" :show-after="250">
+                <el-tooltip :content="t('skills.removeFavorite')" placement="top" effect="light" :show-after="250">
                   <button class="v2-row-act danger" @click="handleRemoveFavoriteById(favorite)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
                 </el-tooltip>
               </div>
@@ -126,14 +126,15 @@
       </div>
     </template>
 
-    <V2Drawer v-model="showAddRepoDialog" title="添加技能仓库" @confirm="handleAddRepo">
-      <div class="v2-field"><label class="v2-label">仓库地址 <span class="req">*</span></label><input v-model="repoForm.url" class="v2-input mono" placeholder="owner/repo 或本地路径"></div>
-      <div class="v2-hint">支持 GitHub 仓库 URL 或本地目录路径。</div>
+    <V2Drawer v-model="showAddRepoDialog" :title="t('skills.repo.addTitle')" @confirm="handleAddRepo">
+      <div class="v2-field"><label class="v2-label">{{ t('skills.repo.url') }} <span class="req">*</span></label><input v-model="repoForm.url" class="v2-input mono" :placeholder="t('skills.repo.urlPlaceholder')"></div>
+      <div class="v2-hint">{{ t('skills.repo.urlHint') }}</div>
     </V2Drawer>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2CliChips from '@/components/V2CliChips.vue'
 import V2Empty from '@/components/V2Empty.vue'
@@ -144,6 +145,8 @@ import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { skillsApi } from '@/api/skills'
 import type { CliType, SkillRepo, DiscoverableSkill, InstalledSkill, SkillFavoriteItem } from '@/types/models'
+
+const { t } = useI18n()
 
 const activeTab = ref<'skills' | 'repos' | 'favorites'>('skills')
 
@@ -178,7 +181,7 @@ async function fetchInstalled() {
   try {
     installedList.value = await skillsApi.getInstalled()
   } catch (error: any) {
-    notify(getErrorMessage(error, '加载失败'), 'error')
+    notify(getErrorMessage(error, t('skills.msg.loadFailed')), 'error')
   } finally {
     loadingInstalled.value = false
   }
@@ -188,7 +191,7 @@ async function fetchRepos() {
   try {
     repoList.value = await skillsApi.getRepos()
   } catch (error: any) {
-    notify(getErrorMessage(error, '加载失败'), 'error')
+    notify(getErrorMessage(error, t('skills.msg.loadFailed')), 'error')
   } finally {
     loadingRepos.value = false
   }
@@ -198,7 +201,7 @@ async function fetchFavorites() {
   try {
     favoriteList.value = await skillsApi.getFavorites()
   } catch (error: any) {
-    notify(getErrorMessage(error, '加载失败'), 'error')
+    notify(getErrorMessage(error, t('skills.msg.loadFailed')), 'error')
   } finally {
     loadingFavorites.value = false
   }
@@ -219,11 +222,11 @@ async function handleReinstallRepo(repo: SkillRepo) {
   loadingRepos.value = true
   try {
     await skillsApi.reinstallRepo(repo.name)
-    notify('重装成功')
+    notify(t('skills.msg.reinstallSuccess'))
     await fetchRepos()
     if (currentRepo.value?.name === repo.name) await fetchRepoSkills()
   } catch (error: any) {
-    notify(getErrorMessage(error, '重装失败'), 'error')
+    notify(getErrorMessage(error, t('skills.msg.reinstallFailed')), 'error')
   } finally {
     loadingRepos.value = false
   }
@@ -234,7 +237,7 @@ async function fetchRepoSkills() {
   try {
     repoSkillList.value = await skillsApi.discoverRepoSkills(currentRepo.value.name)
   } catch (error: any) {
-    notify(getErrorMessage(error, '加载失败'), 'error')
+    notify(getErrorMessage(error, t('skills.msg.loadFailed')), 'error')
   } finally {
     loadingSkills.value = false
   }
@@ -244,9 +247,9 @@ async function refreshRepoSkills() {
   loadingSkills.value = true
   try {
     repoSkillList.value = await skillsApi.reinstallRepo(currentRepo.value.name)
-    notify('已获取最新列表')
+    notify(t('skills.msg.listRefreshed'))
   } catch (error: any) {
-    notify(getErrorMessage(error, '刷新失败'), 'error')
+    notify(getErrorMessage(error, t('skills.msg.refreshFailed')), 'error')
   } finally {
     loadingSkills.value = false
   }
@@ -261,9 +264,9 @@ async function handleCliToggle(skill: InstalledSkill, cliType: CliType, enabled:
   try {
     await skillsApi.toggleCli(skill.id, cliType, enabled)
     if (skill.cli_flags) skill.cli_flags[cliType] = enabled
-    notify('已更新')
+    notify(t('skills.msg.updated'))
   } catch (error: any) {
-    notify(getErrorMessage(error, '更新失败'), 'error')
+    notify(getErrorMessage(error, t('skills.msg.updateFailed')), 'error')
     await fetchInstalled()
   } finally {
     loadingInstalledOperation.value = false
@@ -271,27 +274,27 @@ async function handleCliToggle(skill: InstalledSkill, cliType: CliType, enabled:
 }
 async function handleUninstall(skill: InstalledSkill) {
   try {
-    await confirm(`确定卸载技能 "${skill.name}"?`, '确认卸载')
+    await confirm(t('skills.confirm.uninstallMsg', { name: skill.name }), t('skills.confirm.uninstallTitle'))
     loadingInstalledOperation.value = true
     await skillsApi.uninstall(skill.id)
-    notify('已卸载')
+    notify(t('skills.msg.uninstalled'))
     await Promise.all([refreshInstallationState(), refreshCurrentRepoSkillsIfNeeded(skill.repo?.name)])
   } catch (error: any) {
-    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, '卸载失败'), 'error')
+    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, t('skills.msg.uninstallFailed')), 'error')
   } finally {
     loadingInstalledOperation.value = false
   }
 }
 async function handleInstall(skill: DiscoverableSkill, reinstall = false) {
   try {
-    if (reinstall) await confirm(`确定重装 "${skill.name}"? (将更新为最新版本)`, '确认重装')
+    if (reinstall) await confirm(t('skills.confirm.reinstallMsg', { name: skill.name }), t('skills.confirm.reinstallTitle'))
     loadingSkillsOperation.value = true
     installingSkillId.value = skill.key
     await skillsApi.install(skill, reinstall)
-    notify(reinstall ? '重装成功' : '安装成功')
+    notify(reinstall ? t('skills.msg.reinstallSuccess') : t('skills.msg.installSuccess'))
     await Promise.all([refreshInstallationState(), refreshCurrentRepoSkillsIfNeeded(skill.repo.name)])
   } catch (error: any) {
-    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, '安装失败'), 'error')
+    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, t('skills.msg.installFailed')), 'error')
   } finally {
     installingSkillId.value = null
     loadingSkillsOperation.value = false
@@ -299,18 +302,18 @@ async function handleInstall(skill: DiscoverableSkill, reinstall = false) {
 }
 async function handleReinstallFromInstalled(skill: InstalledSkill) {
   if (!skill.can_favorite) {
-    notify('缺少仓库信息，无法重装', 'error')
+    notify(t('skills.msg.missingRepo'), 'error')
     return
   }
   try {
-    await confirm(`确定重装技能 "${skill.name}"?`, '确认重装')
+    await confirm(t('skills.confirm.reinstallSkillMsg', { name: skill.name }), t('skills.confirm.reinstallTitle'))
     loadingInstalledOperation.value = true
     installingSkillId.value = `installed-${skill.id}`
     await skillsApi.reinstall(skill.directory)
-    notify('重装成功')
+    notify(t('skills.msg.reinstallSuccess'))
     await Promise.all([refreshInstallationState(), refreshCurrentRepoSkillsIfNeeded(skill.repo?.name)])
   } catch (error: any) {
-    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, '重装失败'), 'error')
+    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, t('skills.msg.reinstallFailed')), 'error')
   } finally {
     installingSkillId.value = null
     loadingInstalledOperation.value = false
@@ -320,26 +323,26 @@ async function toggleInstalledFavorite(skill: InstalledSkill) {
   loadingInstalledOperation.value = true
   try {
     const isFavorited = await skillsApi.toggleInstalledFavorite(skill.id)
-    notify(isFavorited ? '已收藏' : '已取消收藏')
+    notify(isFavorited ? t('skills.msg.favorited') : t('skills.msg.unfavorited'))
     await fetchInstalled()
     await fetchFavorites()
   } catch (error: any) {
-    notify(getErrorMessage(error, '操作失败'), 'error')
+    notify(getErrorMessage(error, t('common.operationFailed')), 'error')
   } finally {
     loadingInstalledOperation.value = false
   }
 }
 async function handleInstallFavorite(favorite: SkillFavoriteItem, reinstall = false) {
   try {
-    if (reinstall) await confirm(`确定重装 "${favorite.name}"? (将更新为最新版本)`, '确认重装')
+    if (reinstall) await confirm(t('skills.confirm.reinstallMsg', { name: favorite.name }), t('skills.confirm.reinstallTitle'))
     loadingFavoritesOperation.value = true
     installingSkillId.value = favorite.key
     if (reinstall) await skillsApi.reinstallFavorite(favorite.key)
     else await skillsApi.installFavorite(favorite.key)
-    notify(reinstall ? '重装成功' : '安装成功')
+    notify(reinstall ? t('skills.msg.reinstallSuccess') : t('skills.msg.installSuccess'))
     await Promise.all([refreshInstallationState(), refreshCurrentRepoSkillsIfNeeded(favorite.repo.name)])
   } catch (error: any) {
-    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, reinstall ? '重装失败' : '安装失败'), 'error')
+    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, reinstall ? t('skills.msg.reinstallFailed') : t('skills.msg.installFailed')), 'error')
   } finally {
     installingSkillId.value = null
     loadingFavoritesOperation.value = false
@@ -350,9 +353,9 @@ async function handleRemoveFavoriteById(favorite: SkillFavoriteItem) {
   try {
     await skillsApi.removeFavorite(favorite.key)
     await Promise.all([fetchFavorites(), fetchInstalled()])
-    notify('已移除')
+    notify(t('skills.msg.removed'))
   } catch (error: any) {
-    notify(getErrorMessage(error, '操作失败'), 'error')
+    notify(getErrorMessage(error, t('common.operationFailed')), 'error')
   } finally {
     loadingFavoritesOperation.value = false
   }
@@ -361,14 +364,14 @@ async function copyDescription(text: string) {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
-    notify('描述已复制')
+    notify(t('skills.msg.descriptionCopied'))
   } catch {
-    notify('复制失败', 'error')
+    notify(t('skills.msg.copyFailed'), 'error')
   }
 }
 async function handleAddRepo() {
   if (!repoForm.value.url.trim()) {
-    notify('请输入仓库地址', 'error')
+    notify(t('skills.msg.repoUrlRequired'), 'error')
     return
   }
   const payload = { url: repoForm.value.url.trim() }
@@ -377,22 +380,22 @@ async function handleAddRepo() {
   loadingRepos.value = true
   try {
     await skillsApi.addRepo(payload)
-    notify('添加成功')
+    notify(t('skills.msg.added'))
     await fetchRepos()
   } catch (error: any) {
-    notify(getErrorMessage(error, '添加失败'), 'error')
+    notify(getErrorMessage(error, t('skills.msg.addFailed')), 'error')
     loadingRepos.value = false
   }
 }
 async function handleRemoveRepo(repo: SkillRepo) {
   try {
-    await confirm(`确定删除仓库 "${repo.name}" 并卸载该仓库下所有已安装技能？`, '确认删除')
+    await confirm(t('skills.confirm.removeRepoMsg', { name: repo.name }), t('skills.confirm.removeRepoTitle'))
     loadingRepos.value = true
     await skillsApi.removeRepo(repo.name)
-    notify('已删除')
+    notify(t('skills.msg.deleted'))
     await refreshInstallationState()
   } catch (error: any) {
-    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, '删除失败'), 'error')
+    if (error !== 'cancel' && error?.toString() !== 'cancel') notify(getErrorMessage(error, t('skills.msg.deleteFailed')), 'error')
     loadingRepos.value = false
   }
 }

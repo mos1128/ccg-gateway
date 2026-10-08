@@ -34,6 +34,7 @@ thiserror = "2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "6"
+sys-locale = "0.3"
 toml = "0.8"
 toml_edit = "0.22"
 serde_yaml = "0.9"

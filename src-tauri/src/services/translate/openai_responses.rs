@@ -627,7 +627,7 @@ fn build_user(blocks: &[Block], input: &mut Vec<Value>) {
     }
     // function_call_output 只收文本，图片挪到紧随其后的这条 user 消息里。
     if !media.is_empty() {
-        let mut moved = vec![json!({"type": "input_text", "text": TOOL_MEDIA_MOVED})];
+        let mut moved = vec![json!({"type": "input_text", "text": tool_media_moved()})];
         moved.extend(
             media
                 .iter()
@@ -1136,7 +1136,7 @@ impl Decoder {
             return vec![StreamEvent::Error {
                 message: response
                     .map(error_message)
-                    .unwrap_or_else(|| "上游响应失败".to_string()),
+                    .unwrap_or_else(|| crate::tr!("translate.upstream_response_failed")),
             }];
         }
         if kind == "response.incomplete" {

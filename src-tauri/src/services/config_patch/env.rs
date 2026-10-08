@@ -52,10 +52,7 @@ pub(super) fn patch(content: &str, operations: &[ResolvedOperation]) -> Result<S
 
     for operation in operations {
         if operation.path.len() != 1 {
-            return Err(format!(
-                "operation `{}` 的 ENV path 必须只有一个 key",
-                operation.id
-            ));
+            return Err(crate::tr!("err.patch.env_path_single_key", operation.id));
         }
         let key = &operation.path[0];
         match operation.kind {

@@ -219,7 +219,9 @@ pub async fn sync_now(db: &SqlitePool) -> Result<PriceSyncState, String> {
         .await
     {
         Ok(response) => response,
-        Err(error) => return mark_failed(db, format!("请求价格源失败: {}", error)).await,
+        Err(error) => {
+            return mark_failed(db, crate::tr!("err.pricing.request_source_failed", error)).await;
+        }
     };
 
     if !response.status().is_success() {
@@ -227,24 +229,28 @@ pub async fn sync_now(db: &SqlitePool) -> Result<PriceSyncState, String> {
         let body = response.text().await.unwrap_or_default();
         let detail = truncate_error(&body);
         let message = if detail.is_empty() {
-            format!("价格源返回 HTTP {}", status)
+            crate::tr!("err.pricing.source_http_status", status)
         } else {
-            format!("价格源返回 HTTP {}: {}", status, detail)
+            crate::tr!("err.pricing.source_http_status_detail", status, detail)
         };
         return mark_failed(db, message).await;
     }
 
     let body = match response.text().await {
         Ok(body) => body,
-        Err(error) => return mark_failed(db, format!("读取价格源失败: {}", error)).await,
+        Err(error) => {
+            return mark_failed(db, crate::tr!("err.pricing.read_source_failed", error)).await;
+        }
     };
     let raw: HashMap<String, SourceVendor> = match serde_json::from_str(&body) {
         Ok(raw) => raw,
-        Err(error) => return mark_failed(db, format!("解析价格源失败: {}", error)).await,
+        Err(error) => {
+            return mark_failed(db, crate::tr!("err.pricing.parse_source_failed", error)).await;
+        }
     };
     let mut entries = parse_catalog(raw);
     if entries.is_empty() {
-        return mark_failed(db, "价格源未返回可计费文本模型".to_string()).await;
+        return mark_failed(db, crate::tr!("err.pricing.no_billable_models")).await;
     }
     entries.sort_by(|left, right| left.model_key.cmp(&right.model_key));
 
@@ -533,7 +539,7 @@ async fn mark_failed(db: &SqlitePool, message: String) -> Result<PriceSyncState,
             .execute(db)
             .await;
     if let Err(error) = update_result {
-        return Err(format!("{}; 写入同步状态失败: {}", message, error));
+        return Err(crate::tr!("err.pricing.write_state_failed", message, error));
     }
     tracing::warn!(error = %message, "Model price catalog sync failed");
     Err(message)

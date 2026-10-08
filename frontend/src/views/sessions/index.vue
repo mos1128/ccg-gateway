@@ -9,7 +9,7 @@
     <!-- 项目列表 -->
     <template v-if="!currentProject">
       <div v-loading="sessionStore.loading" class="ses-body">
-        <V2Empty class="v2-card" v-if="sessionStore.projects.length === 0" title="暂无项目" description="使用 Agent 产生会话后，会按项目分组显示">
+        <V2Empty class="v2-card" v-if="sessionStore.projects.length === 0" :title="t('sessions.emptyProjects')" :description="t('sessions.emptyProjectsDesc')">
           <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></template>
         </V2Empty>
         <div v-else class="v2-card ses-plist">
@@ -17,10 +17,10 @@
             <div class="ses-picon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></div>
             <div class="ses-pinfo">
               <div class="ses-pname">{{ getProjectTitle(project) }}</div>
-              <div class="ses-ppath mono" :title="project.full_path">{{ project.full_path }}</div>
+              <div class="ses-ppath mono"><OverflowText :text="project.full_path" /></div>
             </div>
-            <div class="ses-pmeta"><span>{{ project.session_count }} 个会话</span><span class="mono">{{ formatSize(project.total_size) }}</span></div>
-            <el-tooltip v-if="!sessionReadOnly" content="删除项目" placement="top" effect="light" :show-after="250">
+            <div class="ses-pmeta"><span>{{ t('sessions.sessionCount', { count: project.session_count }) }}</span><span class="mono">{{ formatSize(project.total_size) }}</span></div>
+            <el-tooltip v-if="!sessionReadOnly" :content="t('sessions.deleteProject')" placement="top" effect="light" :show-after="250">
               <button class="v2-row-act danger ses-pdel" @click.stop="handleDeleteProject(project)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
             </el-tooltip>
           </div>
@@ -32,30 +32,30 @@
     <template v-else>
       <div class="ses-listhead">
         <div class="ses-listhead-l">
-          <el-tooltip content="返回" placement="top" effect="light" :show-after="250">
+          <el-tooltip :content="t('sessions.back')" placement="top" effect="light" :show-after="250">
             <button class="v2-row-act" @click="handleBackToProjects"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
           </el-tooltip>
           <div class="ses-listhead-main">
             <div class="ses-listhead-t">{{ getProjectTitle(sessionStore.currentProjectInfo) }}</div>
             <div class="ses-listhead-sub">
-              <span class="mono" :title="sessionStore.currentProjectInfo?.full_path">{{ sessionStore.currentProjectInfo?.full_path }}</span>
+              <span class="mono"><OverflowText :text="sessionStore.currentProjectInfo?.full_path || ''" /></span>
               <span class="ses-sdot">•</span>
-              <span>{{ sessionStore.sessionTotal }} 个会话</span>
+              <span>{{ t('sessions.sessionCount', { count: sessionStore.sessionTotal }) }}</span>
             </div>
           </div>
         </div>
-        <input v-model="sessionSearchQuery" class="v2-input v2-input-surface ses-search" placeholder="搜索会话…">
+        <input v-model="sessionSearchQuery" class="v2-input v2-input-surface ses-search" :placeholder="t('sessions.searchPlaceholder')">
       </div>
 
       <div v-loading="sessionStore.loading" class="ses-body">
-        <V2Empty class="v2-card" v-if="filteredSessions.length === 0" title="暂无会话">
+        <V2Empty class="v2-card" v-if="filteredSessions.length === 0" :title="t('sessions.emptySessions')">
           <template #icon><svg width="40" height="40" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></template>
         </V2Empty>
         <div v-else class="v2-card ses-slist">
           <div v-for="session in filteredSessions" :key="session.session_id" class="ses-srow" @click="handleSessionClick(session)">
             <div class="ses-sicon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
             <div class="ses-sinfo">
-              <div class="ses-stitle">{{ session.first_message ? truncateText(session.first_message, 160) : '无消息内容' }}</div>
+              <div class="ses-stitle">{{ session.first_message ? truncateText(session.first_message, 160) : t('sessions.noMessageContent') }}</div>
               <div class="ses-smeta">
                 <el-tooltip :content="session.session_id" placement="top" effect="light" :show-after="250">
                   <span class="mono ses-sid">{{ formatSessionId(session.session_id) }}</span>
@@ -70,7 +70,7 @@
               <span>{{ formatTime(session.mtime) }}</span>
               <span class="mono">{{ formatSize(session.size) }}</span>
             </div>
-            <el-tooltip v-if="!sessionReadOnly" content="删除会话" placement="top" effect="light" :show-after="250">
+            <el-tooltip v-if="!sessionReadOnly" :content="t('sessions.deleteSession')" placement="top" effect="light" :show-after="250">
               <button class="v2-row-act danger" @click.stop="handleDeleteSession(session)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>
             </el-tooltip>
           </div>
@@ -78,17 +78,17 @@
       </div>
     </template>
 
-    <V2Drawer v-model="showSessionDrawer" :title="`会话 ${currentSessionId.slice(0, 8)}`" :show-footer="false" width="80%">
+    <V2Drawer v-model="showSessionDrawer" :title="t('sessions.drawerTitle', { id: currentSessionId.slice(0, 8) })" :show-footer="false" width="80%">
       <div v-loading="sessionStore.loading" class="ses-chat">
-        <div v-if="sessionStore.messages.length === 0" class="v2-hint" style="text-align:center;padding:40px">暂无消息</div>
+        <div v-if="sessionStore.messages.length === 0" class="v2-hint" style="text-align:center;padding:40px">{{ t('sessions.emptyMessages') }}</div>
         <div v-for="(msg, index) in sessionStore.messages" :key="index" class="ses-bubble" :class="msg.role === 'user' ? 'is-user' : 'is-bot'">
           <div class="ses-role">{{ msg.role === 'user' ? 'USER' : 'ASSISTANT' }}</div>
           <div class="ses-bubble-c">
-            <el-tooltip content="复制" placement="top" effect="light" :show-after="250">
+            <el-tooltip :content="t('common.copy')" placement="top" effect="light" :show-after="250">
               <button class="ses-copy" @click="handleCopyMessage(msg.content)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
             </el-tooltip>
             {{ getDisplayContent(msg.content, index) }}
-            <div v-if="isLongMessage(msg.content)" class="ses-expand" @click="toggleExpand(index)">{{ expandedMessages.has(index) ? '收起' : '展开全部' }}</div>
+            <div v-if="isLongMessage(msg.content)" class="ses-expand" @click="toggleExpand(index)">{{ expandedMessages.has(index) ? t('sessions.collapse') : t('sessions.expandAll') }}</div>
           </div>
         </div>
       </div>
@@ -100,17 +100,20 @@
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Empty from '@/components/V2Empty.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
+import OverflowText from '@/components/OverflowText.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { useSessionStore } from '@/stores/sessions'
 import { useUiStore } from '@/stores/ui'
 import { useAgentStore } from '@/stores/agents'
+import { useI18n } from 'vue-i18n'
 import type { CliType } from '@/types/models'
 import type { ProjectInfo, SessionInfo } from '@/api/sessions'
 
 const sessionStore = useSessionStore()
 const uiStore = useUiStore()
 const agentStore = useAgentStore()
+const { t, locale } = useI18n()
 const sessionTabs = computed(() => agentStore.visibleAgents
   .filter((agent) => agent.features.sessions.enabled)
   .map((agent) => ({ id: agent.id, label: agent.name })))
@@ -159,20 +162,20 @@ function handleSessionClick(session: SessionInfo) {
 }
 async function handleDeleteProject(project: ProjectInfo) {
   try {
-    await confirm(`确定删除项目 "${project.display_name}" 及其所有会话吗？此操作不可恢复！`, '确认删除')
+    await confirm(t('sessions.deleteProjectConfirm', { name: project.display_name }), t('sessions.confirmDeleteTitle'))
     await sessionStore.deleteProject(project.name)
-    notify('项目已删除')
+    notify(t('sessions.projectDeleted'))
   } catch (e: any) {
-    if (e !== 'cancel' && e?.toString() !== 'cancel') notify(e?.message || e?.toString() || '删除失败', 'error')
+    if (e !== 'cancel' && e?.toString() !== 'cancel') notify(e?.message || e?.toString() || t('sessions.deleteFailed'), 'error')
   }
 }
 async function handleDeleteSession(session: SessionInfo) {
   try {
-    await confirm(`确定删除会话 "${session.session_id.substring(0, 8)}..." 吗？此操作不可恢复！`, '确认删除')
+    await confirm(t('sessions.deleteSessionConfirm', { id: session.session_id.substring(0, 8) }), t('sessions.confirmDeleteTitle'))
     await sessionStore.deleteSession(sessionStore.currentProject, session.session_id)
-    notify('会话已删除')
+    notify(t('sessions.sessionDeleted'))
   } catch (e: any) {
-    if (e !== 'cancel' && e?.toString() !== 'cancel') notify(e?.message || e?.toString() || '删除失败', 'error')
+    if (e !== 'cancel' && e?.toString() !== 'cancel') notify(e?.message || e?.toString() || t('sessions.deleteFailed'), 'error')
   }
 }
 function formatSize(bytes: number): string {
@@ -184,7 +187,7 @@ function formatSize(bytes: number): string {
 }
 function formatTime(timestamp: number): string {
   if (!timestamp) return ''
-  return new Date(timestamp * 1000).toLocaleString('zh-CN')
+  return new Date(timestamp * 1000).toLocaleString(locale.value)
 }
 function truncateText(text: string, maxLength: number): string {
   if (!text) return ''
@@ -200,9 +203,9 @@ function formatSessionId(id: string): string {
 async function handleCopyMessage(content: string) {
   try {
     await navigator.clipboard.writeText(normalizeContent(content))
-    notify('已复制')
+    notify(t('sessions.copied'))
   } catch {
-    notify('复制失败', 'error')
+    notify(t('sessions.copyFailed'), 'error')
   }
 }
 const MAX_LINES = 10

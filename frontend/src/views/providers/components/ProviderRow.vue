@@ -1,6 +1,6 @@
 <template>
   <div class="pt-row" :class="{ bl: provider.is_blacklisted, off: !provider.enabled }">
-    <div class="pt-drag" aria-label="拖拽排序">
+    <div class="pt-drag" :aria-label="t('providers.row.dragAria')">
       <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor"><circle cx="3" cy="3" r="1.5"/><circle cx="3" cy="8" r="1.5"/><circle cx="3" cy="13" r="1.5"/><circle cx="7" cy="3" r="1.5"/><circle cx="7" cy="8" r="1.5"/><circle cx="7" cy="13" r="1.5"/></svg>
     </div>
     <div class="pt-cols m-route">
@@ -11,10 +11,8 @@
         <OverflowText :text="provider.name" />
       </div>
       <div class="pt-cell pt-col-protocol">
-        <el-tooltip :content="protocolLabel" placement="top" effect="light" :show-after="250">
-          <span class="v2-pill v2-pill-neutral pt-protocol">{{ protocolLabel }}</span>
-        </el-tooltip>
-        <el-tooltip v-if="translated" content="端点类型与 Agent 协议不同，转发时自动转换" placement="top" effect="light" :show-after="250">
+        <span class="v2-pill v2-pill-neutral pt-protocol"><OverflowText :text="protocolLabel" /></span>
+        <el-tooltip v-if="translated" :content="t('providers.row.translateTip')" placement="top" effect="light" :show-after="250">
           <span class="pt-translate">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
           </span>
@@ -30,16 +28,16 @@
         <OverflowText :text="mappingText || '—'" />
       </div>
       <div class="pt-acts">
-        <el-tooltip content="复制" placement="top" effect="light" :show-after="250">
+        <el-tooltip :content="t('common.copy')" placement="top" effect="light" :show-after="250">
           <button class="pt-act" @click="emit('copy', provider)"><svg width="16" height="16"><use href="#v2i-copy"/></svg></button>
         </el-tooltip>
-        <el-tooltip content="编辑" placement="top" effect="light" :show-after="250">
+        <el-tooltip :content="t('common.edit')" placement="top" effect="light" :show-after="250">
           <button class="pt-act" @click="emit('edit', provider)"><svg width="16" height="16"><use href="#v2i-edit"/></svg></button>
         </el-tooltip>
-        <el-tooltip content="重置并解除熔断" placement="top" effect="light" :show-after="250">
+        <el-tooltip :content="t('providers.row.resetTip')" placement="top" effect="light" :show-after="250">
           <button class="pt-act" @click="emit('reset', provider)"><svg width="16" height="16"><use href="#v2i-refresh"/></svg></button>
         </el-tooltip>
-        <el-tooltip content="删除" placement="top" effect="light" :show-after="250">
+        <el-tooltip :content="t('common.delete')" placement="top" effect="light" :show-after="250">
           <button class="pt-act danger" @click="emit('delete', provider)"><svg width="16" height="16"><use href="#v2i-trash"/></svg></button>
         </el-tooltip>
       </div>
@@ -48,13 +46,15 @@
 </template>
 
 <script setup lang="ts">
-import OverflowText from './OverflowText.vue'
+import OverflowText from '@/components/OverflowText.vue'
 import { open } from '@tauri-apps/plugin-shell'
+import { useI18n } from 'vue-i18n'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { PROTOCOL_LABELS } from '@/types/models'
 import type { Provider } from '@/types/models'
 
+const { t } = useI18n()
 const props = defineProps<{
   provider: Provider
   unblacklistText: string
@@ -86,18 +86,18 @@ const failText = computed(() => {
 })
 const protocolLabel = computed(() => PROTOCOL_LABELS[props.provider.protocol] || props.provider.protocol)
 const mappingText = computed(() => {
-  if (props.provider.model_maps?.length) return props.provider.model_maps.map((m) => m.target_model).join('、')
-  if (props.provider.model_blacklist?.length) return `${props.provider.model_blacklist.length} 个黑名单`
+  if (props.provider.model_maps?.length) return props.provider.model_maps.map((m) => m.target_model).join(t('providers.listSeparator'))
+  if (props.provider.model_blacklist?.length) return t('providers.row.blacklistCount', { count: props.provider.model_blacklist.length })
   return ''
 })
 const health = computed(() => {
-  if (props.provider.is_blacklisted) return { cls: 'v2-pill-danger', text: '熔断' }
-  if (!props.provider.enabled) return { cls: 'v2-pill-neutral', text: '停用' }
-  return { cls: 'v2-pill-success', text: '正常' }
+  if (props.provider.is_blacklisted) return { cls: 'v2-pill-danger', text: t('providers.status.fused') }
+  if (!props.provider.enabled) return { cls: 'v2-pill-neutral', text: t('providers.status.disabled') }
+  return { cls: 'v2-pill-success', text: t('providers.status.normal') }
 })
 
 const statusTitle = computed(() => {
-  if (props.provider.is_blacklisted) return `${props.unblacklistText || '熔断中'} · 点击解除熔断`
+  if (props.provider.is_blacklisted) return t('providers.row.unblacklistTitle', { time: props.unblacklistText || t('providers.row.unblacklistFallback') })
   return ''
 })
 
@@ -110,7 +110,7 @@ async function openBaseUrl() {
   try {
     await open(url)
   } catch (error) {
-    notify(`无法打开 ${url}：${getErrorMessage(error)}`, 'error')
+    notify(t('providers.row.openUrlFailed', { url, message: getErrorMessage(error) }), 'error')
   }
 }
 function onToggleChange(value: string | number | boolean) {

@@ -1,11 +1,11 @@
 <template>
   <V2Drawer v-model="visible" :title="title" @confirm="emit('confirm')">
     <div class="v2-field">
-      <label class="v2-label">凭证名称 <span class="req">*</span></label>
-      <input v-model="form.name" type="text" class="v2-input" placeholder="例如：个人主账号">
+      <label class="v2-label">{{ t('providers.credential.nameLabel') }} <span class="req">*</span></label>
+      <input v-model="form.name" type="text" class="v2-input" :placeholder="t('providers.credential.namePlaceholder')">
     </div>
 
-    <label class="v2-label dr-config-label">配置文件</label>
+    <label class="v2-label dr-config-label">{{ t('providers.credential.configFiles') }}</label>
 
     <div v-for="file in fileDefinitions" :key="file.key" class="v2-field">
       <div class="v2-file-editor">
@@ -22,7 +22,7 @@
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
               <path d="M3 3v5h5"/>
             </svg>
-            <span>读取agent配置</span>
+            <span>{{ t('providers.credential.readFromCli') }}</span>
           </button>
         </div>
         <div class="v2-file-editor-body">
@@ -39,9 +39,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2CodeEditor from '@/components/V2CodeEditor.vue'
 import type { CredentialFileDefinition } from '@/types/models'
+
+const { t } = useI18n()
 
 interface CredentialEditForm {
   name: string

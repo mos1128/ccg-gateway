@@ -128,14 +128,14 @@ async fn insert_blacklist_tiers_tx(
 
 fn validate_provider_protocol(agent_id: &str, protocol: Option<&str>) -> Result<String> {
     let definition = crate::services::agent::get_definition(agent_id)
-        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.provider_cmd.agent_unknown", agent_id))?;
     let declared = &definition.protocols;
     let protocol = match protocol.map(str::trim).filter(|value| !value.is_empty()) {
         Some(value) => value
             .parse::<crate::db::models::Protocol>()
-            .map_err(|_| format!("无效 Protocol: {}", value))?,
+            .map_err(|_| crate::tr!("err.provider_cmd.protocol_invalid", value))?,
         None if declared.len() == 1 => declared[0],
-        None => return Err("该 Agent 支持多个 Protocol，请明确选择".to_string()),
+        None => return Err(crate::tr!("err.provider_cmd.protocol_ambiguous")),
     };
     if !declared.contains(&protocol) {
         // 端点类型可以和 Agent 声明的协议不同，网关转发时自动转换；Gemini 不参与
@@ -146,7 +146,11 @@ fn validate_provider_protocol(agent_id: &str, protocol: Option<&str>) -> Result<
                 .copied()
                 .any(crate::services::translate::is_convertible);
         if !convertible {
-            return Err(format!("Agent {} 无法使用 Protocol {}", agent_id, protocol));
+            return Err(crate::tr!(
+                "err.provider_cmd.protocol_not_supported",
+                agent_id,
+                protocol
+            ));
         }
     }
     Ok(protocol.as_str().to_string())
@@ -384,7 +388,7 @@ pub async fn get_provider(db: State<'_, SqlitePool>, id: i64) -> Result<Provider
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "Provider not found".to_string())?;
+        .ok_or_else(|| crate::tr!("err.provider_cmd.not_found"))?;
 
     let mut response = ProviderResponse::from(provider);
 
@@ -492,19 +496,22 @@ pub async fn write_provider_direct_config_command(
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "服务商不存在".to_string())?;
+        .ok_or_else(|| crate::tr!("err.provider_cmd.not_found"))?;
     if provider.enabled == 0 {
-        return Err("已停用的服务商不能用于中转直连".to_string());
+        return Err(crate::tr!("err.provider_cmd.disabled_direct"));
     }
 
     let agent = crate::services::agent::get_agent(db.inner(), &provider.cli_type)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("未知 Agent: {}", provider.cli_type))?;
+        .ok_or_else(|| crate::tr!("err.provider_cmd.agent_unknown", provider.cli_type))?;
     if !agent.features.provider_config.enabled
         || agent.features.provider_config.operations.is_empty()
     {
-        return Err(format!("Agent {} 不支持服务商直连模式", agent.name));
+        return Err(crate::tr!(
+            "err.provider_cmd.agent_direct_unsupported",
+            agent.name
+        ));
     }
 
     let gateway_url = config.gateway_base_url();
@@ -535,10 +542,11 @@ pub async fn write_provider_direct_config_command(
     let now = now_timestamp();
     remember_default_provider_direct_provider(db.inner(), &provider, now).await?;
 
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "provider_direct_written",
-        &format!("服务商 {} 已写入 CLI 配置", provider.name),
+        "logs.sysLog.provider_direct_written",
+        serde_json::json!({ "provider": provider.name }),
     )
     .await;
 
@@ -557,12 +565,12 @@ pub async fn create_provider(
         input
             .cli_type
             .as_deref()
-            .ok_or_else(|| "必须指定 Agent".to_string())?,
+            .ok_or_else(|| crate::tr!("err.provider_cmd.agent_required"))?,
     )?;
     let protocol = validate_provider_protocol(&cli_type, input.protocol.as_deref())?;
     let profile = validate_provider_profile(input.profile.as_deref())?.to_string();
     if !provider_profile_exists_if_supported(db.inner(), &cli_type, &profile).await? {
-        return Err("Profile 不存在".to_string());
+        return Err(crate::tr!("err.provider_cmd.profile_not_found"));
     }
     let provider_name = input.name.clone();
 
@@ -626,10 +634,11 @@ pub async fn create_provider(
     tx.commit().await.map_err(|e| e.to_string())?;
 
     // Log system event
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "provider_created",
-        &format!("服务商 {} 已创建", provider_name),
+        "logs.sysLog.provider_created",
+        serde_json::json!({ "provider": provider_name }),
     )
     .await;
 
@@ -651,7 +660,7 @@ pub async fn update_provider(
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "服务商不存在".to_string())?;
+        .ok_or_else(|| crate::tr!("err.provider_cmd.not_found"))?;
     let provider_name = provider_before.name.clone();
     let provider_cli_type = provider_before.cli_type.clone();
     let active_direct_provider_id = crate::services::agent_config::provider_direct_active_provider_id(
@@ -687,7 +696,7 @@ pub async fn update_provider(
         .transpose()?;
     if let Some(ref profile) = normalized_profile {
         if !provider_profile_exists_if_supported(db.inner(), &provider_cli_type, profile).await? {
-            return Err("Profile 不存在".to_string());
+            return Err(crate::tr!("err.provider_cmd.profile_not_found"));
         }
     }
     let profile_changed = normalized_profile
@@ -885,10 +894,11 @@ pub async fn update_provider(
         || has_model_blacklist_update
         || has_blacklist_tiers_update
     {
-        let _ = crate::services::stats::record_system_log(
+        let _ = crate::services::stats::record_system_log_event(
             &log_db.0,
             "provider_updated",
-            &format!("服务商 {} 已更新", provider_name),
+            "logs.sysLog.provider_updated",
+            serde_json::json!({ "provider": provider_name }),
         )
         .await;
     }
@@ -977,10 +987,11 @@ pub async fn delete_provider(
     }
 
     // Log system event
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "provider_deleted",
-        &format!("服务商 {} 已删除", provider_name),
+        "logs.sysLog.provider_deleted",
+        serde_json::json!({ "provider": provider_name }),
     )
     .await;
 
@@ -1073,10 +1084,11 @@ pub async fn reset_provider_failures(
     .map_err(map_db_error)?;
 
     // Log system event
-    let _ = crate::services::stats::record_system_log(
+    let _ = crate::services::stats::record_system_log_event(
         &log_db.0,
         "provider_reset",
-        &format!("服务商 {} 状态已手动重置", provider_name),
+        "logs.sysLog.provider_reset",
+        serde_json::json!({ "provider": provider_name }),
     )
     .await;
 

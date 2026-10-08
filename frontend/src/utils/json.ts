@@ -1,3 +1,5 @@
+import { translate } from '@/locales'
+
 /**
  * 校验 JSON 格式
  * @returns 错误信息，校验通过返回空字符串
@@ -9,7 +11,7 @@ export function validateJson(input: string): string {
     JSON.parse(trimmed)
     return ''
   } catch (e) {
-    return `JSON 格式错误: ${(e as Error).message}`
+    return translate('common.jsonInvalid', { message: (e as Error).message })
   }
 }
 

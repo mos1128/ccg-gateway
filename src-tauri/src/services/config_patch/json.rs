@@ -16,40 +16,40 @@ fn parent_object_mut<'a>(
             }
             current
                 .as_object_mut()
-                .ok_or_else(|| format!("operation `{}` 路径结构冲突", operation_id))?
+                .ok_or_else(|| crate::tr!("err.config_patch.path_conflict", operation_id))?
                 .insert(part.clone(), Value::Object(Map::new()));
         }
         current = current
             .get_mut(part)
-            .ok_or_else(|| format!("operation `{}` 路径不存在", operation_id))?;
+            .ok_or_else(|| crate::tr!("err.config_patch.path_not_found", operation_id))?;
         if !current.is_object() {
-            return Err(format!("operation `{}` 路径结构冲突", operation_id));
+            return Err(crate::tr!("err.config_patch.path_conflict", operation_id));
         }
     }
     current
         .as_object_mut()
         .map(Some)
-        .ok_or_else(|| format!("operation `{}` 目标不是对象", operation_id))
+        .ok_or_else(|| crate::tr!("err.config_patch.target_not_object", operation_id))
 }
 
 fn set_value(root: &mut Value, operation: &ResolvedOperation, value: Value) -> Result<(), String> {
     let (key, parent) = operation
         .path
         .split_last()
-        .ok_or_else(|| format!("operation `{}` path 不能为空", operation.id))?;
+        .ok_or_else(|| crate::tr!("err.config_patch.operation_path_required", operation.id))?;
     let target = parent_object_mut(root, parent, true, &operation.id)?
-        .ok_or_else(|| format!("operation `{}` 路径不存在", operation.id))?;
+        .ok_or_else(|| crate::tr!("err.config_patch.path_not_found", operation.id))?;
     target.insert(key.clone(), value);
     Ok(())
 }
 
 fn remove_path(current: &mut Value, path: &[String], operation_id: &str) -> Result<(), String> {
     let Some((key, remaining)) = path.split_first() else {
-        return Err(format!("operation `{}` path 不能为空", operation_id));
+        return Err(crate::tr!("err.config_patch.operation_path_required", operation_id));
     };
     let object = current
         .as_object_mut()
-        .ok_or_else(|| format!("operation `{}` 路径结构冲突", operation_id))?;
+        .ok_or_else(|| crate::tr!("err.config_patch.path_conflict", operation_id))?;
     if remaining.is_empty() {
         object.remove(key);
         return Ok(());
@@ -72,10 +72,11 @@ pub(super) fn patch(content: &str, operations: &[ResolvedOperation]) -> Result<S
     let mut root = if content.trim().is_empty() {
         Value::Object(Map::new())
     } else {
-        serde_json::from_str(content).map_err(|error| format!("JSON 解析失败: {}", error))?
+        serde_json::from_str(content)
+            .map_err(|error| crate::tr!("err.config_patch.json_parse_failed", error))?
     };
     if !root.is_object() {
-        return Err("JSON 顶层必须是对象".to_string());
+        return Err(crate::tr!("err.config_patch.json_root_must_be_object"));
     }
 
     for operation in operations {

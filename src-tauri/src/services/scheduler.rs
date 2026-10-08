@@ -163,7 +163,7 @@ async fn recover_stuck_tasks(
     stale_after_seconds: Option<i64>,
 ) -> Result<(), String> {
     let now = now_timestamp();
-    let error_message = "应用异常退出，任务中断";
+    let error_message = crate::tr!("err.scheduler.recovered_interrupted");
     let mut sql = "SELECT * FROM scheduled_tasks WHERE last_status = ?".to_string();
     if stale_after_seconds.is_some() {
         sql.push_str(" AND last_run_at IS NOT NULL AND last_run_at <= ?");
@@ -200,7 +200,7 @@ async fn recover_stuck_tasks(
             "#,
         )
         .bind(STATUS_FAILED)
-        .bind(error_message)
+        .bind(error_message.as_str())
         .bind(next_run_at)
         .bind(now)
         .bind(task.id)
@@ -222,7 +222,7 @@ async fn recover_stuck_tasks(
         )
         .bind(STATUS_FAILED)
         .bind(now)
-        .bind(error_message)
+        .bind(error_message.as_str())
         .bind(task.id)
         .bind(STATUS_RUNNING)
         .execute(log_db)
@@ -258,7 +258,7 @@ pub async fn create_task(
 ) -> Result<ScheduledTaskResponse, String> {
     let name = input.name.trim();
     if name.is_empty() {
-        return Err("任务名称不能为空".to_string());
+        return Err(crate::tr!("err.scheduler.task_name_required"));
     }
 
     validate_task_type(&input.task_type)?;
@@ -315,7 +315,7 @@ pub async fn update_task(
     let name = input.name.unwrap_or_else(|| current.name.clone());
     let name = name.trim().to_string();
     if name.is_empty() {
-        return Err("任务名称不能为空".to_string());
+        return Err(crate::tr!("err.scheduler.task_name_required"));
     }
 
     let schedule_type = input
@@ -392,7 +392,7 @@ pub async fn update_task(
 
 pub async fn delete_task(db: &SqlitePool, log_db: &SqlitePool, id: i64) -> Result<(), String> {
     if !try_lock_task(id).await {
-        return Err("任务正在执行，稍后再删除".to_string());
+        return Err(crate::tr!("err.scheduler.task_running_delete_later"));
     }
 
     let result = delete_task_locked(db, log_db, id).await;
@@ -403,7 +403,7 @@ pub async fn delete_task(db: &SqlitePool, log_db: &SqlitePool, id: i64) -> Resul
 async fn delete_task_locked(db: &SqlitePool, log_db: &SqlitePool, id: i64) -> Result<(), String> {
     let task = load_task(db, id).await?;
     if task.last_status == STATUS_RUNNING {
-        return Err("任务正在执行，稍后再删除".to_string());
+        return Err(crate::tr!("err.scheduler.task_running_delete_later"));
     }
 
     delete_task_run_history(log_db, &[id]).await?;
@@ -560,7 +560,7 @@ async fn run_due_tasks(
             if let Err(e) =
                 execute_task(&db, &log_db, task_id, TRIGGER_SCHEDULED, Some(&app_handle)).await
             {
-                if e != "任务正在执行" {
+                if e != crate::tr!("err.scheduler.task_running") {
                     tracing::error!(task_id = task_id, error = %e, "Scheduled task execution failed");
                 }
             }
@@ -578,7 +578,7 @@ async fn execute_task(
     app_handle: Option<&AppHandle>,
 ) -> Result<ScheduledTaskRun, String> {
     if !try_lock_task(task_id).await {
-        return Err("任务正在执行".to_string());
+        return Err(crate::tr!("err.scheduler.task_running"));
     }
 
     let result = execute_task_locked(db, log_db, task_id, trigger_type, app_handle).await;
@@ -598,7 +598,7 @@ async fn execute_task_locked(
 ) -> Result<ScheduledTaskRun, String> {
     let task = load_task(db, task_id).await?;
     if task.enabled == 0 && trigger_type == TRIGGER_SCHEDULED {
-        return Err("任务已停用".to_string());
+        return Err(crate::tr!("err.scheduler.task_disabled"));
     }
 
     let started_at = now_timestamp();
@@ -632,7 +632,10 @@ async fn execute_task_locked(
         TASK_TYPE_PROVIDER_KEEPALIVE => {
             execute_keepalive_task(db, log_db, run_id, &task, retry_provider_ids.as_deref()).await
         }
-        _ => Err(format!("不支持的任务类型: {}", task.task_type)),
+        _ => Err(crate::tr!(
+            "err.scheduler.task_type_unsupported",
+            task.task_type
+        )),
     };
 
     let finished_at = now_timestamp();
@@ -686,27 +689,27 @@ async fn execute_keepalive_task(
     retry_provider_ids: Option<&[i64]>,
 ) -> Result<RunOutcome, String> {
     let payload: ProviderKeepalivePayload = serde_json::from_str(&task.payload_json)
-        .map_err(|e| format!("服务商调用参数解析失败: {}", e))?;
+        .map_err(|e| crate::tr!("err.scheduler.payload_parse_failed", e))?;
     let model_name = payload.model_name.trim().to_string();
     let test_text = payload.test_text.clone();
     let targets = resolve_keepalive_targets(db, &payload, retry_provider_ids).await?;
     let mut outcome = RunOutcome::empty();
 
     if targets.is_empty() {
-        let reason = "没有可执行的服务商";
+        let reason = crate::tr!("err.scheduler.no_executable_provider");
         outcome.total_count = 1;
         outcome.skipped_count = 1;
-        outcome.errors.push(reason.to_string());
+        outcome.errors.push(reason.clone());
         insert_run_item(
             log_db,
             run_id,
             None,
-            "任务",
+            &crate::tr!("scheduler.task_placeholder"),
             &model_name,
             STATUS_SKIPPED,
             None,
             0,
-            Some(reason),
+            Some(reason.as_str()),
         )
         .await?;
         return Ok(outcome);
@@ -774,7 +777,7 @@ async fn execute_keepalive_target(
         .status_code
         .map(|code| (200..300).contains(&code))
         .unwrap_or(false)
-        && result.response_text == "请求成功";
+        && result.response_text == crate::tr!("test.success");
 
     if ok {
         outcome.success_count = 1;
@@ -823,7 +826,7 @@ async fn resolve_keepalive_targets(
             let cli_type = payload
                 .cli_type
                 .as_deref()
-                .ok_or_else(|| "全选模式缺少 cli_type".to_string())?;
+                .ok_or_else(|| crate::tr!("err.scheduler.all_mode_missing_cli_type"))?;
             let profile = normalize_profile(payload.profile.as_deref())
                 .unwrap_or_else(|| DEFAULT_PROFILE.to_string());
             if !provider_profile_exists_if_supported(db, cli_type, &profile).await? {
@@ -831,7 +834,7 @@ async fn resolve_keepalive_targets(
                     provider_id: None,
                     provider_name: format!("{}:{}", cli_type, profile),
                     provider: None,
-                    skip_reason: Some("Profile 不存在".to_string()),
+                    skip_reason: Some(crate::tr!("err.scheduler.profile_missing")),
                 }]);
             }
 
@@ -853,7 +856,7 @@ async fn resolve_keepalive_targets(
                     provider_id: None,
                     provider_name: format!("{}:{}", cli_type, profile),
                     provider: None,
-                    skip_reason: Some("没有可用服务商".to_string()),
+                    skip_reason: Some(crate::tr!("err.scheduler.no_available_provider")),
                 }]);
             }
 
@@ -871,10 +874,10 @@ async fn resolve_keepalive_targets(
             let ids = payload
                 .provider_ids
                 .as_deref()
-                .ok_or_else(|| "指定服务商模式缺少 provider_ids".to_string())?;
+                .ok_or_else(|| crate::tr!("err.scheduler.selected_mode_missing_provider_ids"))?;
             resolve_provider_ids(db, ids).await
         }
-        _ => Err("执行对象只能是 all 或 selected".to_string()),
+        _ => Err(crate::tr!("err.scheduler.invalid_target_mode")),
     }
 }
 
@@ -914,13 +917,13 @@ async fn resolve_provider_ids(
                 provider_id: Some(*id),
                 provider_name: provider.name.clone(),
                 provider: None,
-                skip_reason: Some("服务商已停用".to_string()),
+                skip_reason: Some(crate::tr!("err.scheduler.provider_disabled")),
             },
             None => KeepaliveTarget {
                 provider_id: Some(*id),
                 provider_name: format!("Provider#{}", id),
                 provider: None,
-                skip_reason: Some("服务商不存在".to_string()),
+                skip_reason: Some(crate::tr!("err.scheduler.provider_missing")),
             },
         })
         .collect())
@@ -1029,14 +1032,17 @@ async fn update_task_after_run(
     }
 
     if !is_manual && !is_success && !should_retry && status != STATUS_SKIPPED {
-        let message = format!(
-            "定时任务 {} 执行失败: {}",
-            task.name,
-            error_message.unwrap_or("未知错误")
-        );
-        let _ =
-            crate::services::stats::record_system_log(log_db, "scheduled_task_failed", &message)
-                .await;
+        let fallback = crate::tr!("err.scheduler.unknown_error");
+        let _ = crate::services::stats::record_system_log_event(
+            log_db,
+            "scheduled_task_failed",
+            "logs.sysLog.scheduled_task_failed",
+            serde_json::json!({
+                "task": &task.name,
+                "error": error_message.unwrap_or(&fallback),
+            }),
+        )
+        .await;
     }
 
     Ok(())
@@ -1273,7 +1279,7 @@ async fn load_task(db: &SqlitePool, id: i64) -> Result<ScheduledTask, String> {
         .fetch_optional(db)
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "任务不存在".to_string())
+        .ok_or_else(|| crate::tr!("err.scheduler.task_not_found"))
 }
 
 async fn load_run(db: &SqlitePool, id: i64) -> Result<ScheduledTaskRun, String> {
@@ -1312,7 +1318,7 @@ fn validate_task_type(task_type: &str) -> Result<(), String> {
     if task_type == TASK_TYPE_PROVIDER_KEEPALIVE {
         Ok(())
     } else {
-        Err("只支持服务商调用任务".to_string())
+        Err(crate::tr!("err.scheduler.task_type_not_supported"))
     }
 }
 
@@ -1320,7 +1326,7 @@ fn validate_schedule_type(schedule_type: &str) -> Result<(), String> {
     if schedule_type == SCHEDULE_TYPE_INTERVAL || schedule_type == SCHEDULE_TYPE_DAILY {
         Ok(())
     } else {
-        Err("只支持间隔执行或定期执行".to_string())
+        Err(crate::tr!("err.scheduler.schedule_type_unsupported"))
     }
 }
 
@@ -1329,11 +1335,11 @@ fn validate_payload(task_type: &str, payload_json: &str) -> Result<(), String> {
         return validate_task_type(task_type);
     }
 
-    let payload: ProviderKeepalivePayload =
-        serde_json::from_str(payload_json).map_err(|e| format!("任务参数不是合法 JSON: {}", e))?;
+    let payload: ProviderKeepalivePayload = serde_json::from_str(payload_json)
+        .map_err(|e| crate::tr!("err.scheduler.payload_not_json", e))?;
 
     if payload.model_name.trim().is_empty() {
-        return Err("模型名不能为空".to_string());
+        return Err(crate::tr!("err.scheduler.model_name_required"));
     }
 
     match payload.target_mode.as_str() {
@@ -1341,15 +1347,15 @@ fn validate_payload(task_type: &str, payload_json: &str) -> Result<(), String> {
             let cli_type = payload.cli_type.as_deref().unwrap_or_default();
             validate_cli_type(cli_type)?;
             if normalize_profile(payload.profile.as_deref()).is_none() {
-                return Err("profile 参数无效".to_string());
+                return Err(crate::tr!("err.scheduler.profile_invalid"));
             }
         }
         "selected" => {
             if payload.provider_ids.as_ref().map_or(true, Vec::is_empty) {
-                return Err("指定服务商模式必须选择服务商".to_string());
+                return Err(crate::tr!("err.scheduler.selected_mode_requires_provider"));
             }
         }
-        _ => return Err("执行对象只能是 all 或 selected".to_string()),
+        _ => return Err(crate::tr!("err.scheduler.invalid_target_mode")),
     }
 
     Ok(())
@@ -1357,10 +1363,10 @@ fn validate_payload(task_type: &str, payload_json: &str) -> Result<(), String> {
 
 fn validate_retry(retry_limit: i64, retry_interval_minutes: i64) -> Result<(), String> {
     if retry_limit < 0 {
-        return Err("重试次数不能小于 0".to_string());
+        return Err(crate::tr!("err.scheduler.retry_limit_negative"));
     }
     if retry_interval_minutes <= 0 {
-        return Err("重试间隔必须大于 0".to_string());
+        return Err(crate::tr!("err.scheduler.retry_interval_invalid"));
     }
     Ok(())
 }
@@ -1378,14 +1384,14 @@ fn next_interval_run_after(schedule_expr: &str, after_ts: i64) -> Result<i64, St
     let minutes = schedule_expr
         .trim()
         .parse::<i64>()
-        .map_err(|_| "执行间隔必须是整数分钟".to_string())?;
+        .map_err(|_| crate::tr!("err.scheduler.interval_not_integer"))?;
     if minutes <= 0 {
-        return Err("执行间隔必须大于 0 分钟".to_string());
+        return Err(crate::tr!("err.scheduler.interval_not_positive"));
     }
     minutes
         .checked_mul(60)
         .and_then(|seconds| after_ts.checked_add(seconds))
-        .ok_or_else(|| "执行间隔过大".to_string())
+        .ok_or_else(|| crate::tr!("err.scheduler.interval_too_large"))
 }
 
 fn next_daily_run_after(schedule_expr: &str, after_ts: i64) -> Result<i64, String> {
@@ -1412,36 +1418,36 @@ fn next_daily_run_after(schedule_expr: &str, after_ts: i64) -> Result<i64, Strin
         date += Duration::days(days);
     }
 
-    Err("无法计算下次定期执行时间".to_string())
+    Err(crate::tr!("err.scheduler.next_daily_run_failed"))
 }
 
 fn parse_daily_schedule(schedule_expr: &str) -> Result<(i64, NaiveTime), String> {
     let value = schedule_expr.trim();
     if value.is_empty() {
-        return Err("定期执行时间不能为空".to_string());
+        return Err(crate::tr!("err.scheduler.daily_time_required"));
     }
 
     if let Ok(expr) = serde_json::from_str::<DailyScheduleExpr>(value) {
         validate_daily_parts(expr.days, expr.hour, expr.minute)?;
         let time = NaiveTime::from_hms_opt(expr.hour, expr.minute, 0)
-            .ok_or_else(|| "定期执行时间无效".to_string())?;
+            .ok_or_else(|| crate::tr!("err.scheduler.daily_time_invalid"))?;
         return Ok((expr.days, time));
     }
 
     let time = NaiveTime::parse_from_str(value, "%H:%M")
-        .map_err(|_| "定期执行格式必须是 HH:mm 或 JSON".to_string())?;
+        .map_err(|_| crate::tr!("err.scheduler.daily_format_invalid"))?;
     Ok((1, time))
 }
 
 fn validate_daily_parts(days: i64, hour: u32, minute: u32) -> Result<(), String> {
     if !(1..=365).contains(&days) {
-        return Err("执行周期必须是 1 到 365 天".to_string());
+        return Err(crate::tr!("err.scheduler.daily_days_out_of_range"));
     }
     if hour > 23 {
-        return Err("执行小时必须是 0 到 23".to_string());
+        return Err(crate::tr!("err.scheduler.daily_hour_out_of_range"));
     }
     if minute > 59 {
-        return Err("执行分钟必须是 0 到 59".to_string());
+        return Err(crate::tr!("err.scheduler.daily_minute_out_of_range"));
     }
     Ok(())
 }

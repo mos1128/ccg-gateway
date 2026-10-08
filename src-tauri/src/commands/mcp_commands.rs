@@ -11,22 +11,22 @@ async fn resolve_mcp_target(db: &SqlitePool, agent_id: &str) -> Result<McpTarget
     let agent = crate::services::agent::get_agent(db, agent_id)
         .await
         .map_err(|error| error.to_string())?
-        .ok_or_else(|| format!("未知 Agent: {}", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.mcp.agent_unknown", agent_id))?;
     let feature = agent.features.mcp;
     if !feature.enabled {
-        return Err(format!("Agent {} 的 MCP 功能不可用", agent_id));
+        return Err(crate::tr!("err.mcp.agent_unsupported", agent_id));
     }
     let file = feature
         .file
         .as_deref()
-        .ok_or_else(|| format!("Agent {} 的 MCP 缺少 file", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.mcp.missing_file", agent_id))?;
     let format = feature
         .format
-        .ok_or_else(|| format!("Agent {} 的 MCP 缺少 format", agent_id))?;
+        .ok_or_else(|| crate::tr!("err.mcp.missing_format", agent_id))?;
     match feature.adapter {
         Some(crate::db::models::McpAdapter::Dsh) => {
             if format != crate::db::models::ConfigFormat::Yaml {
-                return Err(format!("Agent {} 的 DSH MCP 只支持 yaml", agent_id));
+                return Err(crate::tr!("err.mcp.dsh_yaml_only", agent_id));
             }
         }
         _ => {
@@ -34,13 +34,10 @@ async fn resolve_mcp_target(db: &SqlitePool, agent_id: &str) -> Result<McpTarget
                 format,
                 crate::db::models::ConfigFormat::Json | crate::db::models::ConfigFormat::Toml
             ) {
-                return Err(format!(
-                    "Agent {} 的 MCP format 只支持 json 或 toml",
-                    agent_id
-                ));
+                return Err(crate::tr!("err.mcp.format_json_toml_only", agent_id));
             }
             if feature.servers_path.is_empty() {
-                return Err(format!("Agent {} 的 MCP 缺少 servers_path", agent_id));
+                return Err(crate::tr!("err.mcp.missing_servers_path", agent_id));
             }
         }
     }
@@ -61,7 +58,7 @@ fn apply_mcp_adapter(
         return Ok(config_json.to_string());
     };
     let config = serde_json::from_str(config_json)
-        .map_err(|error| format!("MCP JSON 格式错误: {}", error))?;
+        .map_err(|error| crate::tr!("err.mcp.json_invalid", error))?;
     let adapted = match adapter {
         crate::db::models::McpAdapter::Opencode => adapt_opencode_mcp(config)?,
         crate::db::models::McpAdapter::Dsh => crate::services::dsh_mcp::adapt(mcp_name, config)?,
@@ -72,14 +69,14 @@ fn apply_mcp_adapter(
 fn adapt_opencode_mcp(config: serde_json::Value) -> Result<serde_json::Value> {
     let server = config
         .as_object()
-        .ok_or_else(|| "OpenCode MCP 配置必须是 JSON object".to_string())?;
+        .ok_or_else(|| crate::tr!("err.mcp.opencode_object_required"))?;
     let server_type = match server.get("type") {
         Some(serde_json::Value::String(value)) => value.as_str(),
-        Some(_) => return Err("MCP type 必须是字符串".to_string()),
+        Some(_) => return Err(crate::tr!("err.mcp.type_string_required")),
         None => match (server.contains_key("command"), server.contains_key("url")) {
             (true, false) => "stdio",
             (false, true) => "http",
-            _ => return Err("MCP 配置必须通过 command 或 url 明确服务类型".to_string()),
+            _ => return Err(crate::tr!("err.mcp.service_type_required")),
         },
     };
 
@@ -90,20 +87,20 @@ fn adapt_opencode_mcp(config: serde_json::Value) -> Result<serde_json::Value> {
                 .get("command")
                 .and_then(serde_json::Value::as_str)
                 .filter(|command| !command.trim().is_empty())
-                .ok_or_else(|| "stdio MCP 必须提供非空 command".to_string())?;
+                .ok_or_else(|| crate::tr!("err.mcp.command_required"))?;
             let mut command = vec![serde_json::json!(command)];
             if let Some(args) = server.get("args") {
                 let args = args
                     .as_array()
                     .filter(|args| args.iter().all(serde_json::Value::is_string))
-                    .ok_or_else(|| "MCP args 必须是字符串数组".to_string())?;
+                    .ok_or_else(|| crate::tr!("err.mcp.args_string_array_required"))?;
                 command.extend(args.iter().cloned());
             }
             adapted.insert("type".to_string(), serde_json::json!("local"));
             adapted.insert("command".to_string(), serde_json::Value::Array(command));
             if let Some(environment) = server.get("env") {
                 if !environment.is_object() {
-                    return Err("MCP env 必须是 JSON object".to_string());
+                    return Err(crate::tr!("err.mcp.env_object_required"));
                 }
                 adapted.insert("environment".to_string(), environment.clone());
             }
@@ -113,17 +110,17 @@ fn adapt_opencode_mcp(config: serde_json::Value) -> Result<serde_json::Value> {
                 .get("url")
                 .and_then(serde_json::Value::as_str)
                 .filter(|url| !url.trim().is_empty())
-                .ok_or_else(|| "远程 MCP 必须提供非空 url".to_string())?;
+                .ok_or_else(|| crate::tr!("err.mcp.url_required"))?;
             adapted.insert("type".to_string(), serde_json::json!("remote"));
             adapted.insert("url".to_string(), serde_json::json!(url));
             if let Some(headers) = server.get("headers") {
                 if !headers.is_object() {
-                    return Err("MCP headers 必须是 JSON object".to_string());
+                    return Err(crate::tr!("err.mcp.headers_object_required"));
                 }
                 adapted.insert("headers".to_string(), headers.clone());
             }
         }
-        value => return Err(format!("OpenCode MCP 不支持 type: {}", value)),
+        value => return Err(crate::tr!("err.mcp.type_unsupported", value)),
     }
     adapted.insert("enabled".to_string(), serde_json::json!(true));
     Ok(serde_json::Value::Object(adapted))
@@ -154,14 +151,14 @@ fn ensure_json_object<'a>(
     for key in path {
         let object = current
             .as_object_mut()
-            .ok_or_else(|| format!("MCP 路径 `{}` 不是对象", path.join(".")))?;
+            .ok_or_else(|| crate::tr!("err.mcp.path_not_object", path.join(".")))?;
         current = object
             .entry(key.clone())
             .or_insert_with(|| serde_json::json!({}));
     }
     current
         .as_object_mut()
-        .ok_or_else(|| format!("MCP 路径 `{}` 不是对象", path.join(".")))
+        .ok_or_else(|| crate::tr!("err.mcp.path_not_object", path.join(".")))
 }
 
 fn toml_table_at<'a>(table: &'a toml_edit::Table, path: &[String]) -> Option<&'a toml_edit::Table> {
@@ -193,7 +190,7 @@ fn ensure_toml_table<'a>(
         current = current
             .get_mut(key)
             .and_then(toml_edit::Item::as_table_mut)
-            .ok_or_else(|| format!("MCP 路径 `{}` 不是 TOML table", path.join(".")))?;
+            .ok_or_else(|| crate::tr!("err.mcp.path_not_toml_table", path.join(".")))?;
     }
     Ok(current)
 }
@@ -285,7 +282,7 @@ pub async fn get_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<McpResponse> 
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "MCP not found".to_string())?;
+        .ok_or_else(|| crate::tr!("err.mcp.not_found"))?;
 
     let mut cli_flags = Vec::new();
     for cli_type in crate::services::agent::agent_ids_for_feature("mcp") {
@@ -312,7 +309,7 @@ pub async fn create_mcp(db: State<'_, SqlitePool>, input: McpCreate) -> Result<M
     let config_trimmed = input.config_json.trim();
     if !config_trimmed.is_empty() {
         serde_json::from_str::<serde_json::Value>(config_trimmed)
-            .map_err(|e| format!("JSON 格式错误: {}", e))?;
+            .map_err(|e| crate::tr!("err.mcp.json_format_invalid", e))?;
     }
     let cli_flags = input.cli_flags.unwrap_or_default();
     validate_mcp_config_for_flags(db.inner(), &input.name, config_trimmed, &cli_flags).await?;
@@ -349,14 +346,14 @@ pub async fn update_mcp(
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "MCP not found".to_string())?;
+        .ok_or_else(|| crate::tr!("err.mcp.not_found"))?;
 
     // Validate JSON format if config_json is provided and not empty
     if let Some(ref config) = input.config_json {
         let config_trimmed = config.trim();
         if !config_trimmed.is_empty() {
             serde_json::from_str::<serde_json::Value>(config_trimmed)
-                .map_err(|e| format!("JSON 格式错误: {}", e))?;
+                .map_err(|e| crate::tr!("err.mcp.json_format_invalid", e))?;
         }
     }
 
@@ -419,7 +416,7 @@ pub async fn toggle_mcp_cli(
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "MCP not found".to_string())?;
+        .ok_or_else(|| crate::tr!("err.mcp.not_found"))?;
 
     sync_mcp_to_cli_async(db.inner(), &mcp.name, &mcp.config_json, &cli_type, enabled).await?;
 
@@ -434,7 +431,7 @@ pub async fn delete_mcp(db: State<'_, SqlitePool>, id: i64) -> Result<()> {
         .fetch_optional(db.inner())
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "MCP not found".to_string())?;
+        .ok_or_else(|| crate::tr!("err.mcp.not_found"))?;
 
     let mcp_name = mcp.name.clone();
 
@@ -484,7 +481,7 @@ async fn sync_mcp_to_cli_async(
         {
             crate::services::dsh_mcp::sync(&target.path, mcp_name, adapted_config.as_deref()).await
         }
-        _ => Err("MCP format 与 adapter 不匹配".to_string()),
+        _ => Err(crate::tr!("err.mcp.format_adapter_mismatch")),
     }
 }
 
@@ -501,8 +498,8 @@ async fn sync_json_mcp(
         match serde_json::from_str::<serde_json::Value>(&content) {
             Ok(config) => config,
             Err(error) if is_enabled => {
-                return Err(format!(
-                    "{} 解析失败，未写入: {}",
+                return Err(crate::tr!(
+                    "err.mcp.parse_failed_not_written",
                     target.path.display(),
                     error
                 ));
@@ -522,7 +519,7 @@ async fn sync_json_mcp(
 
     if is_enabled {
         let mcp_config = serde_json::from_str::<serde_json::Value>(mcp_config_json)
-            .map_err(|error| format!("MCP JSON 格式错误: {}", error))?;
+            .map_err(|error| crate::tr!("err.mcp.json_invalid", error))?;
         ensure_json_object(&mut config, &target.servers_path)?
             .insert(mcp_name.to_string(), mcp_config);
     } else if let Some(servers) = json_object_at_mut(&mut config, &target.servers_path) {
@@ -555,8 +552,8 @@ async fn sync_toml_mcp(
         match content.parse::<toml_edit::DocumentMut>() {
             Ok(document) => document,
             Err(error) if is_enabled => {
-                return Err(format!(
-                    "{} 解析失败，未写入: {}",
+                return Err(crate::tr!(
+                    "err.mcp.parse_failed_not_written",
                     target.path.display(),
                     error
                 ));

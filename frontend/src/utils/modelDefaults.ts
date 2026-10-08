@@ -1,4 +1,5 @@
 import type { CliType } from '@/types/models'
+import { translate } from '@/locales'
 
 export const DEFAULT_MODEL_NAMES: Record<string, string> = {
   claude_code: 'claude-opus-4-8',
@@ -19,14 +20,16 @@ export function saveReusableModelName(cliType: CliType, modelName: string): void
   if (value) localStorage.setItem(modelStorageKey(cliType), value)
 }
 
-export const DEFAULT_TEST_TEXT = '今天天气不错'
+export function defaultTestText(): string {
+  return translate('common.defaultTestText')
+}
 
 function testTextStorageKey(cliType: CliType): string {
   return `detect_text_${cliType}`
 }
 
 export function getReusableTestText(cliType: CliType): string {
-  return localStorage.getItem(testTextStorageKey(cliType)) || DEFAULT_TEST_TEXT
+  return localStorage.getItem(testTextStorageKey(cliType)) || defaultTestText()
 }
 
 export function saveReusableTestText(cliType: CliType, text: string): void {

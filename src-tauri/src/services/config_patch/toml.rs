@@ -5,13 +5,13 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value as TomlValue
 
 fn to_toml_value(value: &Value) -> Result<TomlValue, String> {
     match value {
-        Value::Null => Err("TOML 不支持 null".to_string()),
+        Value::Null => Err(crate::tr!("err.patch.toml_null_unsupported")),
         Value::Bool(value) => Ok(TomlValue::from(*value)),
         Value::Number(value) => value
             .as_i64()
             .map(TomlValue::from)
             .or_else(|| value.as_f64().map(TomlValue::from))
-            .ok_or_else(|| "TOML 数字超出支持范围".to_string()),
+            .ok_or_else(|| crate::tr!("err.patch.toml_number_out_of_range")),
         Value::String(value) => Ok(TomlValue::from(value.as_str())),
         Value::Array(values) => {
             let mut array = Array::new();
@@ -59,7 +59,7 @@ fn table_mut<'a>(
         current = current
             .get_mut(key)
             .and_then(Item::as_table_mut)
-            .ok_or_else(|| format!("operation `{}` 路径结构冲突", operation_id))?;
+            .ok_or_else(|| crate::tr!("err.patch.path_conflict", operation_id))?;
     }
     Ok(Some(current))
 }
@@ -72,7 +72,7 @@ fn set(
     let (key, parent) = operation
         .path
         .split_last()
-        .ok_or_else(|| format!("operation `{}` path 不能为空", operation.id))?;
+        .ok_or_else(|| crate::tr!("err.patch.path_empty", operation.id))?;
     let table = table_mut(document.as_table_mut(), parent, true, &operation.id)?
         .expect("created TOML path");
     table.insert(key, to_item(value)?);
@@ -81,7 +81,7 @@ fn set(
 
 fn remove_path(table: &mut Table, path: &[String], operation_id: &str) -> Result<(), String> {
     let Some((key, remaining)) = path.split_first() else {
-        return Err(format!("operation `{}` path 不能为空", operation_id));
+        return Err(crate::tr!("err.patch.path_empty", operation_id));
     };
     if remaining.is_empty() {
         table.remove(key);
@@ -92,7 +92,7 @@ fn remove_path(table: &mut Table, path: &[String], operation_id: &str) -> Result
     };
     let child_table = child
         .as_table_mut()
-        .ok_or_else(|| format!("operation `{}` 路径结构冲突", operation_id))?;
+        .ok_or_else(|| crate::tr!("err.patch.path_conflict", operation_id))?;
     remove_path(child_table, remaining, operation_id)?;
     if child_table.is_empty() {
         table.remove(key);
@@ -106,7 +106,7 @@ pub(super) fn patch(content: &str, operations: &[ResolvedOperation]) -> Result<S
     } else {
         content
             .parse::<DocumentMut>()
-            .map_err(|error| format!("TOML 解析失败: {}", error))?
+            .map_err(|error| crate::tr!("err.patch.toml_parse_failed_generic", error))?
     };
     for operation in operations {
         match operation.kind {

@@ -37,12 +37,12 @@ fn resolve_runtime_string(
         let candidate = &remaining[start..];
         let (placeholder, replacement) = if candidate.starts_with("{target.endpoint}") {
             if context.target_endpoint.is_empty() {
-                return Err(format!("operation `{}` 缺少 target.endpoint", operation.id));
+                return Err(crate::tr!("err.config_patch.missing_target_endpoint", operation.id));
             }
             ("{target.endpoint}", context.target_endpoint.as_str())
         } else if candidate.starts_with("{target.token}") {
             if context.target_token.is_empty() {
-                return Err(format!("operation `{}` 缺少 target.token", operation.id));
+                return Err(crate::tr!("err.config_patch.missing_target_token", operation.id));
             }
             ("{target.token}", context.target_token.as_str())
         } else if candidate.starts_with("{agent.id}") {
@@ -51,7 +51,7 @@ fn resolve_runtime_string(
             || candidate.starts_with("{agent.")
             || candidate.starts_with("{profile")
         {
-            return Err(format!("operation `{}` 使用了未知模板变量", operation.id));
+            return Err(crate::tr!("err.config_patch.unknown_template_variable", operation.id));
         } else {
             output.push('{');
             remaining = &candidate[1..];
@@ -96,7 +96,7 @@ fn resolve_value(operation: &ConfigOperation, context: &PatchContext) -> Result<
     let value = operation
         .value
         .as_ref()
-        .ok_or_else(|| format!("operation `{}` 缺少 value", operation.id))?;
+        .ok_or_else(|| crate::tr!("err.config_patch.missing_value", operation.id))?;
     resolve_runtime_value(operation, value, context)
 }
 
@@ -108,17 +108,17 @@ fn resolve_operations(
         .iter()
         .map(|operation| {
             if operation.id.trim().is_empty() {
-                return Err("operation id 不能为空".to_string());
+                return Err(crate::tr!("err.config_patch.operation_id_required"));
             }
             if operation.path.is_empty() || operation.path.iter().any(|part| part.is_empty()) {
-                return Err(format!("operation `{}` 的 path 不能为空", operation.id));
+                return Err(crate::tr!("err.config_patch.path_required", operation.id));
             }
             let writes_value = operation.op == ConfigOperationKind::Set;
             let value = if writes_value {
                 Some(resolve_value(operation, context)?)
             } else {
                 if operation.value.is_some() {
-                    return Err(format!("operation `{}` 不接受 value", operation.id));
+                    return Err(crate::tr!("err.config_patch.value_not_accepted", operation.id));
                 }
                 None
             };
@@ -195,7 +195,11 @@ pub async fn patch_file(
             Ok(content) => content,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(error) => {
-                return Err(format!("读取 {} 失败: {}", task_path.display(), error));
+                return Err(crate::tr!(
+                    "err.config_patch.read_file_failed",
+                    task_path.display(),
+                    error
+                ));
             }
         };
         let next = patch_content(format, &content, &operations, &context)?;
@@ -203,7 +207,7 @@ pub async fn patch_file(
         Ok(())
     })
     .await
-    .map_err(|error| format!("配置写入任务失败: {}", error))??;
+    .map_err(|error| crate::tr!("err.config_patch.write_task_failed", error))??;
     Ok(path)
 }
 
@@ -212,7 +216,7 @@ pub async fn write_atomic_json(path: &Path, value: &Value) -> Result<(), String>
     let bytes = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
     tokio::task::spawn_blocking(move || writer::write_atomic(&path, &bytes))
         .await
-        .map_err(|error| format!("配置写入任务失败: {}", error))?
+        .map_err(|error| crate::tr!("err.config_patch.write_task_failed", error))?
 }
 
 pub async fn write_atomic_text(path: &Path, content: &str) -> Result<(), String> {
@@ -228,7 +232,7 @@ pub async fn write_atomic_text_with_privacy(
     let bytes = content.as_bytes().to_vec();
     tokio::task::spawn_blocking(move || writer::write_atomic_with_privacy(&path, &bytes, private))
         .await
-        .map_err(|error| format!("配置写入任务失败: {}", error))?
+        .map_err(|error| crate::tr!("err.config_patch.write_task_failed", error))?
 }
 
 fn inverse_operation(operation: &ConfigOperation) -> Option<ConfigOperation> {

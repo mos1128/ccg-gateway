@@ -4,7 +4,7 @@
       v-if="isOverflowing"
       class="v2-tabs-arrow v2-tabs-arrow-left"
       type="button"
-      aria-label="向左滚动标签"
+      :aria-label="t('common.scrollLeft')"
       :disabled="!canScrollLeft"
       @click="scrollTabs(-1)"
     >
@@ -21,7 +21,7 @@
       v-if="isOverflowing"
       class="v2-tabs-arrow v2-tabs-arrow-right"
       type="button"
-      aria-label="向右滚动标签"
+      :aria-label="t('common.scrollRight')"
       :disabled="!canScrollRight"
       @click="scrollTabs(1)"
     >
@@ -33,6 +33,9 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 const scroller = ref<HTMLElement | null>(null)
 const root = ref<HTMLElement | null>(null)
 const isOverflowing = ref(false)

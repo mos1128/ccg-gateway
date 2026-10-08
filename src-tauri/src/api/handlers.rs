@@ -40,7 +40,6 @@ const RESPONSE_FILTERED_HEADERS: &[&str] = &[
     "content-length",
 ];
 const CLIENT_CLOSED_REQUEST_STATUS: u16 = 499;
-const CLIENT_CLOSED_REQUEST_MESSAGE: &str = "客户端在完成前断开了连接";
 /// 流式响应体收集进日志的上限，10MB。
 const MAX_BODY_LOG: usize = 10 * 1024 * 1024;
 /// 整流判定要把错误体整个读进内存，4xx 的错误体最多几 KB，1MB 足够。
@@ -111,7 +110,8 @@ impl Drop for RequestLogCancelGuard {
                     CLIENT_CLOSED_REQUEST_STATUS,
                     elapsed_ms,
                     first_byte_ms,
-                    CLIENT_CLOSED_REQUEST_MESSAGE,
+                    &crate::tr!("err.proxy.client_closed"),
+                    "client_closed",
                 )
                 .await
                 {
@@ -159,10 +159,11 @@ pub async fn proxy_handler_catchall(
             let _ =
                 agent_service::record_diagnostic(&state.log_db, "unknown_agent", &key, &payload)
                     .await;
-            let _ = stats_service::record_system_log_dedup(
+            let _ = stats_service::record_system_log_event_dedup(
                 &state.log_db,
                 "unknown_agent",
-                &payload.to_string(),
+                "logs.sysLog.unknown_agent",
+                payload.clone(),
                 600,
             )
             .await;
@@ -193,10 +194,11 @@ pub async fn proxy_handler_catchall(
         );
         let _ = agent_service::record_diagnostic(&state.log_db, "config_conflict", &key, &payload)
             .await;
-        let _ = stats_service::record_system_log_dedup(
+        let _ = stats_service::record_system_log_event_dedup(
             &state.log_db,
             "config_conflict",
-            &payload.to_string(),
+            "logs.sysLog.config_conflict",
+            payload.clone(),
             600,
         )
         .await;
@@ -246,17 +248,18 @@ pub async fn proxy_handler_catchall(
                         "method": method.as_str(),
                         "path": full_path,
                     });
-                    let _ = stats_service::record_system_log_dedup(
+                    let _ = stats_service::record_system_log_event_dedup(
                         &state.log_db,
                         "no_provider_available",
-                        &payload.to_string(),
+                        "logs.sysLog.no_provider_available_passthrough",
+                        payload.clone(),
                         600,
                     )
                     .await;
                     return Ok(json_error_response(
                         StatusCode::SERVICE_UNAVAILABLE,
                         "no_provider_available",
-                        "没有可用的服务商，无法透传该请求",
+                        &crate::tr!("err.proxy.no_provider_passthrough"),
                     ));
                 }
                 Err(error) => {
@@ -287,10 +290,11 @@ pub async fn proxy_handler_catchall(
         let _ =
             agent_service::record_diagnostic(&state.log_db, "protocol_conflict", &key, &payload)
                 .await;
-        let _ = stats_service::record_system_log_dedup(
+        let _ = stats_service::record_system_log_event_dedup(
             &state.log_db,
             "protocol_conflict",
-            &payload.to_string(),
+            "logs.sysLog.protocol_conflict",
+            payload.clone(),
             600,
         )
         .await;
@@ -355,21 +359,22 @@ pub async fn proxy_handler_catchall(
                 "No available provider"
             );
             // Log system event
-            let _ = stats_service::record_system_log(
+            let _ = stats_service::record_system_log_event(
                 &state.log_db,
                 "no_provider_available",
-                &format!(
-                    "Agent {} / profile {} / protocol {} 没有可用的服务商",
-                    agent.id, provider_profile, protocol
-                ),
+                "logs.sysLog.no_provider_available",
+                serde_json::json!({
+                    "agent_id": agent.id,
+                    "profile": provider_profile,
+                    "protocol": protocol.as_str(),
+                }),
             )
             .await;
+            let body = serde_json::json!({ "error": crate::tr!("err.proxy.no_provider") }).to_string();
             return Ok(Response::builder()
                 .status(StatusCode::SERVICE_UNAVAILABLE)
                 .header("content-type", "application/json")
-                .body(Body::from(
-                    r#"{"error": "没有可用的服务商"}"#,
-                ))
+                .body(Body::from(body))
                 .unwrap());
         }
         Err(e) => {
@@ -643,7 +648,7 @@ pub async fn proxy_handler_catchall(
                 Err(status) => json_error_response(
                     status,
                     "upstream_error",
-                    "上游请求失败，未收到响应",
+                    &crate::tr!("err.proxy.upstream_no_response"),
                 ),
             };
 
@@ -710,7 +715,7 @@ pub async fn proxy_handler_catchall(
         json_error_response(
             StatusCode::BAD_GATEWAY,
             "upstream_unavailable",
-            "所有服务商均未能成功响应",
+            &crate::tr!("err.proxy.all_providers_failed"),
         )
     }))
 }
@@ -770,9 +775,18 @@ async fn handle_passthrough_request(
     let response = match tokio::time::timeout(timeout, state.http_client.execute(request)).await {
         Ok(Ok(response)) => response,
         Ok(Err(e)) => {
-            let reason = format!("上游请求失败: {}", e);
-            record_passthrough_failure(state, agent_id, &provider.name, method, full_path, &reason)
-                .await;
+            let reason = crate::tr!("err.proxy.upstream_request_failed", e);
+            record_passthrough_failure(
+                state,
+                agent_id,
+                &provider.name,
+                method,
+                full_path,
+                "upstream_request_failed",
+                serde_json::json!({ "error": e.to_string() }),
+                &reason,
+            )
+            .await;
             return Ok(json_error_response(
                 StatusCode::BAD_GATEWAY,
                 "passthrough_failed",
@@ -786,13 +800,15 @@ async fn handle_passthrough_request(
                 &provider.name,
                 method,
                 full_path,
-                "请求超时",
+                "request_timeout",
+                serde_json::json!({}),
+                &crate::tr!("err.proxy.request_timeout"),
             )
             .await;
             return Ok(json_error_response(
                 StatusCode::GATEWAY_TIMEOUT,
                 "passthrough_timeout",
-                "透传请求超时",
+                &crate::tr!("err.proxy.passthrough_timeout"),
             ));
         }
     };
@@ -803,9 +819,18 @@ async fn handle_passthrough_request(
     let body_bytes = match response.bytes().await {
         Ok(bytes) => bytes,
         Err(e) => {
-            let reason = format!("读取上游响应体失败: {}", e);
-            record_passthrough_failure(state, agent_id, &provider.name, method, full_path, &reason)
-                .await;
+            let reason = crate::tr!("err.proxy.read_upstream_body_failed", e);
+            record_passthrough_failure(
+                state,
+                agent_id,
+                &provider.name,
+                method,
+                full_path,
+                "read_upstream_body_failed",
+                serde_json::json!({ "error": e.to_string() }),
+                &reason,
+            )
+            .await;
             return Ok(json_error_response(
                 StatusCode::BAD_GATEWAY,
                 "passthrough_failed",
@@ -822,7 +847,9 @@ async fn handle_passthrough_request(
             &provider.name,
             method,
             full_path,
-            &format!("上游返回 {}", status.as_u16()),
+            "upstream_http_status",
+            serde_json::json!({ "status": status.as_u16() }),
+            &crate::tr!("err.proxy.upstream_http_status", status.as_u16()),
         )
         .await;
     }
@@ -834,20 +861,23 @@ async fn handle_passthrough_request(
             json_error_response(
                 StatusCode::BAD_GATEWAY,
                 "passthrough_failed",
-                "透传响应构造失败",
+                &crate::tr!("err.proxy.passthrough_build_failed"),
             )
         }))
 }
 
 /// 透传失败留一条 1 小时去重的系统日志：成功的透传完全静默，失败的看得见又不刷屏。
 /// 窗口比别的诊断长，因为"这家上游没实现这个端点"是个静态事实，知道一次就够了。
+#[allow(clippy::too_many_arguments)]
 async fn record_passthrough_failure(
     state: &Arc<AppState>,
     agent_id: &str,
     provider_name: &str,
     method: &axum::http::Method,
     full_path: &str,
-    reason: &str,
+    reason_code: &str,
+    reason_params: serde_json::Value,
+    reason_text: &str,
 ) {
     let payload = serde_json::json!({
         "type": "passthrough_failed",
@@ -855,12 +885,15 @@ async fn record_passthrough_failure(
         "provider": provider_name,
         "method": method.as_str(),
         "path": full_path,
-        "reason": reason,
+        "reason_code": reason_code,
+        "reason_params": reason_params,
+        "reason": reason_text,
     });
-    let _ = stats_service::record_system_log_dedup(
+    let _ = stats_service::record_system_log_event_dedup(
         &state.log_db,
         "passthrough_failed",
-        &payload.to_string(),
+        "logs.sysLog.passthrough_failed",
+        payload,
         3600,
     )
     .await;
@@ -932,7 +965,11 @@ async fn thinking_rejected(response: Response<Body>) -> (bool, Response<Body>) {
             tracing::warn!(status = %parts.status, %error, "读取上游错误响应体失败");
             return (
                 false,
-                json_error_response(parts.status, "upstream_error", "上游错误响应体读取失败"),
+                json_error_response(
+                    parts.status,
+                    "upstream_error",
+                    &crate::tr!("err.proxy.read_upstream_error_body_failed"),
+                ),
             );
         }
     };
@@ -994,6 +1031,24 @@ enum StreamStartFailure {
     Protocol(String),
 }
 
+/// 流式请求失败：结构化错误码 + 渲染文本兜底 + 参数
+#[derive(Clone)]
+struct StreamFailure {
+    code: &'static str,
+    message: String,
+    params: serde_json::Value,
+}
+
+impl StreamFailure {
+    fn new(code: &'static str, message: String, params: serde_json::Value) -> Self {
+        Self {
+            code,
+            message,
+            params,
+        }
+    }
+}
+
 impl StreamStartFailure {
     fn status(&self) -> StatusCode {
         match self {
@@ -1004,10 +1059,27 @@ impl StreamStartFailure {
 
     fn log_message(&self) -> String {
         match self {
-            Self::Timeout => "首字节超时".to_string(),
-            Self::Empty => "上游返回了空流".to_string(),
-            Self::Body(error) => format!("上游流错误: {}", error),
-            Self::Protocol(error) => format!("上游流协议错误: {}", error),
+            Self::Timeout => crate::tr!("err.proxy.first_byte_timeout"),
+            Self::Empty => crate::tr!("err.proxy.empty_stream"),
+            Self::Body(error) => crate::tr!("err.proxy.stream_error", error),
+            Self::Protocol(error) => crate::tr!("err.proxy.stream_protocol_error", error),
+        }
+    }
+
+    /// 结构化错误码（前端按 logErrors.* 词条渲染）
+    fn error_code(&self) -> &'static str {
+        match self {
+            Self::Timeout => "first_byte_timeout",
+            Self::Empty => "empty_stream",
+            Self::Body(_) => "stream_error",
+            Self::Protocol(_) => "stream_protocol_error",
+        }
+    }
+
+    fn error_params(&self) -> serde_json::Value {
+        match self {
+            Self::Body(error) | Self::Protocol(error) => serde_json::json!({ "error": error }),
+            _ => serde_json::json!({}),
         }
     }
 }
@@ -1079,7 +1151,7 @@ fn inspect_stream_prefix(
     if end_of_stream {
         if hinted_kind == Some(StreamResponseKind::Json) {
             return StreamPrefixState::Error(
-                "上游返回了无效的 JSON 响应".to_string(),
+                crate::tr!("err.proxy.invalid_json_response"),
             );
         }
         if hinted_kind == Some(StreamResponseKind::Sse) && stream_event_has_data(&trimmed) {
@@ -1259,14 +1331,14 @@ fn upstream_error_message(protocol: Protocol, body: &[u8]) -> String {
     let text = String::from_utf8_lossy(body);
     let text = text.trim();
     if text.is_empty() {
-        "上游返回了 HTTP 错误".to_string()
+        crate::tr!("err.proxy.upstream_http_error")
     } else {
         truncate_stream_error(text)
     }
 }
 
 fn stream_error_event(protocol: Protocol) -> Bytes {
-    stream_error_event_with_message(protocol, "上游流中断，未完成")
+    stream_error_event_with_message(protocol, &crate::tr!("err.proxy.stream_interrupted"))
 }
 
 fn stream_error_event_with_message(protocol: Protocol, message: &str) -> Bytes {
@@ -1321,10 +1393,11 @@ async fn record_provider_failure(state: &Arc<AppState>, provider_id: i64) {
         provider_service::record_failure(&state.db, provider_id).await
     {
         if was_blacklisted {
-            let _ = stats_service::record_system_log(
+            let _ = stats_service::record_system_log_event(
                 &state.log_db,
                 "provider_blacklisted",
-                &format!("服务商 {} 因连续失败已被加入黑名单", provider_name),
+                "logs.sysLog.provider_blacklisted",
+                serde_json::json!({ "provider": provider_name }),
             )
             .await;
         }
@@ -1338,13 +1411,11 @@ async fn blacklist_provider_first_tier(state: &Arc<AppState>, provider_id: i64) 
         provider_service::blacklist_first_tier(&state.db, provider_id).await
     {
         if was_blacklisted {
-            let _ = stats_service::record_system_log(
+            let _ = stats_service::record_system_log_event(
                 &state.log_db,
                 "provider_blacklisted",
-                &format!(
-                    "服务商 {} 因凭证/资源错误（401/403/404）已按最小档熔断",
-                    provider_name
-                ),
+                "logs.sysLog.provider_blacklisted_credentials",
+                serde_json::json!({ "provider": provider_name }),
             )
             .await;
         }
@@ -1355,10 +1426,11 @@ async fn blacklist_provider_first_tier(state: &Arc<AppState>, provider_id: i64) 
 async fn record_provider_success(state: &Arc<AppState>, provider_id: i64, provider_name: &str) {
     if let Ok(had_failures) = provider_service::record_success(&state.db, provider_id).await {
         if had_failures {
-            let _ = stats_service::record_system_log(
+            let _ = stats_service::record_system_log_event(
                 &state.log_db,
                 "provider_recovered",
-                &format!("服务商 {} 已恢复正常", provider_name),
+                "logs.sysLog.provider_recovered",
+                serde_json::json!({ "provider": provider_name }),
             )
             .await;
             emit_provider_health_event(state, provider_id).await;
@@ -1417,7 +1489,7 @@ where
                         Err(StreamStartFailure::Empty)
                     }
                     StreamPrefixState::NeedMore => Err(StreamStartFailure::Protocol(
-                        "上游流在有效事件前结束".to_string(),
+                        crate::tr!("err.proxy.stream_ended_before_event"),
                     )),
                 };
             }
@@ -1496,7 +1568,7 @@ where
             .pending_body()
             .and_then(|body| response_body_error(upstream_protocol, body));
         if let Some(message) = pending_error {
-            let message = format!("上游响应错误: {}", message);
+            let message = crate::tr!("err.proxy.upstream_response_error", message);
             tracing::warn!(error = %message, "Upstream returned a structured error body on a streaming request");
             let frame = translator.error(&message);
             if !frame.is_empty() {
@@ -1738,7 +1810,11 @@ async fn handle_streaming_request(
             Ok(Ok(resp)) => resp,
             Ok(Err(e)) => {
                 tracing::error!(error = %e, "Upstream request failed");
-                log_info.error_message = Some(format!("上游请求失败: {}", e));
+                log_info.set_gateway_error(
+                    "upstream_request_failed",
+                    crate::tr!("err.proxy.upstream_request_failed", e),
+                    serde_json::json!({ "error": e.to_string() }),
+                );
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -1763,12 +1839,16 @@ async fn handle_streaming_request(
                 return Ok(json_error_response(
                     StatusCode::BAD_GATEWAY,
                     "upstream_error",
-                    &format!("上游请求失败: {}", e),
+                    &crate::tr!("err.proxy.upstream_request_failed", e),
                 ));
             }
             Err(_) => {
                 tracing::error!("First byte timeout");
-                log_info.error_message = Some("首字节超时".to_string());
+                log_info.set_gateway_error(
+                    "first_byte_timeout",
+                    crate::tr!("err.proxy.first_byte_timeout"),
+                    serde_json::json!({}),
+                );
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -1793,7 +1873,7 @@ async fn handle_streaming_request(
                 return Ok(json_error_response(
                     StatusCode::GATEWAY_TIMEOUT,
                     "upstream_timeout",
-                    "首字节超时",
+                    &crate::tr!("err.proxy.first_byte_timeout"),
                 ));
             }
         };
@@ -1813,8 +1893,8 @@ async fn handle_streaming_request(
                         .get("content-encoding")
                         .and_then(|value| value.to_str().ok()),
                 ),
-                Ok(Err(error)) => format!("读取上游错误响应失败: {}", error).into_bytes(),
-                Err(_) => "读取上游错误响应超时".as_bytes().to_vec(),
+                Ok(Err(error)) => crate::tr!("err.proxy.read_upstream_error_response_failed", error).into_bytes(),
+                Err(_) => crate::tr!("err.proxy.read_upstream_error_response_timeout").into_bytes(),
             };
         let message = upstream_error_message(upstream_protocol, &error_body);
         tracing::warn!(
@@ -1825,7 +1905,7 @@ async fn handle_streaming_request(
             "Upstream returned an HTTP error before streaming started"
         );
         log_info.provider_body = Some(truncate_body(&error_body));
-        log_info.error_message = Some(message.clone());
+        log_info.set_upstream_error(message.clone());
         let elapsed = start_time.elapsed().as_millis() as i64;
         record_request_stats(
             state,
@@ -1863,9 +1943,9 @@ async fn handle_streaming_request(
     );
     // 转换必须读明文。请求已经要过 identity，上游还压缩就交给下一个服务商。
     if translating && upstream_encoded {
-        let message = "上游压缩了流式响应，无法转换协议".to_string();
+        let message = crate::tr!("err.proxy.compressed_stream");
         tracing::warn!(provider_id, provider = provider_name, error = %message, "Compressed upstream stream cannot be translated");
-        log_info.error_message = Some(message.clone());
+        log_info.set_gateway_error("compressed_stream", message.clone(), serde_json::json!({}));
         let elapsed = start_time.elapsed().as_millis() as i64;
         record_request_stats(
             state,
@@ -1944,7 +2024,11 @@ async fn handle_streaming_request(
                 let failure_status = failure.status();
                 let message = failure.log_message();
                 tracing::warn!(provider_id, provider = provider_name, error = %message, "Upstream stream failed before the client response started");
-                log_info.error_message = Some(message.clone());
+                log_info.set_gateway_error(
+                    failure.error_code(),
+                    message.clone(),
+                    failure.error_params(),
+                );
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -2013,7 +2097,7 @@ async fn handle_streaming_request(
     let body_truncated_flag_for_stream = body_truncated_flag.clone();
     let idle_timeout_flag = Arc::new(Mutex::new(false));
     let idle_timeout_flag_for_stream = idle_timeout_flag.clone();
-    let stream_failure = Arc::new(Mutex::new(None::<String>));
+    let stream_failure = Arc::new(Mutex::new(None::<StreamFailure>));
     let stream_failure_for_stream = stream_failure.clone();
     let stream_completed = Arc::new(AtomicBool::new(false));
     let stream_completed_for_stream = stream_completed.clone();
@@ -2090,8 +2174,11 @@ async fn handle_streaming_request(
                         };
                     if let Some(message) = error_message {
                         upstream_error_event = true;
-                        *stream_failure_for_stream.lock().await =
-                            Some(format!("上游流错误: {}", message));
+                        *stream_failure_for_stream.lock().await = Some(StreamFailure::new(
+                            "stream_error",
+                            crate::tr!("err.proxy.stream_error", &message),
+                            serde_json::json!({ "error": &message }),
+                        ));
                     }
 
                     // Collect the normalized chunk for body logging.
@@ -2130,8 +2217,11 @@ async fn handle_streaming_request(
                         protocol, chunk_count, total_bytes, e
                     );
                     if !stream_completed_for_stream.load(Ordering::Relaxed) {
-                        *stream_failure_for_stream.lock().await =
-                            Some(format!("上游流错误: {}", e));
+                        *stream_failure_for_stream.lock().await = Some(StreamFailure::new(
+                            "stream_error",
+                            crate::tr!("err.proxy.stream_error", &e),
+                            serde_json::json!({ "error": e.to_string() }),
+                        ));
                     }
                     break;
                 }
@@ -2152,8 +2242,11 @@ async fn handle_streaming_request(
                     );
                     if !stream_completed_for_stream.load(Ordering::Relaxed) {
                         *idle_timeout_flag_for_stream.lock().await = true;
-                        *stream_failure_for_stream.lock().await =
-                            Some("流空闲超时".to_string());
+                        *stream_failure_for_stream.lock().await = Some(StreamFailure::new(
+                            "stream_idle_timeout",
+                            crate::tr!("err.proxy.stream_idle_timeout"),
+                            serde_json::json!({}),
+                        ));
                     }
                     break;
                 }
@@ -2167,8 +2260,11 @@ async fn handle_streaming_request(
         {
             let pending = if let Some(message) = stream_event_error(protocol, &pending_sse) {
                 upstream_error_event = true;
-                *stream_failure_for_stream.lock().await =
-                    Some(format!("上游流错误: {}", message));
+                *stream_failure_for_stream.lock().await = Some(StreamFailure::new(
+                    "stream_error",
+                    crate::tr!("err.proxy.stream_error", &message),
+                    serde_json::json!({ "error": &message }),
+                ));
                 stream_error_event_with_message(protocol, &message)
             } else {
                 Bytes::from(std::mem::take(&mut pending_sse))
@@ -2214,7 +2310,11 @@ async fn handle_streaming_request(
             if !really_done {
                 let mut failure = stream_failure_for_stream.lock().await;
                 if failure.is_none() {
-                    *failure = Some("上游流在完成事件前结束".to_string());
+                    *failure = Some(StreamFailure::new(
+                        "stream_ended_before_completion",
+                        crate::tr!("err.proxy.stream_ended_before_completion"),
+                        serde_json::json!({}),
+                    ));
                 }
                 drop(failure);
 
@@ -2366,11 +2466,23 @@ async fn handle_streaming_request(
         let is_idle_timeout = *idle_timeout_flag.lock().await;
         let stream_failure = stream_failure.lock().await.clone();
         if client_cancelled {
-            final_log_info.error_message = Some(CLIENT_CLOSED_REQUEST_MESSAGE.to_string());
-        } else if let Some(message) = stream_failure.as_ref() {
-            final_log_info.error_message = Some(message.clone());
+            final_log_info.set_gateway_error(
+                "client_closed",
+                crate::tr!("err.proxy.client_closed"),
+                serde_json::json!({}),
+            );
+        } else if let Some(failure) = stream_failure.as_ref() {
+            final_log_info.set_gateway_error(
+                failure.code,
+                failure.message.clone(),
+                failure.params.clone(),
+            );
         } else if is_idle_timeout {
-            final_log_info.error_message = Some("流空闲超时".to_string());
+            final_log_info.set_gateway_error(
+                "stream_idle_timeout",
+                crate::tr!("err.proxy.stream_idle_timeout"),
+                serde_json::json!({}),
+            );
         }
 
         // Record stats
@@ -2444,7 +2556,11 @@ async fn handle_non_streaming_request(
             Ok(Ok(resp)) => resp,
             Ok(Err(e)) => {
                 tracing::error!(error = %e, "Upstream request failed");
-                log_info.error_message = Some(format!("上游请求失败: {}", e));
+                log_info.set_gateway_error(
+                    "upstream_request_failed",
+                    crate::tr!("err.proxy.upstream_request_failed", e),
+                    serde_json::json!({ "error": e.to_string() }),
+                );
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -2469,12 +2585,16 @@ async fn handle_non_streaming_request(
                 return Ok(json_error_response(
                     StatusCode::BAD_GATEWAY,
                     "upstream_error",
-                    &format!("上游请求失败: {}", e),
+                    &crate::tr!("err.proxy.upstream_request_failed", e),
                 ));
             }
             Err(_) => {
                 tracing::error!("Request timeout");
-                log_info.error_message = Some("请求超时".to_string());
+                log_info.set_gateway_error(
+                    "request_timeout",
+                    crate::tr!("err.proxy.request_timeout"),
+                    serde_json::json!({}),
+                );
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -2499,7 +2619,7 @@ async fn handle_non_streaming_request(
                 return Ok(json_error_response(
                     StatusCode::GATEWAY_TIMEOUT,
                     "upstream_timeout",
-                    "Request timeout",
+                    &crate::tr!("err.proxy.request_timeout"),
                 ));
             }
         };
@@ -2519,9 +2639,13 @@ async fn handle_non_streaming_request(
     let body_bytes = match tokio::time::timeout(timeouts.non_stream_timeout, response.bytes()).await
     {
         Err(_) => {
-            let message = "响应体读取超时".to_string();
+            let message = crate::tr!("err.proxy.body_read_timeout");
             tracing::error!(provider_id, provider = provider_name, error = %message, "Timed out while reading upstream response body");
-            log_info.error_message = Some(message);
+            log_info.set_gateway_error(
+                "body_read_timeout",
+                message,
+                serde_json::json!({}),
+            );
             let elapsed = start_time.elapsed().as_millis() as i64;
             record_request_stats(
                 state,
@@ -2546,14 +2670,18 @@ async fn handle_non_streaming_request(
             return Ok(json_error_response(
                 StatusCode::GATEWAY_TIMEOUT,
                 "upstream_timeout",
-                "响应体读取超时",
+                &crate::tr!("err.proxy.body_read_timeout"),
             ));
         }
         Ok(result) => match result {
             Ok(bytes) => bytes,
             Err(e) => {
                 tracing::error!(error = %e, "Failed to read response body");
-                log_info.error_message = Some(format!("读取响应体失败: {}", e));
+                log_info.set_gateway_error(
+                    "read_body_failed",
+                    crate::tr!("err.proxy.read_upstream_body_failed", e),
+                    serde_json::json!({ "error": e.to_string() }),
+                );
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,
@@ -2578,7 +2706,7 @@ async fn handle_non_streaming_request(
                 return Ok(json_error_response(
                     StatusCode::BAD_GATEWAY,
                     "upstream_body_error",
-                    "读取上游响应体失败",
+                    &crate::tr!("err.proxy.read_upstream_body_failed_generic"),
                 ));
             }
         },
@@ -2602,7 +2730,7 @@ async fn handle_non_streaming_request(
             error = %message,
             "Upstream returned an HTTP error"
         );
-        log_info.error_message = Some(message.clone());
+        log_info.set_upstream_error(message.clone());
         let elapsed = start_time.elapsed().as_millis() as i64;
         record_request_stats(
             state,
@@ -2630,14 +2758,14 @@ async fn handle_non_streaming_request(
 
     if is_success {
         if let Some(message) = response_body_error(upstream_protocol, &decompressed_body) {
-            let message = format!("上游响应错误: {}", message);
+            let message = crate::tr!("err.proxy.upstream_response_error", message);
             tracing::warn!(
                 provider_id,
                 provider = provider_name,
                 error = %message,
                 "Upstream returned a structured error with a successful HTTP status"
             );
-            log_info.error_message = Some(message.clone());
+            log_info.set_upstream_error(message.clone());
             let elapsed = start_time.elapsed().as_millis() as i64;
             record_request_stats(
                 state,
@@ -2681,9 +2809,9 @@ async fn handle_non_streaming_request(
         match converted {
             Some(body) => Some(body),
             None => {
-                let message = "上游响应无法转成客户端协议".to_string();
+                let message = crate::tr!("err.proxy.translate_to_client_failed");
                 tracing::warn!(provider_id, provider = provider_name, error = %message, "Upstream response cannot be translated");
-                log_info.error_message = Some(message.clone());
+                log_info.set_gateway_error("translate_to_client_failed", message.clone(), serde_json::json!({}));
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,

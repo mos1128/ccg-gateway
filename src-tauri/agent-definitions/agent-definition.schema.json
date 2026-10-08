@@ -11,6 +11,7 @@
     "sort_order": { "type": "integer", "minimum": 0 },
     "name": { "type": "string", "minLength": 1 },
     "remark": { "type": "string", "minLength": 1 },
+    "remark_en": { "type": "string", "minLength": 1 },
     "icon": { "$ref": "#/$defs/icon" },
     "config_dir": { "type": "string", "minLength": 1 },
     "user_agent": {
