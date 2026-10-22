@@ -1,5 +1,6 @@
 import { createApp, h, ref, onMounted } from 'vue'
 import AppConfirm from '@/components/AppConfirm.vue'
+import { i18n } from '@/locales'
 
 interface ConfirmOptions {
   confirmText?: string
@@ -35,6 +36,8 @@ export function confirm(
     }
 
     const app = createApp(Comp)
+    // 独立挂载的 app 不继承主 app 的插件，需单独安装 i18n，否则 AppConfirm 内 useI18n 会抛错
+    app.use(i18n)
     cleanup = () => {
       app.unmount()
       container.remove()
