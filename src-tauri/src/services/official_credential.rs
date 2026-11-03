@@ -11,8 +11,70 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 enum PreparedFile {
-    Json(Value),
+    Fields(ConfigFormat, Value),
     Text(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dsh_account_snapshot_excludes_shared_records_and_switch_merges_grant() {
+        let root =
+            std::env::temp_dir().join(format!("ccg-dsh-account-check-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        let db = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE cli_settings (cli_type TEXT, config_dir TEXT)")
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO cli_settings VALUES ('deepseek_harness', ?)")
+            .bind(root.to_string_lossy().as_ref())
+            .execute(&db)
+            .await
+            .unwrap();
+        let path = root.join(".credentials.yaml");
+        let original = "version: 1\nrefs:\n  CCG_GATEWAY_API_KEY: gateway-token\nrecords:\n  deepseek-account-platform/default:\n    kind: grant\n    payload:\n      version: 1\n      token: account-one\n      issuer: https://platform.deepseek.com\n  deepseek-account-platform/device:\n    kind: grant\n    payload: device-identity\n  client-connection/browser-session:\n    kind: grant\n    payload: browser-session\n";
+        tokio::fs::write(&path, original).await.unwrap();
+        let snapshot = read_current_payload(&db, "deepseek_harness").await.unwrap();
+        assert!(!snapshot.contains("gateway-token"));
+        assert!(!snapshot.contains("device-identity"));
+        assert!(!snapshot.contains("browser-session"));
+        let mut payload: Value = serde_json::from_str(&snapshot).unwrap();
+        payload["files"]["deepseek_account"]["content"]["account"]["payload"]["token"] =
+            serde_json::json!("account-two");
+        let snapshot = serde_json::to_string(&payload).unwrap();
+        apply_payload(&db, "deepseek_harness", &snapshot)
+            .await
+            .unwrap();
+        assert!(payload_matches(&db, "deepseek_harness", &snapshot)
+            .await
+            .unwrap());
+        let switched: Value =
+            serde_yaml::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(
+            switched["records"]["deepseek-account-platform/default"]["payload"]["token"],
+            "account-two"
+        );
+        remove_payload(&db, "deepseek_harness", &snapshot)
+            .await
+            .unwrap();
+        let removed: Value =
+            serde_yaml::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        let mut expected: Value = serde_yaml::from_str(original).unwrap();
+        expected["records"]
+            .as_object_mut()
+            .unwrap()
+            .remove("deepseek-account-platform/default");
+        assert_eq!(removed, expected);
+        db.close().await;
+        tokio::fs::remove_dir_all(&root).await.unwrap();
+    }
 }
 
 fn operation_format(operation: &OfficialLoginOperation) -> ConfigFormat {
@@ -48,13 +110,13 @@ pub fn validate_payload(agent_id: &str, json: &str) -> Result<(), String> {
             OfficialLoginOperationKind::SetField => operation.value_from.as_ref(),
         };
         if let Some(source) = source {
-            let file = payload
-                .files
-                .get(&source.file_id)
-                .ok_or_else(|| {
-                    crate::tr!("err.official_credential.missing_logical_file", source.file_id)
-                })?;
-            let expected_format = operation_format(operation);
+            let file = payload.files.get(&source.file_id).ok_or_else(|| {
+                crate::tr!(
+                    "err.official_credential.missing_logical_file",
+                    source.file_id
+                )
+            })?;
+            let expected_format = operation.source_format();
             if file.format != expected_format {
                 return Err(crate::tr!(
                     "err.official_credential.logical_file_format_expected",
@@ -128,13 +190,13 @@ fn source_value(
         OfficialLoginOperationKind::SetField => operation.value_from.as_ref(),
     }
     .ok_or_else(|| crate::tr!("err.official_credential.missing_source", operation.id))?;
-    let file = payload
-        .files
-        .get(&source.file_id)
-        .ok_or_else(|| {
-            crate::tr!("err.official_credential.logical_file_not_found", source.file_id)
-        })?;
-    if file.format != operation_format(operation) {
+    let file = payload.files.get(&source.file_id).ok_or_else(|| {
+        crate::tr!(
+            "err.official_credential.logical_file_not_found",
+            source.file_id
+        )
+    })?;
+    if file.format != operation.source_format() {
         return Err(crate::tr!(
             "err.official_credential.logical_file_format_mismatch",
             source.file_id
@@ -148,7 +210,12 @@ fn source_value(
     }
     value_at(&file.content, &source.path)
         .cloned()
-        .ok_or_else(|| crate::tr!("err.official_credential.source_path_not_found", source.file_id))
+        .ok_or_else(|| {
+            crate::tr!(
+                "err.official_credential.source_path_not_found",
+                source.file_id
+            )
+        })
 }
 
 fn prepared_replacement(
@@ -157,8 +224,12 @@ fn prepared_replacement(
 ) -> Result<PreparedFile, String> {
     let value = source_value(payload, operation)?;
     match operation_format(operation) {
-        ConfigFormat::Json => Ok(PreparedFile::Json(value)),
-        ConfigFormat::Jsonc | ConfigFormat::Toml | ConfigFormat::Yaml | ConfigFormat::Env => value
+        ConfigFormat::Json => Ok(PreparedFile::Fields(ConfigFormat::Json, value)),
+        ConfigFormat::Jsonc
+        | ConfigFormat::Toml
+        | ConfigFormat::Yaml
+        | ConfigFormat::CordisYaml
+        | ConfigFormat::Env => value
             .as_str()
             .map(|content| PreparedFile::Text(content.to_string()))
             .ok_or_else(|| {
@@ -210,16 +281,32 @@ fn remove_matching_value(
     Ok(removed)
 }
 
-async fn read_target_json(path: &Path) -> Result<Value, String> {
+fn parse_target_fields(path: &Path, content: &str, format: ConfigFormat) -> Result<Value, String> {
+    match format {
+        ConfigFormat::Json => serde_json::from_str(content).map_err(|error| {
+            crate::tr!(
+                "err.official_credential.target_file_invalid_json",
+                path.display(),
+                error
+            )
+        }),
+        ConfigFormat::Yaml if content.trim().is_empty() => Ok(Value::Object(Map::new())),
+        ConfigFormat::Yaml => serde_yaml::from_str(content).map_err(|_| {
+            crate::tr!(
+                "err.official_credential.target_file_invalid_yaml",
+                path.display()
+            )
+        }),
+        _ => Err(crate::tr!(
+            "err.official_credential.set_field_format_unsupported",
+            path.display()
+        )),
+    }
+}
+
+async fn read_target_fields(path: &Path, format: ConfigFormat) -> Result<Value, String> {
     match tokio::fs::read_to_string(path).await {
-        Ok(content) => serde_json::from_str(&content)
-            .map_err(|error| {
-                crate::tr!(
-                    "err.official_credential.target_file_invalid_json",
-                    path.display(),
-                    error
-                )
-            }),
+        Ok(content) => parse_target_fields(path, &content, format),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Value::Object(Map::new())),
         Err(error) => Err(crate::tr!(
             "err.official_credential.read_target_file_failed",
@@ -227,6 +314,22 @@ async fn read_target_json(path: &Path) -> Result<Value, String> {
             error
         )),
     }
+}
+
+async fn write_prepared(path: &Path, content: PreparedFile, private: bool) -> Result<(), String> {
+    let text = match content {
+        PreparedFile::Fields(ConfigFormat::Json, value) if !private => {
+            return config_patch::write_atomic_json(path, &value).await;
+        }
+        PreparedFile::Fields(ConfigFormat::Yaml, value) => {
+            serde_yaml::to_string(&value).map_err(|error| error.to_string())?
+        }
+        PreparedFile::Fields(_, value) => {
+            serde_json::to_string_pretty(&value).map_err(|error| error.to_string())?
+        }
+        PreparedFile::Text(text) => text,
+    };
+    config_patch::write_atomic_text_with_privacy(path, &text, private).await
 }
 
 async fn resolved_operations(
@@ -264,28 +367,37 @@ pub async fn apply_payload(
     let operations = resolved_operations(db, agent_id).await?;
     let config_dir = get_cli_config_dir_path(db, agent_id).await;
     let mut prepared: HashMap<PathBuf, PreparedFile> = HashMap::new();
+    let mut private_paths = HashSet::new();
 
     for operation in &operations {
         let path = resolve_cli_config_file_from_dir(&config_dir, &operation.file);
+        if operation.private {
+            private_paths.insert(path.clone());
+        }
         match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
                 prepared.insert(path, prepared_replacement(&payload, operation)?);
             }
             OfficialLoginOperationKind::SetField => {
-                if operation.format != Some(ConfigFormat::Json) {
+                if !matches!(
+                    operation.format,
+                    Some(ConfigFormat::Json | ConfigFormat::Yaml)
+                ) {
                     return Err(crate::tr!(
-                        "err.official_credential.set_field_json_only",
+                        "err.official_credential.set_field_format_unsupported",
                         operation.id
                     ));
                 }
+                let format = operation_format(operation);
                 let next = operation_value(&payload, operation)?;
                 if !prepared.contains_key(&path) {
                     prepared.insert(
                         path.clone(),
-                        PreparedFile::Json(read_target_json(&path).await?),
+                        PreparedFile::Fields(format, read_target_fields(&path, format).await?),
                     );
                 }
-                let PreparedFile::Json(target) = prepared.get_mut(&path).expect("prepared target")
+                let PreparedFile::Fields(_, target) =
+                    prepared.get_mut(&path).expect("prepared target")
                 else {
                     return Err(crate::tr!(
                         "err.official_credential.replace_conflict",
@@ -299,10 +411,7 @@ pub async fn apply_payload(
 
     let mut written = Vec::with_capacity(prepared.len());
     for (path, content) in prepared {
-        match content {
-            PreparedFile::Json(value) => config_patch::write_atomic_json(&path, &value).await?,
-            PreparedFile::Text(value) => config_patch::write_atomic_text(&path, &value).await?,
-        }
+        write_prepared(&path, content, private_paths.contains(&path)).await?;
         written.push(path);
     }
     Ok(written)
@@ -316,11 +425,18 @@ pub async fn remove_payload(
     let payload = parse_payload(json)?;
     let operations = builtin_operations(agent_id)?;
     let config_dir = get_cli_config_dir_path(db, agent_id).await;
-    let mut prepared: HashMap<PathBuf, Value> = HashMap::new();
+    let mut prepared: HashMap<PathBuf, (ConfigFormat, Value)> = HashMap::new();
     let mut remove_files = HashSet::new();
+    let mut private_paths = HashSet::new();
 
     for operation in &operations {
+        if operation.preserve_on_remove {
+            continue;
+        }
         let path = resolve_cli_config_file_from_dir(&config_dir, &operation.file);
+        if operation.private {
+            private_paths.insert(path.clone());
+        }
         match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
                 let actual = match tokio::fs::read_to_string(&path).await {
@@ -329,7 +445,7 @@ pub async fn remove_payload(
                     Err(error) => return Err(error.to_string()),
                 };
                 let matches = match prepared_replacement(&payload, operation)? {
-                    PreparedFile::Json(expected) => serde_json::from_str::<Value>(&actual)
+                    PreparedFile::Fields(_, expected) => serde_json::from_str::<Value>(&actual)
                         .map(|value| value == expected)
                         .unwrap_or(false),
                     PreparedFile::Text(expected) => actual == expected,
@@ -339,24 +455,28 @@ pub async fn remove_payload(
                 }
             }
             OfficialLoginOperationKind::SetField => {
-                if operation.format != Some(ConfigFormat::Json) {
+                if !matches!(
+                    operation.format,
+                    Some(ConfigFormat::Json | ConfigFormat::Yaml)
+                ) {
                     return Err(crate::tr!(
-                        "err.official_credential.set_field_json_only",
+                        "err.official_credential.set_field_format_unsupported",
                         operation.id
                     ));
                 }
+                let format = operation_format(operation);
                 let expected = operation_value(&payload, operation)?;
-                if let Some(target) = prepared.get_mut(&path) {
+                if let Some((_, target)) = prepared.get_mut(&path) {
                     remove_matching_value(target, &operation.path, &expected, &operation.id)?;
                 } else {
-                    let mut target = read_target_json(&path).await?;
+                    let mut target = read_target_fields(&path, format).await?;
                     if remove_matching_value(
                         &mut target,
                         &operation.path,
                         &expected,
                         &operation.id,
                     )? {
-                        prepared.insert(path, target);
+                        prepared.insert(path, (format, target));
                     }
                 }
             }
@@ -364,9 +484,14 @@ pub async fn remove_payload(
     }
 
     let mut touched = Vec::new();
-    for (path, value) in prepared {
+    for (path, (format, value)) in prepared {
         if !remove_files.contains(&path) {
-            config_patch::write_atomic_json(&path, &value).await?;
+            write_prepared(
+                &path,
+                PreparedFile::Fields(format, value),
+                private_paths.contains(&path),
+            )
+            .await?;
             touched.push(path);
         }
     }
@@ -405,7 +530,7 @@ pub async fn payload_matches(db: &SqlitePool, agent_id: &str, json: &str) -> Res
                     Err(error) => return Err(error.to_string()),
                 };
                 let matches = match prepared_replacement(&payload, operation)? {
-                    PreparedFile::Json(expected) => serde_json::from_str::<Value>(&actual)
+                    PreparedFile::Fields(_, expected) => serde_json::from_str::<Value>(&actual)
                         .map(|value| value == expected)
                         .unwrap_or(false),
                     PreparedFile::Text(expected) => actual == expected,
@@ -416,13 +541,9 @@ pub async fn payload_matches(db: &SqlitePool, agent_id: &str, json: &str) -> Res
             }
             OfficialLoginOperationKind::SetField => {
                 let actual = match tokio::fs::read_to_string(&path).await {
-                    Ok(content) => serde_json::from_str::<Value>(&content).map_err(|error| {
-                        crate::tr!(
-                            "err.official_credential.target_file_invalid_json",
-                            path.display(),
-                            error
-                        )
-                    })?,
+                    Ok(content) => {
+                        parse_target_fields(&path, &content, operation_format(operation))?
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
                     Err(error) => return Err(error.to_string()),
                 };
@@ -483,10 +604,10 @@ pub async fn read_current_payload(db: &SqlitePool, agent_id: &str) -> Result<Str
                 );
             }
             OfficialLoginOperationKind::SetField => {
-                let target = read_target_json(&path).await?;
                 let Some(source) = &operation.value_from else {
                     continue;
                 };
+                let target = read_target_fields(&path, operation_format(operation)).await?;
                 let Some(current) = value_at(&target, &operation.path).cloned() else {
                     continue;
                 };

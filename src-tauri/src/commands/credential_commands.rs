@@ -877,6 +877,7 @@ async fn apply_dashboard_cli_mode(
         .map_err(|error| error.to_string())?
         .ok_or_else(|| crate::tr!("err.credential.agent_unknown", cli_type))?;
     validate_dashboard_mode_capability(&agent, mode)?;
+    crate::services::dsh_config::clean_legacy_config(db, &agent).await?;
 
     let gateway_url = config.gateway_base_url();
     let current_mode = detect_cli_mode_from_url(db, &gateway_url, cli_type).await;

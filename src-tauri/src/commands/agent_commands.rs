@@ -28,6 +28,9 @@ pub fn validate_config_content(format: ConfigFormat, content: String) -> Result<
         ConfigFormat::Yaml => serde_yaml::from_str::<serde_json::Value>(&content)
             .map(|_| ())
             .map_err(|error| crate::tr!("err.agent_cmd.yaml_format_invalid", error)),
+        ConfigFormat::CordisYaml => {
+            crate::services::config_patch::validate_preset(format, &content)
+        }
         ConfigFormat::Jsonc | ConfigFormat::Env => Ok(()),
     }
 }

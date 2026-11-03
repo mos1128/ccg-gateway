@@ -268,6 +268,13 @@ pub fn is_file_log_enabled() -> bool {
 
 /// 获取 CLI 默认配置目录（不涉及数据库）
 pub fn get_default_cli_config_dir(cli_type: &str) -> PathBuf {
+    if let Some(path) = crate::services::agent::get_definition(cli_type)
+        .and_then(|definition| definition.config_dir_env.as_deref())
+        .and_then(|name| std::env::var(name).ok())
+        .filter(|path| !path.trim().is_empty())
+    {
+        return PathBuf::from(expand_home_path(path.trim()));
+    }
     crate::services::agent::default_config_directory(cli_type)
         .map(expand_home_path)
         .map(PathBuf::from)

@@ -57,6 +57,9 @@ pub fn validate_config_format(cli_type: &str, content: &str) -> std::result::Res
             serde_yaml::from_str::<serde_json::Value>(content)
                 .map_err(|e| crate::tr!("err.cli_helpers.yaml_invalid", e))?;
         }
+        Some(format @ crate::db::models::ConfigFormat::CordisYaml) => {
+            crate::services::config_patch::validate_preset(format, content)?;
+        }
         _ => return Err(crate::tr!("err.cli_helpers.preset_format_unsupported", cli_type)),
     }
     Ok(())

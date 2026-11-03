@@ -28,7 +28,7 @@
         <div v-if="pluginAgent" class="v2-chip-row">
           <span class="v2-chip on pg-badge">
             <CliBrandIcon :type="pluginAgent.id" width="13" height="13" />
-            {{ pluginAgent.name }} · {{ t('plugins.activated') }}
+            {{ pluginAgent.name }} · {{ t('plugins.installed') }}
           </span>
         </div>
       </div>
@@ -58,7 +58,6 @@ import type { PluginItem } from '@/types/models'
 
 const { t } = useI18n()
 const agentStore = useAgentStore()
-// dsh 插件装上即激活，无启停概念：徽标取启用插件功能的 Agent，仅作展示
 const pluginAgent = computed(() => agentStore.agentsFor('plugins')[0])
 
 const plugins = ref<PluginItem[]>([])

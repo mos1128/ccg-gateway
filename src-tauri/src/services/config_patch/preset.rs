@@ -130,7 +130,7 @@ pub(super) fn apply(
             merge_toml(current.as_table_mut(), preset.as_table());
             Ok(current.to_string())
         }
-        ConfigFormat::Jsonc | ConfigFormat::Env => {
+        ConfigFormat::Jsonc | ConfigFormat::Env | ConfigFormat::CordisYaml => {
             Err(crate::tr!("err.patch.preset_format_unsupported"))
         }
     }
@@ -163,7 +163,7 @@ pub(super) fn remove(
             remove_matching_toml(current.as_table_mut(), preset.as_table());
             Ok(current.to_string())
         }
-        ConfigFormat::Jsonc | ConfigFormat::Env => {
+        ConfigFormat::Jsonc | ConfigFormat::Env | ConfigFormat::CordisYaml => {
             Err(crate::tr!("err.patch.preset_format_unsupported"))
         }
     }

@@ -716,7 +716,7 @@ function credentialSource(operation: OfficialLoginOperation) {
 }
 
 function credentialFormat(operation: OfficialLoginOperation): ConfigFormat {
-  return operation.format || 'json'
+  return operation.op === 'set_field' ? 'json' : operation.format || 'json'
 }
 
 const credentialFileDefinitions = computed<CredentialFileDefinition[]>(() => {

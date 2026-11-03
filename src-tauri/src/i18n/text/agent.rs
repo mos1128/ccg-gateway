@@ -61,8 +61,20 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::En => "enabled global_preset must provide file",
         },
         "err.agent.global_preset_format_invalid" => match lang {
-            Lang::Zh => "enabled global_preset 只支持 json、toml 或 yaml",
-            Lang::En => "enabled global_preset only supports json, toml or yaml",
+            Lang::Zh => "enabled global_preset 只支持 json、toml、yaml 或 cordis_yaml",
+            Lang::En => "enabled global_preset only supports json, toml, yaml or cordis_yaml",
+        },
+        "err.cordis.block_invalid" => match lang {
+            Lang::Zh => "CCG 的 Cordis 配置块无效，请检查管理标记及 id/config 条目",
+            Lang::En => "Invalid CCG Cordis config block; check its markers and id/config entries",
+        },
+        "err.agent.config_dir_env_invalid" => match lang {
+            Lang::Zh => "config_dir_env 必须是有效的环境变量名",
+            Lang::En => "config_dir_env must be a valid environment variable name",
+        },
+        "err.cordis.preset_invalid" => match lang {
+            Lang::Zh => "Cordis 预设必须是以插件条目 ID 为键、配置对象为值的 YAML 映射",
+            Lang::En => "Cordis presets must be a YAML mapping from entry IDs to config objects",
         },
         "err.agent.official_login_operations_required" => match lang {
             Lang::Zh => "enabled official_login 必须提供 operations",
@@ -77,8 +89,8 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::En => "official_login operation `{}` non-JSON source cannot configure path",
         },
         "err.agent.official_login_set_field_invalid" => match lang {
-            Lang::Zh => "official_login operation `{}` 必须使用 JSON format，并正确配置 path 和 value",
-            Lang::En => "official_login operation `{}` must use JSON format and configure path and value correctly",
+            Lang::Zh => "official_login operation `{}` 必须使用 JSON 或 YAML format，并正确配置 path 和 value",
+            Lang::En => "official_login operation `{}` must use JSON or YAML format and configure path and value correctly",
         },
         "err.agent.official_login_format_conflict" => match lang {
             Lang::Zh => "official_login 逻辑文件 `{}` 不能使用不同 format",

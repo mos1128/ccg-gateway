@@ -6,6 +6,7 @@ export default {
     restoreDefault: '恢复默认'
   },
   preset: {
+    cordisHint: '以插件条目 ID 为键填写 YAML 配置。接管期间会替换对应条目的完整配置；需保留的自定义模型或参数请一并填写。',
     title: '全局预设',
     clickToEdit: '点击编辑配置',
     editTitle: '编辑全局预设 - {name}',
@@ -17,7 +18,7 @@ export default {
     writeModeTip: {
       title: '配置写入模式',
       mergeDesc: '只写入需要变更的字段，保留配置文件中已有的其他配置（如 MCP / plugin 开关等配置）。',
-      overwriteDesc: '每次写入时完全覆盖配置文件。中转路由会备份原始文件，关闭时自动恢复。保持配置干净。'
+      overwriteDesc: '替换受管配置内容。私有凭证文件保留其他字段，DSH 仅替换 CCG 管理的设置。'
     }
   },
   backup: {

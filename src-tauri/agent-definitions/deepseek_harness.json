@@ -3,8 +3,8 @@
   "id": "deepseek_harness",
   "sort_order": 90,
   "name": "DeepSeek Harness",
-  "remark": "网关会接管 DeepSeek Harness 的 deepseek-official、openai 与 anthropic 服务商，分别使用 OpenAI Chat、OpenAI Responses 与 Anthropic Messages 协议，选择对应的模型即可。",
-  "remark_en": "The gateway takes over DeepSeek Harness's deepseek-official, openai and anthropic providers, using the OpenAI Chat, OpenAI Responses and Anthropic Messages protocols respectively — just pick the corresponding models.",
+  "remark": "网关会接管 DeepSeek、anthropic、openai 服务商；分别使用 Anthropic Messages、OpenAI Responses 协议，选择对应的模型即可",
+  "remark_en": "The gateway takes over the DeepSeek, anthropic and openai providers, using the Anthropic Messages and OpenAI Responses protocols respectively — just pick the corresponding models.",
   "icon": {
     "view_box": "0 0 50 50",
     "paths": [
@@ -15,6 +15,7 @@
     ]
   },
   "config_dir": "~/.dsh",
+  "config_dir_env": "DSH_HOME",
   "user_agent": ["deepseek-harness/"],
   "protocols": ["openai_chat", "openai_responses", "anthropic_messages"],
   "features": {
@@ -24,66 +25,82 @@
         {
           "id": "set-deepseek-endpoint",
           "op": "set",
-          "file": "settings.yaml",
-          "format": "yaml",
+          "file": "profiles/*/cordis.patch.yml",
+          "format": "cordis_yaml",
           "path": ["llm-deepseek", "baseURL"],
           "value": "{target.endpoint}"
         },
         {
           "id": "set-deepseek-key-reference",
           "op": "set",
-          "file": "settings.yaml",
-          "format": "yaml",
+          "file": "profiles/*/cordis.patch.yml",
+          "format": "cordis_yaml",
           "path": ["llm-deepseek", "apiKeyEnv"],
           "value": "CCG_GATEWAY_API_KEY"
         },
         {
           "id": "set-openai-endpoint",
           "op": "set",
-          "file": "settings.yaml",
-          "format": "yaml",
+          "file": "profiles/*/cordis.patch.yml",
+          "format": "cordis_yaml",
           "path": ["llm-pi-ai", "providers", "openai", "baseURL"],
           "value": "{target.endpoint}"
         },
         {
           "id": "set-openai-key-reference",
           "op": "set",
-          "file": "settings.yaml",
-          "format": "yaml",
+          "file": "profiles/*/cordis.patch.yml",
+          "format": "cordis_yaml",
           "path": ["llm-pi-ai", "providers", "openai", "apiKeyEnv"],
           "value": "CCG_GATEWAY_API_KEY"
         },
         {
-          "id": "set-openai-api",
-          "op": "set",
-          "file": "settings.yaml",
-          "format": "yaml",
-          "path": ["llm-pi-ai", "providers", "openai", "api"],
-          "value": "openai-responses"
+          "id": "remove-openai-api-override",
+          "op": "remove",
+          "file": "profiles/*/cordis.patch.yml",
+          "format": "cordis_yaml",
+          "path": ["llm-pi-ai", "providers", "openai", "api"]
         },
         {
           "id": "set-anthropic-endpoint",
           "op": "set",
-          "file": "settings.yaml",
-          "format": "yaml",
+          "file": "profiles/*/cordis.patch.yml",
+          "format": "cordis_yaml",
           "path": ["llm-pi-ai", "providers", "anthropic", "baseURL"],
           "value": "{target.endpoint}"
         },
         {
           "id": "set-anthropic-key-reference",
           "op": "set",
-          "file": "settings.yaml",
-          "format": "yaml",
+          "file": "profiles/*/cordis.patch.yml",
+          "format": "cordis_yaml",
           "path": ["llm-pi-ai", "providers", "anthropic", "apiKeyEnv"],
           "value": "CCG_GATEWAY_API_KEY"
         },
         {
-          "id": "set-anthropic-api",
+          "id": "remove-anthropic-api-override",
+          "op": "remove",
+          "file": "profiles/*/cordis.patch.yml",
+          "format": "cordis_yaml",
+          "path": ["llm-pi-ai", "providers", "anthropic", "api"]
+        },
+        {
+          "id": "set-credentials-version",
           "op": "set",
-          "file": "settings.yaml",
+          "file": ".credentials.yaml",
           "format": "yaml",
-          "path": ["llm-pi-ai", "providers", "anthropic", "api"],
-          "value": "anthropic-messages"
+          "private": true,
+          "preserve_on_remove": true,
+          "path": ["version"],
+          "value": 1
+        },
+        {
+          "id": "remove-legacy-gateway-token",
+          "op": "remove",
+          "file": ".credentials.yaml",
+          "format": "yaml",
+          "private": true,
+          "path": ["CCG_GATEWAY_API_KEY"]
         },
         {
           "id": "set-gateway-token",
@@ -91,18 +108,41 @@
           "file": ".credentials.yaml",
           "format": "yaml",
           "private": true,
-          "path": ["CCG_GATEWAY_API_KEY"],
+          "path": ["refs", "CCG_GATEWAY_API_KEY"],
           "value": "{target.token}"
         }
       ]
     },
     "global_preset": {
       "enabled": true,
-      "file": "settings.yaml",
-      "format": "yaml"
+      "file": "profiles/*/cordis.patch.yml",
+      "format": "cordis_yaml"
     },
     "profiles": { "enabled": false },
-    "official_login": { "enabled": false },
+    "official_login": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "set-credentials-version",
+          "op": "set_field",
+          "file": ".credentials.yaml",
+          "format": "yaml",
+          "private": true,
+          "preserve_on_remove": true,
+          "path": ["version"],
+          "value": 1
+        },
+        {
+          "id": "set-deepseek-account",
+          "op": "set_field",
+          "file": ".credentials.yaml",
+          "format": "yaml",
+          "private": true,
+          "path": ["records", "deepseek-account-platform/default"],
+          "value_from": { "file_id": "deepseek_account", "path": ["account"] }
+        }
+      ]
+    },
     "model_mapping": { "enabled": true },
     "token_usage": { "enabled": true },
     "skills": { "enabled": true, "directory": "skills" },

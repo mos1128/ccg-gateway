@@ -29,9 +29,12 @@ pub async fn get_installed_plugins(db: State<'_, SqlitePool>) -> Result<Vec<Plug
 
 #[tauri::command]
 pub async fn plugin_action(
+    db: State<'_, SqlitePool>,
     action: String,
     profile: String,
     param: String,
 ) -> Result<crate::services::plugin::PluginActionResult> {
-    crate::services::plugin::plugin_action(&action, &profile, &param).await
+    let agent_id = plugins_agent_id()?;
+    let config_dir = get_cli_config_dir_path(db.inner(), &agent_id).await;
+    crate::services::plugin::plugin_action(&config_dir, &action, &profile, &param).await
 }

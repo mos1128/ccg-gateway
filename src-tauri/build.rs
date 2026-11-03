@@ -79,7 +79,7 @@ fn validate_config_operations(operations: &[Value], label: &str, file: &Path) {
                 )
             });
         let is_env = format == "env";
-        if is_env && path.len() != 1 {
+        if is_env && path.len() != 1 || format == "cordis_yaml" && path.len() < 2 {
             panic!(
                 "{}: {} operation `{}` has incompatible op, format or path",
                 file.display(),
@@ -89,6 +89,19 @@ fn validate_config_operations(operations: &[Value], label: &str, file: &Path) {
         }
 
         let writes_value = op == "set";
+        if operation
+            .get("preserve_on_remove")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            && !writes_value
+        {
+            panic!(
+                "{}: {} operation `{}` can preserve only set fields",
+                file.display(),
+                label,
+                id
+            );
+        }
         let has_value = operation.get("value").is_some();
         if (writes_value && !has_value) || (!writes_value && has_value) {
             panic!(
@@ -242,10 +255,10 @@ fn validate_definition(value: &Value, file: &Path, ids: &mut HashSet<String>) ->
                 required_string(feature, "file", file);
                 if !matches!(
                     feature.get("format").and_then(Value::as_str),
-                    Some("json" | "toml" | "yaml")
+                    Some("json" | "toml" | "yaml" | "cordis_yaml")
                 ) {
                     panic!(
-                        "{}: enabled global_preset needs a JSON, TOML or YAML target",
+                        "{}: enabled global_preset needs a JSON, TOML, YAML or Cordis YAML target",
                         file.display()
                     );
                 }

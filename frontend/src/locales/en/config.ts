@@ -6,6 +6,7 @@ export default {
     restoreDefault: 'Restore Defaults'
   },
   preset: {
+    cordisHint: 'Enter YAML keyed by plugin entry ID. While active, each entry receives the complete config here; include custom models or parameters you want to retain.',
     title: 'Global Preset',
     clickToEdit: 'Click to edit configuration',
     editTitle: 'Edit Global Preset - {name}',
@@ -17,7 +18,7 @@ export default {
     writeModeTip: {
       title: 'Config Write Mode',
       mergeDesc: 'Only writes the fields that need to change, keeping the existing configuration in the file (such as MCP / plugin toggles).',
-      overwriteDesc: 'Fully overwrites the config file on every write. The proxy backs up the original file and restores it automatically when disabled. Keeps the config clean.'
+      overwriteDesc: 'Replaces managed configuration. Private credential files retain other fields; DSH replaces only settings managed by CCG.'
     }
   },
   backup: {

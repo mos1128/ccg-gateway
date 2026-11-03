@@ -48,6 +48,7 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | `remark` | 可选；非空字符串 | 显示在 Agent 列表和能力信息中，适合说明启用前提或特殊限制。没有实际信息时应省略。 |
 | `icon` | 可选对象 | Agent 图标，具体 key 见下文。 |
 | `config_dir` | 非空路径字符串 | Agent 的默认配置目录。用户在 CCG 中设置的自定义目录优先。 |
+| `config_dir_env` | 可选；环境变量名 | 非空环境变量覆盖 `config_dir`，CCG 自定义目录仍优先。例如 DSH 使用 `DSH_HOME`。 |
 | `user_agent` | 至少包含一个非空字符串的数组 | 用于识别请求来自哪个 Agent。匹配时忽略大小写，并按子串匹配。应填写从真实请求中观察到的稳定特征。 |
 | `protocols` | 至少包含一个协议值的数组；不能重复 | 声明该 Agent 可能发送的请求协议。可用值见下文。 |
 | `features` | 对象 | 功能集合，必须包含第 3 节列出的全部功能 key。 |
@@ -140,13 +141,16 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | --- | --- | --- |
 | `id` | 非空字符串 | operation 的标识。在同一个 `operations` 数组中必须唯一。 |
 | `op` | `set` 或 `remove` | `set` 写入字段；`remove` 删除字段。 |
-| `file` | 非空路径字符串 | 目标配置文件。默认配置必须写明确路径；Profile operation 可以使用 Profile 占位符。 |
-| `format` | `json`、`jsonc`、`toml`、`yaml`、`env` | 目标文件格式。同一组 operations 中，同一个文件不能声明不同格式。 |
-| `private` | 可选布尔值，默认 `false` | 设为 `true` 时，在 Unix 上以 `0700` 创建缺失的父目录，并将目标文件权限设为 `0600`；同一文件的 operations 必须使用相同值。 |
+| `file` | 非空路径字符串 | 目标配置文件。默认配置必须写明确路径；Profile operation 可以使用 Profile 占位符。可以包含一个 `*` 目录段，写入时会展开为实际存在的同级目录。 |
+| `format` | `json`、`jsonc`、`toml`、`yaml`、`cordis_yaml`、`env` | 目标文件格式。同一组 operations 中，同一个文件不能声明不同格式。`cordis_yaml` 用于 DSH 的 Cordis 补丁。 |
+| `private` | 可选布尔值，默认 `false` | 在 Unix 上以 `0700` 创建缺失的父目录、以 `0600` 写文件；即使选择覆盖模式也合并原文件，保留其他凭证。同一文件的 operations 必须使用相同值。 |
+| `preserve_on_remove` | 可选布尔值，默认 `false` | 仅供 `set` 使用。关闭时保留此字段，例如共享凭证库的 `version`。 |
 | `path` | 至少包含一个非空字符串的数组 | 目标字段路径，例如 `["env", "API_KEY"]`。`env` 格式必须且只能有一个元素。 |
 | `value` | 字符串、布尔值、数字、数组或对象 | `op: "set"` 时必填，`op: "remove"` 时禁止出现。字符串中可以使用占位符。 |
 
 `path` 按层级定位字段。例如 `["provider", "openai", "apiKey"]` 表示 JSON/TOML 中的 `provider.openai.apiKey`；对于 `env`，`["API_KEY"]` 表示环境变量 `API_KEY`。
+
+`cordis_yaml` 的 `path` 至少包含两项：首项是 Cordis 条目的 `id`，其余项定位该条目的 `config` 字段。例如 `["llm-pi-ai", "providers", "openai", "baseURL"]` 写为 `- id: llm-pi-ai` 下的 `config.providers.openai.baseURL`。只修改 `CCG Gateway Cordis Config` 标记块，覆盖模式也保留块外的 MCP、用户补丁、注释和 `!!js` 原文；关闭时仅移除仍匹配的受管字段，空管理块被删除。
 
 #### 配置 operation 占位符
 
@@ -175,8 +179,8 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
 | `enabled` | `true` / `false` | 是否允许写入全局预设。 |
-| `file` | 非空路径字符串 | 默认配置档案使用的预设文件。 |
-| `format` | `json`、`toml` 或 `yaml` | 预设文件格式。 |
+| `file` | 非空路径字符串 | 默认配置档案使用的预设文件。与配置 operation 一样支持一个 `*` 目录段。 |
+| `format` | `json`、`toml`、`yaml` 或 `cordis_yaml` | 预设文件格式。`cordis_yaml` 的输入仍为 YAML 映射，以条目 ID 为键、完整配置对象为值。 |
 
 `global_preset` 只作用于默认配置档案。它与 `provider_config.operations` 写入同一文件和字段时，该预设字段会被忽略，避免覆盖地址、密钥等核心配置。
 
@@ -213,9 +217,11 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
 | `id` | 非空字符串 | operation 标识。 |
-| `op` | `replace_file` 或 `set_field` | 替换整个文件，或只设置 JSON 中的一个字段。 |
+| `op` | `replace_file` 或 `set_field` | 替换整个文件，或只设置 JSON / YAML 中的一个字段。 |
 | `file` | 非空路径字符串 | 写回凭证或设置的目标文件。 |
-| `format` | `json`、`jsonc`、`toml`、`yaml`、`env` | `replace_file` 可省略，省略时按 `json`；`set_field` 必须明确写 `json`。 |
+| `format` | `json`、`jsonc`、`toml`、`yaml`、`env` | 目标文件格式。`replace_file` 可省略，省略时按 `json`；`set_field` 必须明确写 `json` 或 `yaml`。 |
+| `private` | 可选布尔值，默认 `false` | 与配置 operation 相同：写入时使用私有文件权限。共享凭证库应设为 `true`；同一目标文件的声明必须一致。 |
+| `preserve_on_remove` | 可选布尔值，默认 `false` | 清理官方凭证时保留该 operation 写入的内容，适用于共享凭证库的格式版本等公共元数据。 |
 | `path` | 字符串数组 | `set_field` 的目标字段路径，不能为空；`replace_file` 不使用。 |
 | `content_from` | 凭证来源对象 | `replace_file` 必填，表示整文件内容来自哪个逻辑凭证文件。 |
 | `value` | 任意固定 JSON 值 | `set_field` 时与 `value_from` 二选一。 |
@@ -228,7 +234,9 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | `file_id` | 非空字符串 | CCG 凭证数据中的逻辑文件 ID。相同 ID 表示同一份导入内容。 |
 | `path` | 可选字符串数组 | 从逻辑文件中取值的路径。省略时取整个文件；非 JSON 来源不能使用该 key。 |
 
-同一个 `file_id` 被多个 operation 使用时，`format` 必须一致。对于会自动刷新 Token 的 Agent，CCG 写入的凭证可能随后被 Agent 覆盖，这是正常行为。
+`set_field` 的逻辑凭证文件始终使用 `json` 格式保存提取的字段，目标文件可以是 JSON 或 YAML；`replace_file` 的来源格式与目标格式一致，非 JSON 格式保存原文。同一个 `file_id` 被多个 operation 使用时，来源格式必须一致；同一目标文件的格式也必须一致。对于会自动刷新 Token 的 Agent，CCG 写入的凭证可能随后被 Agent 覆盖，这是正常行为。
+
+DeepSeek Harness 的桌面版与 CLI 共用 `$DSH_HOME/.credentials.yaml`（默认 `~/.dsh/.credentials.yaml`）。内置模板只导入 `records.deepseek-account-platform/default` 的授权记录，包括 `kind` 与 `payload` 中的 `version`、`token`、`issuer`。网关/API 密钥、浏览器会话及设备标识不会进入账号凭证快照。写回时合并账号记录并设置顶层 `version: 1`；清理时只删除匹配的账号记录，保留顶层版本和其他记录。默认目录会读取 CCG 进程的 `DSH_HOME`，显式设置的 CCG 配置目录优先。用户先在 Harness 完成登录，再通过服务商页面的“官方账号”入口读取并保存凭证；在 Harness 中选择 `deepseek-account` 路由使用该登录。
 
 ### `model_mapping` 和 `token_usage`
 
@@ -274,7 +282,7 @@ Session adapter 是已经编译进 CCG 的解析实现。用户模板不能只�
 | `enabled` | `true` / `false` | 是否支持插件管理。 |
 | `adapter` | 非空字符串 | `enabled: true` 时必填。当前实际实现为 `dsh`。 |
 
-Plugin adapter 是已经编译进 CCG 的插件生命周期实现，不能由模板新增。`dsh` adapter 通过 `dsh plugin` 命令（pnpm 转发）管理 DeepSeek Harness profile 的插件，输入 Git 仓库地址即可安装。
+Plugin adapter 是已经编译进 CCG 的插件生命周期实现，不能由模板新增。`dsh` adapter 通过 `dsh plugin` 命令（pnpm 转发）管理 DeepSeek Harness profile 的插件，并将 CCG 解析的配置根目录传为 `DSH_HOME`。DSH bundle 会自动激活；普通依赖只安装，不会自动激活。`desktop` profile 必须先由桌面版初始化。
 
 ### `prompts`
 
@@ -498,9 +506,13 @@ Gemini CLI 的官方登录同时使用整文件替换和单字段设置：
 }
 ```
 
-`dsh` adapter 不使用 `servers_path`。它将 CCG 的 stdio 或 Streamable HTTP MCP 配置转换为独立的 `@deepseek-ai/dsh-mcp-client` 条目，并只更新 `cordis.patch.yml` 中由 CCG 标记的管理块；块外的用户 patch 保持原文。DSH 的 `serverName` 要求 MCP 名称匹配 `[A-Za-z0-9_-]{1,32}`，且不支持旧式 SSE transport。DSH 凭据写入 `.credentials.yaml` 时应为对应 operation 配置 `"private": true`。
+`dsh` adapter 不使用 `servers_path`。它将 CCG 的 stdio 或 Streamable HTTP MCP 配置转换为独立的 `@deepseek-ai/dsh-mcp-client` 条目，并只更新根目录 `cordis.patch.yml` 中由 CCG 标记的管理块；该块只 insert 新条目，不会覆盖 profile 配置，块外的用户 patch 保持原文。DSH 的 `serverName` 要求 MCP 名称匹配 `[A-Za-z0-9_-]{1,32}`，且不支持旧式 SSE transport。DSH 凭据写入 `.credentials.yaml` 时应为对应 operation 配置 `"private": true`。
 
-DeepSeek Harness 模板同时配置三个模型路由：原生 `deepseek-official` 使用 OpenAI Chat，内置 `llm-pi-ai` 的 `openai` 与 `anthropic` 路由分别固定为 OpenAI Responses 和 Anthropic Messages。后两者复用 DSH 已安装的模型 catalog，不需要声明静态模型列表或额外安装 SDK。三个路由共用 `.credentials.yaml` 中的 `CCG_GATEWAY_API_KEY`；不要覆盖 `DEEPSEEK_API_KEY`，因为 DSH 的官方网页搜索也会读取它。
+DeepSeek Harness 模板接管原生 `llm-deepseek`（DeepSeek 官方 API 路由，Anthropic Messages）以及 `llm-pi-ai` 内置 `openai` 和 `anthropic` 路由。原生路由只写入 `baseURL` 和 `apiKeyEnv`，其余字段沿用 DSH 的默认 catalog；如需自定义 `models`、`reasoningEffort` 等参数，请放入 CCG 全局预设的 `llm-deepseek` 条目。两个 `llm-pi-ai` 路由复用 DSH 已安装的 provider catalog，不声明 `api`，因此继续使用每个模型在目录中的协议和模型列表；启用时也会移除旧管理块中固定的 `api` 覆盖。不需要声明静态模型列表或额外安装 SDK。三条受管路由共用 `.credentials.yaml` 中的 `refs.CCG_GATEWAY_API_KEY`；写入时确保 `version: 1` 并移除旧版顶层同名密钥，关闭时保留版本和其他凭证。仅支持新版凭证结构，不迁移旧版平铺密钥；升级后停用再启用即可重建 CCG 密钥，其他旧密钥需要用户自行重新配置。保留已有的 `refs` 和 `records`，不要覆盖官方网页搜索使用的 `DEEPSEEK_API_KEY`。`llm-deepseek-account` 仍是官方账号登录路由，不经过网关。
+
+服务商配置和全局预设使用 `cordis_yaml` 写入各 profile 自己的 `profiles/<name>/cordis.patch.yml`，不再写入根目录 home patch，也不再依赖 `settings.yaml` 的一次性导入。目标文件为 `profiles/*/cordis.patch.yml`：写入时展开所有已初始化（存在 `package.json`）的 profile，并额外包含 `desktop` 和 `web`（目录不存在时创建）。根目录 home patch 的优先级高于 profile patch，会覆盖 profile 配置，并让 DSH 设置编辑器因“被 home patch 覆盖”而拒绝保存；升级时会移除根目录中旧的 CCG 管理块。DSH 按完整 `config` 替换同 ID 条目的配置；接管期间需要保留的额外 provider、自定义模型和参数应放入 CCG 全局预设的对应 ID 下。移除管理块后，profile 自身的设置重新生效。
+
+写入或切换模式时，DSH 适配会通过 YAML 节点编辑，清理旧 `settings.yaml` 和已初始化 profile 的 `cordis.patch.yml` 中使用 `CCG_GATEWAY_API_KEY` 的路由字段。直接移除对应字段，不追加覆盖条目；保留其他配置、注释、管理标记和 `!!js` 表达式，支持块式、流式 YAML 及文档结束符。写回前校验完整 YAML，清理幂等，避免关闭新管理块后重新启用旧网关地址。`settings.yaml.imported` 是 DSH 的历史导入文件，不参与运行配置，CCG 不修改它。
 
 ### ZCode：深层路径、布尔值、数字和嵌套 `servers_path`
 

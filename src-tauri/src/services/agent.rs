@@ -53,7 +53,11 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
             }
             if operation.path.is_empty() || operation.path.iter().any(|part| part.trim().is_empty())
             {
-                return Err(crate::tr!("err.agent.operation_path_empty", label, operation.id));
+                return Err(crate::tr!(
+                    "err.agent.operation_path_empty",
+                    label,
+                    operation.id
+                ));
             }
             if let Some(existing) = file_formats.insert(operation.file.as_str(), operation.format) {
                 if existing != operation.format {
@@ -76,8 +80,26 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
                 return Err(crate::tr!("err.agent.env_path_single_key", label, operation.id));
             }
             let writes_value = operation.op == ConfigOperationKind::Set;
+            if operation.preserve_on_remove && !writes_value {
+                return Err(crate::tr!(
+                    "err.agent.operation_value_required",
+                    label,
+                    operation.id
+                ));
+            }
+            if operation.format == ConfigFormat::CordisYaml && operation.path.len() < 2 {
+                return Err(crate::tr!(
+                    "err.agent.operation_path_empty",
+                    label,
+                    operation.id
+                ));
+            }
             if writes_value && operation.value.is_none() {
-                return Err(crate::tr!("err.agent.operation_value_required", label, operation.id));
+                return Err(crate::tr!(
+                    "err.agent.operation_value_required",
+                    label,
+                    operation.id
+                ));
             }
             if !writes_value && operation.value.is_some() {
                 return Err(crate::tr!("err.agent.operation_value_unexpected", label, operation.id));
@@ -110,7 +132,8 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
             {
                 return Err(crate::tr!(
                     "err.agent.profile_path_template_invalid",
-                    label, operation.id
+                    label,
+                    operation.id
                 ));
             }
         }
@@ -144,6 +167,7 @@ fn validate_global_preset(definition: &AgentDefinition) -> Result<(), String> {
             crate::db::models::ConfigFormat::Json
                 | crate::db::models::ConfigFormat::Toml
                 | crate::db::models::ConfigFormat::Yaml
+                | crate::db::models::ConfigFormat::CordisYaml
         )
     ) {
         return Err(crate::tr!("err.agent.global_preset_format_invalid"));
@@ -160,9 +184,29 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
         return Err(crate::tr!("err.agent.official_login_operations_required"));
     }
     let mut source_formats = HashMap::new();
+    let mut file_formats = HashMap::new();
+    let mut file_privacy = HashMap::new();
     for operation in &feature.operations {
         use crate::db::models::{ConfigFormat, OfficialLoginOperationKind};
         let format = operation.format.unwrap_or(ConfigFormat::Json);
+        if let Some(existing) = file_formats.insert(operation.file.as_str(), format) {
+            if existing != format {
+                return Err(crate::tr!(
+                    "err.agent.file_format_conflict",
+                    "official_login",
+                    operation.file
+                ));
+            }
+        }
+        if let Some(existing) = file_privacy.insert(operation.file.as_str(), operation.private) {
+            if existing != operation.private {
+                return Err(crate::tr!(
+                    "err.agent.file_private_conflict",
+                    "official_login",
+                    operation.file
+                ));
+            }
+        }
         let source = match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
                 let source = operation.content_from.as_ref().ok_or_else(|| {
@@ -179,7 +223,10 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
             OfficialLoginOperationKind::SetField => {
                 if operation.path.is_empty()
                     || operation.value.is_some() == operation.value_from.is_some()
-                    || operation.format != Some(ConfigFormat::Json)
+                    || !matches!(
+                        operation.format,
+                        Some(ConfigFormat::Json | ConfigFormat::Yaml)
+                    )
                 {
                     return Err(crate::tr!(
                         "err.agent.official_login_set_field_invalid",
@@ -190,8 +237,10 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
             }
         };
         if let Some(source) = source {
-            if let Some(existing) = source_formats.insert(source.file_id.as_str(), format) {
-                if existing != format {
+            if let Some(existing) =
+                source_formats.insert(source.file_id.as_str(), operation.source_format())
+            {
+                if existing != operation.source_format() {
                     return Err(crate::tr!(
                         "err.agent.official_login_format_conflict",
                         source.file_id
@@ -419,6 +468,14 @@ fn validate_definition(definition: &AgentDefinition) -> Result<(), String> {
     validate_icon(definition)?;
     if definition.config_dir.trim().is_empty() {
         return Err(crate::tr!("err.agent.config_dir_empty"));
+    }
+    if definition.config_dir_env.as_deref().is_some_and(|name| {
+        name.is_empty()
+            || name.chars().enumerate().any(|(index, c)| {
+                !(c == '_' || c.is_ascii_alphabetic() || index > 0 && c.is_ascii_digit())
+            })
+    }) {
+        return Err(crate::tr!("err.agent.config_dir_env_invalid"));
     }
     if definition.sort_order < 0 {
         return Err(crate::tr!("err.agent.sort_order_negative"));
@@ -661,6 +718,7 @@ fn resolve_definition(definition: &AgentDefinition) -> AgentInfo {
         remark_en: definition.remark_en.clone(),
         icon: definition.icon.clone(),
         config_dir: definition.config_dir.clone(),
+        config_dir_env: definition.config_dir_env.clone(),
         user_agent: definition.user_agent.clone(),
         protocols: definition.protocols.clone(),
         features: definition.features.clone(),

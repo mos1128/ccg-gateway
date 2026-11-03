@@ -99,6 +99,8 @@ CCG Gateway 是一款面向 Claude Code、Codex、Gemini CLI、OpenCode、Kimi C
 ### 官方账号
 
 - 支持多个账号的凭证配置，支持一键读取已登录信息。
+- DeepSeek Harness 可读取桌面版 / CLI 共用的 `~/.dsh/.credentials.yaml`，只保存官方账号授权记录，切换时保留网关密钥、浏览器会话及设备标识。默认跟随 CCG 进程的 `DSH_HOME`，CCG 自定义配置目录优先。
+- 新版 DSH 的网关配置和全局预设写入各 profile 的 `profiles/<name>/cordis.patch.yml`（同时覆盖 `desktop`、`web`，升级时迁移并清理根目录旧管理块），接管原生 DeepSeek 路由和 `llm-pi-ai` 的 openai / anthropic 路由，密钥写入 `refs.CCG_GATEWAY_API_KEY`；覆盖模式保留其他凭证、MCP 和用户补丁。切换模式时清理旧版迁移留下的 CCG 路由字段。
 - 支持拖拽快速切换当前使用的账号凭证。
 - 官方账号不通过网关转发，规避账号风控。
 

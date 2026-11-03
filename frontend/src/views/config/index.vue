@@ -223,6 +223,7 @@
               />
             </div>
           </div>
+          <div v-if="globalPresetFeature?.format === 'cordis_yaml'" class="v2-hint">{{ t('config.preset.cordisHint') }}</div>
           <div v-if="presetValidationError" class="json-err" style="color: var(--v2-danger); font-size: var(--v2-fs-xs); margin-top: 6px;">{{ presetValidationError }}</div>
         </div>
 
@@ -320,6 +321,8 @@ const presetFileLabel = computed(() => {
       return 'settings.json'
     case 'yaml':
       return 'models.yml'
+    case 'cordis_yaml':
+      return 'cordis.patch.yml'
     case 'toml':
       return 'config.toml'
     default:
@@ -364,13 +367,13 @@ async function validatePresetConfig(): Promise<boolean> {
     return !presetValidationError.value
   }
   const format = globalPresetFeature.value?.format
-  if (format === 'toml' || format === 'yaml') {
+  if (format === 'toml' || format === 'yaml' || format === 'cordis_yaml') {
     try {
       await agentsApi.validateConfigContent(format, config)
     } catch (error) {
       presetValidationError.value = getErrorMessage(
         error,
-        format === 'yaml' ? t('config.msg.yamlInvalid') : t('config.msg.tomlInvalid'),
+        format === 'toml' ? t('config.msg.tomlInvalid') : t('config.msg.yamlInvalid'),
       )
       return false
     }

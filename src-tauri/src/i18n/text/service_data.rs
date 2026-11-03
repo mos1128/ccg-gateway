@@ -180,6 +180,10 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "目标文件 {} 不是合法 JSON: {}",
             Lang::En => "Target file {} is not valid JSON: {}",
         },
+        "err.official_credential.target_file_invalid_yaml" => match lang {
+            Lang::Zh => "目标文件 {} 不是合法 YAML",
+            Lang::En => "Target file {} is not valid YAML",
+        },
         "err.official_credential.read_target_file_failed" => match lang {
             Lang::Zh => "读取目标文件 {} 失败: {}",
             Lang::En => "Failed to read target file {}: {}",
@@ -196,9 +200,9 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "Agent {} 没有官方凭证写入规则",
             Lang::En => "Agent {} has no official credential write rules",
         },
-        "err.official_credential.set_field_json_only" => match lang {
-            Lang::Zh => "operation `{}` 的 set_field 只支持 JSON",
-            Lang::En => "set_field of operation `{}` supports JSON only",
+        "err.official_credential.set_field_format_unsupported" => match lang {
+            Lang::Zh => "{} 的 set_field 只支持 JSON 或 YAML",
+            Lang::En => "set_field for {} supports JSON or YAML only",
         },
         "err.official_credential.replace_conflict" => match lang {
             Lang::Zh => "operation `{}` 与同一目标文件的原文替换规则冲突",

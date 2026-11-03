@@ -1,3 +1,4 @@
+mod cordis;
 mod env;
 mod json;
 mod jsonc;
@@ -37,12 +38,18 @@ fn resolve_runtime_string(
         let candidate = &remaining[start..];
         let (placeholder, replacement) = if candidate.starts_with("{target.endpoint}") {
             if context.target_endpoint.is_empty() {
-                return Err(crate::tr!("err.config_patch.missing_target_endpoint", operation.id));
+                return Err(crate::tr!(
+                    "err.config_patch.missing_target_endpoint",
+                    operation.id
+                ));
             }
             ("{target.endpoint}", context.target_endpoint.as_str())
         } else if candidate.starts_with("{target.token}") {
             if context.target_token.is_empty() {
-                return Err(crate::tr!("err.config_patch.missing_target_token", operation.id));
+                return Err(crate::tr!(
+                    "err.config_patch.missing_target_token",
+                    operation.id
+                ));
             }
             ("{target.token}", context.target_token.as_str())
         } else if candidate.starts_with("{agent.id}") {
@@ -51,7 +58,10 @@ fn resolve_runtime_string(
             || candidate.starts_with("{agent.")
             || candidate.starts_with("{profile")
         {
-            return Err(crate::tr!("err.config_patch.unknown_template_variable", operation.id));
+            return Err(crate::tr!(
+                "err.config_patch.unknown_template_variable",
+                operation.id
+            ));
         } else {
             output.push('{');
             remaining = &candidate[1..];
@@ -118,7 +128,10 @@ fn resolve_operations(
                 Some(resolve_value(operation, context)?)
             } else {
                 if operation.value.is_some() {
-                    return Err(crate::tr!("err.config_patch.value_not_accepted", operation.id));
+                    return Err(crate::tr!(
+                        "err.config_patch.value_not_accepted",
+                        operation.id
+                    ));
                 }
                 None
             };
@@ -144,6 +157,7 @@ pub fn patch_content(
         ConfigFormat::Jsonc => jsonc::patch(content, &operations),
         ConfigFormat::Toml => toml::patch(content, &operations),
         ConfigFormat::Yaml => yaml::patch(content, &operations),
+        ConfigFormat::CordisYaml => cordis::patch(content, &operations),
         ConfigFormat::Env => env::patch(content, &operations),
     }
 }
@@ -177,6 +191,8 @@ pub fn operations_applied(
             Ok(current == next)
         }
         ConfigFormat::Env => Ok(content == patched),
+        ConfigFormat::CordisYaml => Ok(cordis::configs(content)? == cordis::configs(&patched)?
+            && cordis::applied(content, &resolve_operations(operations, context)?)?),
     }
 }
 
@@ -236,6 +252,9 @@ pub async fn write_atomic_text_with_privacy(
 }
 
 fn inverse_operation(operation: &ConfigOperation) -> Option<ConfigOperation> {
+    if operation.preserve_on_remove {
+        return None;
+    }
     let op = match operation.op {
         ConfigOperationKind::Set => ConfigOperationKind::Remove,
         ConfigOperationKind::Remove => return None,
@@ -246,6 +265,7 @@ fn inverse_operation(operation: &ConfigOperation) -> Option<ConfigOperation> {
         file: operation.file.clone(),
         format: operation.format,
         private: operation.private,
+        preserve_on_remove: false,
         path: operation.path.clone(),
         value: None,
     })
@@ -266,9 +286,18 @@ pub fn safely_remove_operations(
         let Some(inverse) = inverse_operation(operation) else {
             continue;
         };
-        if !operations_applied(format, &current, std::slice::from_ref(operation), context)
-            .unwrap_or(false)
-        {
+        let matches = if format == ConfigFormat::CordisYaml {
+            let owned = yaml::to_string(&cordis::configs(&current)?)?;
+            operations_applied(
+                ConfigFormat::Yaml,
+                &owned,
+                std::slice::from_ref(operation),
+                context,
+            )
+        } else {
+            operations_applied(format, &current, std::slice::from_ref(operation), context)
+        };
+        if !matches.unwrap_or(false) {
             continue;
         }
         current = patch_content(format, &current, &[inverse], context)?;
@@ -281,6 +310,9 @@ pub fn apply_preset(
     content: &str,
     preset_content: &str,
 ) -> Result<String, String> {
+    if format == ConfigFormat::CordisYaml {
+        return cordis::preset(content, preset_content, false);
+    }
     preset::apply(format, content, preset_content)
 }
 
@@ -289,7 +321,26 @@ pub fn safely_remove_preset(
     content: &str,
     preset_content: &str,
 ) -> Result<String, String> {
+    if format == ConfigFormat::CordisYaml {
+        return cordis::preset(content, preset_content, true);
+    }
     preset::remove(format, content, preset_content)
+}
+
+pub fn reset_content(format: ConfigFormat, content: &str) -> Result<String, String> {
+    if format == ConfigFormat::CordisYaml {
+        cordis::reset(content)
+    } else {
+        Ok(String::new())
+    }
+}
+
+pub fn has_cordis_block(content: &str) -> bool {
+    cordis::has_block(content)
+}
+
+pub fn validate_preset(format: ConfigFormat, content: &str) -> Result<(), String> {
+    apply_preset(format, "", content).map(|_| ())
 }
 
 /// Remove fields owned by a mode before merging a global preset.
@@ -315,6 +366,7 @@ pub fn sanitize_preset(
                 file: operation.file.clone(),
                 format: operation.format,
                 private: operation.private,
+                preserve_on_remove: false,
                 path: operation.path.clone(),
                 value: None,
             })
@@ -323,5 +375,14 @@ pub fn sanitize_preset(
     if removals.is_empty() {
         return Ok(content.to_string());
     }
-    patch_content(format, content, &removals, context)
+    patch_content(
+        if format == ConfigFormat::CordisYaml {
+            ConfigFormat::Yaml
+        } else {
+            format
+        },
+        content,
+        &removals,
+        context,
+    )
 }

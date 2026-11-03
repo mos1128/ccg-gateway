@@ -123,6 +123,7 @@ pub enum ConfigFormat {
     Jsonc,
     Toml,
     Yaml,
+    CordisYaml,
     Env,
 }
 
@@ -142,6 +143,8 @@ pub struct ConfigOperation {
     pub format: ConfigFormat,
     #[serde(default)]
     pub private: bool,
+    #[serde(default)]
+    pub preserve_on_remove: bool,
     #[serde(default)]
     pub path: Vec<String>,
     pub value: Option<serde_json::Value>,
@@ -186,10 +189,23 @@ pub struct OfficialLoginOperation {
     pub file: String,
     pub format: Option<ConfigFormat>,
     #[serde(default)]
+    pub private: bool,
+    #[serde(default)]
+    pub preserve_on_remove: bool,
+    #[serde(default)]
     pub path: Vec<String>,
     pub content_from: Option<CredentialSource>,
     pub value: Option<serde_json::Value>,
     pub value_from: Option<CredentialSource>,
+}
+
+impl OfficialLoginOperation {
+    pub fn source_format(&self) -> ConfigFormat {
+        match self.op {
+            OfficialLoginOperationKind::SetField => ConfigFormat::Json,
+            OfficialLoginOperationKind::ReplaceFile => self.format.unwrap_or(ConfigFormat::Json),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,6 +269,7 @@ pub struct AgentDefinition {
     pub remark_en: Option<String>,
     pub icon: Option<AgentIcon>,
     pub config_dir: String,
+    pub config_dir_env: Option<String>,
     pub user_agent: Vec<String>,
     pub protocols: Vec<Protocol>,
     pub features: AgentFeatures,
@@ -267,6 +284,7 @@ pub struct AgentInfo {
     pub remark_en: Option<String>,
     pub icon: Option<AgentIcon>,
     pub config_dir: String,
+    pub config_dir_env: Option<String>,
     pub user_agent: Vec<String>,
     pub protocols: Vec<Protocol>,
     pub features: AgentFeatures,

@@ -189,6 +189,10 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "Agent {} 未声明可用的全局预设格式",
             Lang::En => "Agent {} does not declare a supported global preset format",
         },
+        "err.cli_config.multiple_wildcards" => match lang {
+            Lang::Zh => "配置文件路径只能包含一个通配符: {}",
+            Lang::En => "A config file path may contain only one wildcard: {}",
+        },
 
         // commands/plugin_commands.rs
         "err.plugin.no_agent_enabled" => match lang {

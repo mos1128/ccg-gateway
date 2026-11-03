@@ -30,7 +30,7 @@ export interface ProfileFeature extends ToggleFeature {
   launch?: ProfileLaunch | null
 }
 
-export type ConfigFormat = 'json' | 'jsonc' | 'toml' | 'yaml' | 'env'
+export type ConfigFormat = 'json' | 'jsonc' | 'toml' | 'yaml' | 'cordis_yaml' | 'env'
 
 export interface ProviderConfigOperation {
   id: string
@@ -38,6 +38,7 @@ export interface ProviderConfigOperation {
   file: string
   format: ConfigFormat
   private?: boolean
+  preserve_on_remove?: boolean
   path: string[]
   value?: unknown
 }
@@ -80,6 +81,8 @@ export interface OfficialLoginOperation {
   op: 'replace_file' | 'set_field'
   file: string
   format?: ConfigFormat | null
+  private?: boolean
+  preserve_on_remove?: boolean
   path?: string[]
   content_from?: CredentialSource | null
   value?: unknown
@@ -128,6 +131,7 @@ export interface AgentInfo {
   remark_en?: string | null
   icon?: AgentIcon | null
   config_dir: string
+  config_dir_env?: string | null
   user_agent: string[]
   protocols: Protocol[]
   features: AgentFeatures

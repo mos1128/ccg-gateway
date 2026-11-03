@@ -26,6 +26,111 @@ struct PresetTarget {
     previous: Option<String>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn overwrite_preserves_other_records_in_shared_credentials() {
+        let root = std::env::temp_dir().join(format!("ccg-dsh-check-{}", uuid::Uuid::new_v4()));
+        let definition: crate::db::models::AgentDefinition = serde_json::from_str(include_str!(
+            "../../agent-definitions/deepseek_harness.json"
+        ))
+        .unwrap();
+        let operations: Vec<_> = definition
+            .features
+            .provider_config
+            .operations
+            .into_iter()
+            .filter(|operation| operation.private)
+            .collect();
+        let groups = group_operations(&root, &operations).unwrap();
+        let credentials = &groups[0].path;
+        let original = "version: 1\nrefs:\n  USER_KEY: keep\nrecords:\n  deepseek-account-platform/default:\n    kind: grant\n    payload:\n      version: 1\n      token: account-token\n      issuer: https://platform.deepseek.com\n  client-connection/browser-session:\n    kind: grant\n    payload: browser-session\n";
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        tokio::fs::write(credentials, original).await.unwrap();
+        let context = PatchContext {
+            target_endpoint: "http://127.0.0.1:7788".into(),
+            target_token: "gateway-token".into(),
+            agent_id: "deepseek_harness".into(),
+        };
+        apply_enabled_groups(&groups, &context, &[], "overwrite")
+            .await
+            .unwrap();
+        let value: Value =
+            serde_yaml::from_str(&tokio::fs::read_to_string(credentials).await.unwrap()).unwrap();
+        let before: Value = serde_yaml::from_str(original).unwrap();
+        assert_eq!(value["records"], before["records"]);
+        assert_eq!(value["refs"]["USER_KEY"], "keep");
+        assert_eq!(value["refs"]["CCG_GATEWAY_API_KEY"], "gateway-token");
+        safely_remove_groups(&groups, &context, &[]).await.unwrap();
+        let value: Value =
+            serde_yaml::from_str(&tokio::fs::read_to_string(credentials).await.unwrap()).unwrap();
+        assert_eq!(value, before);
+        tokio::fs::remove_dir_all(&root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cordis_routes_are_written_to_each_profile_patch() {
+        let root = std::env::temp_dir().join(format!("ccg-dsh-profiles-{}", uuid::Uuid::new_v4()));
+        for name in ["desktop", "web"] {
+            let dir = root.join("profiles").join(name);
+            tokio::fs::create_dir_all(&dir).await.unwrap();
+            tokio::fs::write(dir.join("package.json"), "{}")
+                .await
+                .unwrap();
+        }
+        let definition: crate::db::models::AgentDefinition = serde_json::from_str(include_str!(
+            "../../agent-definitions/deepseek_harness.json"
+        ))
+        .unwrap();
+        let operations: Vec<_> = definition
+            .features
+            .provider_config
+            .operations
+            .into_iter()
+            .filter(|operation| operation.format == ConfigFormat::CordisYaml)
+            .collect();
+        let groups = group_operations(&root, &operations).unwrap();
+        assert_eq!(groups.len(), 2);
+        assert!(groups
+            .iter()
+            .all(|group| group.path.starts_with(root.join("profiles"))));
+
+        let context = PatchContext {
+            target_endpoint: "http://127.0.0.1:7788".into(),
+            target_token: "gateway-token".into(),
+            agent_id: "deepseek_harness".into(),
+        };
+        apply_enabled_groups(&groups, &context, &[], "merge")
+            .await
+            .unwrap();
+        for name in ["desktop", "web"] {
+            let content = tokio::fs::read_to_string(
+                root.join("profiles").join(name).join("cordis.patch.yml"),
+            )
+            .await
+            .unwrap();
+            assert!(content.contains("llm-deepseek"));
+            assert!(content.contains("llm-pi-ai"));
+            assert!(content.contains("http://127.0.0.1:7788"));
+        }
+        assert!(!root.join("cordis.patch.yml").exists());
+
+        safely_remove_groups(&groups, &context, &[]).await.unwrap();
+        for name in ["desktop", "web"] {
+            let content = tokio::fs::read_to_string(
+                root.join("profiles").join(name).join("cordis.patch.yml"),
+            )
+            .await
+            .unwrap();
+            assert!(!content.contains("llm-deepseek"));
+            assert!(!content.contains("llm-pi-ai"));
+        }
+        tokio::fs::remove_dir_all(&root).await.unwrap();
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProfileTemplateContext {
     pub profile: String,
@@ -43,7 +148,10 @@ pub fn profile_template_context(
 ) -> Result<ProfileTemplateContext, String> {
     let profile = validate_provider_profile(Some(profile))?;
     if !resolved.features.profiles.enabled && profile != DEFAULT_PROFILE {
-        return Err(crate::tr!("err.agent_config.profile_unsupported", resolved.name));
+        return Err(crate::tr!(
+            "err.agent_config.profile_unsupported",
+            resolved.name
+        ));
     }
 
     let relative_path = (profile != DEFAULT_PROFILE)
@@ -79,7 +187,10 @@ fn replace_profile_placeholders(
         output = output.replace("{profile.absolute_path}", value);
     }
     if output.contains("{profile") {
-        return Err(crate::tr!("err.agent_config.unknown_template_variable", output));
+        return Err(crate::tr!(
+            "err.agent_config.unknown_template_variable",
+            output
+        ));
     }
     Ok(output)
 }
@@ -124,6 +235,7 @@ fn resolve_operations(
                 file: replace_profile_placeholders(&operation.file, &context)?,
                 format: operation.format,
                 private: operation.private,
+                preserve_on_remove: operation.preserve_on_remove,
                 path: operation
                     .path
                     .iter()
@@ -148,7 +260,10 @@ fn operations_for_profile<'a>(
         return Ok(&resolved.features.provider_config.operations);
     }
     if !resolved.features.profiles.enabled {
-        return Err(crate::tr!("err.agent_config.profile_unsupported", resolved.name));
+        return Err(crate::tr!(
+            "err.agent_config.profile_unsupported",
+            resolved.name
+        ));
     }
     Ok(&resolved.features.profiles.operations)
 }
@@ -178,34 +293,43 @@ pub async fn profile_operation_paths(
         .collect())
 }
 
+fn operation_paths(config_dir: &Path, operation: &ConfigOperation) -> Result<Vec<PathBuf>, String> {
+    if operation.format == ConfigFormat::CordisYaml {
+        crate::services::dsh_config::resolve_cordis_targets(config_dir, &operation.file)
+    } else {
+        crate::services::cli_config::resolve_cli_config_file_targets(config_dir, &operation.file)
+    }
+}
+
 fn group_operations(
     config_dir: &Path,
     operations: &[ConfigOperation],
 ) -> Result<Vec<OperationGroup>, String> {
     let mut groups: Vec<OperationGroup> = Vec::new();
     for operation in operations {
-        let path = resolve_cli_config_file_from_dir(config_dir, &operation.file);
-        if let Some(group) = groups.iter_mut().find(|group| group.path == path) {
-            if group.format != operation.format {
-                return Err(crate::tr!(
-                    "err.agent_config.provider_file_format_conflict",
-                    operation.file
-                ));
+        for path in operation_paths(config_dir, operation)? {
+            if let Some(group) = groups.iter_mut().find(|group| group.path == path) {
+                if group.format != operation.format {
+                    return Err(crate::tr!(
+                        "err.agent_config.provider_file_format_conflict",
+                        operation.file
+                    ));
+                }
+                if group.private != operation.private {
+                    return Err(crate::tr!(
+                        "err.agent_config.provider_file_private_conflict",
+                        operation.file
+                    ));
+                }
+                group.operations.push(operation.clone());
+            } else {
+                groups.push(OperationGroup {
+                    path,
+                    format: operation.format,
+                    private: operation.private,
+                    operations: vec![operation.clone()],
+                });
             }
-            if group.private != operation.private {
-                return Err(crate::tr!(
-                    "err.agent_config.provider_file_private_conflict",
-                    operation.file
-                ));
-            }
-            group.operations.push(operation.clone());
-        } else {
-            groups.push(OperationGroup {
-                path,
-                format: operation.format,
-                private: operation.private,
-                operations: vec![operation.clone()],
-            });
         }
     }
     Ok(groups)
@@ -218,7 +342,10 @@ fn ensure_group(
 ) -> Result<(), String> {
     if let Some(group) = groups.iter().find(|group| group.path == path) {
         if group.format != format {
-            return Err(crate::tr!("err.agent_config.file_format_conflict", path.display()));
+            return Err(crate::tr!(
+                "err.agent_config.file_format_conflict",
+                path.display()
+            ));
         }
     } else {
         groups.push(OperationGroup {
@@ -272,21 +399,22 @@ pub async fn profile_file(
 ) -> Result<Option<(String, PathBuf)>, String> {
     let resolved = resolved_agent(db, agent_id).await?;
     let context = profile_template_context(&resolved, profile)?;
-    let file = if context.profile == DEFAULT_PROFILE {
-        resolved
-            .features
-            .provider_config
-            .operations
-            .first()
-            .map(|operation| operation.file.clone())
-    } else {
-        context.relative_path
-    };
-    let Some(file) = file else {
-        return Ok(None);
-    };
     let config_dir = get_cli_config_dir_path(db, agent_id).await;
-    let path = resolve_cli_config_file_from_dir(&config_dir, &file);
+    let (file, path) = if context.profile == DEFAULT_PROFILE {
+        let Some(operation) = resolved.features.provider_config.operations.first() else {
+            return Ok(None);
+        };
+        let Some(path) = operation_paths(&config_dir, operation)?.into_iter().next() else {
+            return Ok(None);
+        };
+        (operation.file.clone(), path)
+    } else {
+        let Some(file) = context.relative_path else {
+            return Ok(None);
+        };
+        let path = resolve_cli_config_file_from_dir(&config_dir, &file);
+        (file, path)
+    };
     Ok(Some((file, path)))
 }
 
@@ -353,7 +481,10 @@ pub async fn profile_settings_status(
 ) -> Result<ProfileSettingsStatus, String> {
     let profile = validate_provider_profile(Some(profile))?;
     let Some((filename, path)) = profile_file(db, agent_id, &profile).await? else {
-        return Err(crate::tr!("err.agent_config.profile_file_not_declared", agent_id));
+        return Err(crate::tr!(
+            "err.agent_config.profile_file_not_declared",
+            agent_id
+        ));
     };
     let exists = tokio::fs::try_exists(&path).await.unwrap_or(false);
     let launch_command = profile_launch_command(db, agent_id, &profile).await?;
@@ -401,16 +532,16 @@ pub async fn ensure_profile_settings(
     profile_settings_status(db, agent_id, gateway_url, &profile).await
 }
 
-fn preset_target(
+fn preset_targets(
     resolved: &AgentInfo,
     config_dir: &Path,
     profile: &str,
     current: &str,
     previous: Option<&str>,
-) -> Result<Option<PresetTarget>, String> {
+) -> Result<Vec<PresetTarget>, String> {
     let feature = &resolved.features.global_preset;
     if !feature.enabled || profile != DEFAULT_PROFILE {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let template = profile_template_context(resolved, profile)?;
     let file = replace_profile_placeholders(
@@ -423,29 +554,42 @@ fn preset_target(
     let format = feature
         .format
         .ok_or_else(|| crate::tr!("err.agent_config.global_preset_format_missing"))?;
-    Ok(Some(PresetTarget {
-        path: resolve_cli_config_file_from_dir(config_dir, &file),
-        format,
-        current: current.to_string(),
-        previous: previous
-            .map(str::trim)
-            .filter(|value| !value.is_empty() && *value != current.trim())
-            .map(str::to_string),
-    }))
+    let paths = if format == ConfigFormat::CordisYaml {
+        crate::services::dsh_config::resolve_cordis_targets(config_dir, &file)?
+    } else {
+        crate::services::cli_config::resolve_cli_config_file_targets(config_dir, &file)?
+    };
+    let previous = previous
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value != current.trim())
+        .map(str::to_string);
+    Ok(paths
+        .into_iter()
+        .map(|path| PresetTarget {
+            path,
+            format,
+            current: current.to_string(),
+            previous: previous.clone(),
+        })
+        .collect())
 }
 
 async fn read_optional(path: &Path) -> Result<Option<String>, String> {
     match tokio::fs::read_to_string(path).await {
         Ok(content) => Ok(Some(content)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(crate::tr!("err.agent_config.read_file_failed", path.display(), error)),
+        Err(error) => Err(crate::tr!(
+            "err.agent_config.read_file_failed",
+            path.display(),
+            error
+        )),
     }
 }
 
 async fn apply_enabled_groups(
     groups: &[OperationGroup],
     context: &PatchContext,
-    preset: Option<&PresetTarget>,
+    presets: &[PresetTarget],
     write_mode: &str,
 ) -> Result<Vec<PathBuf>, String> {
     if !matches!(write_mode, "merge" | "overwrite") {
@@ -455,12 +599,12 @@ async fn apply_enabled_groups(
     let mut prepared = Vec::with_capacity(groups.len());
     for group in groups {
         let existing = read_optional(&group.path).await?.unwrap_or_default();
-        let mut content = if write_mode == "overwrite" {
-            String::new()
+        let mut content = if write_mode == "overwrite" && !group.private {
+            config_patch::reset_content(group.format, &existing)?
         } else {
             existing
         };
-        if let Some(preset) = preset.filter(|preset| preset.path == group.path) {
+        if let Some(preset) = presets.iter().find(|preset| preset.path == group.path) {
             if write_mode == "merge" {
                 if let Some(previous) = preset.previous.as_deref() {
                     let previous = config_patch::sanitize_preset(
@@ -499,14 +643,14 @@ async fn apply_enabled_groups(
 async fn safely_remove_groups(
     groups: &[OperationGroup],
     context: &PatchContext,
-    preset: Option<&PresetTarget>,
+    presets: &[PresetTarget],
 ) -> Result<Vec<PathBuf>, String> {
     let mut prepared = Vec::new();
     for group in groups {
         let Some(mut content) = read_optional(&group.path).await? else {
             continue;
         };
-        if let Some(preset) = preset.filter(|preset| preset.path == group.path) {
+        if let Some(preset) = presets.iter().find(|preset| preset.path == group.path) {
             match config_patch::sanitize_preset(
                 group.format,
                 &preset.current,
@@ -584,30 +728,34 @@ pub async fn sync_global_preset(
     write_mode: &str,
 ) -> Result<Vec<PathBuf>, String> {
     let resolved = resolved_agent(db, agent_id).await?;
+    crate::services::dsh_config::clean_legacy_config(db, &resolved).await?;
     if !resolved.features.global_preset.enabled {
         return if enabled && !current_preset.trim().is_empty() {
-            Err(crate::tr!("err.agent_config.global_preset_disabled", resolved.name))
+            Err(crate::tr!(
+                "err.agent_config.global_preset_disabled",
+                resolved.name
+            ))
         } else {
             Ok(Vec::new())
         };
     }
 
     let config_dir = get_cli_config_dir_path(db, agent_id).await;
-    let Some(preset) = preset_target(
+    let presets = preset_targets(
         &resolved,
         &config_dir,
         DEFAULT_PROFILE,
         current_preset,
         previous_preset,
-    )?
-    else {
+    )?;
+    if presets.is_empty() {
         return Ok(Vec::new());
-    };
+    }
 
     if enabled
         && write_mode == "merge"
         && current_preset.trim().is_empty()
-        && preset.previous.is_none()
+        && presets.iter().all(|preset| preset.previous.is_none())
     {
         return Ok(Vec::new());
     }
@@ -615,17 +763,20 @@ pub async fn sync_global_preset(
         return Ok(Vec::new());
     }
 
-    let groups = vec![OperationGroup {
-        path: preset.path.clone(),
-        format: preset.format,
-        private: false,
-        operations: Vec::new(),
-    }];
+    let groups: Vec<OperationGroup> = presets
+        .iter()
+        .map(|preset| OperationGroup {
+            path: preset.path.clone(),
+            format: preset.format,
+            private: false,
+            operations: Vec::new(),
+        })
+        .collect();
     let context = gateway_context(agent_id, DEFAULT_PROFILE, "");
     if enabled {
-        apply_enabled_groups(&groups, &context, Some(&preset), write_mode).await
+        apply_enabled_groups(&groups, &context, &presets, write_mode).await
     } else {
-        safely_remove_groups(&groups, &context, Some(&preset)).await
+        safely_remove_groups(&groups, &context, &presets).await
     }
 }
 
@@ -640,6 +791,7 @@ pub async fn sync_proxy_route_config(
     write_mode: &str,
 ) -> Result<Vec<PathBuf>, String> {
     let resolved = resolved_agent(db, agent_id).await?;
+    crate::services::dsh_config::clean_legacy_config(db, &resolved).await?;
     let feature = &resolved.features.provider_config;
     if enabled && !feature.enabled {
         return Err(crate::tr!("err.agent_config.provider_config_disabled"));
@@ -648,21 +800,21 @@ pub async fn sync_proxy_route_config(
     let operations = resolve_profile_operations(&resolved, profile)?;
     let config_dir = get_cli_config_dir_path(db, agent_id).await;
     let mut groups = group_operations(&config_dir, &operations)?;
-    let preset = preset_target(
+    let presets = preset_targets(
         &resolved,
         &config_dir,
         profile,
         current_preset,
         previous_preset,
     )?;
-    if let Some(preset) = &preset {
+    for preset in &presets {
         ensure_group(&mut groups, &preset.path, preset.format)?;
     }
     let context = gateway_context(agent_id, profile, gateway_endpoint);
     if enabled {
-        apply_enabled_groups(&groups, &context, preset.as_ref(), write_mode).await
+        apply_enabled_groups(&groups, &context, &presets, write_mode).await
     } else {
-        safely_remove_groups(&groups, &context, preset.as_ref()).await
+        safely_remove_groups(&groups, &context, &presets).await
     }
 }
 
@@ -704,7 +856,11 @@ pub async fn migrate_gateway_endpoints(
         };
         if config_patch::operations_applied(group.format, &content, &group.operations, &new_context)
             .map_err(|error| {
-                crate::tr!("err.agent_config.parse_file_failed", group.path.display(), error)
+                crate::tr!(
+                    "err.agent_config.parse_file_failed",
+                    group.path.display(),
+                    error
+                )
             })?
         {
             continue;
@@ -713,7 +869,11 @@ pub async fn migrate_gateway_endpoints(
         for context in &old_contexts {
             if config_patch::operations_applied(group.format, &content, &group.operations, context)
                 .map_err(|error| {
-                    crate::tr!("err.agent_config.parse_file_failed", group.path.display(), error)
+                    crate::tr!(
+                        "err.agent_config.parse_file_failed",
+                        group.path.display(),
+                        error
+                    )
                 })?
             {
                 matches_old = true;
@@ -771,32 +931,30 @@ async fn write_provider_direct_config_impl(
     write_mode_override: Option<&str>,
 ) -> Result<Vec<PathBuf>, String> {
     let resolved = resolved_agent(db, &provider.cli_type).await?;
+    crate::services::dsh_config::clean_legacy_config(db, &resolved).await?;
     let feature = &resolved.features.provider_config;
     if !feature.enabled {
-        return Err(crate::tr!("err.agent_config.provider_direct_unsupported", resolved.name));
+        return Err(crate::tr!(
+            "err.agent_config.provider_direct_unsupported",
+            resolved.name
+        ));
     }
     let operations = resolve_profile_operations(&resolved, &provider.profile)?;
     let config_dir = get_cli_config_dir_path(db, &provider.cli_type).await;
     let mut groups = group_operations(&config_dir, &operations)?;
     let (current_preset, stored_write_mode) = cli_preset_settings(db, &provider.cli_type).await?;
     let write_mode = write_mode_override.unwrap_or(&stored_write_mode);
-    let preset = preset_target(
+    let presets = preset_targets(
         &resolved,
         &config_dir,
         &provider.profile,
         &current_preset,
         previous_preset,
     )?;
-    if let Some(preset) = &preset {
+    for preset in &presets {
         ensure_group(&mut groups, &preset.path, preset.format)?;
     }
-    apply_enabled_groups(
-        &groups,
-        &provider_context(provider),
-        preset.as_ref(),
-        write_mode,
-    )
-    .await
+    apply_enabled_groups(&groups, &provider_context(provider), &presets, write_mode).await
 }
 
 pub async fn write_provider_direct_config_with_previous(
@@ -834,7 +992,7 @@ pub async fn remove_provider_direct_config_for_provider(
     let operations = resolve_profile_operations(&resolved, &provider.profile)?;
     let config_dir = get_cli_config_dir_path(db, &provider.cli_type).await;
     let groups = group_operations(&config_dir, &operations)?;
-    safely_remove_groups(&groups, &provider_context(provider), None).await
+    safely_remove_groups(&groups, &provider_context(provider), &[]).await
 }
 
 async fn providers_for_profile(
@@ -952,5 +1110,5 @@ pub async fn remove_default_provider_direct_config(
     let Some(provider) = selected else {
         return Ok(Vec::new());
     };
-    safely_remove_groups(&groups, &provider_context(&provider), None).await
+    safely_remove_groups(&groups, &provider_context(&provider), &[]).await
 }
