@@ -3765,8 +3765,8 @@ fn delete_pi_family_project(base_dir: &std::path::Path, project_name: &str) -> R
 // dsh 把每个会话存成独立的 JSONL 日志：
 //   <config_dir>/sessions/--<cwd>--/<session-id>/session.vN.jsonl[.zstd]
 // 第一行是物理 header（version/id/createdAt/cwd），后续每行是一个 SessionEvent：
-//   user/message、assistant/message、tool/call、tool/result、system/message 等。
-// 只读解析，删除由 dsh 自己管理。
+//   user/message（source.kind == "user" 才是人类输入）、assistant/message、
+//   tool/call、tool/result、session/title 等。只读解析，删除由 dsh 自己管理。
 
 fn dsh_sessions_root(base_dir: &std::path::Path) -> std::path::PathBuf {
     base_dir.join("sessions")
@@ -3845,6 +3845,19 @@ fn dsh_content_text(value: &serde_json::Value) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
         serde_json::Value::Object(object) => {
+            if let Some(kind) = object.get("type").and_then(|v| v.as_str()) {
+                if kind == "reasoning" || kind == "thinking" {
+                    let thinking = object
+                        .get("text")
+                        .or_else(|| object.get("thinking"))
+                        .or_else(|| object.get("reasoning"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !thinking.is_empty() {
+                        return crate::tr!("session.thinking", thinking);
+                    }
+                }
+            }
             if let Some(text) = object.get("text").and_then(|v| v.as_str()) {
                 return text.to_string();
             }
@@ -3876,7 +3889,7 @@ fn dsh_content_text(value: &serde_json::Value) -> String {
                             return crate::tr!("session.tool_result", result);
                         }
                     }
-                    "image" | "image_url" => return "[image]".to_string(),
+                    "image" | "image_url" => return crate::tr!("session.image"),
                     _ => {}
                 }
             }
@@ -3892,6 +3905,17 @@ fn dsh_content_text(value: &serde_json::Value) -> String {
     }
 }
 
+fn dsh_is_human_user(data: &serde_json::Value) -> bool {
+    match data
+        .get("source")
+        .and_then(|source| source.get("kind"))
+        .and_then(|kind| kind.as_str())
+    {
+        Some(kind) => kind == "user",
+        None => true,
+    }
+}
+
 fn dsh_event_message(line: &str) -> Option<SessionMessage> {
     let value: serde_json::Value = serde_json::from_str(line).ok()?;
     let event_type = value.get("type")?.as_str()?;
@@ -3901,7 +3925,10 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
         .and_then(|v| v.as_i64())
         .map(|time| time / 1000);
     let (role, content) = match event_type {
-        "user/message" => ("user", dsh_content_text(data.get("content")?)),
+        "user/message" if dsh_is_human_user(&data) => {
+            ("user", dsh_content_text(data.get("content")?))
+        }
+        "user/message" => return None,
         "assistant/message" => {
             let message = data.get("message")?;
             let content = message
@@ -3953,11 +3980,13 @@ fn dsh_first_user_message(text: &str) -> String {
         if value.get("type").and_then(|v| v.as_str()) != Some("user/message") {
             continue;
         }
-        if let Some(content) = value
-            .get("data")
-            .and_then(|data| data.get("content"))
-            .map(dsh_content_text)
-        {
+        let Some(data) = value.get("data") else {
+            continue;
+        };
+        if !dsh_is_human_user(data) {
+            continue;
+        }
+        if let Some(content) = data.get("content").map(dsh_content_text) {
             let content = content.trim();
             if !content.is_empty() {
                 return content.chars().take(200).collect();
@@ -3965,6 +3994,28 @@ fn dsh_first_user_message(text: &str) -> String {
         }
     }
     String::new()
+}
+
+fn dsh_session_title(text: &str) -> Option<String> {
+    let mut title = None;
+    for line in text.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("type").and_then(|v| v.as_str()) != Some("session/title") {
+            continue;
+        }
+        if let Some(next) = value
+            .get("data")
+            .and_then(|data| data.get("title"))
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            title = Some(next.to_string());
+        }
+    }
+    title
 }
 
 fn dsh_project_cwd(project_dir: &std::path::Path) -> Option<String> {
@@ -4095,14 +4146,7 @@ fn get_dsh_sessions(
                 .unwrap_or(0.0);
             let text = dsh_read_session_text(&file).unwrap_or_default();
             let first_message = dsh_first_user_message(&text);
-            let summary = dsh_header(&text)
-                .and_then(|header| {
-                    header
-                        .get("title")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_string)
-                })
-                .unwrap_or_else(|| first_message.clone());
+            let summary = dsh_session_title(&text).unwrap_or_else(|| first_message.clone());
             sessions.push(SessionInfo {
                 session_id: entry.file_name().to_string_lossy().to_string(),
                 size,
@@ -4848,6 +4892,82 @@ mod dsh_session_tests {
 {"type":"user/message","data":{"content":[{"type":"text","text":"first question"}]}}
 {"type":"assistant/message","data":{"message":{"content":"answer"}}}"#;
         assert_eq!(dsh_first_user_message(text), "first question");
+    }
+
+    #[test]
+    fn skips_synthetic_user_messages() {
+        let synthetic = r#"{"type":"user/message","data":{"content":"skill catalog","source":{"kind":"skill"}}}"#;
+        assert!(dsh_event_message(synthetic).is_none());
+
+        let text = r#"{"version":4,"id":"s1","cwd":"/work"}
+{"type":"user/message","data":{"content":"skill catalog","source":{"kind":"skill"}}}
+{"type":"user/message","data":{"content":"real prompt","source":{"kind":"user"}}}"#;
+        assert_eq!(dsh_first_user_message(text), "real prompt");
+    }
+
+    #[test]
+    fn reads_latest_session_title() {
+        let text = r#"{"version":4,"id":"s1","cwd":"/work"}
+{"type":"session/title","data":{"title":"First title","messageSeqs":[],"source":{"kind":"fallback"}}}
+{"type":"session/title","data":{"title":"Latest title","messageSeqs":[],"source":{"kind":"user"}}}"#;
+        assert_eq!(dsh_session_title(text).as_deref(), Some("Latest title"));
+    }
+
+    #[test]
+    fn marks_reasoning_blocks_as_thinking() {
+        let content = serde_json::json!([
+            { "type": "reasoning", "text": "plan" },
+            { "type": "text", "text": "answer" }
+        ]);
+        let text = dsh_content_text(&content);
+        assert!(text.contains("answer"));
+        assert!(text.contains(&crate::tr!("session.thinking", "plan")));
+    }
+
+    #[test]
+    fn reads_concatenated_zstd_frames() {
+        let dir = std::env::temp_dir().join(format!("ccg-dsh-zstd-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.v4.jsonl.zstd");
+        let header = "{\"type\":\"session\",\"version\":4,\"id\":\"s1\",\"createdAt\":1700000000000,\"cwd\":\"/work\"}\n";
+        let event = "{\"type\":\"user/message\",\"time\":1700000000000,\"data\":{\"role\":\"user\",\"content\":\"hello\",\"source\":{\"kind\":\"user\"}}}\n";
+        let mut bytes = zstd::encode_all(header.as_bytes(), 0).unwrap();
+        bytes.extend(zstd::encode_all(event.as_bytes(), 0).unwrap());
+        std::fs::write(&path, bytes).unwrap();
+
+        let text = dsh_read_session_text(&path).unwrap();
+        assert!(text.contains("\"type\":\"session\""));
+        assert!(text.contains("hello"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn selects_newest_session_file() {
+        let dir = std::env::temp_dir().join(format!("ccg-dsh-version-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("session.v3.jsonl"), "").unwrap();
+        std::fs::write(dir.join("session.v4.jsonl"), "").unwrap();
+        assert_eq!(
+            dsh_session_file(&dir)
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy(),
+            "session.v4.jsonl"
+        );
+
+        std::fs::write(dir.join("session.v4.jsonl.zstd"), "").unwrap();
+        assert_eq!(
+            dsh_session_file(&dir)
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy(),
+            "session.v4.jsonl.zstd"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

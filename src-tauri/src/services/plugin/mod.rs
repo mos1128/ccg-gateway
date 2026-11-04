@@ -6,7 +6,8 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::process::Command;
 
-const CLI_TIMEOUT: Duration = Duration::from_secs(15);
+// dsh plugin add/update may run npm or git; allow a real install to finish.
+const CLI_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub(crate) type Result<T> = std::result::Result<T, String>;
 

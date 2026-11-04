@@ -476,7 +476,7 @@ DeepSeek Harness 模板接管原生 `llm-deepseek`（DeepSeek 官方 API 路由�
 
 写入或切换模式时，DSH 适配会通过 YAML 节点编辑，清理旧 `settings.yaml` 和已初始化 profile 的 `cordis.patch.yml` 中使用 `CCG_GATEWAY_API_KEY` 的路由字段。直接移除对应字段，不追加覆盖条目；保留其他配置、注释、管理标记和 `!!js` 表达式，支持块式、流式 YAML 及文档结束符。写回前校验完整 YAML，清理幂等，避免关闭新管理块后重新启用旧网关地址。`settings.yaml.imported` 是 DSH 的历史导入文件，不参与运行配置，CCG 不修改它。
 
-DSH 的会话位于 `<config_dir>/sessions/--<cwd>--/<session-id>/session.vN.jsonl[.zstd]`。`dsh` session adapter 只读解析物理 header、`user/message`、`assistant/message`、`tool/call` 和 `tool/result`，支持 raw JSONL 与 Zstandard 压缩；删除操作被拒绝，由 DSH 自己管理会话文件。
+DSH 的会话位于 `<config_dir>/sessions/--<cwd>--/<session-id>/session.vN.jsonl[.zstd]`。`dsh` session adapter 只读解析物理 header、human `user/message`（按 `source.kind` 过滤插件注入）、`assistant/message`、`tool/call`、`tool/result` 和 `session/title`，支持 raw JSONL 与 Zstandard 压缩；删除操作被拒绝，由 DSH 自己管理会话文件。
 
 ### ZCode：深层路径、数字和嵌套 `servers_path`
 
