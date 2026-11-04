@@ -4796,3 +4796,244 @@ pub async fn delete_project(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod dsh_session_tests {
+    use super::*;
+
+    #[test]
+    fn parses_session_file_versions() {
+        assert_eq!(dsh_session_version("session.jsonl"), Some((0, false)));
+        assert_eq!(dsh_session_version("session.v1.jsonl"), Some((1, false)));
+        assert_eq!(
+            dsh_session_version("session.v3.jsonl.zstd"),
+            Some((3, true))
+        );
+        assert_eq!(dsh_session_version("other.jsonl"), None);
+    }
+
+    #[test]
+    fn parses_user_and_assistant_messages() {
+        let user = r#"{"type":"user/message","time":1700000000000,"data":{"role":"user","content":"hello"}}"#;
+        let message = dsh_event_message(user).expect("user message");
+        assert_eq!(message.role, "user");
+        assert_eq!(message.content, "hello");
+        assert_eq!(message.timestamp, Some(1700000000));
+
+        let assistant = r#"{"type":"assistant/message","time":1700000001000,"data":{"message":{"role":"assistant","content":[{"type":"text","text":"hi"},{"type":"thinking","thinking":"plan"}]}}}"#;
+        let message = dsh_event_message(assistant).expect("assistant message");
+        assert_eq!(message.role, "assistant");
+        assert!(message.content.contains("hi"));
+        assert!(message.content.contains("plan"));
+    }
+
+    #[test]
+    fn parses_tool_events() {
+        let call =
+            r#"{"type":"tool/call","data":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}"#;
+        let message = dsh_event_message(call).expect("tool call");
+        assert_eq!(message.role, "assistant");
+        assert!(message.content.contains("read_file"));
+
+        let result =
+            r#"{"type":"tool/result","data":{"message":{"role":"tool","content":"done"}}}"#;
+        let message = dsh_event_message(result).expect("tool result");
+        assert_eq!(message.role, "user");
+        assert!(message.content.contains("done"));
+    }
+
+    #[test]
+    fn extracts_first_user_message() {
+        let text = r#"{"version":3,"id":"s1","cwd":"/work"}
+{"type":"user/message","data":{"content":[{"type":"text","text":"first question"}]}}
+{"type":"assistant/message","data":{"message":{"content":"answer"}}}"#;
+        assert_eq!(dsh_first_user_message(text), "first question");
+    }
+
+    #[test]
+    fn claude_project_reads_real_cwd_instead_of_decoding_name() {
+        let dir =
+            std::env::temp_dir().join(format!("ccg-claude-project-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = format!(
+            "{}{}新建文件夹",
+            std::env::temp_dir().display(),
+            std::path::MAIN_SEPARATOR
+        );
+        let line = serde_json::json!({
+            "type": "user",
+            "message": { "role": "user", "content": "hi" },
+            "cwd": cwd,
+        })
+        .to_string();
+        std::fs::write(dir.join("session.jsonl"), line).unwrap();
+
+        assert_eq!(claude_project_cwd(&dir).as_deref(), Some(cwd.as_str()));
+        let (display_name, full_path) =
+            decode_claude_project_info("C--Users-mos-Desktop------", &dir);
+        assert_eq!(display_name, "新建文件夹");
+        assert_eq!(full_path, cwd);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    async fn opencode_test_connection() -> SqliteConnection {
+        let mut connection = SqliteConnection::connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite");
+
+        sqlx::query(
+            "CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT, name TEXT, time_updated INTEGER)",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TABLE session_v2 (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                parent_id TEXT,
+                title TEXT,
+                time_created INTEGER,
+                time_updated INTEGER,
+                time_archived INTEGER
+            )
+            "#,
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            CREATE TABLE session_message (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                type TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                time_created INTEGER,
+                time_updated INTEGER,
+                data TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+
+        connection
+    }
+
+    #[tokio::test]
+    async fn reads_opencode_v2_sessions_and_messages() {
+        let mut connection = opencode_test_connection().await;
+        sqlx::query(
+            "INSERT INTO project (id, worktree, name, time_updated) VALUES ('p1', '/work', 'Work', 1700000000000)",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            INSERT INTO session_v2
+                (id, project_id, parent_id, title, time_created, time_updated, time_archived)
+            VALUES
+                ('s1', 'p1', NULL, 'V2 title', 1700000000000, 1700000002000, NULL)
+            "#,
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES ('m1', 's1', 'user', 1, 1700000000000, 1700000000000, ?)",
+        )
+        .bind(r#"{"time":{"created":1700000000000},"text":"hello v2"}"#)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES ('m2', 's1', 'assistant', 2, 1700000001000, 1700000001000, ?)",
+        )
+        .bind(
+            r#"{"time":{"created":1700000001000},"content":[{"type":"reasoning","text":"think"},{"type":"text","text":"hi"},{"type":"tool","name":"shell","state":{"input":{"command":"ls"},"content":[{"type":"text","text":"file.txt"}]}}]}"#,
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+
+        let projects = query_opencode_projects(&mut connection, 1, 20)
+            .await
+            .expect("projects");
+        assert_eq!(projects.total, 1);
+        assert_eq!(projects.items[0].session_count, 1);
+        assert!(projects.items[0].total_size > 0);
+
+        let sessions = query_opencode_sessions(&mut connection, "p1", 1, 20)
+            .await
+            .expect("sessions");
+        assert_eq!(sessions.total, 1);
+        assert_eq!(sessions.items[0].first_message, "hello v2");
+        assert_eq!(sessions.items[0].summary, "V2 title");
+
+        let messages = query_opencode_messages(&mut connection, "p1", "s1")
+            .await
+            .expect("messages");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "hello v2");
+        assert_eq!(messages[1].role, "assistant");
+        assert!(messages[1].content.contains("think"));
+        assert!(messages[1].content.contains("hi"));
+        assert!(messages[1].content.contains("shell"));
+        assert!(messages[1].content.contains("file.txt"));
+    }
+}
+
+#[cfg(test)]
+mod kimi_session_tests {
+    use super::*;
+
+    #[test]
+    fn parses_prompt_assistant_tool_call_and_result() {
+        let wire = r#"{"type":"turn.prompt","input":[{"type":"text","text":"check the repo"}],"time":1000}
+{"type":"context.append_message","message":{"role":"user","content":[{"type":"text","text":"check the repo"}],"toolCalls":[]},"time":1002}
+{"type":"context.append_loop_event","event":{"type":"step.begin","uuid":"step-1"},"time":1003}
+{"type":"context.append_loop_event","event":{"type":"content.part","stepUuid":"step-1","part":{"type":"think","think":"look around"}},"time":1004}
+{"type":"context.append_loop_event","event":{"type":"content.part","stepUuid":"step-1","part":{"type":"text","text":"I will inspect it."}},"time":1005}
+{"type":"context.append_loop_event","event":{"type":"tool.call","stepUuid":"step-1","toolCallId":"call-1","name":"Bash","args":{"command":"ls"}},"time":1006}
+{"type":"context.append_loop_event","event":{"type":"step.end","uuid":"step-1","finishReason":"tool_use"},"time":1007}
+{"type":"context.append_loop_event","event":{"type":"tool.result","toolCallId":"call-1","result":{"output":[{"type":"text","text":"a.txt"},{"type":"text","text":"b.txt"}]}},"time":1008}"#;
+
+        let messages = parse_kimi_wire_jsonl(wire).expect("messages");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "check the repo");
+        assert_eq!(messages[1].role, "assistant");
+        assert!(messages[1].content.contains("look around"));
+        assert!(messages[1].content.contains("I will inspect it."));
+        assert!(messages[1].content.contains("Bash"));
+        assert!(messages[1].content.contains("\"command\": \"ls\""));
+        assert_eq!(messages[2].role, "user");
+        assert!(messages[2].content.contains("a.txt"));
+        assert!(messages[2].content.contains("b.txt"));
+    }
+
+    #[test]
+    fn session_size_includes_nested_agent_files() {
+        let dir =
+            std::env::temp_dir().join(format!("ccg-kimi-session-size-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("agents").join("main")).unwrap();
+        std::fs::write(dir.join("state.json"), b"1234").unwrap();
+        std::fs::write(
+            dir.join("agents").join("main").join("wire.jsonl"),
+            b"123456",
+        )
+        .unwrap();
+
+        assert_eq!(kimi_session_size(&dir), 10);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

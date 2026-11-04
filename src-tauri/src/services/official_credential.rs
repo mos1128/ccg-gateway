@@ -20,6 +20,17 @@ enum PreparedFile {
 mod tests {
     use super::*;
 
+    fn kimi_managed_config() -> crate::db::models::OfficialManagedConfig {
+        let definition: crate::db::models::AgentDefinition =
+            serde_json::from_str(include_str!("../../agent-definitions/kimi_code.json"))
+                .expect("kimi template");
+        definition
+            .features
+            .official_login
+            .managed_config
+            .expect("kimi managed config")
+    }
+
     #[tokio::test]
     async fn dsh_account_snapshot_excludes_shared_records_and_switch_merges_grant() {
         let root =
@@ -74,6 +85,112 @@ mod tests {
             .remove("deepseek-account-platform/default");
         assert_eq!(removed, expected);
         db.close().await;
+        tokio::fs::remove_dir_all(&root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn kimi_official_config_restores_provider_and_keeps_base_url() {
+        let root =
+            std::env::temp_dir().join(format!("ccg-kimi-account-check-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        let path = root.join("config.toml");
+        let managed = kimi_managed_config();
+
+        ensure_managed_official_config(&root, &managed)
+            .await
+            .unwrap();
+        let value: ::toml::Value =
+            ::toml::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(
+            value["providers"]["managed:kimi-code"]["type"].as_str(),
+            Some(managed.provider_type.as_str())
+        );
+        assert_eq!(
+            value["providers"]["managed:kimi-code"]["base_url"].as_str(),
+            managed.base_url.as_deref()
+        );
+        assert_eq!(
+            value["providers"]["managed:kimi-code"]["oauth"]["storage"].as_str(),
+            Some(managed.oauth_storage.as_str())
+        );
+        assert_eq!(
+            value["providers"]["managed:kimi-code"]["oauth"]["key"].as_str(),
+            Some(managed.oauth_key.as_str())
+        );
+
+        tokio::fs::write(
+            &path,
+            r#"[providers."managed:kimi-code"]
+type = "kimi"
+base_url = "https://api.kimi.ai/coding/v1"
+"#,
+        )
+        .await
+        .unwrap();
+        ensure_managed_official_config(&root, &managed)
+            .await
+            .unwrap();
+        let value: ::toml::Value =
+            ::toml::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert_eq!(
+            value["providers"]["managed:kimi-code"]["base_url"].as_str(),
+            Some("https://api.kimi.ai/coding/v1")
+        );
+
+        tokio::fs::remove_dir_all(&root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn kimi_official_config_removal_keeps_user_entries() {
+        let root =
+            std::env::temp_dir().join(format!("ccg-kimi-logout-check-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        let path = root.join("config.toml");
+        tokio::fs::write(
+            &path,
+            r#"default_model = "kimi-code/k3"
+[providers."managed:kimi-code"]
+type = "kimi"
+api_key = ""
+base_url = "https://api.kimi.com/coding/v1"
+[providers."managed:kimi-code".oauth]
+storage = "file"
+key = "oauth/kimi-code"
+[providers.other]
+type = "openai"
+api_key = "keep"
+[models."kimi-code/k3"]
+provider = "managed:kimi-code"
+model = "k3"
+max_context_size = 1048576
+[models."other/model"]
+provider = "other"
+model = "model"
+max_context_size = 128000
+[services.moonshot_search]
+base_url = "https://api.kimi.com/coding/v1/search"
+oauth = { storage = "file", key = "oauth/kimi-code" }
+[services.moonshot_fetch]
+base_url = "https://api.kimi.com/coding/v1/fetch"
+oauth = { storage = "file", key = "oauth/kimi-code" }
+"#,
+        )
+        .await
+        .unwrap();
+
+        let managed = kimi_managed_config();
+        remove_managed_official_config(&root, &managed)
+            .await
+            .unwrap();
+        let value: ::toml::Value =
+            ::toml::from_str(&tokio::fs::read_to_string(&path).await.unwrap()).unwrap();
+        assert!(value.get("default_model").is_none());
+        assert!(value["providers"].get("managed:kimi-code").is_none());
+        assert!(value["providers"]["other"].is_table());
+        assert!(value["models"].get("kimi-code/k3").is_none());
+        assert!(value["models"]["other/model"].is_table());
+        assert!(value.get("services").is_none());
+
         tokio::fs::remove_dir_all(&root).await.unwrap();
     }
 }

@@ -386,3 +386,191 @@ pub fn sanitize_preset(
         context,
     )
 }
+
+#[cfg(test)]
+mod template_tests {
+    use super::*;
+    use crate::db::models::AgentDefinition;
+    use serde_json::Value;
+
+    #[test]
+    fn zcode_template_targets_desktop_only() {
+        let definition: AgentDefinition =
+            serde_json::from_str(include_str!("../../../agent-definitions/zcode.json"))
+                .expect("zcode template");
+        let operations = definition.features.provider_config.operations;
+        assert!(!operations.is_empty());
+        assert!(operations
+            .iter()
+            .all(|operation| operation.file == "v2/config.json"));
+    }
+
+    #[test]
+    fn opencode_template_uses_v2_provider_keys() {
+        let definition: AgentDefinition =
+            serde_json::from_str(include_str!("../../../agent-definitions/opencode.json"))
+                .expect("opencode template");
+        let operations = definition.features.provider_config.operations;
+        let context = PatchContext {
+            target_endpoint: "https://gateway.test".to_string(),
+            target_token: "token-123".to_string(),
+            agent_id: "opencode".to_string(),
+        };
+        let output = patch_content(ConfigFormat::Json, "{}", &operations, &context).unwrap();
+        let value: Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(
+            value["providers"]["anthropic"]["settings"]["baseURL"],
+            "https://gateway.test/v1"
+        );
+        assert_eq!(
+            value["providers"]["openai"]["settings"]["apiKey"],
+            "token-123"
+        );
+        assert!(value.get("provider").is_none());
+        assert_eq!(
+            definition.features.mcp.servers_path,
+            vec!["mcp".to_string(), "servers".to_string()]
+        );
+    }
+}
+
+#[cfg(test)]
+mod kimi_template_tests {
+    use super::*;
+    use crate::db::models::AgentDefinition;
+    use serde_json::Value;
+
+    #[test]
+    fn kimi_template_sets_provider_protocols_and_paths() {
+        let definition: AgentDefinition =
+            serde_json::from_str(include_str!("../../../agent-definitions/kimi_code.json"))
+                .expect("kimi template");
+        let operations = definition.features.provider_config.operations;
+        let context = PatchContext {
+            target_endpoint: "https://gateway.test".to_string(),
+            target_token: "token-123".to_string(),
+            agent_id: "kimi_code".to_string(),
+        };
+        let output = patch_content(ConfigFormat::Toml, "", &operations, &context).unwrap();
+        let value: ::toml::Value = ::toml::from_str(&output).unwrap();
+
+        assert_eq!(
+            value["providers"]["anthropic"]["type"].as_str(),
+            Some("anthropic")
+        );
+        assert_eq!(
+            value["providers"]["anthropic"]["base_url"].as_str(),
+            Some("https://gateway.test")
+        );
+        assert_eq!(
+            value["providers"]["anthropic"]["api_key"].as_str(),
+            Some("token-123")
+        );
+        assert_eq!(
+            value["providers"]["openai"]["type"].as_str(),
+            Some("openai")
+        );
+        assert_eq!(
+            value["providers"]["openai"]["base_url"].as_str(),
+            Some("https://gateway.test")
+        );
+
+        let raw: Value =
+            serde_json::from_str(include_str!("../../../agent-definitions/kimi_code.json"))
+                .expect("kimi template json");
+        assert_eq!(raw["config_dir_env"], "KIMI_CODE_HOME");
+        assert_eq!(
+            raw["features"]["official_login"]["operations"][0]["file"],
+            "credentials/kimi-code.json"
+        );
+        assert_eq!(
+            raw["features"]["official_login"]["managed_config"]["provider"],
+            "managed:kimi-code"
+        );
+        assert_eq!(
+            raw["features"]["official_login"]["managed_config"]["oauth_key"],
+            "oauth/kimi-code"
+        );
+        assert_eq!(
+            raw["features"]["official_login"]["managed_config"]["oauth_storage"],
+            "file"
+        );
+    }
+}
+
+#[cfg(test)]
+mod agent_template_path_tests {
+    use crate::db::models::AgentDefinition;
+
+    fn definition(source: &str) -> AgentDefinition {
+        serde_json::from_str(source).expect("agent template")
+    }
+
+    fn first_operation_file(definition: &AgentDefinition) -> Option<&str> {
+        definition
+            .features
+            .provider_config
+            .operations
+            .first()
+            .map(|operation| operation.file.as_str())
+    }
+
+    #[test]
+    fn pi_template_uses_settings_and_auth_files() {
+        let definition = definition(include_str!("../../../agent-definitions/pi.json"));
+        assert_eq!(
+            definition.features.global_preset.file.as_deref(),
+            Some("agent/settings.json")
+        );
+        assert_eq!(first_operation_file(&definition), Some("agent/models.json"));
+
+        assert!(definition.features.official_login.enabled);
+        let operation = definition
+            .features
+            .official_login
+            .operations
+            .first()
+            .expect("pi auth operation");
+        assert_eq!(operation.file, "agent/auth.json");
+        assert_eq!(
+            operation
+                .content_from
+                .as_ref()
+                .map(|source| source.file_id.as_str()),
+            Some("pi_auth")
+        );
+    }
+
+    #[test]
+    fn omp_template_uses_config_yml_for_global_preset() {
+        let definition = definition(include_str!("../../../agent-definitions/omp.json"));
+        assert_eq!(
+            definition.features.global_preset.file.as_deref(),
+            Some("agent/config.yml")
+        );
+        assert_eq!(first_operation_file(&definition), Some("agent/models.yml"));
+    }
+
+    #[test]
+    fn grok_template_identifies_cli_and_shell() {
+        let definition = definition(include_str!("../../../agent-definitions/grok.json"));
+        assert!(definition
+            .user_agent
+            .iter()
+            .any(|value| value == "grok-cli"));
+        assert!(definition
+            .user_agent
+            .iter()
+            .any(|value| value == "grok-shell"));
+    }
+
+    #[test]
+    fn dsh_template_enables_readonly_sessions() {
+        let definition = definition(include_str!(
+            "../../../agent-definitions/deepseek_harness.json"
+        ));
+        assert!(definition.features.sessions.enabled);
+        assert_eq!(definition.features.sessions.adapter.as_deref(), Some("dsh"));
+    }
+}
