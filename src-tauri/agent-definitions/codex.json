@@ -3,6 +3,8 @@
   "id": "codex",
   "sort_order": 20,
   "name": "Codex",
+  "remark": "Codex 和 ChatGPT 桌面端共享配置",
+  "remark_en": "Codex and the ChatGPT desktop app share configuration.",
   "icon": {
     "view_box": "0 0 24 24",
     "paths": [
