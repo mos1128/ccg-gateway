@@ -2042,6 +2042,21 @@ fn get_kimi_projects(
     })
 }
 
+fn kimi_first_user_message(session_dir: &std::path::Path) -> String {
+    let wire = session_dir.join("agents").join("main").join("wire.jsonl");
+    let Ok(content) = std::fs::read_to_string(wire) else {
+        return String::new();
+    };
+    let Ok(messages) = parse_kimi_wire_jsonl(&content) else {
+        return String::new();
+    };
+    messages
+        .iter()
+        .find(|message| message.role == "user" && !message.content.trim().is_empty())
+        .map(|message| message.content.chars().take(200).collect())
+        .unwrap_or_default()
+}
+
 /// kimi-code 项目下的会话列表。
 fn get_kimi_sessions(
     home_dir: &std::path::Path,
@@ -2063,10 +2078,15 @@ fn get_kimi_sessions(
         let size = kimi_session_size(&session_dir);
         let wire_mtime = kimi_latest_wire_mtime(&session_dir);
         let mtime = updated_at.max(wire_mtime).max(created_at);
-        let first_message = if !title.is_empty() {
-            title
+        let first_message = kimi_first_user_message(&session_dir);
+        let first_message = if first_message.is_empty() {
+            if !title.is_empty() {
+                title
+            } else {
+                last_prompt
+            }
         } else {
-            last_prompt
+            first_message
         };
         sessions.push(SessionInfo {
             session_id,
@@ -2425,7 +2445,7 @@ fn get_kimi_messages(
 // rollout jsonl 每行是一条 model_io 记录：
 //   startedAt / model / request.body.input / response.text / response.toolCalls / error
 // input 是累积上下文（OpenAI responses 格式），含 developer 系统指令与 user 输入。
-// 还原消息流：逐条记录取最后一条真实 user 输入（跳过 system-reminder）+ response.text，按内容去重。
+// 还原消息流：按 input 顺序保留 user 消息（含 system-reminder）+ response.text，按内容去重。
 
 fn zcode_db_path(home_dir: &std::path::Path) -> std::path::PathBuf {
     home_dir.join("v2").join("tasks-index.sqlite")
@@ -2581,11 +2601,17 @@ async fn get_zcode_sessions(
         if db_mtime > mtime {
             mtime = db_mtime;
         }
+        let first_message = zcode_first_user_message(&home_dir, &task_id);
+        let first_message = if first_message.is_empty() {
+            title
+        } else {
+            first_message
+        };
         sessions.push(SessionInfo {
             session_id: task_id,
             size,
             mtime,
-            first_message: title,
+            first_message,
             git_branch: String::new(),
             summary: String::new(),
         });
@@ -2661,19 +2687,19 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
             .and_then(|t| t.as_str())
             .and_then(parse_zcode_time);
 
-        // 取 input 里最后一条真实 user 消息（跳过 system-reminder 注入）
+        // 按 input 顺序保留 user 消息；system-reminder 作为用户消息保留。
         if let Some(input) = rec
             .get("request")
             .and_then(|r| r.get("body"))
             .and_then(|b| b.get("input"))
             .and_then(|i| i.as_array())
         {
-            for msg in input.iter().rev() {
+            for msg in input {
                 if msg.get("role").and_then(|r| r.as_str()) != Some("user") {
                     continue;
                 }
                 let text = extract_zcode_input_text(msg);
-                if text.is_empty() || text.starts_with("<system-reminder>") {
+                if text.is_empty() {
                     continue;
                 }
                 if seen.insert(text.clone()) {
@@ -2683,7 +2709,6 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
                         timestamp,
                     });
                 }
-                break;
             }
         }
 
@@ -2730,6 +2755,30 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
     }
 
     Ok(messages)
+}
+
+fn zcode_first_user_message(home_dir: &std::path::Path, session_id: &str) -> String {
+    let rollout = zcode_rollout_path(home_dir, session_id);
+    let Ok(content) = std::fs::read_to_string(rollout) else {
+        return String::new();
+    };
+    let Ok(messages) = parse_zcode_rollout(&content) else {
+        return String::new();
+    };
+    messages
+        .iter()
+        .find(|message| {
+            message.role == "user"
+                && !message.content.trim().is_empty()
+                && !message.content.starts_with("<system-reminder>")
+        })
+        .or_else(|| {
+            messages
+                .iter()
+                .find(|message| message.role == "user" && !message.content.trim().is_empty())
+        })
+        .map(|message| message.content.chars().take(200).collect())
+        .unwrap_or_default()
 }
 
 /// 读取 zcode 会话消息。
@@ -2882,6 +2931,7 @@ fn grok_first_user_message(session_dir: &std::path::Path) -> String {
     let Ok(file) = std::fs::File::open(session_dir.join("chat_history.jsonl")) else {
         return String::new();
     };
+    let mut fallback: Option<String> = None;
     for line in BufReader::new(file).lines().flatten() {
         let line = line.trim();
         if line.is_empty() {
@@ -2893,16 +2943,16 @@ fn grok_first_user_message(session_dir: &std::path::Path) -> String {
         if v.get("type").and_then(|t| t.as_str()) != Some("user") {
             continue;
         }
-        if v.get("synthetic_reason").is_some() {
-            continue;
-        }
         if let Some(text) = grok_extract_text(v.get("content")) {
             if !text.is_empty() {
-                return text;
+                if v.get("synthetic_reason").is_none() {
+                    return text;
+                }
+                fallback.get_or_insert(text);
             }
         }
     }
-    String::new()
+    fallback.unwrap_or_default()
 }
 
 /// 解析 grok chat_history.jsonl 还原会话消息流。
@@ -2937,11 +2987,7 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
         };
         match role {
             Some("user") => {
-                // v1 跳过合成消息（system-reminder / compaction-meta 等运行时注入）；
-                // v0 无 synthetic_reason 字段，所有 user 视为真实输入。
-                if v.get("synthetic_reason").is_some() {
-                    continue;
-                }
+                // synthetic_reason 标记运行时注入，也保留在消息流里；标题另行优先真实输入。
                 let Some(text) = grok_extract_text(v.get("content")) else {
                     continue;
                 };
@@ -3765,7 +3811,7 @@ fn delete_pi_family_project(base_dir: &std::path::Path, project_name: &str) -> R
 // dsh 把每个会话存成独立的 JSONL 日志：
 //   <config_dir>/sessions/--<cwd>--/<session-id>/session.vN.jsonl[.zstd]
 // 第一行是物理 header（version/id/createdAt/cwd），后续每行是一个 SessionEvent：
-//   user/message（source.kind == "user" 才是人类输入）、assistant/message、
+//   user/message（source.kind == "user" 是人类输入，其他注入也保留）、assistant/message、
 //   tool/call、tool/result、session/title 等。只读解析，删除由 dsh 自己管理。
 
 fn dsh_sessions_root(base_dir: &std::path::Path) -> std::path::PathBuf {
@@ -3925,10 +3971,7 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
         .and_then(|v| v.as_i64())
         .map(|time| time / 1000);
     let (role, content) = match event_type {
-        "user/message" if dsh_is_human_user(&data) => {
-            ("user", dsh_content_text(data.get("content")?))
-        }
-        "user/message" => return None,
+        "user/message" => ("user", dsh_content_text(data.get("content")?)),
         "assistant/message" => {
             let message = data.get("message")?;
             let content = message
@@ -3973,6 +4016,7 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
 }
 
 fn dsh_first_user_message(text: &str) -> String {
+    let mut fallback = String::new();
     for line in text.lines() {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
@@ -3983,17 +4027,20 @@ fn dsh_first_user_message(text: &str) -> String {
         let Some(data) = value.get("data") else {
             continue;
         };
-        if !dsh_is_human_user(data) {
-            continue;
-        }
         if let Some(content) = data.get("content").map(dsh_content_text) {
             let content = content.trim();
-            if !content.is_empty() {
+            if content.is_empty() {
+                continue;
+            }
+            if fallback.is_empty() {
+                fallback = content.chars().take(200).collect();
+            }
+            if dsh_is_human_user(data) {
                 return content.chars().take(200).collect();
             }
         }
     }
-    String::new()
+    fallback
 }
 
 fn dsh_session_title(text: &str) -> Option<String> {
@@ -4895,14 +4942,20 @@ mod dsh_session_tests {
     }
 
     #[test]
-    fn skips_synthetic_user_messages() {
+    fn keeps_injected_user_messages_and_prefers_human_title() {
         let synthetic = r#"{"type":"user/message","data":{"content":"skill catalog","source":{"kind":"skill"}}}"#;
-        assert!(dsh_event_message(synthetic).is_none());
+        let message = dsh_event_message(synthetic).expect("injected user message");
+        assert_eq!(message.role, "user");
+        assert_eq!(message.content, "skill catalog");
 
         let text = r#"{"version":4,"id":"s1","cwd":"/work"}
 {"type":"user/message","data":{"content":"skill catalog","source":{"kind":"skill"}}}
 {"type":"user/message","data":{"content":"real prompt","source":{"kind":"user"}}}"#;
         assert_eq!(dsh_first_user_message(text), "real prompt");
+
+        let only_injected = r#"{"version":4,"id":"s1","cwd":"/work"}
+{"type":"user/message","data":{"content":"skill catalog","source":{"kind":"skill"}}}"#;
+        assert_eq!(dsh_first_user_message(only_injected), "skill catalog");
     }
 
     #[test]
@@ -5155,5 +5208,62 @@ mod kimi_session_tests {
         assert_eq!(kimi_session_size(&dir), 10);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn first_message_uses_first_prompt() {
+        let dir =
+            std::env::temp_dir().join(format!("ccg-kimi-first-message-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("agents").join("main")).unwrap();
+        let wire = r#"{"type":"turn.prompt","input":[{"type":"text","text":"first prompt"}],"time":1000}
+{"type":"turn.prompt","input":[{"type":"text","text":"second prompt"}],"time":2000}"#;
+        std::fs::write(dir.join("agents").join("main").join("wire.jsonl"), wire).unwrap();
+
+        assert_eq!(kimi_first_user_message(&dir), "first prompt");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod grok_session_tests {
+    use super::*;
+
+    #[test]
+    fn keeps_synthetic_messages_and_prefers_human_title() {
+        let dir =
+            std::env::temp_dir().join(format!("ccg-grok-synthetic-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let content = r#"{"type":"user","content":[{"type":"text","text":"skill catalog"}],"synthetic_reason":"skill"}
+{"type":"user","content":[{"type":"text","text":"real prompt"}]}"#;
+        std::fs::write(dir.join("chat_history.jsonl"), content).unwrap();
+
+        let messages = parse_grok_chat_history(content).expect("messages");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "skill catalog");
+        assert_eq!(grok_first_user_message(&dir), "real prompt");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod zcode_session_tests {
+    use super::*;
+
+    #[test]
+    fn keeps_system_reminder_but_prefers_real_user_for_title() {
+        let content = r#"{"startedAt":"2026-01-01T00:00:00Z","request":{"body":{"input":[{"role":"user","content":[{"type":"input_text","text":"<system-reminder>noise</system-reminder>"}]},{"role":"user","content":"real prompt"}]}},"response":{"text":"ok"}}"#;
+
+        let messages = parse_zcode_rollout(content).expect("messages");
+        assert!(messages
+            .iter()
+            .any(|message| message.content.starts_with("<system-reminder>")));
+        assert!(messages
+            .iter()
+            .any(|message| message.content == "real prompt"));
     }
 }
