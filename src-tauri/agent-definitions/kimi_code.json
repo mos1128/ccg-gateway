@@ -3,8 +3,8 @@
   "id": "kimi_code",
   "sort_order": 50,
   "name": "Kimi Code",
-  "remark": "网关会接管 KimiCode 内置的 anthropic 与 openai 服务商；在 KimiCode 中选择 anthropic 与 openai 的模型即可。\n注意：需要先在 KimiCode 中通过 /provider 命令添加 anthropic 和 openai 服务商（key随意输入），然后再开启网关中 KimiCode 的路由模式。",
-  "remark_en": "The gateway takes over KimiCode's built-in anthropic and openai providers; just pick anthropic and openai models in KimiCode.\nNote: first add the anthropic and openai providers in KimiCode via the /provider command (any key will do), then enable KimiCode routing in the gateway.",
+  "remark": "注意：需要先在 KimiCode 中通过 /provider 命令添加 anthropic 和 openai 服务商（key随意输入），然后再开启网关中 KimiCode 的路由模式。\n网关会接管 anthropic、openai 服务商；分别使用 Anthropic Messages、OpenAI Chat Completions 协议，选择对应的模型即可。\nKimi Code CLI 和桌面端共享配置。",
+  "remark_en": "Note: first add the anthropic and openai providers in KimiCode via the /provider command (any key will do), then enable KimiCode routing in the gateway.\nThe gateway takes over the anthropic and openai providers, using the Anthropic Messages and OpenAI Chat Completions protocols respectively — just pick the corresponding models.\nThe Kimi Code CLI and desktop app share configuration.",
   "icon": {
     "view_box": "0 0 54 38",
     "paths": [
@@ -19,12 +19,21 @@
     ]
   },
   "config_dir": "~/.kimi-code",
+  "config_dir_env": "KIMI_CODE_HOME",
   "user_agent": ["kimi-code-cli"],
   "protocols": ["openai_chat", "anthropic_messages"],
   "features": {
     "provider_config": {
       "enabled": true,
       "operations": [
+        {
+          "id": "set-anthropic-type",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["providers", "anthropic", "type"],
+          "value": "anthropic"
+        },
         {
           "id": "set-anthropic-endpoint",
           "op": "set",
@@ -40,6 +49,14 @@
           "format": "toml",
           "path": ["providers", "anthropic", "api_key"],
           "value": "{target.token}"
+        },
+        {
+          "id": "set-openai-type",
+          "op": "set",
+          "file": "config.toml",
+          "format": "toml",
+          "path": ["providers", "openai", "type"],
+          "value": "openai"
         },
         {
           "id": "set-openai-endpoint",
@@ -71,10 +88,23 @@
         {
           "id": "replace-kimi-oauth",
           "op": "replace_file",
-          "file": "credentials/oauth/kimi-code.json",
+          "file": "credentials/kimi-code.json",
+          "private": true,
           "content_from": { "file_id": "kimi_oauth" }
         }
-      ]
+      ],
+      "managed_config": {
+        "file": "config.toml",
+        "format": "toml",
+        "provider": "managed:kimi-code",
+        "provider_type": "kimi",
+        "oauth_key": "oauth/kimi-code",
+        "oauth_storage": "file",
+        "base_url": "https://api.kimi.com/coding/v1",
+        "base_url_env": "KIMI_CODE_BASE_URL",
+        "oauth_host_env": "KIMI_CODE_OAUTH_HOST",
+        "services": ["moonshot_search", "moonshot_fetch"]
+      }
     },
     "model_mapping": { "enabled": true },
     "token_usage": { "enabled": true },

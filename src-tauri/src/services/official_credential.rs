@@ -1,6 +1,7 @@
 use crate::db::models::{
-    ConfigFormat, OfficialCredentialFile, OfficialCredentialPayload, OfficialLoginOperation,
-    OfficialLoginOperationKind,
+    ConfigFormat, ConfigOperation, ConfigOperationKind, OfficialCredentialFile,
+    OfficialCredentialPayload, OfficialLoginFeature, OfficialLoginOperation,
+    OfficialLoginOperationKind, OfficialManagedConfig,
 };
 use crate::services::cli_config::{get_cli_config_dir_path, resolve_cli_config_file_from_dir};
 use crate::services::{agent, config_patch};
@@ -332,30 +333,268 @@ async fn write_prepared(path: &Path, content: PreparedFile, private: bool) -> Re
     config_patch::write_atomic_text_with_privacy(path, &text, private).await
 }
 
-async fn resolved_operations(
-    db: &SqlitePool,
-    agent_id: &str,
-) -> Result<Vec<OfficialLoginOperation>, String> {
+async fn resolved_feature(db: &SqlitePool, agent_id: &str) -> Result<OfficialLoginFeature, String> {
     let resolved = agent::get_agent(db, agent_id)
         .await
         .map_err(|error| error.to_string())?
         .ok_or_else(|| crate::tr!("err.official_credential.unknown_agent", agent_id))?;
     let feature = resolved.features.official_login;
     if feature.enabled {
-        Ok(feature.operations)
+        Ok(feature)
     } else {
         Err(crate::tr!("err.official_credential.feature_disabled"))
     }
 }
 
-fn builtin_operations(agent_id: &str) -> Result<Vec<OfficialLoginOperation>, String> {
+async fn resolved_operations(
+    db: &SqlitePool,
+    agent_id: &str,
+) -> Result<Vec<OfficialLoginOperation>, String> {
+    Ok(resolved_feature(db, agent_id).await?.operations)
+}
+
+fn builtin_feature(agent_id: &str) -> Result<OfficialLoginFeature, String> {
     let definition = agent::get_definition(agent_id)
         .ok_or_else(|| crate::tr!("err.official_credential.unknown_agent", agent_id))?;
     let feature = &definition.features.official_login;
     if feature.operations.is_empty() {
-        return Err(crate::tr!("err.official_credential.no_operations", agent_id));
+        return Err(crate::tr!(
+            "err.official_credential.no_operations",
+            agent_id
+        ));
     }
-    Ok(feature.operations.clone())
+    Ok(feature.clone())
+}
+
+fn builtin_operations(agent_id: &str) -> Result<Vec<OfficialLoginOperation>, String> {
+    Ok(builtin_feature(agent_id)?.operations)
+}
+
+fn managed_config_operation(
+    managed: &OfficialManagedConfig,
+    id: &str,
+    path: &[&str],
+    value: Value,
+) -> ConfigOperation {
+    let mut full_path = vec!["providers".to_string(), managed.provider.clone()];
+    full_path.extend(path.iter().map(|part| part.to_string()));
+    ConfigOperation {
+        id: id.to_string(),
+        op: ConfigOperationKind::Set,
+        file: managed.file.clone(),
+        format: managed.format,
+        private: false,
+        preserve_on_remove: false,
+        path: full_path,
+        key: None,
+        value: Some(value),
+    }
+}
+
+/// Restore the managed provider and OAuth reference after Kimi logout removed
+/// them. Kimi can then refresh its own managed model catalog on the next start.
+async fn ensure_managed_official_config(
+    config_dir: &Path,
+    managed: &OfficialManagedConfig,
+) -> Result<(), String> {
+    let path = resolve_cli_config_file_from_dir(config_dir, &managed.file);
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.to_string()),
+    };
+    let existing_base_url = if content.trim().is_empty() {
+        None
+    } else {
+        let value: ::toml::Value = ::toml::from_str(&content).map_err(|error| error.to_string())?;
+        value
+            .get("providers")
+            .and_then(|providers| providers.get(&managed.provider))
+            .and_then(|provider| provider.get("base_url"))
+            .and_then(::toml::Value::as_str)
+            .filter(|base_url| !base_url.trim().is_empty())
+            .map(str::to_string)
+    };
+
+    let mut operations = vec![
+        managed_config_operation(
+            managed,
+            "managed-provider-type",
+            &["type"],
+            Value::String(managed.provider_type.clone()),
+        ),
+        managed_config_operation(
+            managed,
+            "managed-provider-api-key",
+            &["api_key"],
+            Value::String(String::new()),
+        ),
+        managed_config_operation(
+            managed,
+            "managed-provider-oauth-storage",
+            &["oauth", "storage"],
+            Value::String(managed.oauth_storage.clone()),
+        ),
+        managed_config_operation(
+            managed,
+            "managed-provider-oauth-key",
+            &["oauth", "key"],
+            Value::String(managed.oauth_key.clone()),
+        ),
+    ];
+    if existing_base_url.is_none() {
+        let base_url = managed
+            .base_url_env
+            .as_deref()
+            .and_then(|name| std::env::var(name).ok())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| managed.base_url.clone());
+        if let Some(base_url) = base_url {
+            operations.push(managed_config_operation(
+                managed,
+                "managed-provider-base-url",
+                &["base_url"],
+                Value::String(base_url),
+            ));
+        }
+    }
+    if let Some(oauth_host) = managed
+        .oauth_host_env
+        .as_deref()
+        .and_then(|name| std::env::var(name).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        operations.push(managed_config_operation(
+            managed,
+            "managed-provider-oauth-host",
+            &["oauth", "oauth_host"],
+            Value::String(oauth_host),
+        ));
+    }
+
+    let context = config_patch::PatchContext {
+        target_endpoint: String::new(),
+        target_token: String::new(),
+        agent_id: managed.provider.clone(),
+    };
+    config_patch::patch_file(&path, managed.format, &operations, &context)
+        .await
+        .map(|_| ())
+}
+
+/// Remove the managed provider, its generated model aliases and the managed
+/// services when leaving official mode.
+async fn remove_managed_official_config(
+    config_dir: &Path,
+    managed: &OfficialManagedConfig,
+) -> Result<(), String> {
+    let path = resolve_cli_config_file_from_dir(config_dir, &managed.file);
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let value: ::toml::Value = ::toml::from_str(&content).map_err(|error| error.to_string())?;
+    if value
+        .get("providers")
+        .and_then(|providers| providers.get(&managed.provider))
+        .is_none()
+    {
+        return Ok(());
+    }
+
+    let managed_models: Vec<String> = value
+        .get("models")
+        .and_then(::toml::Value::as_table)
+        .map(|models| {
+            models
+                .iter()
+                .filter(|(_, model)| {
+                    model.get("provider").and_then(::toml::Value::as_str)
+                        == Some(managed.provider.as_str())
+                })
+                .map(|(alias, _)| alias.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let default_model = value
+        .get("default_model")
+        .and_then(::toml::Value::as_str)
+        .map(str::to_string);
+
+    let mut operations = vec![ConfigOperation {
+        id: "managed-provider-remove".to_string(),
+        op: ConfigOperationKind::Remove,
+        file: managed.file.clone(),
+        format: managed.format,
+        private: false,
+        preserve_on_remove: false,
+        path: vec!["providers".to_string(), managed.provider.clone()],
+        key: None,
+        value: None,
+    }];
+    for alias in &managed_models {
+        operations.push(ConfigOperation {
+            id: format!("managed-model-remove-{alias}"),
+            op: ConfigOperationKind::Remove,
+            file: managed.file.clone(),
+            format: managed.format,
+            private: false,
+            preserve_on_remove: false,
+            path: vec!["models".to_string(), alias.clone()],
+            key: None,
+            value: None,
+        });
+    }
+    if default_model
+        .as_deref()
+        .is_some_and(|alias| managed_models.iter().any(|model| model == alias))
+    {
+        operations.push(ConfigOperation {
+            id: "managed-default-model-remove".to_string(),
+            op: ConfigOperationKind::Remove,
+            file: managed.file.clone(),
+            format: managed.format,
+            private: false,
+            preserve_on_remove: false,
+            path: vec!["default_model".to_string()],
+            key: None,
+            value: None,
+        });
+    }
+    for service in &managed.services {
+        let uses_managed_oauth = value
+            .get("services")
+            .and_then(|services| services.get(service))
+            .and_then(|service| service.get("oauth"))
+            .and_then(|oauth| oauth.get("key"))
+            .and_then(::toml::Value::as_str)
+            == Some(managed.oauth_key.as_str());
+        if uses_managed_oauth {
+            operations.push(ConfigOperation {
+                id: format!("managed-service-remove-{service}"),
+                op: ConfigOperationKind::Remove,
+                file: managed.file.clone(),
+                format: managed.format,
+                private: false,
+                preserve_on_remove: false,
+                path: vec!["services".to_string(), service.clone()],
+                key: None,
+                value: None,
+            });
+        }
+    }
+
+    let context = config_patch::PatchContext {
+        target_endpoint: String::new(),
+        target_token: String::new(),
+        agent_id: managed.provider.clone(),
+    };
+    config_patch::patch_file(&path, managed.format, &operations, &context)
+        .await
+        .map(|_| ())
 }
 
 pub async fn apply_payload(
@@ -364,12 +603,13 @@ pub async fn apply_payload(
     json: &str,
 ) -> Result<Vec<PathBuf>, String> {
     let payload = parse_payload(json)?;
-    let operations = resolved_operations(db, agent_id).await?;
+    let feature = resolved_feature(db, agent_id).await?;
+    let operations = &feature.operations;
     let config_dir = get_cli_config_dir_path(db, agent_id).await;
     let mut prepared: HashMap<PathBuf, PreparedFile> = HashMap::new();
     let mut private_paths = HashSet::new();
 
-    for operation in &operations {
+    for operation in operations {
         let path = resolve_cli_config_file_from_dir(&config_dir, &operation.file);
         if operation.private {
             private_paths.insert(path.clone());
@@ -414,6 +654,9 @@ pub async fn apply_payload(
         write_prepared(&path, content, private_paths.contains(&path)).await?;
         written.push(path);
     }
+    if let Some(managed) = feature.managed_config.as_ref() {
+        ensure_managed_official_config(&config_dir, managed).await?;
+    }
     Ok(written)
 }
 
@@ -423,13 +666,14 @@ pub async fn remove_payload(
     json: &str,
 ) -> Result<Vec<PathBuf>, String> {
     let payload = parse_payload(json)?;
-    let operations = builtin_operations(agent_id)?;
+    let feature = builtin_feature(agent_id)?;
+    let operations = &feature.operations;
     let config_dir = get_cli_config_dir_path(db, agent_id).await;
     let mut prepared: HashMap<PathBuf, (ConfigFormat, Value)> = HashMap::new();
     let mut remove_files = HashSet::new();
     let mut private_paths = HashSet::new();
 
-    for operation in &operations {
+    for operation in operations {
         if operation.preserve_on_remove {
             continue;
         }
@@ -483,6 +727,7 @@ pub async fn remove_payload(
         }
     }
 
+    let remove_managed_config = feature.managed_config.is_some() && !remove_files.is_empty();
     let mut touched = Vec::new();
     for (path, (format, value)) in prepared {
         if !remove_files.contains(&path) {
@@ -506,6 +751,11 @@ pub async fn remove_payload(
                     error
                 ));
             }
+        }
+    }
+    if remove_managed_config {
+        if let Some(managed) = feature.managed_config.as_ref() {
+            remove_managed_official_config(&config_dir, managed).await?;
         }
     }
     Ok(touched)

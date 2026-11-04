@@ -1,6 +1,6 @@
 use crate::db::models::{
     AdapterFeature, AgentDefinition, AgentDefinitionLoadError, AgentFeatures, AgentInfo,
-    FileFeature, McpAdapter, McpFeature, Protocol,
+    ConfigFormat, FileFeature, McpAdapter, McpFeature, Protocol,
 };
 use crate::time::now_timestamp;
 use sqlx::SqlitePool;
@@ -182,6 +182,39 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
     }
     if feature.operations.is_empty() {
         return Err(crate::tr!("err.agent.official_login_operations_required"));
+    }
+    if let Some(managed) = &feature.managed_config {
+        let valid_env = |name: &Option<String>| match name.as_deref() {
+            None => true,
+            Some(name) => {
+                let mut chars = name.chars();
+                chars
+                    .next()
+                    .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
+                    && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            }
+        };
+        if managed.file.trim().is_empty()
+            || managed.format != ConfigFormat::Toml
+            || managed.provider.trim().is_empty()
+            || managed.provider_type.trim().is_empty()
+            || managed.oauth_key.trim().is_empty()
+            || managed.oauth_storage.trim().is_empty()
+            || managed
+                .base_url
+                .as_deref()
+                .is_some_and(|base_url| base_url.trim().is_empty())
+            || !valid_env(&managed.base_url_env)
+            || !valid_env(&managed.oauth_host_env)
+            || managed
+                .services
+                .iter()
+                .any(|service| service.trim().is_empty())
+        {
+            return Err(crate::tr!(
+                "err.agent.official_login_managed_config_invalid"
+            ));
+        }
     }
     let mut source_formats = HashMap::new();
     let mut file_formats = HashMap::new();

@@ -89,8 +89,22 @@ export interface OfficialLoginOperation {
   value_from?: CredentialSource | null
 }
 
+export interface OfficialManagedConfig {
+  file: string
+  format: 'toml'
+  provider: string
+  provider_type: string
+  oauth_key: string
+  oauth_storage: string
+  base_url?: string
+  base_url_env?: string
+  oauth_host_env?: string
+  services?: string[]
+}
+
 export interface OfficialLoginFeature extends ToggleFeature {
   operations?: OfficialLoginOperation[]
+  managed_config?: OfficialManagedConfig
 }
 
 export interface McpFeature extends ToggleFeature {

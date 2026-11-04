@@ -322,12 +322,33 @@
       ],
       "additionalProperties": false
     },
+    "officialManagedConfig": {
+      "type": "object",
+      "required": ["file", "format", "provider", "provider_type", "oauth_key", "oauth_storage"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "format": { "const": "toml" },
+        "provider": { "type": "string", "minLength": 1 },
+        "provider_type": { "type": "string", "minLength": 1 },
+        "oauth_key": { "type": "string", "minLength": 1 },
+        "oauth_storage": { "type": "string", "minLength": 1 },
+        "base_url": { "type": "string", "minLength": 1 },
+        "base_url_env": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "oauth_host_env": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+        "services": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
     "officialLogin": {
       "type": "object",
       "required": ["enabled"],
       "properties": {
         "enabled": { "type": "boolean" },
-        "operations": { "type": "array", "items": { "$ref": "#/$defs/officialOperation" } }
+        "operations": { "type": "array", "items": { "$ref": "#/$defs/officialOperation" } },
+        "managed_config": { "$ref": "#/$defs/officialManagedConfig" }
       },
       "additionalProperties": false
     }

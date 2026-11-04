@@ -211,6 +211,22 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | --- | --- | --- |
 | `enabled` | `true` / `false` | 是否支持托管官方凭证。 |
 | `operations` | 官方凭证 operation 数组 | `enabled: true` 时不能为空。 |
+| `managed_config` | 可选对象 | 官方登录会同时删除 provider/模型配置的 Agent 使用。写回凭证时补回 provider 与 OAuth 引用，清理时移除该 provider、其模型及声明的服务。模式切换仍保持互斥。 |
+
+`managed_config` 字段：
+
+| Key | 类型与可用值 | 含义 |
+| --- | --- | --- |
+| `file` | 非空路径字符串 | provider 所在的配置文件。 |
+| `format` | `toml` | 当前只支持 TOML。 |
+| `provider` | 非空字符串 | 官方 provider 名称，例如 `managed:kimi-code`。 |
+| `provider_type` | 非空字符串 | provider 的 `type` 值，例如 Kimi 的 `kimi`。 |
+| `oauth_key` | 非空字符串 | OAuth 引用中的 `key`。 |
+| `oauth_storage` | 非空字符串 | OAuth 引用中的 `storage`，Kimi 使用 `file`。 |
+| `base_url` | 可选字符串 | provider 缺失时写入的默认地址。 |
+| `base_url_env` | 可选环境变量名 | 优先从该环境变量读取地址。 |
+| `oauth_host_env` | 可选环境变量名 | 从该环境变量读取 `oauth_host`。 |
+| `services` | 可选字符串数组 | 清理官方模式时需要一并移除的服务配置。 |
 
 #### 官方凭证 operation
 

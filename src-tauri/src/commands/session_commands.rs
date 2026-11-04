@@ -1926,28 +1926,24 @@ fn kimi_latest_wire_mtime(session_dir: &std::path::Path) -> f64 {
 
 /// 计算 kimi-code 会话目录占用大小（字节）。
 fn kimi_session_size(session_dir: &std::path::Path) -> i64 {
-    let mut total = 0i64;
-    if let Ok(entries) = std::fs::read_dir(session_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                if let Ok(meta) = path.metadata() {
-                    total += meta.len() as i64;
-                }
-            } else if path.is_dir() {
-                if let Ok(sub) = std::fs::read_dir(&path) {
-                    for item in sub.flatten() {
-                        if item.path().is_file() {
-                            if let Ok(meta) = item.path().metadata() {
-                                total += meta.len() as i64;
-                            }
-                        }
+    fn directory_size(directory: &std::path::Path) -> i64 {
+        let mut total = 0i64;
+        if let Ok(entries) = std::fs::read_dir(directory) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Ok(meta) = path.metadata() {
+                        total += meta.len() as i64;
                     }
+                } else if path.is_dir() {
+                    total += directory_size(&path);
                 }
             }
         }
+        total
     }
-    total
+
+    directory_size(session_dir)
 }
 
 /// kimi-code 项目列表：按 workDir 分组所有会话。
@@ -2194,9 +2190,73 @@ fn parse_kimi_append_message(
     })
 }
 
+fn kimi_append_text(message: &mut SessionMessage, text: String) {
+    if message.content.is_empty() {
+        message.content = text;
+    } else {
+        message.content.push_str("\n\n");
+        message.content.push_str(&text);
+    }
+}
+
+fn kimi_assistant_message(timestamp: Option<i64>) -> SessionMessage {
+    SessionMessage {
+        role: "assistant".to_string(),
+        content: String::new(),
+        timestamp,
+    }
+}
+
+fn flush_kimi_assistant(
+    messages: &mut Vec<SessionMessage>,
+    assistant: &mut Option<SessionMessage>,
+) {
+    if let Some(message) = assistant.take() {
+        if !message.content.trim().is_empty() {
+            messages.push(message);
+        }
+    }
+}
+
+fn kimi_tool_arguments(value: Option<&serde_json::Value>) -> String {
+    let Some(value) = value else {
+        return "{}".to_string();
+    };
+    if let Some(text) = value.as_str() {
+        return match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(parsed) => {
+                serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| text.to_string())
+            }
+            Err(_) => text.to_string(),
+        };
+    }
+    serde_json::to_string_pretty(value).unwrap_or_else(|_| "{}".to_string())
+}
+
+fn kimi_tool_result_text(value: &serde_json::Value) -> String {
+    if let Some(text) = value.as_str() {
+        return text.to_string();
+    }
+    if let Some(parts) = value.as_array() {
+        return parts
+            .iter()
+            .filter_map(render_kimi_content_part)
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    String::new()
+}
+
 /// 解析 wire.jsonl 还原 kimi-code 会话消息流。
+///
+/// 用户消息来自 turn.prompt / context.append_message；assistant 文本和工具调用
+/// 由 context.append_loop_event 的 step.begin / content.part / tool.call 还原，
+/// 工具结果来自 tool.result。旧版 wire 若直接把消息写进 context.append_message，
+/// 仍按原结构兼容。
 fn parse_kimi_wire_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
     let mut messages: Vec<SessionMessage> = Vec::new();
+    let mut assistant: Option<SessionMessage> = None;
+
     for line in content.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -2212,12 +2272,101 @@ fn parse_kimi_wire_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
             .and_then(|t| t.as_f64())
             .map(|ms| (ms / 1000.0) as i64);
 
-        if record_type == "context.append_message" {
-            if let Some(msg) = parse_kimi_append_message(&data, timestamp) {
-                messages.push(msg);
+        match record_type {
+            "turn.prompt" => {
+                flush_kimi_assistant(&mut messages, &mut assistant);
+                let input = data.get("input").and_then(|value| value.as_array());
+                let mut parts = Vec::new();
+                if let Some(input) = input {
+                    for part in input {
+                        if let Some(text) = render_kimi_content_part(part) {
+                            parts.push(text);
+                        }
+                    }
+                }
+                if !parts.is_empty() {
+                    messages.push(SessionMessage {
+                        role: "user".to_string(),
+                        content: parts.join("\n\n"),
+                        timestamp,
+                    });
+                }
             }
+            "context.append_message" => {
+                if let Some(message) = parse_kimi_append_message(&data, timestamp) {
+                    flush_kimi_assistant(&mut messages, &mut assistant);
+                    messages.push(message);
+                }
+            }
+            "context.append_loop_event" => {
+                let Some(event) = data.get("event") else {
+                    continue;
+                };
+                let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                match event_type {
+                    "step.begin" => {
+                        flush_kimi_assistant(&mut messages, &mut assistant);
+                        assistant = Some(kimi_assistant_message(timestamp));
+                    }
+                    "content.part" => {
+                        let Some(part) = event.get("part") else {
+                            continue;
+                        };
+                        let Some(text) = render_kimi_content_part(part) else {
+                            continue;
+                        };
+                        let current =
+                            assistant.get_or_insert_with(|| kimi_assistant_message(timestamp));
+                        kimi_append_text(current, text);
+                    }
+                    "tool.call" => {
+                        let name = event
+                            .get("name")
+                            .and_then(|name| name.as_str())
+                            .unwrap_or("unknown");
+                        let arguments = kimi_tool_arguments(event.get("args"));
+                        let current =
+                            assistant.get_or_insert_with(|| kimi_assistant_message(timestamp));
+                        kimi_append_text(current, crate::tr!("session.tool_call", name, arguments));
+                    }
+                    "tool.result" => {
+                        flush_kimi_assistant(&mut messages, &mut assistant);
+                        let Some(output) =
+                            event.get("result").and_then(|result| result.get("output"))
+                        else {
+                            continue;
+                        };
+                        let text = kimi_tool_result_text(output);
+                        if !text.is_empty() {
+                            messages.push(SessionMessage {
+                                role: "user".to_string(),
+                                content: crate::tr!("session.tool_result", text),
+                                timestamp,
+                            });
+                        }
+                    }
+                    "step.end" => {
+                        flush_kimi_assistant(&mut messages, &mut assistant);
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
     }
+    flush_kimi_assistant(&mut messages, &mut assistant);
+
+    // 部分版本会同时写 turn.prompt 和 context.append_message，避免重复展示同一轮用户输入。
+    messages.dedup_by(|later, earlier| {
+        earlier.role == "user"
+            && later.role == "user"
+            && earlier.content == later.content
+            && match (earlier.timestamp, later.timestamp) {
+                (Some(a), Some(b)) => (a - b).abs() <= 1,
+                _ => false,
+            }
+    });
+
     Ok(messages)
 }
 

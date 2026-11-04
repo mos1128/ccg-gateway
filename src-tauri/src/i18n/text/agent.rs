@@ -80,6 +80,10 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "enabled official_login 必须提供 operations",
             Lang::En => "enabled official_login must provide operations",
         },
+        "err.agent.official_login_managed_config_invalid" => match lang {
+            Lang::Zh => "official_login.managed_config 必须使用 TOML，并提供有效的文件、provider、类型和 OAuth key",
+            Lang::En => "official_login.managed_config must use TOML and provide a valid file, provider, type, and OAuth key",
+        },
         "err.agent.official_login_content_from_missing" => match lang {
             Lang::Zh => "official_login operation `{}` 缺少 content_from",
             Lang::En => "official_login operation `{}` is missing content_from",

@@ -210,10 +210,31 @@ impl OfficialLoginOperation {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct OfficialManagedConfig {
+    pub file: String,
+    pub format: ConfigFormat,
+    pub provider: String,
+    pub provider_type: String,
+    pub oauth_key: String,
+    pub oauth_storage: String,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub base_url_env: Option<String>,
+    #[serde(default)]
+    pub oauth_host_env: Option<String>,
+    #[serde(default)]
+    pub services: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OfficialLoginFeature {
     pub enabled: bool,
     #[serde(default)]
     pub operations: Vec<OfficialLoginOperation>,
+    #[serde(default)]
+    pub managed_config: Option<OfficialManagedConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
