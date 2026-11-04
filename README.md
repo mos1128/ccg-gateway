@@ -80,6 +80,7 @@ CCG Gateway 是一款面向 Claude Code、Codex、OpenCode、Kimi Code、ZCode�
 - 用户模板可以新增 Agent，也可以使用相同 `id` 覆盖内置模板。
 - 用户模板默认放在 `~/.ccg-gateway/agent-definitions/{id}.json`，修改后需要重启软件。字段定义、可用值和完整示例见 [Agent 模板开发指南](agent-template-guide.md)。
 - OpenCode 模板只支持 V2 配置结构；V1 用户请升级 OpenCode 或使用用户模板。
+- ZCode 写入桌面端 `v2/config.json`；应用前请关闭 ZCode 桌面端，避免其内存状态回写覆盖配置。
 
 ### 中转服务商
 

@@ -122,8 +122,10 @@ const activeCliType = computed({
   get: () => uiStore.sessionsActiveCliType,
   set: (val) => uiStore.setSessionsActiveCliType(val)
 })
-const sessionReadOnly = computed(() =>
-  agentStore.get(activeCliType.value)?.features.sessions.adapter === 'opencode')
+const sessionReadOnly = computed(() => {
+  const adapter = agentStore.get(activeCliType.value)?.features.sessions.adapter
+  return ['opencode', 'zcode'].includes(adapter || '')
+})
 const currentProject = computed(() => sessionStore.currentProject)
 const sessionSearchQuery = ref('')
 const showSessionDrawer = ref(false)

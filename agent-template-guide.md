@@ -476,18 +476,7 @@ DeepSeek Harness 模板接管原生 `llm-deepseek`（DeepSeek 官方 API 路由�
 
 写入或切换模式时，DSH 适配会通过 YAML 节点编辑，清理旧 `settings.yaml` 和已初始化 profile 的 `cordis.patch.yml` 中使用 `CCG_GATEWAY_API_KEY` 的路由字段。直接移除对应字段，不追加覆盖条目；保留其他配置、注释、管理标记和 `!!js` 表达式，支持块式、流式 YAML 及文档结束符。写回前校验完整 YAML，清理幂等，避免关闭新管理块后重新启用旧网关地址。`settings.yaml.imported` 是 DSH 的历史导入文件，不参与运行配置，CCG 不修改它。
 
-### ZCode：深层路径、布尔值、数字和嵌套 `servers_path`
-
-```json
-{
-  "id": "set-openai-key-required",
-  "op": "set",
-  "file": "v2/config.json",
-  "format": "json",
-  "path": ["provider", "ccg-openai", "options", "apiKeyRequired"],
-  "value": true
-}
-```
+### ZCode：深层路径、数字和嵌套 `servers_path`
 
 ```json
 {
@@ -510,6 +499,8 @@ DeepSeek Harness 模板接管原生 `llm-deepseek`（DeepSeek 官方 API 路由�
 ```
 
 `value` 会保留 JSON 类型，布尔值和数字不要写成字符串。`path` 和 `servers_path` 都可以有任意合理深度；`servers_path: ["mcp", "servers"]` 表示 MCP 集合位于 `mcp.servers`。
+
+写入前应先关闭 ZCode 桌面端，避免其内存状态回写覆盖 `v2/config.json`。ZCode 适配只覆盖桌面端，不写入 CLI/TUI 的 `v2/provider_config.json`。
 
 ## 5. 使用前检查
 
