@@ -478,7 +478,7 @@ Gemini CLI 的官方登录同时使用整文件替换和单字段设置：
   "op": "set",
   "file": "opencode.json",
   "format": "json",
-  "path": ["provider", "anthropic", "options", "baseURL"],
+  "path": ["providers", "anthropic", "settings", "baseURL"],
   "value": "{target.endpoint}/v1"
 }
 ```
@@ -489,11 +489,13 @@ Gemini CLI 的官方登录同时使用整文件替换和单字段设置：
   "file": "opencode.json",
   "format": "json",
   "adapter": "opencode",
-  "servers_path": ["mcp"]
+  "servers_path": ["mcp", "servers"]
 }
 ```
 
-`protocols` 可以包含多个值。`{target.endpoint}` 可以作为字符串的一部分使用，因此 Anthropic 地址会额外带上 `/v1`。OpenCode 的 MCP 结构与标准结构不同，所以声明 `adapter: "opencode"`；该 adapter 只能配合 `json`。
+`protocols` 可以包含多个值。`{target.endpoint}` 可以作为字符串的一部分使用，因此 Anthropic 地址会额外带上 `/v1`。OpenCode V2 的 provider 位于 `providers.<id>.settings`，MCP 位于 `mcp.servers`；模板只支持 V2 结构。OpenCode 的 MCP 元素结构与标准结构不同，所以声明 `adapter: "opencode"`；该 adapter 只能配合 `json`。
+
+OpenCode V2 的会话存放在 `opencode.db` 的 `session_v2` / `session_message` 表；CCG 只读取 V2 结构，旧版 `session` / `message` / `part` 表需要先由 OpenCode 完成 V1 → V2 迁移。
 
 ### DeepSeek Harness：用户级配置、凭据和 Cordis MCP patch
 

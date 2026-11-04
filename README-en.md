@@ -78,6 +78,7 @@ This project was initiated based on the author's actual needs to solve various p
 
 - User templates can add new Agents or override built-in templates by using the same `id`.
 - User templates are stored in `~/.ccg-gateway/agent-definitions/{id}.json` by default and require an application restart after changes. See the [Agent Template Development Guide](agent-template-guide.md) for field definitions, allowed values, and complete examples.
+- The OpenCode template supports the V2 configuration layout only; V1 users should upgrade OpenCode or use a user template.
 
 ### Relay Providers
 

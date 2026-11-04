@@ -122,7 +122,6 @@ fn adapt_opencode_mcp(config: serde_json::Value) -> Result<serde_json::Value> {
         }
         value => return Err(crate::tr!("err.mcp.type_unsupported", value)),
     }
-    adapted.insert("enabled".to_string(), serde_json::json!(true));
     Ok(serde_json::Value::Object(adapted))
 }
 

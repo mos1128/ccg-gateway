@@ -219,6 +219,14 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "打开 OpenCode 会话数据库失败: {}",
             Lang::En => "Failed to open OpenCode session database: {}",
         },
+        "err.session.opencode_schema_failed" => match lang {
+            Lang::Zh => "读取 OpenCode 数据库结构失败: {}",
+            Lang::En => "Failed to read the OpenCode database schema: {}",
+        },
+        "err.session.opencode_v2_required" => match lang {
+            Lang::Zh => "未找到 OpenCode V2 会话表（session_v2 / session_message），请先升级 OpenCode",
+            Lang::En => "OpenCode V2 session tables (session_v2 / session_message) were not found; upgrade OpenCode first",
+        },
         "err.session.opencode_count_projects_failed" => match lang {
             Lang::Zh => "统计 OpenCode 项目数失败: {}",
             Lang::En => "Failed to count OpenCode projects: {}",

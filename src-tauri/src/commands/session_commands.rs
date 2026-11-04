@@ -1313,16 +1313,61 @@ fn parse_session_messages_content(cli_type: &str, content: &str) -> Result<Vec<S
     Ok(messages)
 }
 
+async fn ensure_opencode_v2(connection: &mut SqliteConnection) -> Result<()> {
+    let table_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name IN ('session_v2', 'session_message')
+        "#,
+    )
+    .fetch_one(&mut *connection)
+    .await
+    .map_err(|error| crate::tr!("err.session.opencode_schema_failed", error))?;
+
+    if table_count < 2 {
+        return Err(crate::tr!("err.session.opencode_v2_required"));
+    }
+    Ok(())
+}
+
 fn opencode_data_dir() -> Result<std::path::PathBuf> {
+    if let Ok(data_dir) = std::env::var("OPENCODE_DATA") {
+        if !data_dir.is_empty() {
+            return Ok(std::path::PathBuf::from(data_dir));
+        }
+    }
     if let Ok(xdg_data_home) = std::env::var("XDG_DATA_HOME") {
         if !xdg_data_home.is_empty() {
             return Ok(std::path::PathBuf::from(xdg_data_home).join("opencode"));
         }
     }
 
-    dirs::home_dir()
-        .map(|home| home.join(".local").join("share").join("opencode"))
-        .ok_or_else(|| crate::tr!("err.session.home_dir_missing"))
+    let home = dirs::home_dir().ok_or_else(|| crate::tr!("err.session.home_dir_missing"))?;
+    let legacy = home.join(".local").join("share").join("opencode");
+
+    // OpenCode V2 on Windows uses %LOCALAPPDATA%\opencode, while older
+    // builds kept the XDG-style path. Use the newest database when both exist.
+    let mut candidates = vec![legacy.clone()];
+    if cfg!(windows) {
+        if let Some(local_app_data) = dirs::data_local_dir() {
+            candidates.push(local_app_data.join("opencode"));
+        }
+    }
+    let existing = candidates
+        .iter()
+        .filter(|directory| directory.join("opencode.db").is_file())
+        .max_by_key(|directory| {
+            std::fs::metadata(directory.join("opencode.db"))
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis())
+                .unwrap_or(0)
+        });
+
+    Ok(existing.cloned().unwrap_or(legacy))
 }
 
 fn opencode_db_path() -> Result<std::path::PathBuf> {
@@ -1350,9 +1395,11 @@ async fn open_opencode_db() -> Result<SqliteConnection> {
         .filename(&path)
         .read_only(true)
         .create_if_missing(false);
-    SqliteConnection::connect_with(&options)
+    let mut connection = SqliteConnection::connect_with(&options)
         .await
-        .map_err(|error| crate::tr!("err.session.opencode_db_open_failed", error))
+        .map_err(|error| crate::tr!("err.session.opencode_db_open_failed", error))?;
+    ensure_opencode_v2(&mut connection).await?;
+    Ok(connection)
 }
 
 async fn query_opencode_projects(
@@ -1372,20 +1419,22 @@ async fn query_opencode_projects(
             p.worktree,
             p.name,
             (SELECT COUNT(*)
-             FROM session s
-             WHERE s.project_id = p.id AND s.time_archived IS NULL) AS session_count,
-            COALESCE((SELECT SUM(length(CAST(m.data AS BLOB)))
-                      FROM message m
-                      JOIN session s ON s.id = m.session_id
+             FROM session_v2 s
+             WHERE s.project_id = p.id
+               AND s.time_archived IS NULL
+               AND s.parent_id IS NULL) AS session_count,
+            COALESCE((SELECT SUM(length(CAST(sm.data AS BLOB)))
+                      FROM session_message sm
+                      JOIN session_v2 s ON s.id = sm.session_id
                       WHERE s.project_id = p.id AND s.time_archived IS NULL), 0)
-              + COALESCE((SELECT SUM(length(CAST(pt.data AS BLOB)))
-                          FROM part pt
-                          JOIN session s ON s.id = pt.session_id
-                          WHERE s.project_id = p.id AND s.time_archived IS NULL), 0) AS total_size,
-            COALESCE((SELECT MAX(s.time_updated)
-                      FROM session s
-                      WHERE s.project_id = p.id AND s.time_archived IS NULL), p.time_updated, 0)
-                AS last_modified
+                AS total_size,
+            MAX(
+                COALESCE((SELECT MAX(s.time_updated)
+                          FROM session_v2 s
+                          WHERE s.project_id = p.id AND s.time_archived IS NULL), 0),
+                p.time_updated,
+                0
+            ) AS last_modified
         FROM project p
         ORDER BY last_modified DESC, p.id ASC
         LIMIT ? OFFSET ?
@@ -1426,39 +1475,75 @@ async fn get_opencode_projects(page: i64, page_size: i64) -> Result<PaginatedPro
     query_opencode_projects(&mut connection, page, page_size).await
 }
 
+fn opencode_text_from_content(value: &serde_json::Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(text) = value
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .filter(|text| !text.trim().is_empty())
+    {
+        parts.push(text.to_owned());
+    }
+    if let Some(content) = value.get("content") {
+        if let Some(text) = content
+            .as_str()
+            .filter(|text| !text.trim().is_empty())
+        {
+            parts.push(text.to_owned());
+        } else if let Some(content) = content.as_array() {
+            for part in content {
+                if part
+                    .get("type")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|kind| kind != "text")
+                {
+                    continue;
+                }
+                if let Some(text) = part
+                    .get("text")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|text| !text.trim().is_empty())
+                {
+                    parts.push(text.to_owned());
+                }
+            }
+        }
+    }
+    parts.join("\n")
+}
+
+fn opencode_preview(text: String) -> String {
+    text.chars().take(200).collect()
+}
+
 async fn opencode_first_user_text(
     connection: &mut SqliteConnection,
     session_id: &str,
 ) -> Result<String> {
-    let row = sqlx::query_as::<_, (String,)>(
+    let rows = sqlx::query_scalar::<_, String>(
         r#"
-        SELECT pt.data
-        FROM message m
-        JOIN part pt ON pt.message_id = m.id AND pt.session_id = m.session_id
-        WHERE m.session_id = ?
-          AND json_extract(m.data, '$.role') = 'user'
-          AND json_extract(pt.data, '$.type') = 'text'
-          AND TRIM(json_extract(pt.data, '$.text')) <> ''
-        ORDER BY m.time_created ASC, m.id ASC, pt.time_created ASC, pt.id ASC
-        LIMIT 1
+        SELECT data
+        FROM session_message
+        WHERE session_id = ? AND type = 'user'
+        ORDER BY seq ASC, time_created ASC, id ASC
+        LIMIT 10
         "#,
     )
     .bind(session_id)
-    .fetch_optional(&mut *connection)
+    .fetch_all(&mut *connection)
     .await
     .map_err(|error| crate::tr!("err.session.opencode_query_preview_failed", error))?;
 
-    Ok(row
-        .and_then(|(data,)| serde_json::from_str::<serde_json::Value>(&data).ok())
-        .and_then(|data| {
-            data.get("text")
-                .and_then(|text| text.as_str())
-                .map(str::to_owned)
-        })
-        .unwrap_or_default()
-        .chars()
-        .take(200)
-        .collect())
+    for data in rows {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&data) {
+            let text = opencode_text_from_content(&value);
+            if !text.trim().is_empty() {
+                return Ok(opencode_preview(text));
+            }
+        }
+    }
+
+    Ok(String::new())
 }
 
 async fn query_opencode_sessions(
@@ -1468,7 +1553,11 @@ async fn query_opencode_sessions(
     page_size: i64,
 ) -> Result<PaginatedSessions> {
     let total = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM session WHERE project_id = ? AND time_archived IS NULL",
+        r#"
+        SELECT COUNT(*)
+        FROM session_v2
+        WHERE project_id = ? AND time_archived IS NULL AND parent_id IS NULL
+        "#,
     )
     .bind(project_id)
     .fetch_one(&mut *connection)
@@ -1479,14 +1568,13 @@ async fn query_opencode_sessions(
         r#"
         SELECT
             s.id,
-            s.title,
-            s.time_updated,
-            COALESCE((SELECT SUM(length(CAST(m.data AS BLOB)))
-                      FROM message m WHERE m.session_id = s.id), 0)
-              + COALESCE((SELECT SUM(length(CAST(pt.data AS BLOB)))
-                          FROM part pt WHERE pt.session_id = s.id), 0) AS total_size
-        FROM session s
-        WHERE s.project_id = ? AND s.time_archived IS NULL
+            COALESCE(s.title, ''),
+            COALESCE(s.time_updated, 0),
+            COALESCE((SELECT SUM(length(CAST(sm.data AS BLOB)))
+                      FROM session_message sm
+                      WHERE sm.session_id = s.id), 0)
+        FROM session_v2 s
+        WHERE s.project_id = ? AND s.time_archived IS NULL AND s.parent_id IS NULL
         ORDER BY s.time_updated DESC, s.id ASC
         LIMIT ? OFFSET ?
         "#,
@@ -1532,18 +1620,78 @@ async fn get_opencode_sessions(
     query_opencode_sessions(&mut connection, project_id, page, page_size).await
 }
 
+fn opencode_tool_output(state: &serde_json::Value) -> Option<String> {
+    if let Some(output) = state
+        .get("output")
+        .and_then(serde_json::Value::as_str)
+        .filter(|output| !output.trim().is_empty())
+    {
+        return Some(output.to_owned());
+    }
+
+    let content = state.get("content")?.as_array()?;
+    let text = content
+        .iter()
+        .filter_map(|block| block.get("text").and_then(serde_json::Value::as_str))
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+fn opencode_part_text(part: &serde_json::Value) -> Option<String> {
+    match part.get("type").and_then(|kind| kind.as_str()) {
+        Some("text") => part
+            .get("text")
+            .and_then(|text| text.as_str())
+            .filter(|text| !text.trim().is_empty())
+            .map(str::to_owned),
+        Some("reasoning") => part
+            .get("text")
+            .or_else(|| part.get("thinking"))
+            .and_then(|text| text.as_str())
+            .filter(|text| !text.trim().is_empty())
+            .map(|text| crate::tr!("session.thinking", text)),
+        Some("tool") => {
+            let name = part
+                .get("tool")
+                .or_else(|| part.get("name"))
+                .and_then(|name| name.as_str())
+                .unwrap_or("unknown");
+            let state = part.get("state");
+            let input = state
+                .and_then(|state| state.get("input"))
+                .or_else(|| part.get("input"))
+                .map(|input| serde_json::to_string_pretty(input).unwrap_or_default())
+                .unwrap_or_else(|| "{}".to_string());
+            let mut output = crate::tr!("session.tool_call", name, input);
+            if let Some(result) = state.and_then(opencode_tool_output) {
+                output.push('\n');
+                output.push_str(&crate::tr!("session.tool_result", result));
+            }
+            Some(output)
+        }
+        Some("file") | Some("image") => Some("[image]".to_string()),
+        _ => None,
+    }
+}
+
 async fn query_opencode_messages(
     connection: &mut SqliteConnection,
     project_id: &str,
     session_id: &str,
 ) -> Result<Vec<SessionMessage>> {
-    let message_rows = sqlx::query_as::<_, (String, i64, String)>(
+    let rows = sqlx::query_as::<_, (String, i64, String)>(
         r#"
-        SELECT m.id, m.time_created, m.data
-        FROM message m
-        JOIN session s ON s.id = m.session_id
-        WHERE m.session_id = ? AND s.project_id = ? AND s.time_archived IS NULL
-        ORDER BY m.time_created ASC, m.id ASC
+        SELECT sm.type, COALESCE(sm.time_created, 0), sm.data
+        FROM session_message sm
+        JOIN session_v2 s ON s.id = sm.session_id
+        WHERE sm.session_id = ? AND s.project_id = ? AND s.time_archived IS NULL
+        ORDER BY sm.seq ASC, sm.time_created ASC, sm.id ASC
         "#,
     )
     .bind(session_id)
@@ -1551,56 +1699,41 @@ async fn query_opencode_messages(
     .fetch_all(&mut *connection)
     .await
     .map_err(|error| crate::tr!("err.session.opencode_query_messages_failed", error))?;
-    let part_rows = sqlx::query_as::<_, (String, String)>(
-        r#"
-        SELECT pt.message_id, pt.data
-        FROM part pt
-        JOIN session s ON s.id = pt.session_id
-        WHERE pt.session_id = ? AND s.project_id = ? AND s.time_archived IS NULL
-        ORDER BY pt.time_created ASC, pt.id ASC
-        "#,
-    )
-    .bind(session_id)
-    .bind(project_id)
-    .fetch_all(&mut *connection)
-    .await
-    .map_err(|error| crate::tr!("err.session.opencode_query_parts_failed", error))?;
-
-    let mut parts_by_message: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-    for (message_id, data) in part_rows {
-        parts_by_message.entry(message_id).or_default().push(data);
-    }
 
     let mut messages = Vec::new();
-    for (message_id, time_created, data) in message_rows {
+    for (message_type, time_created, data) in rows {
+        let role = match message_type.as_str() {
+            "user" => "user",
+            "assistant" => "assistant",
+            _ => continue,
+        };
         let Ok(data) = serde_json::from_str::<serde_json::Value>(&data) else {
             continue;
         };
-        let Some(role @ ("user" | "assistant")) = data.get("role").and_then(|role| role.as_str())
-        else {
-            continue;
+
+        let content = if role == "user" {
+            opencode_text_from_content(&data)
+        } else {
+            let text_parts: Vec<String> = data
+                .get("content")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(opencode_part_text)
+                .collect();
+            if text_parts.is_empty() {
+                opencode_text_from_content(&data)
+            } else {
+                text_parts.join("\n\n")
+            }
         };
-        let text_parts: Vec<String> = parts_by_message
-            .get(&message_id)
-            .into_iter()
-            .flatten()
-            .filter_map(|part| serde_json::from_str::<serde_json::Value>(part).ok())
-            .filter(|part| part.get("type").and_then(|kind| kind.as_str()) == Some("text"))
-            .filter_map(|part| {
-                part.get("text")
-                    .and_then(|text| text.as_str())
-                    .filter(|text| !text.trim().is_empty())
-                    .map(str::to_owned)
-            })
-            .collect();
-        if text_parts.is_empty() {
+        if content.trim().is_empty() {
             continue;
         }
 
         messages.push(SessionMessage {
             role: role.to_string(),
-            content: text_parts.join("\n\n"),
+            content,
             timestamp: Some(time_created / 1000),
         });
     }

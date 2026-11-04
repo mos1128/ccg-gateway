@@ -3,8 +3,8 @@
   "id": "opencode",
   "sort_order": 40,
   "name": "OpenCode",
-  "remark": "网关会接管 OpenCode 内置的 anthropic 与 openai 服务商；在 OpenCode 中选择 anthropic 与 openai 的模型即可。",
-  "remark_en": "The gateway takes over OpenCode's built-in anthropic and openai providers; just pick anthropic and openai models in OpenCode.",
+  "remark": "网关会接管 anthropic、openai 服务商；分别使用 Anthropic Messages、OpenAI Responses 协议，选择对应的模型即可。\nOpenCode CLI 和桌面端共享配置。",
+  "remark_en": "The gateway takes over the anthropic and openai providers, using the Anthropic Messages and OpenAI Responses protocols respectively — just pick the corresponding models.\nThe OpenCode CLI and desktop app share configuration.",
   "icon": {
     "view_box": "0 0 512 512",
     "paths": [
@@ -43,7 +43,7 @@
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "anthropic", "options", "baseURL"],
+          "path": ["providers", "anthropic", "settings", "baseURL"],
           "value": "{target.endpoint}/v1"
         },
         {
@@ -51,7 +51,7 @@
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "anthropic", "options", "apiKey"],
+          "path": ["providers", "anthropic", "settings", "apiKey"],
           "value": "{target.token}"
         },
         {
@@ -59,7 +59,7 @@
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "openai", "options", "baseURL"],
+          "path": ["providers", "openai", "settings", "baseURL"],
           "value": "{target.endpoint}"
         },
         {
@@ -67,7 +67,7 @@
           "op": "set",
           "file": "opencode.json",
           "format": "json",
-          "path": ["provider", "openai", "options", "apiKey"],
+          "path": ["providers", "openai", "settings", "apiKey"],
           "value": "{target.token}"
         }
       ]
@@ -87,7 +87,7 @@
       "file": "opencode.json",
       "format": "json",
       "adapter": "opencode",
-      "servers_path": ["mcp"]
+      "servers_path": ["mcp", "servers"]
     },
     "sessions": { "enabled": true, "adapter": "opencode" },
     "plugins": { "enabled": false },
