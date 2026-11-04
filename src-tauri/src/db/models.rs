@@ -1363,10 +1363,10 @@ pub struct SystemStatus {
 
 // ==================== Plugin 相关实体 ====================
 
-// 已安装插件信息（从 dsh profile 解析）
+// 已安装插件信息（按 Agent adapter 解析）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginItem {
-    /// 所属 dsh profile 名
+    /// 所属 dsh profile 名；其他 adapter 为空字符串
     pub profile: String,
     pub name: String,
     pub version: Option<String>,

@@ -299,7 +299,7 @@ Codex 仍会读取旧的 `$CODEX_HOME/skills`，但源码已将其标记为 depr
 | Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
 | `enabled` | `true` / `false` | 是否支持读取和管理会话。 |
-| `adapter` | 非空字符串 | `enabled: true` 时必填。当前可用值为 `claude_code`、`codex`、`gemini`、`opencode`、`kimi_code`、`zcode`。 |
+| `adapter` | 非空字符串 | `enabled: true` 时必填。当前可用值为 `claude_code`、`codex`、`gemini`、`opencode`、`kimi_code`、`zcode`、`grok`、`pi`、`omp`、`dsh`。 |
 
 Session adapter 是已经编译进 CCG 的解析实现。用户模板不能只靠填写新的字符串来增加一种会话格式。
 
@@ -475,6 +475,8 @@ DeepSeek Harness 模板接管原生 `llm-deepseek`（DeepSeek 官方 API 路由�
 服务商配置和全局预设使用 `cordis_yaml` 写入各 profile 自己的 `profiles/<name>/cordis.patch.yml`，不再写入根目录 home patch，也不再依赖 `settings.yaml` 的一次性导入。目标文件为 `profiles/*/cordis.patch.yml`：写入时展开所有已初始化（存在 `package.json`）的 profile，并额外包含 `desktop` 和 `web`（目录不存在时创建）。根目录 home patch 的优先级高于 profile patch，会覆盖 profile 配置，并让 DSH 设置编辑器因“被 home patch 覆盖”而拒绝保存；升级时会移除根目录中旧的 CCG 管理块。DSH 按完整 `config` 替换同 ID 条目的配置；接管期间需要保留的额外 provider、自定义模型和参数应放入 CCG 全局预设的对应 ID 下。移除管理块后，profile 自身的设置重新生效。
 
 写入或切换模式时，DSH 适配会通过 YAML 节点编辑，清理旧 `settings.yaml` 和已初始化 profile 的 `cordis.patch.yml` 中使用 `CCG_GATEWAY_API_KEY` 的路由字段。直接移除对应字段，不追加覆盖条目；保留其他配置、注释、管理标记和 `!!js` 表达式，支持块式、流式 YAML 及文档结束符。写回前校验完整 YAML，清理幂等，避免关闭新管理块后重新启用旧网关地址。`settings.yaml.imported` 是 DSH 的历史导入文件，不参与运行配置，CCG 不修改它。
+
+DSH 的会话位于 `<config_dir>/sessions/--<cwd>--/<session-id>/session.vN.jsonl[.zstd]`。`dsh` session adapter 只读解析物理 header、`user/message`、`assistant/message`、`tool/call` 和 `tool/result`，支持 raw JSONL 与 Zstandard 压缩；删除操作被拒绝，由 DSH 自己管理会话文件。
 
 ### ZCode：深层路径、数字和嵌套 `servers_path`
 

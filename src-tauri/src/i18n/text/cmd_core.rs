@@ -319,6 +319,14 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "删除项目失败: {}",
             Lang::En => "Failed to delete project: {}",
         },
+        "err.session.dsh_readonly_session" => match lang {
+            Lang::Zh => "DeepSeek Harness 会话管理为只读，不支持删除会话",
+            Lang::En => "DeepSeek Harness session management is read-only; deleting sessions is not supported",
+        },
+        "err.session.dsh_readonly_project" => match lang {
+            Lang::Zh => "DeepSeek Harness 会话管理为只读，不支持删除项目",
+            Lang::En => "DeepSeek Harness session management is read-only; deleting projects is not supported",
+        },
         "err.session.opencode_readonly_session" => match lang {
             Lang::Zh => "OpenCode 会话管理为只读，不支持删除会话",
             Lang::En => "OpenCode session management is read-only; deleting sessions is not supported",

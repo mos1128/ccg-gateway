@@ -1781,6 +1781,7 @@ async fn session_adapter(db: &SqlitePool, agent_id: &str) -> Result<String> {
             | "grok"
             | "pi"
             | "omp"
+            | "dsh"
     ) {
         return Err(crate::tr!("err.session.adapter_unsupported", adapter));
     }
@@ -3759,6 +3760,429 @@ fn delete_pi_family_project(base_dir: &std::path::Path, project_name: &str) -> R
     Ok(())
 }
 
+// ==================== DeepSeek Harness 会话适配 ====================
+//
+// dsh 把每个会话存成独立的 JSONL 日志：
+//   <config_dir>/sessions/--<cwd>--/<session-id>/session.vN.jsonl[.zstd]
+// 第一行是物理 header（version/id/createdAt/cwd），后续每行是一个 SessionEvent：
+//   user/message、assistant/message、tool/call、tool/result、system/message 等。
+// 只读解析，删除由 dsh 自己管理。
+
+fn dsh_sessions_root(base_dir: &std::path::Path) -> std::path::PathBuf {
+    base_dir.join("sessions")
+}
+
+fn dsh_session_version(name: &str) -> Option<(u64, bool)> {
+    let (name, compressed) = match name.strip_suffix(".zstd") {
+        Some(name) => (name, true),
+        None => (name, false),
+    };
+    let stem = name.strip_suffix(".jsonl")?;
+    if stem == "session" {
+        return Some((0, compressed));
+    }
+    let version = stem.strip_prefix("session.v")?.parse::<u64>().ok()?;
+    Some((version, compressed))
+}
+
+fn dsh_session_file(session_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut best: Option<(u64, bool, std::path::PathBuf)> = None;
+    for entry in std::fs::read_dir(session_dir).ok()?.flatten() {
+        if !entry.path().is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Some((version, compressed)) = dsh_session_version(&name) else {
+            continue;
+        };
+        let replace = match &best {
+            None => true,
+            Some((best_version, best_compressed, _)) => {
+                version > *best_version
+                    || (version == *best_version && compressed && !*best_compressed)
+            }
+        };
+        if replace {
+            best = Some((version, compressed, entry.path()));
+        }
+    }
+    best.map(|(_, _, path)| path)
+}
+
+fn dsh_read_session_text(path: &std::path::Path) -> Result<String> {
+    let bytes = if path.extension().and_then(|ext| ext.to_str()) == Some("zstd") {
+        let file = std::fs::File::open(path)
+            .map_err(|error| crate::tr!("err.session.read_failed", path.display(), error))?;
+        zstd::stream::decode_all(file)
+            .map_err(|error| crate::tr!("err.session.read_failed", path.display(), error))?
+    } else {
+        std::fs::read(path)
+            .map_err(|error| crate::tr!("err.session.read_failed", path.display(), error))?
+    };
+    Ok(String::from_utf8_lossy(&bytes).to_string())
+}
+
+fn dsh_header(text: &str) -> Option<serde_json::Value> {
+    let first = text.lines().find(|line| !line.trim().is_empty())?;
+    let value: serde_json::Value = serde_json::from_str(first).ok()?;
+    if value.get("version").is_some()
+        || value.get("cwd").is_some()
+        || value.get("createdAt").is_some()
+    {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn dsh_content_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(dsh_content_text)
+            .filter(|text| !text.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        serde_json::Value::Object(object) => {
+            if let Some(text) = object.get("text").and_then(|v| v.as_str()) {
+                return text.to_string();
+            }
+            if let Some(thinking) = object.get("thinking").and_then(|v| v.as_str()) {
+                if !thinking.is_empty() {
+                    return crate::tr!("session.thinking", thinking);
+                }
+            }
+            if let Some(kind) = object.get("type").and_then(|v| v.as_str()) {
+                match kind {
+                    "tool_use" | "toolCall" | "tool_call" => {
+                        let name = object
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        let input = object
+                            .get("input")
+                            .or_else(|| object.get("arguments"))
+                            .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
+                            .unwrap_or_else(|| "{}".to_string());
+                        return crate::tr!("session.tool_call", name, input);
+                    }
+                    "tool_result" | "toolResult" => {
+                        let result = object
+                            .get("content")
+                            .map(dsh_content_text)
+                            .unwrap_or_default();
+                        if !result.is_empty() {
+                            return crate::tr!("session.tool_result", result);
+                        }
+                    }
+                    "image" | "image_url" => return "[image]".to_string(),
+                    _ => {}
+                }
+            }
+            if let Some(content) = object.get("content") {
+                let text = dsh_content_text(content);
+                if !text.trim().is_empty() {
+                    return text;
+                }
+            }
+            serde_json::to_string(object).unwrap_or_default()
+        }
+        _ => value.to_string(),
+    }
+}
+
+fn dsh_event_message(line: &str) -> Option<SessionMessage> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    let event_type = value.get("type")?.as_str()?;
+    let data = value.get("data").cloned().unwrap_or_default();
+    let timestamp = value
+        .get("time")
+        .and_then(|v| v.as_i64())
+        .map(|time| time / 1000);
+    let (role, content) = match event_type {
+        "user/message" => ("user", dsh_content_text(data.get("content")?)),
+        "assistant/message" => {
+            let message = data.get("message")?;
+            let content = message
+                .get("content")
+                .map(dsh_content_text)
+                .unwrap_or_default();
+            ("assistant", content)
+        }
+        "tool/call" => {
+            let name = data
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let input = data
+                .get("arguments")
+                .map(|v| {
+                    v.as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| serde_json::to_string_pretty(v).unwrap_or_default())
+                })
+                .unwrap_or_else(|| "{}".to_string());
+            ("assistant", crate::tr!("session.tool_call", name, input))
+        }
+        "tool/result" => {
+            let message = data.get("message")?;
+            let content = message
+                .get("content")
+                .map(dsh_content_text)
+                .unwrap_or_default();
+            ("user", crate::tr!("session.tool_result", content))
+        }
+        _ => return None,
+    };
+    if content.trim().is_empty() {
+        return None;
+    }
+    Some(SessionMessage {
+        role: role.to_string(),
+        content,
+        timestamp,
+    })
+}
+
+fn dsh_first_user_message(text: &str) -> String {
+    for line in text.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("type").and_then(|v| v.as_str()) != Some("user/message") {
+            continue;
+        }
+        if let Some(content) = value
+            .get("data")
+            .and_then(|data| data.get("content"))
+            .map(dsh_content_text)
+        {
+            let content = content.trim();
+            if !content.is_empty() {
+                return content.chars().take(200).collect();
+            }
+        }
+    }
+    String::new()
+}
+
+fn dsh_project_cwd(project_dir: &std::path::Path) -> Option<String> {
+    for entry in std::fs::read_dir(project_dir).ok()?.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let Some(file) = dsh_session_file(&entry.path()) else {
+            continue;
+        };
+        let Ok(text) = dsh_read_session_text(&file) else {
+            continue;
+        };
+        if let Some(cwd) = dsh_header(&text).and_then(|header| {
+            header
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        }) {
+            return Some(cwd);
+        }
+    }
+    None
+}
+
+fn get_dsh_projects(
+    base_dir: &std::path::Path,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedProjects> {
+    let root = dsh_sessions_root(base_dir);
+    let mut projects = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let mut session_count = 0i64;
+            let mut total_size = 0i64;
+            let mut last_modified = 0f64;
+            if let Ok(sessions) = std::fs::read_dir(&path) {
+                for session in sessions.flatten() {
+                    if !session.path().is_dir() {
+                        continue;
+                    }
+                    let Some(file) = dsh_session_file(&session.path()) else {
+                        continue;
+                    };
+                    session_count += 1;
+                    if let Ok(meta) = file.metadata() {
+                        total_size += meta.len() as i64;
+                        if let Ok(mtime) = meta.modified() {
+                            let secs = mtime
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs_f64())
+                                .unwrap_or(0.0);
+                            if secs > last_modified {
+                                last_modified = secs;
+                            }
+                        }
+                    }
+                }
+            }
+            if session_count == 0 {
+                continue;
+            }
+            let cwd = dsh_project_cwd(&path);
+            projects.push(ProjectInfo {
+                name,
+                display_name: cwd
+                    .clone()
+                    .unwrap_or_else(|| path.to_string_lossy().to_string()),
+                full_path: cwd.unwrap_or_else(|| path.to_string_lossy().to_string()),
+                session_count,
+                total_size,
+                last_modified,
+            });
+        }
+    }
+    projects.sort_by(|a, b| {
+        b.last_modified
+            .partial_cmp(&a.last_modified)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let total = projects.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items = projects
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+    Ok(PaginatedProjects {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+fn get_dsh_sessions(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    page: i64,
+    page_size: i64,
+) -> Result<PaginatedSessions> {
+    let project_dir = dsh_sessions_root(base_dir).join(project_name);
+    let mut sessions = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&project_dir) {
+        for entry in entries.flatten() {
+            if !entry.path().is_dir() {
+                continue;
+            }
+            let Some(file) = dsh_session_file(&entry.path()) else {
+                continue;
+            };
+            let size = file.metadata().map(|meta| meta.len() as i64).unwrap_or(0);
+            let mtime = file
+                .metadata()
+                .ok()
+                .and_then(|meta| meta.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs_f64())
+                .unwrap_or(0.0);
+            let text = dsh_read_session_text(&file).unwrap_or_default();
+            let first_message = dsh_first_user_message(&text);
+            let summary = dsh_header(&text)
+                .and_then(|header| {
+                    header
+                        .get("title")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| first_message.clone());
+            sessions.push(SessionInfo {
+                session_id: entry.file_name().to_string_lossy().to_string(),
+                size,
+                mtime,
+                first_message,
+                git_branch: String::new(),
+                summary,
+            });
+        }
+    }
+    sessions.sort_by(|a, b| {
+        b.mtime
+            .partial_cmp(&a.mtime)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let total = sessions.len() as i64;
+    let start = ((page - 1) * page_size) as usize;
+    let items = sessions
+        .into_iter()
+        .skip(start)
+        .take(page_size as usize)
+        .collect();
+    Ok(PaginatedSessions {
+        items,
+        total,
+        page,
+        page_size,
+    })
+}
+
+fn dsh_resolve_session_dir(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    session_id: &str,
+) -> Option<std::path::PathBuf> {
+    let project_dir = dsh_sessions_root(base_dir).join(project_name);
+    let direct = project_dir.join(session_id);
+    if direct.is_dir() && dsh_session_file(&direct).is_some() {
+        return Some(direct);
+    }
+    for entry in std::fs::read_dir(&project_dir).ok()?.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let Some(file) = dsh_session_file(&entry.path()) else {
+            continue;
+        };
+        let text = dsh_read_session_text(&file).ok()?;
+        let header_id = dsh_header(&text).and_then(|header| {
+            header
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        });
+        if header_id.as_deref() == Some(session_id) {
+            return Some(entry.path());
+        }
+    }
+    None
+}
+
+fn get_dsh_messages(
+    base_dir: &std::path::Path,
+    project_name: &str,
+    session_id: &str,
+) -> Result<Vec<SessionMessage>> {
+    let session_dir = dsh_resolve_session_dir(base_dir, project_name, session_id)
+        .ok_or_else(|| crate::tr!("err.session.directory_not_found", session_id))?;
+    let file = dsh_session_file(&session_dir)
+        .ok_or_else(|| crate::tr!("err.session.file_not_found", session_id))?;
+    let text = dsh_read_session_text(&file)?;
+    let mut messages = Vec::new();
+    for line in text.lines() {
+        if let Some(message) = dsh_event_message(line) {
+            messages.push(message);
+        }
+    }
+    Ok(messages)
+}
+
 // Session commands
 #[tauri::command]
 pub async fn get_session_projects(
@@ -3770,6 +4194,11 @@ pub async fn get_session_projects(
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(20).clamp(1, 100);
     let adapter = session_adapter(db.inner(), &cli_type).await?;
+
+    if adapter == "dsh" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        return run_session_blocking(move || get_dsh_projects(&base_dir, page, page_size)).await;
+    }
 
     if adapter == "opencode" {
         return get_opencode_projects(page, page_size).await;
@@ -3928,6 +4357,15 @@ pub async fn get_project_sessions(
     let page_size = page_size.unwrap_or(20).clamp(1, 100);
     let adapter = session_adapter(db.inner(), &cli_type).await?;
 
+    if adapter == "dsh" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let project_name = project_name.clone();
+        return run_session_blocking(move || {
+            get_dsh_sessions(&base_dir, &project_name, page, page_size)
+        })
+        .await;
+    }
+
     if adapter == "opencode" {
         return get_opencode_sessions(&project_name, page, page_size).await;
     }
@@ -4073,6 +4511,16 @@ pub async fn get_session_messages(
     session_id: String,
 ) -> Result<Vec<SessionMessage>> {
     let adapter = session_adapter(db.inner(), &cli_type).await?;
+    if adapter == "dsh" {
+        let base_dir = get_cli_base_dir_async(db.inner(), &cli_type).await;
+        let project_name = project_name.clone();
+        let session_id = session_id.clone();
+        return run_session_blocking(move || {
+            get_dsh_messages(&base_dir, &project_name, &session_id)
+        })
+        .await;
+    }
+
     if adapter == "opencode" {
         return get_opencode_messages(&project_name, &session_id).await;
     }
@@ -4136,6 +4584,10 @@ pub async fn delete_session(
     session_id: String,
 ) -> Result<()> {
     let adapter = session_adapter(db.inner(), &cli_type).await?;
+    if adapter == "dsh" {
+        return Err(crate::tr!("err.session.dsh_readonly_session"));
+    }
+
     if adapter == "opencode" {
         return Err(crate::tr!("err.session.opencode_readonly_session"));
     }
@@ -4256,6 +4708,10 @@ pub async fn delete_project(
     project_name: String,
 ) -> Result<()> {
     let adapter = session_adapter(db.inner(), &cli_type).await?;
+    if adapter == "dsh" {
+        return Err(crate::tr!("err.session.dsh_readonly_project"));
+    }
+
     if adapter == "opencode" {
         return Err(crate::tr!("err.session.opencode_readonly_project"));
     }

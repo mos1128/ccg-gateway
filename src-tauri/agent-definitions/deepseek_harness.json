@@ -152,7 +152,7 @@
       "format": "yaml",
       "adapter": "dsh"
     },
-    "sessions": { "enabled": false },
+    "sessions": { "enabled": true, "adapter": "dsh" },
     "plugins": { "enabled": true, "adapter": "dsh" },
     "prompts": { "enabled": true, "file": "AGENTS.md" }
   }

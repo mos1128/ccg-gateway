@@ -124,7 +124,7 @@ const activeCliType = computed({
 })
 const sessionReadOnly = computed(() => {
   const adapter = agentStore.get(activeCliType.value)?.features.sessions.adapter
-  return ['opencode', 'zcode'].includes(adapter || '')
+  return ['opencode', 'zcode', 'dsh'].includes(adapter || '')
 })
 const currentProject = computed(() => sessionStore.currentProject)
 const sessionSearchQuery = ref('')

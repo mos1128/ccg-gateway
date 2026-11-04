@@ -319,6 +319,20 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "未知操作: {}",
             Lang::En => "Unknown action: {}",
         },
+        "err.plugin.cli_spawn_failed" => match lang {
+            Lang::Zh => "执行 {} 命令遇到错误：{}（请确认已安装且在 PATH 上）",
+            Lang::En => {
+                "Failed to run the {} command: {} (please make sure it is installed and on PATH)"
+            }
+        },
+        "err.plugin.cli_failed" => match lang {
+            Lang::Zh => "{} 命令执行失败：\n{}",
+            Lang::En => "{} command failed:\n{}",
+        },
+        "err.plugin.cli_timeout" => match lang {
+            Lang::Zh => "{} 命令执行超时，已终止",
+            Lang::En => "The {} command timed out and was terminated",
+        },
         _ => return None,
     };
     Some(text)

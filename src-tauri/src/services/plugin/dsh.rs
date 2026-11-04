@@ -1,18 +1,7 @@
+use super::{item, run_cli, validate_param, PluginActionResult, Result};
 use crate::db::models::PluginItem;
-use serde::{Deserialize, Serialize};
-use tokio::process::Command;
-
-type Result<T> = std::result::Result<T, String>;
-
-// ==================== 返回结构 ====================
-
-/// 插件操作返回结果（仅 CLI 输出，前端自行刷新列表）
-#[derive(Debug, Serialize)]
-pub struct PluginActionResult {
-    pub cli_output: String,
-}
-
-// ==================== 常量 ====================
+use serde::Deserialize;
+use std::path::Path;
 
 /// profile 模板内置的 bundle，不属于用户安装的插件（防御性过滤）
 const IN_BOX_BUNDLES: [&str; 6] = [
@@ -23,55 +12,6 @@ const IN_BOX_BUNDLES: [&str; 6] = [
     "@deepseek-ai/dsh-sdk-app",
     "@deepseek-ai/dsh-sdk-minimal",
 ];
-
-// ==================== CLI 执行 ====================
-
-/// 执行 dsh 命令，返回完整输出；非零退出码视为失败
-async fn run_dsh(config_dir: &std::path::Path, args: &[&str]) -> Result<String> {
-    #[cfg(windows)]
-    let output = {
-        // Windows 上直接用 cmd /c 执行，可自动解析 .cmd/.bat/.exe 等 PATHEXT 扩展名
-        let mut cmd_args = vec!["/c", "dsh"];
-        cmd_args.extend_from_slice(args);
-        Command::new("cmd")
-            .args(&cmd_args)
-            .env("DSH_HOME", config_dir)
-            .output()
-            .await
-    };
-
-    #[cfg(not(windows))]
-    let output = Command::new("dsh")
-        .args(args)
-        .env("DSH_HOME", config_dir)
-        .output()
-        .await;
-
-    let output = output.map_err(|e| crate::tr!("err.plugin.dsh_spawn_failed", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let combined = if stdout.is_empty() {
-        stderr
-    } else if stderr.is_empty() {
-        stdout
-    } else {
-        format!("{}\n{}", stdout, stderr)
-    };
-
-    if !output.status.success() {
-        let detail = if combined.is_empty() {
-            crate::tr!("err.plugin.exit_code", output.status.code().unwrap_or(-1))
-        } else {
-            combined
-        };
-        return Err(crate::tr!("err.plugin.dsh_failed", detail));
-    }
-
-    Ok(combined)
-}
-
-// ==================== 校验 ====================
 
 /// 校验 profile 名：与 dsh 的 resolveProfileDir 约束对齐（非空、非保留名、不含路径分隔符），
 /// 同时拒绝会被 cmd /c 重解析的元字符
@@ -89,13 +29,11 @@ fn validate_profile(profile: &str) -> Result<()> {
     Ok(())
 }
 
-// ==================== 数据查询 ====================
-
 /// 获取已安装插件列表
 /// 扫描 `<config_dir>/profiles/` 下所有已初始化的 profile，
 /// 读取各 profile package.json 的 dependencies（用户安装的包），
 /// 并从 node_modules 中各包的 package.json 补充 version/description
-pub async fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<PluginItem>> {
+pub async fn list(config_dir: &Path) -> Result<Vec<PluginItem>> {
     let profiles_dir = config_dir.join("profiles");
 
     if !profiles_dir.exists() {
@@ -156,7 +94,10 @@ pub async fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<P
             let pkg_path = if local_path.exists() {
                 local_path
             } else {
-                profiles_dir.join("node_modules").join(&name).join("package.json")
+                profiles_dir
+                    .join("node_modules")
+                    .join(&name)
+                    .join("package.json")
             };
             let (version, description) = if pkg_path.exists() {
                 std::fs::read_to_string(&pkg_path)
@@ -167,12 +108,12 @@ pub async fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<P
             } else {
                 (None, None)
             };
-            result.push(PluginItem {
-                profile: profile_name.clone(),
+            result.push(item(
+                Some(profile_name.clone()),
                 name,
-                version: version.or_else(|| spec.as_str().map(str::to_string)),
+                version.or_else(|| spec.as_str().map(str::to_string)),
                 description,
-            });
+            ));
         }
     }
 
@@ -185,26 +126,17 @@ pub async fn get_installed_plugins(config_dir: &std::path::Path) -> Result<Vec<P
     Ok(result)
 }
 
-// ==================== 公开接口 ====================
-
 /// 插件操作：install 的 param 为仓库地址，uninstall/update 的 param 为插件包名；
 /// profile 不存在时由 dsh 自动初始化
-pub async fn plugin_action(
-    config_dir: &std::path::Path,
+pub async fn action(
+    config_dir: &Path,
     action: &str,
     profile: &str,
     param: &str,
 ) -> Result<PluginActionResult> {
     validate_profile(profile)?;
-
+    validate_param(param)?;
     let param = param.trim();
-    if param.is_empty() {
-        return Err(crate::tr!("err.plugin.param_required"));
-    }
-    // Windows 上经 cmd /c 执行，元字符会被 shell 重解析，直接拒绝
-    if param.chars().any(|c| "&|^<>%\"".contains(c)) || param.contains("  ") {
-        return Err(crate::tr!("err.plugin.param_invalid_chars"));
-    }
 
     let subcommand = match action {
         "install" => "add",
@@ -213,9 +145,10 @@ pub async fn plugin_action(
         _ => return Err(crate::tr!("err.plugin.unknown_action", action)),
     };
 
-    let cli_output = run_dsh(
-        config_dir,
+    let cli_output = run_cli(
+        "dsh",
         &["plugin", "--profile", profile, subcommand, param],
+        Some(("DSH_HOME", config_dir)),
     )
     .await?;
     Ok(PluginActionResult { cli_output })
