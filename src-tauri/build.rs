@@ -344,9 +344,55 @@ fn validate_definition(value: &Value, file: &Path, ids: &mut HashSet<String>) ->
                         file.display()
                     );
                 }
+                if let Some(managed) = feature.get("managed_config") {
+                    for key in [
+                        "file",
+                        "provider",
+                        "provider_type",
+                        "oauth_key",
+                        "oauth_storage",
+                    ] {
+                        if managed
+                            .get(key)
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .is_none()
+                        {
+                            panic!(
+                                "{}: official_login.managed_config needs non-empty {}",
+                                file.display(),
+                                key
+                            );
+                        }
+                    }
+                    if managed.get("format").and_then(Value::as_str) != Some("toml") {
+                        panic!(
+                            "{}: official_login.managed_config only supports toml",
+                            file.display()
+                        );
+                    }
+                    if let Some(services) = managed.get("services") {
+                        let valid = services.as_array().is_some_and(|services| {
+                            services.iter().all(|service| {
+                                service
+                                    .as_str()
+                                    .map(str::trim)
+                                    .filter(|service| !service.is_empty())
+                                    .is_some()
+                            })
+                        });
+                        if !valid {
+                            panic!(
+                                "{}: official_login.managed_config services must be non-empty strings",
+                                file.display()
+                            );
+                        }
+                    }
+                }
             }
             "skills" => {
-                if feature
+                let directory = feature
                     .get("directory")
                     .and_then(Value::as_str)
                     .map(str::trim)
