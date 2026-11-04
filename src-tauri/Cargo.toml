@@ -2,7 +2,7 @@
 name = "ccg-gateway"
 version = "2.1.3"
 edition = "2021"
-description = "CCG Gateway - API Gateway for Claude Code, Codex, and Gemini CLI"
+description = "CCG Gateway - API Gateway for AI coding Agents"
 authors = ["CCG Gateway"]
 license = "MIT"
 
