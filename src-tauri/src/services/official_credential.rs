@@ -386,7 +386,6 @@ fn managed_config_operation(
         private: false,
         preserve_on_remove: false,
         path: full_path,
-        key: None,
         value: Some(value),
     }
 }
@@ -532,7 +531,6 @@ async fn remove_managed_official_config(
         private: false,
         preserve_on_remove: false,
         path: vec!["providers".to_string(), managed.provider.clone()],
-        key: None,
         value: None,
     }];
     for alias in &managed_models {
@@ -544,7 +542,6 @@ async fn remove_managed_official_config(
             private: false,
             preserve_on_remove: false,
             path: vec!["models".to_string(), alias.clone()],
-            key: None,
             value: None,
         });
     }
@@ -560,7 +557,6 @@ async fn remove_managed_official_config(
             private: false,
             preserve_on_remove: false,
             path: vec!["default_model".to_string()],
-            key: None,
             value: None,
         });
     }
@@ -581,7 +577,6 @@ async fn remove_managed_official_config(
                 private: false,
                 preserve_on_remove: false,
                 path: vec!["services".to_string(), service.clone()],
-                key: None,
                 value: None,
             });
         }
