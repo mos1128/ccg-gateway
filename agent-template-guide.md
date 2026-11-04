@@ -429,7 +429,7 @@ Codex 的官方凭证直接替换整个文件：
 ### OpenCode：一个 Agent 支持多协议及 MCP 结构适配
 
 ```json
-"protocols": ["openai_responses", "anthropic_messages"]
+"protocols": ["openai_responses", "anthropic_messages", "openai_chat"]
 ```
 
 ```json

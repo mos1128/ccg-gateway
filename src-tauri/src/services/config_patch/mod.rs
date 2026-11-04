@@ -501,7 +501,7 @@ mod kimi_template_tests {
 
 #[cfg(test)]
 mod agent_template_path_tests {
-    use crate::db::models::AgentDefinition;
+    use crate::db::models::{AgentDefinition, Protocol};
 
     fn definition(source: &str) -> AgentDefinition {
         serde_json::from_str(source).expect("agent template")
@@ -563,6 +563,27 @@ mod agent_template_path_tests {
             .user_agent
             .iter()
             .any(|value| value == "grok-shell"));
+    }
+
+    #[test]
+    fn custom_provider_agents_declare_openai_chat() {
+        for (name, source) in [
+            (
+                "opencode",
+                include_str!("../../../agent-definitions/opencode.json"),
+            ),
+            (
+                "zcode",
+                include_str!("../../../agent-definitions/zcode.json"),
+            ),
+            ("grok", include_str!("../../../agent-definitions/grok.json")),
+        ] {
+            let definition = definition(source);
+            assert!(
+                definition.protocols.contains(&Protocol::OpenaiChat),
+                "{name} should declare openai_chat"
+            );
+        }
     }
 
     #[test]

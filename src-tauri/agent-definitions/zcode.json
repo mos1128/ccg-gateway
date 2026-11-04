@@ -28,7 +28,7 @@
   },
   "config_dir": "~/.zcode",
   "user_agent": ["zcode"],
-  "protocols": ["openai_responses", "anthropic_messages"],
+  "protocols": ["openai_responses", "anthropic_messages", "openai_chat"],
   "features": {
     "provider_config": {
       "enabled": true,
