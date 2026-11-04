@@ -3,6 +3,8 @@
   "id": "claude_code",
   "sort_order": 10,
   "name": "Claude Code",
+  "remark": "官方账号凭证以 ~/.claude/.credentials.json 为准；如果 Claude 使用系统钥匙串存储，请先确认该文件存在或从 Claude 导出凭证。",
+  "remark_en": "Official account credentials are read from ~/.claude/.credentials.json; if Claude stores them in the OS keychain, make sure this file exists or export the credentials from Claude first.",
   "icon": {
     "view_box": "0 0 24 24",
     "paths": [
@@ -68,7 +70,19 @@
         "non_default": ["claude", "--settings", "{profile.absolute_path}"]
       }
     },
-    "official_login": { "enabled": false },
+    "official_login": {
+      "enabled": true,
+      "operations": [
+        {
+          "id": "replace-claude-credentials",
+          "op": "replace_file",
+          "file": ".credentials.json",
+          "format": "json",
+          "private": true,
+          "content_from": { "file_id": "claude_credentials" }
+        }
+      ]
+    },
     "model_mapping": { "enabled": true },
     "token_usage": { "enabled": true },
     "skills": { "enabled": true, "directory": "skills" },

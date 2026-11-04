@@ -111,6 +111,57 @@ fn parse_claude_session_info(file_path: &std::path::Path) -> (String, String, St
     (first_message, git_branch, summary)
 }
 
+/// Claude Code 会把项目路径里的非字母数字替换成 `-`，因此目录名无法还原
+/// 中文、空格或本身带 `-` 的目录。会话 JSONL 的 `cwd` 才是真实路径。
+fn claude_project_cwd(project_dir: &std::path::Path) -> Option<String> {
+    use std::io::{BufRead, BufReader};
+
+    for entry in std::fs::read_dir(project_dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap_or("");
+        if stem == "sessions-index" || stem.starts_with("agent-") {
+            continue;
+        }
+        let Ok(file) = std::fs::File::open(&path) else {
+            continue;
+        };
+        for line in BufReader::new(file).lines().take(80).flatten() {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
+            if let Some(cwd) = value
+                .get("cwd")
+                .and_then(|cwd| cwd.as_str())
+                .map(str::trim)
+                .filter(|cwd| !cwd.is_empty())
+            {
+                return Some(cwd.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn decode_claude_project_info(
+    encoded_name: &str,
+    project_dir: &std::path::Path,
+) -> (String, String) {
+    if let Some(cwd) = claude_project_cwd(project_dir) {
+        let display_name = std::path::Path::new(&cwd)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| cwd.clone());
+        return (display_name, cwd);
+    }
+    decode_claude_project_name(encoded_name)
+}
+
 /// Decode Claude Code project name to (display_name, full_path)
 /// Format: D--my-develop-project-other -> ("other", "D:\\my-develop\\project\\other")
 fn decode_claude_project_name(encoded_name: &str) -> (String, String) {
@@ -3527,8 +3578,8 @@ pub async fn get_session_projects(
                         }
 
                         let (display_name, full_path) = if adapter == "claude_code" {
-                            // Decode path from project name (format: -D-my-develop-project-other)
-                            decode_claude_project_name(&name)
+                            // 优先读会话 JSONL 的真实 cwd；目录名解码只作兜底。
+                            decode_claude_project_info(&name, &path)
                         } else {
                             (name.clone(), path.to_string_lossy().to_string())
                         };
@@ -3680,7 +3731,7 @@ pub async fn get_project_sessions(
                         }
 
                         // Try to read first message from JSONL (Claude Code uses JSONL format)
-                        let (first_message, git_branch, _) = parse_claude_session_info(&path);
+                        let (first_message, git_branch, summary) = parse_claude_session_info(&path);
 
                         sessions.push(SessionInfo {
                             session_id,
@@ -3688,7 +3739,7 @@ pub async fn get_project_sessions(
                             mtime,
                             first_message,
                             git_branch,
-                            summary: String::new(),
+                            summary,
                         });
                     }
                 }
