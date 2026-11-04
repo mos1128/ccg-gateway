@@ -3,8 +3,8 @@
   "id": "grok",
   "sort_order": 70,
   "name": "Grok Build",
-  "remark": "网关会添加两个自定义服务商，分别预置了 gpt-latest 和 claude-latest 模型。\n需要配置模型映射将其映射到实际上游模型，启动 Grok 即走网关，无需登录。",
-  "remark_en": "The gateway adds two custom providers, preconfigured with the gpt-latest and claude-latest models.\nConfigure model mapping to map them to the actual upstream models; Grok then goes through the gateway on startup without login.",
+  "remark": "网关会添加 ccg-openai、ccg-anthropic 两个服务商；分别使用 OpenAI Responses、Anthropic Messages 协议，选择对应的模型即可。\n需要配置模型映射，将 gpt-latest、claude-latest 映射到实际上游模型；Grok CLI 和 TUI 共享配置。",
+  "remark_en": "The gateway adds the ccg-openai and ccg-anthropic providers, using the OpenAI Responses and Anthropic Messages protocols respectively — just pick the corresponding models.\nConfigure model mapping to map gpt-latest and claude-latest to the actual upstream models; the Grok CLI and TUI share configuration.",
   "icon": {
     "view_box": "0 0 34 32",
     "paths": [
@@ -19,7 +19,7 @@
     ]
   },
   "config_dir": "~/.grok",
-  "user_agent": ["grok-shell"],
+  "user_agent": ["grok-cli", "grok-shell"],
   "protocols": ["openai_responses", "anthropic_messages"],
   "features": {
     "provider_config": {
