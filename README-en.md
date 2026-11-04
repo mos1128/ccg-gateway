@@ -99,7 +99,7 @@ This project was initiated based on the author's actual needs to solve various p
 
 ### Official Accounts
 
-- Supports credential configuration for multiple accounts, with one-click import of already logged-in credentials.
+- Supports credential configuration for multiple accounts, with one-click import of already logged-in credentials; Claude Code uses `~/.claude/.credentials.json` and Pi uses `~/.pi/agent/auth.json`.
 - DeepSeek Harness imports only the account grant from `~/.dsh/.credentials.yaml`, shared by Desktop and CLI. Switching accounts preserves gateway keys, browser sessions, and device identity. The default directory follows the CCG process's `DSH_HOME`; an explicit CCG directory takes precedence.
 - Current DSH gateway settings and presets are written to each profile's `profiles/<name>/cordis.patch.yml` (including `desktop` and `web`; the legacy home block is migrated out), taking over the native DeepSeek route and the llm-pi-ai openai/anthropic routes, with keys in `refs.CCG_GATEWAY_API_KEY`. Overwrite mode preserves other credentials, MCP entries, and user patches. Mode changes clear CCG route fields left by the legacy settings migration.
 - Supports drag-and-drop to quickly switch the currently active account credentials.
