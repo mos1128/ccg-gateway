@@ -21,9 +21,7 @@ fn parse_parts(value: Option<&Value>) -> Vec<Block> {
             .filter_map(|item| match str_field(item, "type").as_str() {
                 "input_text" | "output_text" | "text" => Some(Block::Text(str_field(item, "text"))),
                 "input_image" => match item.get("image_url") {
-                    Some(Value::String(url)) if !url.is_empty() => {
-                        Some(Block::Image(url.clone()))
-                    }
+                    Some(Value::String(url)) if !url.is_empty() => Some(Block::Image(url.clone())),
                     _ => None,
                 },
                 "input_file" => {
@@ -164,7 +162,12 @@ fn collect_tools(body: &Value) -> (Vec<Tool>, ToolShapes) {
     (tools, shapes)
 }
 
-fn push_tool(tool: &Value, namespace: Option<&str>, tools: &mut Vec<Tool>, shapes: &mut ToolShapes) {
+fn push_tool(
+    tool: &Value,
+    namespace: Option<&str>,
+    tools: &mut Vec<Tool>,
+    shapes: &mut ToolShapes,
+) {
     let kind = str_field(tool, "type");
     // Chat 形状的工具把字段装在 function 子对象里，一并容忍。
     let source = tool.get("function").unwrap_or(tool);
@@ -379,7 +382,10 @@ fn parse_usage(value: Option<&Value>) -> Usage {
         0 => detail("cached_creation_tokens"),
         value => value,
     };
-    let input = value.get("input_tokens").and_then(Value::as_i64).unwrap_or(0);
+    let input = value
+        .get("input_tokens")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
     Usage {
         input: (input - cached - written).max(0),
         cache_read: cached,
@@ -619,9 +625,9 @@ fn build_user(blocks: &[Block], input: &mut Vec<Value>) {
             }
             Block::Image(url) => parts.push(json!({"type": "input_image", "image_url": url})),
             // input_file 只收 data URL，http URL 无法降级只能丢。
-            Block::Document { url, filename } if url.starts_with("data:") => parts.push(
-                json!({"type": "input_file", "filename": filename, "file_data": url}),
-            ),
+            Block::Document { url, filename } if url.starts_with("data:") => {
+                parts.push(json!({"type": "input_file", "filename": filename, "file_data": url}))
+            }
             _ => {}
         }
     }
@@ -880,7 +886,13 @@ pub fn build_response(response: &ChatResponse, shapes: &ToolShapes) -> Value {
         }
     }
     flush_output(&mut parts, &mut output);
-    build_envelope(response.finish, &response.id, &response.model, output, Some(&response.usage))
+    build_envelope(
+        response.finish,
+        &response.id,
+        &response.model,
+        output,
+        Some(&response.usage),
+    )
 }
 
 fn build_envelope(
@@ -914,7 +926,9 @@ fn build_envelope(
 }
 
 fn output_index(data: &Value) -> usize {
-    data.get("output_index").and_then(Value::as_u64).unwrap_or(0) as usize
+    data.get("output_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize
 }
 
 fn error_message(data: &Value) -> String {
@@ -1257,9 +1271,7 @@ impl Encoder {
                 self.created_frames()
             }
             StreamEvent::TextDelta { index, text } => self.delta(*index, KIND_TEXT, text),
-            StreamEvent::ThinkingDelta { index, text } => {
-                self.delta(*index, KIND_REASONING, text)
-            }
+            StreamEvent::ThinkingDelta { index, text } => self.delta(*index, KIND_REASONING, text),
             // 信封先记在槽位上，跟着 reasoning item 的收尾事件一起发出去。
             StreamEvent::ThinkingOpaque { index, opaque } => {
                 let (position, frames) = self.ensure(*index, KIND_REASONING, "", "");
@@ -1267,10 +1279,13 @@ impl Encoder {
                 frames
             }
             // 工具 id 原样透传：客户端下一轮会带着它回来，改写会对不上上游。
-            StreamEvent::ToolStart { index, id, name } => self.ensure(*index, KIND_TOOL, id, name).1,
-            StreamEvent::ToolDelta { index, json: partial } => {
-                self.delta(*index, KIND_TOOL, partial)
+            StreamEvent::ToolStart { index, id, name } => {
+                self.ensure(*index, KIND_TOOL, id, name).1
             }
+            StreamEvent::ToolDelta {
+                index,
+                json: partial,
+            } => self.delta(*index, KIND_TOOL, partial),
             StreamEvent::BlockStop { index } => self.close(*index),
             StreamEvent::Finish { finish, usage } => self.finish(*finish, usage),
             StreamEvent::Error { message } => {
@@ -1394,7 +1409,10 @@ impl Encoder {
         let (name, data) = match slot.kind {
             KIND_TOOL => {
                 // custom 工具的入参是裸文本，得等参数攒全才剥得出来，中途发不了增量。
-                if matches!(shape_of(&self.shapes, &slot.name), Some(Shape::Custom { .. })) {
+                if matches!(
+                    shape_of(&self.shapes, &slot.name),
+                    Some(Shape::Custom { .. })
+                ) {
                     return frames;
                 }
                 (
@@ -1434,8 +1452,10 @@ impl Encoder {
         let mut frames = Vec::new();
         let item = match slot.kind {
             KIND_TOOL => {
-                let custom =
-                    matches!(shape_of(&self.shapes, &slot.name), Some(Shape::Custom { .. }));
+                let custom = matches!(
+                    shape_of(&self.shapes, &slot.name),
+                    Some(Shape::Custom { .. })
+                );
                 let arguments = if slot.text.is_empty() && !custom {
                     "{}".to_string()
                 } else {
@@ -1555,4 +1575,3 @@ impl Encoder {
         frames
     }
 }
-

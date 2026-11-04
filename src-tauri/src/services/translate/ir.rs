@@ -362,9 +362,7 @@ fn strip_unsupported(value: &Value) -> Value {
     match value {
         Value::Object(map) => Value::Object(
             map.iter()
-                .filter(|(key, value)| {
-                    !(key.as_str() == "format" && value.as_str() == Some("uri"))
-                })
+                .filter(|(key, value)| !(key.as_str() == "format" && value.as_str() == Some("uri")))
                 .map(|(key, value)| (key.clone(), strip_unsupported(value)))
                 .collect(),
         ),

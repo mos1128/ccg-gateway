@@ -141,7 +141,9 @@ pub const TRAY_ID: &str = "main";
 fn build_tray_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
     let show_item = MenuItemBuilder::with_id("show", i18n::t("tray.show", &[])).build(app)?;
     let quit_item = MenuItemBuilder::with_id("quit", i18n::t("tray.quit", &[])).build(app)?;
-    MenuBuilder::new(app).items(&[&show_item, &quit_item]).build()
+    MenuBuilder::new(app)
+        .items(&[&show_item, &quit_item])
+        .build()
 }
 
 /// 按当前语言重建托盘菜单（语言切换时调用）

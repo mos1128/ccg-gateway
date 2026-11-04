@@ -290,7 +290,10 @@ pub fn parse_request(body: &Value) -> ChatRequest {
         }
     }
     request.system = system.join("\n\n");
-    request.tools = array(body.get("tools")).iter().filter_map(parse_tool).collect();
+    request.tools = array(body.get("tools"))
+        .iter()
+        .filter_map(parse_tool)
+        .collect();
     request.tool_choice = parse_tool_choice(body.get("tool_choice"));
     request
 }
@@ -334,11 +337,12 @@ fn build_user(blocks: &[Block], messages: &mut Vec<Value>) {
             Block::Text(text) if !text.is_empty() => {
                 parts.push(json!({"type": "text", "text": text}))
             }
-            Block::Image(url) => parts.push(json!({"type": "image_url", "image_url": {"url": url}})),
+            Block::Image(url) => {
+                parts.push(json!({"type": "image_url", "image_url": {"url": url}}))
+            }
             // Chat 的 file 部件只收 data URL，http URL 无法降级只能丢。
-            Block::Document { url, filename } if url.starts_with("data:") => parts.push(
-                json!({"type": "file", "file": {"filename": filename, "file_data": url}}),
-            ),
+            Block::Document { url, filename } if url.starts_with("data:") => parts
+                .push(json!({"type": "file", "file": {"filename": filename, "file_data": url}})),
             _ => {}
         }
     }
@@ -475,16 +479,17 @@ pub fn build_request(request: &ChatRequest) -> Value {
     if let Some(cache_key) = &request.cache_key {
         body.insert("prompt_cache_key".to_string(), json!(cache_key));
     }
-    if let Some(format) = request.response_format.as_ref().and_then(build_response_format) {
+    if let Some(format) = request
+        .response_format
+        .as_ref()
+        .and_then(build_response_format)
+    {
         body.insert("response_format".to_string(), format);
     }
     if request.stream {
         body.insert("stream".to_string(), json!(true));
         // 用量只在最后一个 chunk 给，不显式打开就统计不到。
-        body.insert(
-            "stream_options".to_string(),
-            json!({"include_usage": true}),
-        );
+        body.insert("stream_options".to_string(), json!({"include_usage": true}));
     }
     Value::Object(body)
 }
@@ -517,7 +522,9 @@ pub fn parse_response(body: &Value) -> ChatResponse {
         // Chat 没有承载签名/密文的字段，思考内容只能当纯文本转出去。
         blocks.push(Block::Thinking { text, opaque: None });
     }
-    blocks.extend(parse_parts(message.and_then(|message| message.get("content"))));
+    blocks.extend(parse_parts(
+        message.and_then(|message| message.get("content")),
+    ));
     blocks.extend(parse_tool_calls(
         message.and_then(|message| message.get("tool_calls")),
     ));
@@ -531,7 +538,9 @@ pub fn parse_response(body: &Value) -> ChatResponse {
         model: str_field(body, "model"),
         finish: finish_with_tools(
             finish,
-            blocks.iter().any(|block| matches!(block, Block::ToolUse { .. })),
+            blocks
+                .iter()
+                .any(|block| matches!(block, Block::ToolUse { .. })),
         ),
         blocks,
         usage: parse_usage(body.get("usage")),
@@ -788,7 +797,10 @@ impl Encoder {
                     "function": {"name": name, "arguments": ""},
                 }]}))
             }
-            StreamEvent::ToolDelta { index, json: partial } => {
+            StreamEvent::ToolDelta {
+                index,
+                json: partial,
+            } => {
                 let slot = self.slot(*index);
                 self.chunk(json!({"tool_calls": [{
                     "index": slot, "function": {"arguments": partial},
@@ -856,4 +868,3 @@ impl Encoder {
         ]
     }
 }
-

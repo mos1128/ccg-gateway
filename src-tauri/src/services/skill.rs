@@ -203,7 +203,8 @@ pub fn upsert_skill_repo(repo: SkillRepo) -> Result<()> {
         if !repo_sources_equal(&existing.source, &repo.source) {
             return Err(crate::tr!(
                 "err.skill.repo_name_used",
-                repo.name, existing.source
+                repo.name,
+                existing.source
             ));
         }
         existing.source = repo.source;
@@ -252,7 +253,8 @@ pub fn upsert_installed_skill_manifest_entry(entry: InstalledSkillManifestEntry)
         if !repo_sources_equal(&repo_entry.source, &repo.source) {
             return Err(crate::tr!(
                 "err.skill.repo_name_used",
-                repo.name, repo_entry.source
+                repo.name,
+                repo_entry.source
             ));
         }
     }
@@ -391,7 +393,8 @@ pub fn ensure_repo_exists(repo: &SkillRepo) -> Result<()> {
         if !repo_sources_equal(&existing.source, &repo.source) {
             return Err(crate::tr!(
                 "err.skill.repo_name_used",
-                repo.name, existing.source
+                repo.name,
+                existing.source
             ));
         }
         existing.source = repo.source.clone();

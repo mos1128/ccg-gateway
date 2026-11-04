@@ -121,7 +121,10 @@ fn claude_project_cwd(project_dir: &std::path::Path) -> Option<String> {
         if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
             continue;
         }
-        let stem = path.file_stem().and_then(|stem| stem.to_str()).unwrap_or("");
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("");
         if stem == "sessions-index" || stem.starts_with("agent-") {
             continue;
         }
@@ -917,8 +920,8 @@ async fn get_codex_messages_async(
             }
         }
 
-        let session_file =
-            session_file_path.ok_or_else(|| crate::tr!("err.session.file_not_found", session_id))?;
+        let session_file = session_file_path
+            .ok_or_else(|| crate::tr!("err.session.file_not_found", session_id))?;
 
         let file = std::fs::File::open(&session_file)
             .map_err(|e| crate::tr!("err.session.file_open_failed", e))?;
@@ -1015,7 +1018,10 @@ async fn get_codex_messages_async(
                                 if !text_parts.is_empty() {
                                     messages.push(SessionMessage {
                                         role: "assistant".to_string(),
-                                        content: crate::tr!("session.reasoning", text_parts.join("\n")),
+                                        content: crate::tr!(
+                                            "session.reasoning",
+                                            text_parts.join("\n")
+                                        ),
                                         timestamp,
                                     });
                                 }
@@ -1112,7 +1118,11 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                                         } else {
                                             "{}".to_string()
                                         };
-                                        text_parts.push(crate::tr!("session.tool_call", tool_name, input_str));
+                                        text_parts.push(crate::tr!(
+                                            "session.tool_call",
+                                            tool_name,
+                                            input_str
+                                        ));
                                     }
                                     "tool_result" if role == "user" => {
                                         // Tool result from user
@@ -1128,7 +1138,10 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                                             String::new()
                                         };
                                         if !result_str.is_empty() {
-                                            text_parts.push(crate::tr!("session.tool_result", result_str));
+                                            text_parts.push(crate::tr!(
+                                                "session.tool_result",
+                                                result_str
+                                            ));
                                         }
                                     }
                                     "thinking" if role == "assistant" => {
@@ -1270,8 +1283,7 @@ fn parse_session_messages_content(cli_type: &str, content: &str) -> Result<Vec<S
                             .and_then(|r| r.as_str())
                             .unwrap_or("");
                         if !result_display.is_empty() {
-                            text_parts
-                                .push(crate::tr!("session.tool", tool_name, result_display));
+                            text_parts.push(crate::tr!("session.tool", tool_name, result_display));
                         }
                     }
                 }
@@ -1388,7 +1400,10 @@ fn opencode_db_path() -> Result<std::path::PathBuf> {
 async fn open_opencode_db() -> Result<SqliteConnection> {
     let path = opencode_db_path()?;
     if !path.is_file() {
-        return Err(crate::tr!("err.session.opencode_db_not_found", path.display()));
+        return Err(crate::tr!(
+            "err.session.opencode_db_not_found",
+            path.display()
+        ));
     }
 
     let options = SqliteConnectOptions::new()
@@ -1485,10 +1500,7 @@ fn opencode_text_from_content(value: &serde_json::Value) -> String {
         parts.push(text.to_owned());
     }
     if let Some(content) = value.get("content") {
-        if let Some(text) = content
-            .as_str()
-            .filter(|text| !text.trim().is_empty())
-        {
+        if let Some(text) = content.as_str().filter(|text| !text.trim().is_empty()) {
             parts.push(text.to_owned());
         } else if let Some(content) = content.as_array() {
             for part in content {
@@ -4176,7 +4188,10 @@ pub async fn delete_session(
                 return Err(crate::tr!("err.session.directory_not_found", session_id));
             };
             if !session_dir.exists() {
-                return Err(crate::tr!("err.session.directory_not_found", session_dir.display()));
+                return Err(crate::tr!(
+                    "err.session.directory_not_found",
+                    session_dir.display()
+                ));
             }
             std::fs::remove_dir_all(&session_dir)
                 .map_err(|e| crate::tr!("err.session.delete_failed", e))?;
@@ -4221,7 +4236,10 @@ pub async fn delete_session(
         cli_helpers::session_file_path(&base_dir, &adapter, &project_name, &session_id);
 
     if tokio::fs::metadata(&session_file).await.is_err() {
-        return Err(crate::tr!("err.session.file_not_found", session_file.display()));
+        return Err(crate::tr!(
+            "err.session.file_not_found",
+            session_file.display()
+        ));
     }
 
     tokio::fs::remove_file(&session_file)

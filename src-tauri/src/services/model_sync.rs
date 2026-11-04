@@ -208,8 +208,12 @@ async fn sync_provider_with_client(
     let protocol = match provider.protocol.parse::<Protocol>() {
         Ok(protocol) => protocol,
         Err(error) => {
-            return mark_failed(db, provider, crate::tr!("err.model_sync.protocol_invalid", error))
-                .await;
+            return mark_failed(
+                db,
+                provider,
+                crate::tr!("err.model_sync.protocol_invalid", error),
+            )
+            .await;
         }
     };
     let fetched = match fetch_models(client, provider, protocol).await {
@@ -352,9 +356,8 @@ async fn fetch_openai_models(
             return Err(format!("{}: {}", status, truncate_error(&body)));
         }
 
-        let value: Value =
-            serde_json::from_str(&body)
-                .map_err(|error| crate::tr!("err.model_sync.parse_failed", error))?;
+        let value: Value = serde_json::from_str(&body)
+            .map_err(|error| crate::tr!("err.model_sync.parse_failed", error))?;
         models.extend(read_ids(&value, "data"));
         let has_more = value
             .get("has_more")

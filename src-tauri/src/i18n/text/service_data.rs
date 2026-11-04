@@ -206,7 +206,9 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
         },
         "err.official_credential.replace_conflict" => match lang {
             Lang::Zh => "operation `{}` 与同一目标文件的原文替换规则冲突",
-            Lang::En => "Operation `{}` conflicts with a raw replacement rule for the same target file",
+            Lang::En => {
+                "Operation `{}` conflicts with a raw replacement rule for the same target file"
+            }
         },
         "err.official_credential.remove_file_failed" => match lang {
             Lang::Zh => "删除 {} 失败: {}",

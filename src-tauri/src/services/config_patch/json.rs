@@ -45,7 +45,10 @@ fn set_value(root: &mut Value, operation: &ResolvedOperation, value: Value) -> R
 
 fn remove_path(current: &mut Value, path: &[String], operation_id: &str) -> Result<(), String> {
     let Some((key, remaining)) = path.split_first() else {
-        return Err(crate::tr!("err.config_patch.operation_path_required", operation_id));
+        return Err(crate::tr!(
+            "err.config_patch.operation_path_required",
+            operation_id
+        ));
     };
     let object = current
         .as_object_mut()

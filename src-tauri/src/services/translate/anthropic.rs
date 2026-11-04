@@ -153,7 +153,6 @@ fn parse_block(item: &Value, key: Option<&str>) -> Option<Block> {
     }
 }
 
-
 fn parse_tool_choice(value: Option<&Value>) -> Option<ToolChoice> {
     match str_field(value?, "type").as_str() {
         "auto" => Some(ToolChoice::Auto),
@@ -307,9 +306,7 @@ fn image_source(url: &str) -> Value {
 
 fn build_block(block: &Block, key: &str) -> Option<Value> {
     match block {
-        Block::Text(text) if !text.trim().is_empty() => {
-            Some(json!({"type": "text", "text": text}))
-        }
+        Block::Text(text) if !text.trim().is_empty() => Some(json!({"type": "text", "text": text})),
         Block::Image(url) => Some(json!({"type": "image", "source": image_source(url)})),
         Block::Document { url, filename } => Some(json!({
             "type": "document",
@@ -514,7 +511,10 @@ fn disable_thinking(body: &mut Value) -> bool {
         return false;
     };
     let mut changed = !explicit_off && object.remove("thinking").is_some();
-    if let Some(config) = object.get_mut("output_config").and_then(Value::as_object_mut) {
+    if let Some(config) = object
+        .get_mut("output_config")
+        .and_then(Value::as_object_mut)
+    {
         changed |= config.remove("effort").is_some();
         if config.is_empty() {
             object.remove("output_config");
@@ -724,11 +724,18 @@ pub fn build_request(request: &ChatRequest, key: &str, default_max_tokens: i64) 
 
     // 结构化输出优先写原生 output_config.format；写不了的类型退回系统提示，不然约束会
     // 静默消失。两条路只走一条，别同时发——同一个要求说两遍是噪音。
-    let output_format = request.response_format.as_ref().and_then(native_output_format);
+    let output_format = request
+        .response_format
+        .as_ref()
+        .and_then(native_output_format);
 
     let mut system = request.system.clone();
     if output_format.is_none() {
-        if let Some(instruction) = request.response_format.as_ref().and_then(schema_instruction) {
+        if let Some(instruction) = request
+            .response_format
+            .as_ref()
+            .and_then(schema_instruction)
+        {
             if !system.is_empty() {
                 system.push_str("\n\n");
             }
@@ -895,7 +902,9 @@ impl Decoder {
         match kind.as_str() {
             "message_start" => {
                 let message = data.get("message");
-                self.id = message.map(|value| str_field(value, "id")).unwrap_or_default();
+                self.id = message
+                    .map(|value| str_field(value, "id"))
+                    .unwrap_or_default();
                 self.model = message
                     .map(|value| str_field(value, "model"))
                     .unwrap_or_default();
@@ -910,7 +919,8 @@ impl Decoder {
             "content_block_start" => {
                 let index = index_of(data);
                 let block = data.get("content_block");
-                let field = |key: &str| block.map(|value| str_field(value, key)).unwrap_or_default();
+                let field =
+                    |key: &str| block.map(|value| str_field(value, key)).unwrap_or_default();
                 match field("type").as_str() {
                     "tool_use" => vec![StreamEvent::ToolStart {
                         index,
@@ -948,7 +958,8 @@ impl Decoder {
             "content_block_delta" => {
                 let index = index_of(data);
                 let delta = data.get("delta");
-                let field = |key: &str| delta.map(|value| str_field(value, key)).unwrap_or_default();
+                let field =
+                    |key: &str| delta.map(|value| str_field(value, key)).unwrap_or_default();
                 match field("type").as_str() {
                     "text_delta" => text_event(index, field("text"), false),
                     "thinking_delta" => {
@@ -1111,7 +1122,10 @@ impl Encoder {
                     json!({"type": "tool_use", "id": id, "name": name, "input": {}}),
                 )
             }
-            StreamEvent::ToolDelta { index, json: partial } => self.delta(
+            StreamEvent::ToolDelta {
+                index,
+                json: partial,
+            } => self.delta(
                 *index,
                 "tool_use",
                 json!({"type": "input_json_delta", "partial_json": partial}),
@@ -1250,4 +1264,3 @@ impl Encoder {
         frames
     }
 }
-

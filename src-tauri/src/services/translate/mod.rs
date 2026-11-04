@@ -11,9 +11,9 @@ pub mod openai_responses;
 use serde_json::Value;
 
 use crate::db::models::Protocol;
-use ir::{ChatRequest, ChatResponse, StreamEvent};
 pub use ir::has_envelope;
 pub use ir::DEFAULT_MAX_TOKENS;
+use ir::{ChatRequest, ChatResponse, StreamEvent};
 pub use openai_responses::ToolShapes;
 
 /// 关掉 Opaque 回放用的上游标识：任何信封都配不上它。
@@ -484,12 +484,18 @@ mod tests {
                 match str_field(block, "type").as_str() {
                     "tool_use" => {
                         let name = str_field(block, "name");
-                        assert!(declared.contains(&name), "tool_use {name} 没在 tools 里声明");
+                        assert!(
+                            declared.contains(&name),
+                            "tool_use {name} 没在 tools 里声明"
+                        );
                         calls.push(str_field(block, "id"));
                     }
                     "tool_result" => {
                         let id = str_field(block, "tool_use_id");
-                        assert!(previous_calls.contains(&id), "tool_result {id} 找不到配对的调用");
+                        assert!(
+                            previous_calls.contains(&id),
+                            "tool_result {id} 找不到配对的调用"
+                        );
                     }
                     _ => {}
                 }
@@ -526,8 +532,14 @@ mod tests {
 
     #[test]
     fn codex_to_anthropic_keeps_structure() {
-        let body = convert_request(RESPONSES, ANTHROPIC, &codex_request(), "7", DEFAULT_MAX_TOKENS)
-            .expect("转换不该失败");
+        let body = convert_request(
+            RESPONSES,
+            ANTHROPIC,
+            &codex_request(),
+            "7",
+            DEFAULT_MAX_TOKENS,
+        )
+        .expect("转换不该失败");
         assert_anthropic_shape(&body);
         // 上游原生密文不是我们的信封，回放不成立，思考块必须被丢掉而不是原样带走。
         let thinking = body["messages"].as_array().unwrap().iter().any(|message| {
@@ -586,8 +598,16 @@ mod tests {
         let items = out["output"].as_array().unwrap();
         assert_eq!(items[0]["type"], json!("custom_tool_call"));
         assert_eq!(items[0]["name"], json!("exec"));
-        assert_eq!(items[0]["namespace"], json!("functions"), "custom 工具的 namespace 不能丢");
-        assert_eq!(items[0]["input"], json!("console.log(1)"), "裸文本要从 input 字段剥回来");
+        assert_eq!(
+            items[0]["namespace"],
+            json!("functions"),
+            "custom 工具的 namespace 不能丢"
+        );
+        assert_eq!(
+            items[0]["input"],
+            json!("console.log(1)"),
+            "裸文本要从 input 字段剥回来"
+        );
         assert_eq!(items[1]["type"], json!("function_call"));
         assert_eq!(items[1]["namespace"], json!("functions"));
     }
@@ -624,9 +644,14 @@ mod tests {
 
     #[test]
     fn claude_code_to_responses_keeps_tool_pairing() {
-        let out =
-            convert_request(ANTHROPIC, RESPONSES, &claude_code_request(), "7", DEFAULT_MAX_TOKENS)
-                .unwrap();
+        let out = convert_request(
+            ANTHROPIC,
+            RESPONSES,
+            &claude_code_request(),
+            "7",
+            DEFAULT_MAX_TOKENS,
+        )
+        .unwrap();
         let input = out["input"].as_array().unwrap();
         let call = input
             .iter()
@@ -637,23 +662,35 @@ mod tests {
             .position(|item| str_field(item, "type") == "function_call_output")
             .expect("要有 function_call_output");
         assert!(call < result, "调用必须排在结果之前");
-        assert_eq!(str_field(&input[call], "call_id"), str_field(&input[result], "call_id"));
+        assert_eq!(
+            str_field(&input[call], "call_id"),
+            str_field(&input[result], "call_id")
+        );
         assert!(
-            !input.iter().any(|item| str_field(item, "type") == "reasoning"),
+            !input
+                .iter()
+                .any(|item| str_field(item, "type") == "reasoning"),
             "原生签名不是我们的信封，不能当成可回放的 reasoning"
         );
         // A-5：xhigh 原样透传，实测真实 Responses 端点接受这个档位，别加白名单压档。
         assert_eq!(out["reasoning"]["effort"], json!("xhigh"));
         // C-7：只剥字符串形式的 format: "uri"。
-        assert!(!out["tools"][0]["parameters"].to_string().contains("\"uri\""));
+        assert!(!out["tools"][0]["parameters"]
+            .to_string()
+            .contains("\"uri\""));
     }
     /// C-3 的回归：超过 40 字符要哈希，且同一个请求里两处算出同一个值。截断会让
     /// `call-<uuid>-0` 和 `call-<uuid>-10` 撞成一个 id，工具结果配错调用。
     #[test]
     fn long_tool_ids_are_hashed_consistently() {
-        let out =
-            convert_request(ANTHROPIC, CHAT, &claude_code_request(), "7", DEFAULT_MAX_TOKENS)
-                .unwrap();
+        let out = convert_request(
+            ANTHROPIC,
+            CHAT,
+            &claude_code_request(),
+            "7",
+            DEFAULT_MAX_TOKENS,
+        )
+        .unwrap();
         let messages = out["messages"].as_array().unwrap();
         let call = messages
             .iter()
@@ -665,7 +702,11 @@ mod tests {
             .map(|message| str_field(message, "tool_call_id"))
             .next()
             .expect("要有 tool 消息");
-        assert!(call.len() <= 40, "Chat 的 tool_call_id 上限 40 字符，实到 {}", call.len());
+        assert!(
+            call.len() <= 40,
+            "Chat 的 tool_call_id 上限 40 字符，实到 {}",
+            call.len()
+        );
         assert_eq!(call, result, "调用与结果必须算出同一个 id");
     }
 
@@ -684,7 +725,11 @@ mod tests {
                 .clone()
         };
         for effort in ["xhigh", "max"] {
-            assert_eq!(effort_to_chat(effort), json!("high"), "{effort} 要压到 high");
+            assert_eq!(
+                effort_to_chat(effort),
+                json!("high"),
+                "{effort} 要压到 high"
+            );
         }
         for effort in ["low", "medium", "high"] {
             assert_eq!(effort_to_chat(effort), json!(effort));
@@ -706,7 +751,11 @@ mod tests {
     fn thinking_writes_both_knobs_and_passes_effort_through() {
         for effort in ["low", "medium", "high", "xhigh", "max"] {
             let out = thinking_for(effort);
-            assert_eq!(out["thinking"], json!({"type": "adaptive"}), "{effort} 应该开思考");
+            assert_eq!(
+                out["thinking"],
+                json!({"type": "adaptive"}),
+                "{effort} 应该开思考"
+            );
             assert_eq!(
                 out["output_config"]["effort"],
                 json!(effort),
@@ -782,7 +831,10 @@ mod tests {
         );
         assert_eq!(usage.input_tokens, 19);
         assert_eq!(usage.cache_read_input_tokens, 440);
-        assert_eq!(usage.cache_creation_input_tokens, 196, "缓存写入不能被并进普通输入");
+        assert_eq!(
+            usage.cache_creation_input_tokens, 196,
+            "缓存写入不能被并进普通输入"
+        );
         assert_eq!(usage.output_tokens, 361);
 
         // Codex 上游 → Claude Code 客户端。实测形状：cache_write 已经算在 input_tokens 里，
@@ -843,7 +895,10 @@ mod tests {
         out.push_str(&translator.finish());
         assert!(out.contains("半截"), "已经收到的内容要交给客户端");
         assert!(out.contains("error"), "截断必须变成错误事件");
-        assert!(!out.contains("finish_reason\":\"stop"), "不能补一个成功结尾");
+        assert!(
+            !out.contains("finish_reason\":\"stop"),
+            "不能补一个成功结尾"
+        );
         assert!(!out.contains("[DONE]"), "不能补 [DONE]");
     }
     /// C-9 + C-10 的回归：先保活、再把错误体当整块 JSON 甩过来（实测形状）。保活要转出去，
@@ -868,4 +923,3 @@ mod tests {
         assert!(!tail.contains("message_stop"), "不能发正常结尾");
     }
 }
-

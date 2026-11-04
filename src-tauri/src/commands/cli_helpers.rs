@@ -60,7 +60,12 @@ pub fn validate_config_format(cli_type: &str, content: &str) -> std::result::Res
         Some(format @ crate::db::models::ConfigFormat::CordisYaml) => {
             crate::services::config_patch::validate_preset(format, content)?;
         }
-        _ => return Err(crate::tr!("err.cli_helpers.preset_format_unsupported", cli_type)),
+        _ => {
+            return Err(crate::tr!(
+                "err.cli_helpers.preset_format_unsupported",
+                cli_type
+            ))
+        }
     }
     Ok(())
 }

@@ -45,7 +45,10 @@ fn set_value(root: &mut Value, operation: &ResolvedOperation, value: Value) -> R
 
 fn remove_path(current: &mut Value, path: &[String], operation_id: &str) -> Result<(), String> {
     let Some((key, remaining)) = path.split_first() else {
-        return Err(crate::tr!("err.config_patch.operation_path_required", operation_id));
+        return Err(crate::tr!(
+            "err.config_patch.operation_path_required",
+            operation_id
+        ));
     };
     let object = current
         .as_object_mut()
@@ -75,7 +78,10 @@ fn parse_yaml_object(content: &str, label: &str) -> Result<Value, String> {
     let value: Value = serde_yaml::from_str(content)
         .map_err(|error| crate::tr!("err.config_patch.yaml_parse_failed", label, error))?;
     if !value.is_object() {
-        return Err(crate::tr!("err.config_patch.yaml_root_must_be_object", label));
+        return Err(crate::tr!(
+            "err.config_patch.yaml_root_must_be_object",
+            label
+        ));
     }
     Ok(value)
 }

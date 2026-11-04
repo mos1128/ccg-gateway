@@ -120,7 +120,10 @@ async fn rollback_renamed_profile(
 ) -> Result<()> {
     let mut recovery_errors = Vec::new();
     if let Err(error) = remove_profile_mode(db, cli_type, new_profile, gateway_url, mode).await {
-        recovery_errors.push(crate::tr!("err.provider_profile.cleanup_new_config_failed", error));
+        recovery_errors.push(crate::tr!(
+            "err.provider_profile.cleanup_new_config_failed",
+            error
+        ));
     }
 
     let reverse_rename = config_rename.map(|rename| ProfileConfigRename {
@@ -136,12 +139,18 @@ async fn rollback_renamed_profile(
     )
     .await
     {
-        recovery_errors.push(crate::tr!("err.provider_profile.restore_name_failed", error));
+        recovery_errors.push(crate::tr!(
+            "err.provider_profile.restore_name_failed",
+            error
+        ));
         return Err(recovery_errors.join("; "));
     }
 
     if let Err(error) = apply_profile_mode(db, cli_type, old_profile, gateway_url, mode).await {
-        recovery_errors.push(crate::tr!("err.provider_profile.restore_old_config_failed", error));
+        recovery_errors.push(crate::tr!(
+            "err.provider_profile.restore_old_config_failed",
+            error
+        ));
     }
 
     if recovery_errors.is_empty() {
@@ -325,7 +334,10 @@ pub async fn rename_profile(
     if matches!(&active_mode, ActiveProfileMode::None)
         && profile_config_files_exist(db, &cli_type, &old_profile).await?
     {
-        return Err(crate::tr!("err.provider_profile.rename_config_mismatch", old_profile));
+        return Err(crate::tr!(
+            "err.provider_profile.rename_config_mismatch",
+            old_profile
+        ));
     }
     if let Err(error) =
         remove_profile_mode(db, &cli_type, &old_profile, gateway_url, &active_mode).await
@@ -337,7 +349,8 @@ pub async fn rename_profile(
         return Err(match restore_error {
             Some(restore_error) => crate::tr!(
                 "err.provider_profile.cleanup_old_config_failed",
-                error, restore_error
+                error,
+                restore_error
             ),
             None => error,
         });
@@ -359,7 +372,8 @@ pub async fn rename_profile(
         return Err(match restore_error {
             Some(restore_error) => crate::tr!(
                 "err.provider_profile.rename_failed_with_restore",
-                error, restore_error
+                error,
+                restore_error
             ),
             None => error,
         });
@@ -382,7 +396,8 @@ pub async fn rename_profile(
         return Err(match recovery_error {
             Some(recovery_error) => crate::tr!(
                 "err.provider_profile.rewrite_failed_with_rollback",
-                error, recovery_error
+                error,
+                recovery_error
             ),
             None => crate::tr!("err.provider_profile.rewrite_failed_restored", error),
         });
@@ -419,7 +434,10 @@ pub async fn delete_profile(
     if matches!(&active_mode, ActiveProfileMode::None)
         && profile_config_files_exist(db, &cli_type, &profile).await?
     {
-        return Err(crate::tr!("err.provider_profile.delete_config_mismatch", profile));
+        return Err(crate::tr!(
+            "err.provider_profile.delete_config_mismatch",
+            profile
+        ));
     }
     remove_profile_mode(db, &cli_type, &profile, gateway_url, &active_mode).await?;
 
@@ -433,7 +451,8 @@ pub async fn delete_profile(
                 .await
                 .map_err(|e| e.to_string())?;
         let provider_id_set: Vec<i64> = provider_ids.iter().map(|(id,)| *id).collect();
-        let task_ids = delete_profile_tasks_tx(&mut tx, &cli_type, &profile, &provider_id_set).await?;
+        let task_ids =
+            delete_profile_tasks_tx(&mut tx, &cli_type, &profile, &provider_id_set).await?;
         for (id,) in provider_ids {
             sqlx::query("DELETE FROM provider_model_map WHERE provider_id = ?")
                 .bind(id)
@@ -486,7 +505,8 @@ pub async fn delete_profile(
         return Err(match restore_error {
             Some(restore_error) => crate::tr!(
                 "err.provider_profile.delete_data_failed",
-                error, restore_error
+                error,
+                restore_error
             ),
             None => error,
         });
@@ -552,23 +572,18 @@ async fn profile_config_files_exist(
     for path in
         crate::services::agent_config::profile_operation_paths(db, cli_type, profile).await?
     {
-        if tokio::fs::try_exists(&path)
-            .await
-            .map_err(|error| {
-                crate::tr!("err.provider_profile.check_failed", path.display(), error)
-            })?
-        {
+        if tokio::fs::try_exists(&path).await.map_err(|error| {
+            crate::tr!("err.provider_profile.check_failed", path.display(), error)
+        })? {
             return Ok(true);
         }
     }
     if let Some((_, path)) =
         crate::services::agent_config::profile_file(db, cli_type, profile).await?
     {
-        return tokio::fs::try_exists(&path)
-            .await
-            .map_err(|error| {
-                crate::tr!("err.provider_profile.check_failed", path.display(), error)
-            });
+        return tokio::fs::try_exists(&path).await.map_err(|error| {
+            crate::tr!("err.provider_profile.check_failed", path.display(), error)
+        });
     }
     Ok(false)
 }
@@ -651,7 +666,8 @@ async fn rename_profile_records_and_file(
             {
                 return Err(crate::tr!(
                     "err.provider_profile.rename_commit_failed",
-                    error, rollback_error
+                    error,
+                    rollback_error
                 ));
             }
         }
@@ -684,7 +700,10 @@ async fn profile_config_rename(
         return Ok(None);
     }
     if tokio::fs::try_exists(&new_path).await.unwrap_or(false) {
-        return Err(crate::tr!("err.provider_profile.target_file_exists", new_path.display()));
+        return Err(crate::tr!(
+            "err.provider_profile.target_file_exists",
+            new_path.display()
+        ));
     }
     if !tokio::fs::try_exists(&old_path).await.unwrap_or(false) {
         return Ok(None);
@@ -767,9 +786,9 @@ async fn delete_profile_tasks_tx(
             .get("provider_ids")
             .and_then(|value| value.as_array())
             .map(|ids| {
-                ids.iter().filter_map(|value| value.as_i64()).any(|id| {
-                    provider_ids.iter().any(|provider_id| *provider_id == id)
-                })
+                ids.iter()
+                    .filter_map(|value| value.as_i64())
+                    .any(|id| provider_ids.iter().any(|provider_id| *provider_id == id))
             })
             .unwrap_or(false);
 

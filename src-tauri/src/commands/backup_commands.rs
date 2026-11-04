@@ -151,7 +151,10 @@ pub async fn export_to_webdav(db: State<'_, SqlitePool>) -> Result<String> {
         .map_err(|e| crate::tr!("err.backup.upload_failed", e))?;
 
     if !response.status().is_success() && response.status().as_u16() != 201 {
-        return Err(crate::tr!("err.backup.upload_status_failed", response.status()));
+        return Err(crate::tr!(
+            "err.backup.upload_status_failed",
+            response.status()
+        ));
     }
 
     Ok(filename)
@@ -262,7 +265,11 @@ pub async fn list_webdav_backups(db: State<'_, SqlitePool>) -> Result<Vec<Webdav
             }
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(crate::tr!("err.backup.xml_parse_failed", reader.buffer_position(), e))
+                return Err(crate::tr!(
+                    "err.backup.xml_parse_failed",
+                    reader.buffer_position(),
+                    e
+                ))
             }
             _ => {}
         }
@@ -303,7 +310,10 @@ pub async fn import_from_webdav(
         .map_err(|e| crate::tr!("err.backup.download_failed", e))?;
 
     if !response.status().is_success() {
-        return Err(crate::tr!("err.backup.download_status_failed", response.status()));
+        return Err(crate::tr!(
+            "err.backup.download_status_failed",
+            response.status()
+        ));
     }
 
     let content = response.bytes().await.map_err(|e| e.to_string())?;
@@ -345,7 +355,10 @@ pub async fn delete_webdav_backup(db: State<'_, SqlitePool>, filename: String) -
         .map_err(|e| crate::tr!("err.backup.delete_failed", e))?;
 
     if !response.status().is_success() && response.status().as_u16() != 204 {
-        return Err(crate::tr!("err.backup.delete_status_failed", response.status()));
+        return Err(crate::tr!(
+            "err.backup.delete_status_failed",
+            response.status()
+        ));
     }
 
     Ok(())

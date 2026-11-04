@@ -103,7 +103,10 @@ pub fn validate_payload(agent_id: &str, json: &str) -> Result<(), String> {
     let definition = agent::get_definition(agent_id).expect("validated Agent");
     let feature = &definition.features.official_login;
     if !feature.enabled {
-        return Err(crate::tr!("err.official_credential.feature_disabled_for_agent", agent_id));
+        return Err(crate::tr!(
+            "err.official_credential.feature_disabled_for_agent",
+            agent_id
+        ));
     }
     for operation in &feature.operations {
         let source = match operation.op {
@@ -810,12 +813,9 @@ pub async fn read_current_payload(db: &SqlitePool, agent_id: &str) -> Result<Str
         let path = resolve_cli_config_file_from_dir(&config_dir, &operation.file);
         match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
-                let source = operation
-                    .content_from
-                    .as_ref()
-                    .ok_or_else(|| {
-                        crate::tr!("err.official_credential.missing_content_from", operation.id)
-                    })?;
+                let source = operation.content_from.as_ref().ok_or_else(|| {
+                    crate::tr!("err.official_credential.missing_content_from", operation.id)
+                })?;
                 let format = operation_format(operation);
                 let raw = match tokio::fs::read_to_string(&path).await {
                     Ok(content) => content,

@@ -305,7 +305,9 @@ pub async fn get_providers(
     let blacklist_by_provider: HashMap<i64, Vec<_>> = all_blacklist.into_iter().fold(
         HashMap::new(),
         |mut acc, (id, provider_id, model_pattern)| {
-            acc.entry(provider_id).or_insert_with(Vec::new).push((id, model_pattern));
+            acc.entry(provider_id)
+                .or_insert_with(Vec::new)
+                .push((id, model_pattern));
             acc
         },
     );
@@ -313,7 +315,9 @@ pub async fn get_providers(
     let tiers_by_provider: HashMap<i64, Vec<(i64, i64)>> = all_tiers.into_iter().fold(
         HashMap::new(),
         |mut acc, (provider_id, failure_count, blacklist_minutes)| {
-            acc.entry(provider_id).or_insert_with(Vec::new).push((failure_count, blacklist_minutes));
+            acc.entry(provider_id)
+                .or_insert_with(Vec::new)
+                .push((failure_count, blacklist_minutes));
             acc
         },
     );
@@ -361,7 +365,8 @@ pub async fn get_providers(
             response.blacklist_tiers = tiers_by_provider
                 .get(&provider.id)
                 .map(|tiers| {
-                    tiers.iter()
+                    tiers
+                        .iter()
                         .enumerate()
                         .map(|(index, (failure_count, blacklist_minutes))| {
                             crate::db::models::BlacklistTierResponse {
@@ -456,11 +461,10 @@ async fn apply_first_enabled_provider_direct(
     cli_type: &str,
     profile: &str,
 ) -> Result<()> {
-    let provider = crate::services::routing::get_first_enabled_provider_for_direct(
-        db, cli_type, profile,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let provider =
+        crate::services::routing::get_first_enabled_provider_for_direct(db, cli_type, profile)
+            .await
+            .map_err(|e| e.to_string())?;
 
     if let Some(provider) = provider {
         crate::services::agent_config::write_provider_direct_config(db, &provider).await?;
@@ -663,12 +667,13 @@ pub async fn update_provider(
         .ok_or_else(|| crate::tr!("err.provider_cmd.not_found"))?;
     let provider_name = provider_before.name.clone();
     let provider_cli_type = provider_before.cli_type.clone();
-    let active_direct_provider_id = crate::services::agent_config::provider_direct_active_provider_id(
-        db.inner(),
-        &provider_before.cli_type,
-        &provider_before.profile,
-    )
-    .await?;
+    let active_direct_provider_id =
+        crate::services::agent_config::provider_direct_active_provider_id(
+            db.inner(),
+            &provider_before.cli_type,
+            &provider_before.profile,
+        )
+        .await?;
     let active_direct_provider = match active_direct_provider_id {
         Some(active_id) if active_id == id => Some(provider_before.clone()),
         Some(active_id) => sqlx::query_as::<_, Provider>("SELECT * FROM providers WHERE id = ?")
@@ -809,10 +814,7 @@ pub async fn update_provider(
             q = q.bind(normalize_translate_max_tokens(input.translate_max_tokens));
         }
 
-        q.bind(id)
-            .execute(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
+        q.bind(id).execute(&mut *tx).await.map_err(map_db_error)?;
 
         // The old model snapshot no longer describes the saved endpoint, so it
         // stops counting as synced until the user syncs against the new one.

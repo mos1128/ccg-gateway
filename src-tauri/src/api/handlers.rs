@@ -370,7 +370,8 @@ pub async fn proxy_handler_catchall(
                 }),
             )
             .await;
-            let body = serde_json::json!({ "error": crate::tr!("err.proxy.no_provider") }).to_string();
+            let body =
+                serde_json::json!({ "error": crate::tr!("err.proxy.no_provider") }).to_string();
             return Ok(Response::builder()
                 .status(StatusCode::SERVICE_UNAVAILABLE)
                 .header("content-type", "application/json")
@@ -413,10 +414,7 @@ pub async fn proxy_handler_catchall(
         let provider_id = provider.id;
         let provider_name = provider.name.clone();
         // 端点类型与客户端协议不同时转换协议；解析失败按同协议处理（路由已经筛过）。
-        let upstream_protocol = provider
-            .protocol
-            .parse::<Protocol>()
-            .unwrap_or(protocol);
+        let upstream_protocol = provider.protocol.parse::<Protocol>().unwrap_or(protocol);
         let translate_path = if translate::can_translate(protocol, upstream_protocol) {
             translate::upstream_path(upstream_protocol)
         } else {
@@ -497,16 +495,18 @@ pub async fn proxy_handler_catchall(
             };
             // 转换在模型映射之后做：映射改的是 model 字段，转换才换协议外壳。
             let converted_body = translate_path.and_then(|_| {
-                serde_json::from_slice::<Value>(&final_body).ok().and_then(|body| {
-                    translate::convert_request(
-                        protocol,
-                        upstream_protocol,
-                        &body,
-                        &replay_key,
-                        translate_max_tokens,
-                    )
-                })
-                .and_then(|body| serde_json::to_vec(&body).ok())
+                serde_json::from_slice::<Value>(&final_body)
+                    .ok()
+                    .and_then(|body| {
+                        translate::convert_request(
+                            protocol,
+                            upstream_protocol,
+                            &body,
+                            &replay_key,
+                            translate_max_tokens,
+                        )
+                    })
+                    .and_then(|body| serde_json::to_vec(&body).ok())
             });
             let (final_body, final_path) = match (translate_path, converted_body) {
                 (Some(path), Some(body)) => (body, path.to_string()),
@@ -855,15 +855,13 @@ async fn handle_passthrough_request(
     }
 
     let builder = copy_response_headers(Response::builder().status(status), &resp_headers);
-    Ok(builder
-        .body(Body::from(body_bytes))
-        .unwrap_or_else(|_| {
-            json_error_response(
-                StatusCode::BAD_GATEWAY,
-                "passthrough_failed",
-                &crate::tr!("err.proxy.passthrough_build_failed"),
-            )
-        }))
+    Ok(builder.body(Body::from(body_bytes)).unwrap_or_else(|_| {
+        json_error_response(
+            StatusCode::BAD_GATEWAY,
+            "passthrough_failed",
+            &crate::tr!("err.proxy.passthrough_build_failed"),
+        )
+    }))
 }
 
 /// 透传失败留一条 1 小时去重的系统日志：成功的透传完全静默，失败的看得见又不刷屏。
@@ -1014,14 +1012,12 @@ fn build_passthrough_error_response(
         }
     }
 
-    builder
-        .body(Body::from(body.to_vec()))
-        .unwrap_or_else(|_| {
-            Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())
-                .unwrap()
-        })
+    builder.body(Body::from(body.to_vec())).unwrap_or_else(|_| {
+        Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::empty())
+            .unwrap()
+    })
 }
 
 enum StreamStartFailure {
@@ -1150,9 +1146,7 @@ fn inspect_stream_prefix(
 
     if end_of_stream {
         if hinted_kind == Some(StreamResponseKind::Json) {
-            return StreamPrefixState::Error(
-                crate::tr!("err.proxy.invalid_json_response"),
-            );
+            return StreamPrefixState::Error(crate::tr!("err.proxy.invalid_json_response"));
         }
         if hinted_kind == Some(StreamResponseKind::Sse) && stream_event_has_data(&trimmed) {
             return StreamPrefixState::Ready(StreamResponseKind::Sse);
@@ -1488,9 +1482,9 @@ where
                     StreamPrefixState::NeedMore if prefix.is_empty() => {
                         Err(StreamStartFailure::Empty)
                     }
-                    StreamPrefixState::NeedMore => Err(StreamStartFailure::Protocol(
-                        crate::tr!("err.proxy.stream_ended_before_event"),
-                    )),
+                    StreamPrefixState::NeedMore => Err(StreamStartFailure::Protocol(crate::tr!(
+                        "err.proxy.stream_ended_before_event"
+                    ))),
                 };
             }
             Err(_) => return Err(StreamStartFailure::Timeout),
@@ -1646,9 +1640,10 @@ fn copy_metadata_headers(
     ];
     for (name, value) in headers.iter() {
         let name = name.as_str();
-        if !KEPT.iter().any(|kept| {
-            name.len() >= kept.len() && name[..kept.len()].eq_ignore_ascii_case(kept)
-        }) {
+        if !KEPT
+            .iter()
+            .any(|kept| name.len() >= kept.len() && name[..kept.len()].eq_ignore_ascii_case(kept))
+        {
             continue;
         }
         if let Ok(header_value) = axum::http::HeaderValue::from_bytes(value.as_bytes()) {
@@ -1893,7 +1888,9 @@ async fn handle_streaming_request(
                         .get("content-encoding")
                         .and_then(|value| value.to_str().ok()),
                 ),
-                Ok(Err(error)) => crate::tr!("err.proxy.read_upstream_error_response_failed", error).into_bytes(),
+                Ok(Err(error)) => {
+                    crate::tr!("err.proxy.read_upstream_error_response_failed", error).into_bytes()
+                }
                 Err(_) => crate::tr!("err.proxy.read_upstream_error_response_timeout").into_bytes(),
             };
         let message = upstream_error_message(upstream_protocol, &error_body);
@@ -1928,7 +1925,11 @@ async fn handle_streaming_request(
             guard.disarm();
         }
         // Pass through real HTTP errors with original status and body
-        return Ok(build_passthrough_error_response(status, &error_body, &resp_headers));
+        return Ok(build_passthrough_error_response(
+            status,
+            &error_body,
+            &resp_headers,
+        ));
     }
 
     // 响应体收集缓冲：转换模式下由 translated_stream 填原始上游字节，其余情况在下面
@@ -2641,11 +2642,7 @@ async fn handle_non_streaming_request(
         Err(_) => {
             let message = crate::tr!("err.proxy.body_read_timeout");
             tracing::error!(provider_id, provider = provider_name, error = %message, "Timed out while reading upstream response body");
-            log_info.set_gateway_error(
-                "body_read_timeout",
-                message,
-                serde_json::json!({}),
-            );
+            log_info.set_gateway_error("body_read_timeout", message, serde_json::json!({}));
             let elapsed = start_time.elapsed().as_millis() as i64;
             record_request_stats(
                 state,
@@ -2753,7 +2750,11 @@ async fn handle_non_streaming_request(
             guard.disarm();
         }
         // Pass through real HTTP errors with original status and body
-        return Ok(build_passthrough_error_response(status, &decompressed_body, &resp_headers));
+        return Ok(build_passthrough_error_response(
+            status,
+            &decompressed_body,
+            &resp_headers,
+        ));
     }
 
     if is_success {
@@ -2788,7 +2789,11 @@ async fn handle_non_streaming_request(
                 guard.disarm();
             }
             // 200 with error body: rewrite status to 502 for failover, but pass through original body
-            return Ok(build_passthrough_error_response(StatusCode::BAD_GATEWAY, &decompressed_body, &resp_headers));
+            return Ok(build_passthrough_error_response(
+                StatusCode::BAD_GATEWAY,
+                &decompressed_body,
+                &resp_headers,
+            ));
         }
     }
 
@@ -2811,7 +2816,11 @@ async fn handle_non_streaming_request(
             None => {
                 let message = crate::tr!("err.proxy.translate_to_client_failed");
                 tracing::warn!(provider_id, provider = provider_name, error = %message, "Upstream response cannot be translated");
-                log_info.set_gateway_error("translate_to_client_failed", message.clone(), serde_json::json!({}));
+                log_info.set_gateway_error(
+                    "translate_to_client_failed",
+                    message.clone(),
+                    serde_json::json!({}),
+                );
                 let elapsed = start_time.elapsed().as_millis() as i64;
                 record_request_stats(
                     state,

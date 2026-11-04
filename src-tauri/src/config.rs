@@ -186,8 +186,9 @@ pub fn update_bootstrap_config(
 
     let path = bootstrap_config_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| crate::tr!("err.cfg.config_dir_create_failed", parent.display(), error))?;
+        fs::create_dir_all(parent).map_err(|error| {
+            crate::tr!("err.cfg.config_dir_create_failed", parent.display(), error)
+        })?;
     }
     let content = serde_json::to_string_pretty(&config)
         .map_err(|error| crate::tr!("err.cfg.bootstrap_serialize_failed", error))?;

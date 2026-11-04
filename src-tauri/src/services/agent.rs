@@ -46,10 +46,18 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
         let mut file_privacy = HashMap::new();
         for operation in operations {
             if operation.id.trim().is_empty() || !operation_ids.insert(operation.id.as_str()) {
-                return Err(crate::tr!("err.agent.operation_id_invalid", label, operation.id));
+                return Err(crate::tr!(
+                    "err.agent.operation_id_invalid",
+                    label,
+                    operation.id
+                ));
             }
             if operation.file.trim().is_empty() {
-                return Err(crate::tr!("err.agent.operation_file_empty", label, operation.id));
+                return Err(crate::tr!(
+                    "err.agent.operation_file_empty",
+                    label,
+                    operation.id
+                ));
             }
             if operation.path.is_empty() || operation.path.iter().any(|part| part.trim().is_empty())
             {
@@ -61,7 +69,11 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
             }
             if let Some(existing) = file_formats.insert(operation.file.as_str(), operation.format) {
                 if existing != operation.format {
-                    return Err(crate::tr!("err.agent.file_format_conflict", label, operation.file));
+                    return Err(crate::tr!(
+                        "err.agent.file_format_conflict",
+                        label,
+                        operation.file
+                    ));
                 }
             }
             if let Some(existing) = file_privacy.insert(operation.file.as_str(), operation.private)
@@ -69,7 +81,8 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
                 if existing != operation.private {
                     return Err(crate::tr!(
                         "err.agent.file_private_conflict",
-                        label, operation.file
+                        label,
+                        operation.file
                     ));
                 }
             }
@@ -111,7 +124,11 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
                 || path_text.contains("{target.")
                 || path_text.contains("{agent.")
             {
-                return Err(crate::tr!("err.agent.template_value_only", label, operation.id));
+                return Err(crate::tr!(
+                    "err.agent.template_value_only",
+                    label,
+                    operation.id
+                ));
             }
             let value_text = operation
                 .value
@@ -123,7 +140,11 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
                     || path_text.contains("{profile")
                     || value_text.contains("{profile"))
             {
-                return Err(crate::tr!("err.agent.profile_template_forbidden", label, operation.id));
+                return Err(crate::tr!(
+                    "err.agent.profile_template_forbidden",
+                    label,
+                    operation.id
+                ));
             }
             if operation.file.contains("{profile.absolute_path}")
                 || path_text.contains("{profile.absolute_path}")
@@ -243,7 +264,10 @@ fn validate_official_login(definition: &AgentDefinition) -> Result<(), String> {
         let source = match operation.op {
             OfficialLoginOperationKind::ReplaceFile => {
                 let source = operation.content_from.as_ref().ok_or_else(|| {
-                    crate::tr!("err.agent.official_login_content_from_missing", operation.id)
+                    crate::tr!(
+                        "err.agent.official_login_content_from_missing",
+                        operation.id
+                    )
                 })?;
                 if format != ConfigFormat::Json && !source.path.is_empty() {
                     return Err(crate::tr!(
@@ -462,7 +486,10 @@ fn validate_profiles(definition: &AgentDefinition) -> Result<(), String> {
                 .iter()
                 .any(|arg| arg.contains("{profile.relative_path}"))
             {
-                return Err(crate::tr!("err.agent.launch_relative_path_forbidden", label));
+                return Err(crate::tr!(
+                    "err.agent.launch_relative_path_forbidden",
+                    label
+                ));
             }
             if label == "default"
                 && args
@@ -479,7 +506,10 @@ fn validate_profiles(definition: &AgentDefinition) -> Result<(), String> {
 
 fn validate_definition(definition: &AgentDefinition) -> Result<(), String> {
     if definition.schema_version != 1 {
-        return Err(crate::tr!("err.agent.schema_version_unsupported", definition.schema_version));
+        return Err(crate::tr!(
+            "err.agent.schema_version_unsupported",
+            definition.schema_version
+        ));
     }
     if definition.id.is_empty()
         || !definition.id.bytes().all(|byte| {

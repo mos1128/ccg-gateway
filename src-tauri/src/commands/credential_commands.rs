@@ -607,14 +607,10 @@ pub async fn write_credential_config(
 }
 
 async fn dashboard_provider_direct_provider(db: &SqlitePool, cli_type: &str) -> Result<Provider> {
-    crate::services::routing::get_first_enabled_provider_for_direct(
-        db,
-        cli_type,
-        DEFAULT_PROFILE,
-    )
-    .await
-    .map_err(|e| e.to_string())?
-    .ok_or_else(|| crate::tr!("err.credential.no_enabled_provider"))
+    crate::services::routing::get_first_enabled_provider_for_direct(db, cli_type, DEFAULT_PROFILE)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| crate::tr!("err.credential.no_enabled_provider"))
 }
 
 async fn first_official_credential(db: &SqlitePool, cli_type: &str) -> Result<OfficialCredential> {

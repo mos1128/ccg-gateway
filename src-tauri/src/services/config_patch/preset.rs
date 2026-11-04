@@ -119,8 +119,10 @@ pub(super) fn apply(
             serde_json::to_string_pretty(&current).map_err(|error| error.to_string())
         }
         ConfigFormat::Yaml => {
-            let mut current = super::yaml::parse_object(content, &crate::tr!("patch.label.target"))?;
-            let preset = super::yaml::parse_object(preset_content, &crate::tr!("patch.label.preset"))?;
+            let mut current =
+                super::yaml::parse_object(content, &crate::tr!("patch.label.target"))?;
+            let preset =
+                super::yaml::parse_object(preset_content, &crate::tr!("patch.label.preset"))?;
             merge_json(&mut current, &preset);
             super::yaml::to_string(&current)
         }
@@ -152,8 +154,10 @@ pub(super) fn remove(
             serde_json::to_string_pretty(&current).map_err(|error| error.to_string())
         }
         ConfigFormat::Yaml => {
-            let mut current = super::yaml::parse_object(content, &crate::tr!("patch.label.target"))?;
-            let preset = super::yaml::parse_object(preset_content, &crate::tr!("patch.label.preset"))?;
+            let mut current =
+                super::yaml::parse_object(content, &crate::tr!("patch.label.target"))?;
+            let preset =
+                super::yaml::parse_object(preset_content, &crate::tr!("patch.label.preset"))?;
             remove_matching_json(&mut current, &preset);
             super::yaml::to_string(&current)
         }

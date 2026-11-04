@@ -148,9 +148,15 @@ mod tests {
     #[test]
     fn render_handles_missing_and_extra_args() {
         assert_eq!(render("a {} b", &[]), "a {} b");
-        assert_eq!(render("a {} {}", &["1".to_string(), "2".to_string()]), "a 1 2");
+        assert_eq!(
+            render("a {} {}", &["1".to_string(), "2".to_string()]),
+            "a 1 2"
+        );
         assert_eq!(render("a {} {}", &["1".to_string()]), "a 1 {}");
-        assert_eq!(render("no placeholders", &["1".to_string()]), "no placeholders");
+        assert_eq!(
+            render("no placeholders", &["1".to_string()]),
+            "no placeholders"
+        );
         assert_eq!(
             render("x {} y {}", &["A".to_string(), "B".to_string()]),
             "x A y B"

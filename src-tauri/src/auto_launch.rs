@@ -12,8 +12,8 @@ fn get_macos_app_bundle_path(exe_path: &std::path::Path) -> Option<std::path::Pa
 }
 
 fn get_auto_launch() -> Result<AutoLaunch, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| crate::tr!("err.auto_launch.exe_path_failed", e))?;
+    let exe_path =
+        std::env::current_exe().map_err(|e| crate::tr!("err.auto_launch.exe_path_failed", e))?;
 
     #[cfg(target_os = "macos")]
     let app_path = get_macos_app_bundle_path(&exe_path).unwrap_or(exe_path);

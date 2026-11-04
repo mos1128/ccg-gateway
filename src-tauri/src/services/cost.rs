@@ -80,10 +80,9 @@ pub fn resolve_price_snapshot(
         };
     }
     // input_tokens 已扣掉缓存命中部分，模型实际看到的上下文要把缓存加回来。
-    let context_tokens = (input_tokens.max(0)
-        + cache_read_input_tokens.max(0)
-        + cache_creation_input_tokens.max(0))
-        / request_count.max(1);
+    let context_tokens =
+        (input_tokens.max(0) + cache_read_input_tokens.max(0) + cache_creation_input_tokens.max(0))
+            / request_count.max(1);
     let tier = pricing
         .tiers
         .iter()

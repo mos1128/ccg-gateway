@@ -106,12 +106,11 @@ pub async fn record_failure(
         return Ok((false, String::new()));
     }
 
-    let provider: Option<(String, i64)> = sqlx::query_as(
-        "SELECT name, consecutive_failures FROM providers WHERE id = ?",
-    )
-    .bind(provider_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let provider: Option<(String, i64)> =
+        sqlx::query_as("SELECT name, consecutive_failures FROM providers WHERE id = ?")
+            .bind(provider_id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
     let Some((provider_name, failures)) = provider else {
         tx.commit().await?;
@@ -158,12 +157,11 @@ pub async fn blacklist_first_tier(
     let now = now_timestamp();
     let mut tx = db.begin().await?;
 
-    let provider: Option<(String, Option<i64>)> = sqlx::query_as(
-        "SELECT name, blacklisted_until FROM providers WHERE id = ?",
-    )
-    .bind(provider_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let provider: Option<(String, Option<i64>)> =
+        sqlx::query_as("SELECT name, blacklisted_until FROM providers WHERE id = ?")
+            .bind(provider_id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
     let Some((provider_name, blacklisted_until)) = provider else {
         tx.commit().await?;
@@ -221,8 +219,9 @@ async fn match_tier_minutes(
     .await?;
 
     if tiers.is_empty() {
-        return Ok((failures >= FALLBACK_TIER_FAILURE_COUNT)
-            .then_some(FALLBACK_TIER_BLACKLIST_MINUTES));
+        return Ok(
+            (failures >= FALLBACK_TIER_FAILURE_COUNT).then_some(FALLBACK_TIER_BLACKLIST_MINUTES)
+        );
     }
 
     // 已按 failure_count 降序：第一个满足的即最高档。
