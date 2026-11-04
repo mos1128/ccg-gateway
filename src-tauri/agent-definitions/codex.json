@@ -145,7 +145,7 @@
     },
     "model_mapping": { "enabled": true },
     "token_usage": { "enabled": true },
-    "skills": { "enabled": true, "directory": "skills" },
+    "skills": { "enabled": true, "directory": "../.agents/skills" },
     "mcp": {
       "enabled": true,
       "file": "config.toml",
