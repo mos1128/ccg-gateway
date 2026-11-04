@@ -120,6 +120,7 @@ export interface FileFeature extends ToggleFeature {
 
 export interface SkillFeature extends ToggleFeature {
   directory?: string | null
+  directories?: string[]
 }
 
 export interface AgentFeatures {

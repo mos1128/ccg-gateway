@@ -129,8 +129,12 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::En => "Agent icon path rule only supports nonzero or evenodd",
         },
         "err.agent.skills_directory_required" => match lang {
-            Lang::Zh => "enabled skills 必须提供 directory",
-            Lang::En => "enabled skills must provide directory",
+            Lang::Zh => "enabled skills 必须提供 directory 或非空 directories",
+            Lang::En => "enabled skills must provide directory or non-empty directories",
+        },
+        "err.agent.skills_directory_conflict" => match lang {
+            Lang::Zh => "skills 不能同时提供 directory 和 directories",
+            Lang::En => "skills cannot provide both directory and directories",
         },
         "err.agent.mcp_file_required" => match lang {
             Lang::Zh => "enabled mcp 必须提供 file",

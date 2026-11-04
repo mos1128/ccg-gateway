@@ -102,7 +102,7 @@ Agent 模板是一个声明式 JSON 文件，用来告诉 CCG Gateway：如何�
 | `official_login` | 把 CCG 托管的官方凭证写入 Agent | 非空 `operations`。 |
 | `model_mapping` | 允许该 Agent 使用模型映射 | 无其他 key。 |
 | `token_usage` | 允许统计该 Agent 的 Token 用量 | 无其他 key。 |
-| `skills` | 允许管理该 Agent 的 Skills | `directory`。 |
+| `skills` | 允许管理该 Agent 的 Skills | `directory` 或 `directories`（二选一）。 |
 | `mcp` | 允许管理该 Agent 的 MCP 配置 | `file`、`format`；除 `dsh` adapter 外还需要 `servers_path`。 |
 | `sessions` | 允许读取和管理该 Agent 的会话 | `adapter`。 |
 | `plugins` | 允许管理该 Agent 的插件 | `adapter`。 |
@@ -270,7 +270,19 @@ DeepSeek Harness 的桌面版与 CLI 共用 `$DSH_HOME/.credentials.yaml`（默�
 | Key | 类型与可用值 | 含义与注意事项 |
 | --- | --- | --- |
 | `enabled` | `true` / `false` | 是否支持 Skills 管理。 |
-| `directory` | 非空路径字符串 | `enabled: true` 时必填，表示 Skill 根目录。相对路径从 `config_dir` 解析。 |
+| `directory` | 非空路径字符串 | Skill 根目录；与 `directories` 二选一。相对路径从 `config_dir` 解析。 |
+| `directories` | 非空路径数组 | 多个 Skill 根目录；与 `directory` 二选一。启用时写入每个目录，停用时从每个目录删除，任一目录存在即视为启用。 |
+
+Codex 使用官方用户级目录 `$HOME/.agents/skills`：
+
+```json
+"skills": {
+  "enabled": true,
+  "directory": "../.agents/skills"
+}
+```
+
+Codex 仍会读取旧的 `$CODEX_HOME/skills`，但源码已将其标记为 deprecated；CCG 不再双写，避免同一 Skill 在两个路径各出现一次。`directories` 仍可供用户模板同时维护多个目录。
 
 ### `mcp`
 

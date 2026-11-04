@@ -57,29 +57,57 @@ fn get_ssot_dir() -> std::path::PathBuf {
     skill::get_ssot_dir()
 }
 
-// 获取 CLI 的 skills 目录（异步版本，支持自定义配置目录）
-async fn get_skill_cli_dir_async(db: &SqlitePool, cli_type: &str) -> Option<std::path::PathBuf> {
-    let resolved = crate::services::agent::get_agent(db, cli_type)
+// 获取 CLI 的 skills 目录（异步版本，支持自定义配置目录和多目录）
+async fn get_skill_cli_dirs_async(db: &SqlitePool, cli_type: &str) -> Vec<std::path::PathBuf> {
+    let Some(resolved) = crate::services::agent::get_agent(db, cli_type)
         .await
         .ok()
-        .flatten()?;
+        .flatten()
+    else {
+        return Vec::new();
+    };
     let feature = resolved.features.skills;
     if !feature.enabled {
-        return None;
+        return Vec::new();
     }
-    let directory = feature.directory?;
-    Some(crate::services::cli_config::resolve_cli_config_file(db, cli_type, &directory).await)
+    let mut directories = Vec::new();
+    if let Some(directory) = feature
+        .directory
+        .as_deref()
+        .map(str::trim)
+        .filter(|directory| !directory.is_empty())
+    {
+        directories.push(directory.to_string());
+    }
+    directories.extend(
+        feature
+            .directories
+            .iter()
+            .map(|directory| directory.trim().to_string())
+            .filter(|directory| !directory.is_empty()),
+    );
+    directories.sort();
+    directories.dedup();
+
+    let mut paths = Vec::with_capacity(directories.len());
+    for directory in directories {
+        paths.push(
+            crate::services::cli_config::resolve_cli_config_file(db, cli_type, &directory).await,
+        );
+    }
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 // 检查 skill 是否在 CLI 目录中启用（异步版本）
 async fn skill_enabled_in_cli_async(db: &SqlitePool, cli_type: &str, directory: &str) -> bool {
-    let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
-        Some(d) => d,
-        None => return false,
-    };
-
-    let skill_path = cli_dir.join(directory);
-    tokio::fs::metadata(skill_path).await.is_ok()
+    for cli_dir in get_skill_cli_dirs_async(db, cli_type).await {
+        if tokio::fs::metadata(cli_dir.join(directory)).await.is_ok() {
+            return true;
+        }
+    }
+    false
 }
 
 async fn build_skill_cli_flags(db: &SqlitePool, directory: &str) -> Vec<SkillCliFlag> {
@@ -202,19 +230,29 @@ async fn file_modified_at_async(path: &std::path::Path) -> i64 {
 async fn sync_skill_to_cli_async(db: &SqlitePool, directory: &str, cli_type: &str) -> Result<()> {
     let ssot_dir = get_ssot_dir();
     let source = ssot_dir.join(directory);
-    let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
-        Some(d) => d,
-        None => return Err(crate::tr!("err.skill.agent_unsupported", cli_type)),
-    };
+    if !source.exists() {
+        return Err(crate::tr!(
+            "err.skill.directory_not_found",
+            source.display()
+        ));
+    }
+    let cli_dirs = get_skill_cli_dirs_async(db, cli_type).await;
+    if cli_dirs.is_empty() {
+        return Err(crate::tr!("err.skill.agent_unsupported", cli_type));
+    }
 
-    let dest = cli_dir.join(directory);
-    run_skill_blocking(move || {
-        if !source.exists() {
-            return Err(crate::tr!("err.skill.directory_not_found", source.display()));
+    let mut failures = Vec::new();
+    for cli_dir in cli_dirs {
+        let source = source.clone();
+        let dest = cli_dir.join(directory);
+        let dest_display = dest.display().to_string();
+        if let Err(error) = run_skill_blocking(move || copy_dir_recursive(&source, &dest)).await {
+            failures.push(format!("{}: {}", dest_display, error));
         }
-        copy_dir_recursive(&source, &dest)
-    })
-    .await?;
+    }
+    if !failures.is_empty() {
+        return Err(failures.join("; "));
+    }
     tracing::info!("Synced skill {} to {}", directory, cli_type);
     Ok(())
 }
@@ -225,20 +263,20 @@ async fn remove_skill_from_cli_async(
     directory: &str,
     cli_type: &str,
 ) -> Result<()> {
-    let cli_dir = match get_skill_cli_dir_async(db, cli_type).await {
-        Some(d) => d,
-        None => return Ok(()),
-    };
-    let skill_folder = cli_dir.join(directory);
-    let removed = run_skill_blocking(move || {
-        if skill_folder.exists() {
-            std::fs::remove_dir_all(&skill_folder).map_err(|e| e.to_string())?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    })
-    .await?;
+    let mut removed = false;
+    for cli_dir in get_skill_cli_dirs_async(db, cli_type).await {
+        let skill_folder = cli_dir.join(directory);
+        let removed_here = run_skill_blocking(move || {
+            if skill_folder.exists() {
+                std::fs::remove_dir_all(&skill_folder).map_err(|e| e.to_string())?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        })
+        .await?;
+        removed |= removed_here;
+    }
 
     if removed {
         tracing::info!("Removed skill {} from {}", directory, cli_type);
@@ -828,7 +866,10 @@ async fn install_skill_inner(
     let dest_path = ssot_dir.join(&directory_name);
     run_skill_blocking(move || {
         if !skill_source_path.exists() {
-            return Err(crate::tr!("err.skill.source_dir_missing", skill_source_path.display()));
+            return Err(crate::tr!(
+                "err.skill.source_dir_missing",
+                skill_source_path.display()
+            ));
         }
         copy_dir_recursive(&skill_source_path, &dest_path)
     })
@@ -935,7 +976,10 @@ async fn reinstall_skill_impl(
 
     run_skill_blocking(move || {
         if !skill_source_path.exists() {
-            return Err(crate::tr!("err.skill.source_dir_missing", skill_source_path.display()));
+            return Err(crate::tr!(
+                "err.skill.source_dir_missing",
+                skill_source_path.display()
+            ));
         }
 
         if let Err(e) = copy_dir_recursive(&skill_source_path, &temp_path) {
@@ -955,7 +999,11 @@ async fn reinstall_skill_impl(
             let _ = std::fs::remove_dir_all(&temp_path);
             if had_existing {
                 if let Err(restore_err) = std::fs::rename(&backup_path, &skill_path) {
-                    return Err(crate::tr!("err.skill.replace_restore_failed", e, restore_err));
+                    return Err(crate::tr!(
+                        "err.skill.replace_restore_failed",
+                        e,
+                        restore_err
+                    ));
                 }
             }
             return Err(crate::tr!("err.skill.replace_failed", e));

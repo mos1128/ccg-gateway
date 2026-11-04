@@ -350,10 +350,29 @@ fn validate_definition(value: &Value, file: &Path, ids: &mut HashSet<String>) ->
                     .get("directory")
                     .and_then(Value::as_str)
                     .map(str::trim)
-                    .filter(|directory| !directory.is_empty())
-                    .is_none()
-                {
-                    panic!("{}: enabled skills needs directory", file.display());
+                    .filter(|directory| !directory.is_empty());
+                let directories = feature.get("directories").and_then(Value::as_array);
+                let directories_valid = directories.is_some_and(|directories| {
+                    !directories.is_empty()
+                        && directories.iter().all(|directory| {
+                            directory
+                                .as_str()
+                                .map(str::trim)
+                                .filter(|directory| !directory.is_empty())
+                                .is_some()
+                        })
+                });
+                if directory.is_none() && !directories_valid {
+                    panic!(
+                        "{}: enabled skills needs directory or non-empty directories",
+                        file.display()
+                    );
+                }
+                if directory.is_some() && directories.is_some() {
+                    panic!(
+                        "{}: enabled skills cannot use directory and directories together",
+                        file.display()
+                    );
                 }
             }
             "mcp" => {

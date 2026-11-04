@@ -362,14 +362,21 @@ fn validate_icon(definition: &AgentDefinition) -> Result<(), String> {
 
 fn validate_skills(definition: &AgentDefinition) -> Result<(), String> {
     let feature = &definition.features.skills;
-    if feature.enabled
+    let has_directory = feature
+        .directory
+        .as_deref()
+        .map(str::trim)
+        .filter(|directory| !directory.is_empty())
+        .is_some();
+    let directories_valid = !feature.directories.is_empty()
         && feature
-            .directory
-            .as_deref()
-            .map(str::trim)
-            .filter(|directory| !directory.is_empty())
-            .is_none()
-    {
+            .directories
+            .iter()
+            .all(|directory| !directory.trim().is_empty());
+    if has_directory && !feature.directories.is_empty() {
+        return Err(crate::tr!("err.agent.skills_directory_conflict"));
+    }
+    if feature.enabled && !has_directory && !directories_valid {
         return Err(crate::tr!("err.agent.skills_directory_required"));
     }
     Ok(())

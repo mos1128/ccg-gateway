@@ -89,6 +89,8 @@ pub struct ProfileFeature {
 pub struct SkillFeature {
     pub enabled: bool,
     pub directory: Option<String>,
+    #[serde(default)]
+    pub directories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
