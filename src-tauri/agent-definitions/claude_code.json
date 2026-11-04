@@ -3,8 +3,8 @@
   "id": "claude_code",
   "sort_order": 10,
   "name": "Claude Code",
-  "remark": "官方账号凭证以 ~/.claude/.credentials.json 为准；如果 Claude 使用系统钥匙串存储，请先确认该文件存在或从 Claude 导出凭证。",
-  "remark_en": "Official account credentials are read from ~/.claude/.credentials.json; if Claude stores them in the OS keychain, make sure this file exists or export the credentials from Claude first.",
+  "remark": "官方账号读取 ~/.claude/.credentials.json；使用系统钥匙串时需先导出。",
+  "remark_en": "Official credentials are read from ~/.claude/.credentials.json; export them first if Claude uses the OS keychain.",
   "icon": {
     "view_box": "0 0 24 24",
     "paths": [
