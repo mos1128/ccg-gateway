@@ -90,7 +90,11 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
             use crate::db::models::{ConfigFormat, ConfigOperationKind};
             let is_env = operation.format == ConfigFormat::Env;
             if is_env && operation.path.len() != 1 {
-                return Err(crate::tr!("err.agent.env_path_single_key", label, operation.id));
+                return Err(crate::tr!(
+                    "err.agent.env_path_single_key",
+                    label,
+                    operation.id
+                ));
             }
             let writes_value = operation.op == ConfigOperationKind::Set;
             if operation.preserve_on_remove && !writes_value {
@@ -115,7 +119,11 @@ fn validate_config_operations(definition: &AgentDefinition) -> Result<(), String
                 ));
             }
             if !writes_value && operation.value.is_some() {
-                return Err(crate::tr!("err.agent.operation_value_unexpected", label, operation.id));
+                return Err(crate::tr!(
+                    "err.agent.operation_value_unexpected",
+                    label,
+                    operation.id
+                ));
             }
 
             let path_text = operation.path.join("\n");
