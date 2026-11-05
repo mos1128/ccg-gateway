@@ -1014,10 +1014,18 @@ async fn get_codex_messages_async(
                                     })
                                     .collect();
                                 if !text_parts.is_empty() {
-                                    messages.push(SessionMessage {
+                                    let content = text_parts.join("\n\n");
+                                    let injected = role != Some("user")
+                                        || codex_is_injected_user_text(&content);
+                                    let message = SessionMessage {
                                         role: "user".to_string(),
-                                        content: text_parts.join("\n\n"),
+                                        content,
                                         timestamp,
+                                    };
+                                    messages.push(if injected {
+                                        message.injected()
+                                    } else {
+                                        message
                                     });
                                 }
                             }
@@ -1164,16 +1172,19 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                         .get("renderedRole")
                         .and_then(|role| role.as_str())
                         .unwrap_or("user");
-                    messages.push(SessionMessage {
-                        role: if role == "assistant" {
-                            "assistant"
-                        } else {
-                            "user"
+                    messages.push(
+                        SessionMessage {
+                            role: if role == "assistant" {
+                                "assistant"
+                            } else {
+                                "user"
+                            }
+                            .to_string(),
+                            content: content.to_string(),
+                            timestamp: None,
                         }
-                        .to_string(),
-                        content: content.to_string(),
-                        timestamp: None,
-                    });
+                        .injected(),
+                    );
                 }
                 continue;
             }
@@ -1806,8 +1817,9 @@ async fn query_opencode_messages(
 
     let mut messages = Vec::new();
     for (message_type, time_created, data) in rows {
+        let injected = matches!(message_type.as_str(), "system" | "developer");
         let role = match message_type.as_str() {
-            "user" => "user",
+            "user" | "system" | "developer" => "user",
             "assistant" => "assistant",
             _ => continue,
         };
@@ -1835,10 +1847,15 @@ async fn query_opencode_messages(
             continue;
         }
 
-        messages.push(SessionMessage {
+        let message = SessionMessage {
             role: role.to_string(),
             content,
             timestamp: Some(time_created / 1000),
+        };
+        messages.push(if injected {
+            message.injected()
+        } else {
+            message
         });
     }
 
@@ -2303,15 +2320,20 @@ fn parse_kimi_append_message(
     if parts.is_empty() {
         return None;
     }
-    // 系统消息不在 UI 展示
-    if role == "system" {
-        return None;
-    }
-    let display_role = if role == "tool" { "user" } else { role };
-    Some(SessionMessage {
+    let display_role = if role == "tool" || role == "system" {
+        "user"
+    } else {
+        role
+    };
+    let message = SessionMessage {
         role: display_role.to_string(),
         content: parts.join("\n\n"),
         timestamp,
+    };
+    Some(if role == "system" {
+        message.injected()
+    } else {
+        message
     })
 }
 
@@ -2787,7 +2809,8 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
             .and_then(|i| i.as_array())
         {
             for msg in input {
-                if msg.get("role").and_then(|r| r.as_str()) != Some("user") {
+                let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("");
+                if role != "user" && role != "developer" && role != "system" {
                     continue;
                 }
                 let text = extract_zcode_input_text(msg);
@@ -2795,10 +2818,16 @@ fn parse_zcode_rollout(content: &str) -> Result<Vec<SessionMessage>> {
                     continue;
                 }
                 if seen.insert(text.clone()) {
-                    messages.push(SessionMessage {
+                    let injected = role != "user" || text.starts_with("<system-reminder>");
+                    let message = SessionMessage {
                         role: "user".to_string(),
                         content: text,
                         timestamp,
+                    };
+                    messages.push(if injected {
+                        message.injected()
+                    } else {
+                        message
                     });
                 }
             }
@@ -3074,10 +3103,26 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
             (Some("user"), _) | (None, Some("user")) => Some("user"),
             (Some("assistant"), _) | (None, Some("assistant")) => Some("assistant"),
             (Some("tool_result"), _) | (None, Some("tool")) => Some("tool_result"),
-            // system / reasoning / backend_tool_call 等不展示
+            (Some("system"), _) | (None, Some("system")) => Some("system"),
+            // reasoning / backend_tool_call 等不展示
             _ => continue,
         };
         match role {
+            Some("system") => {
+                let Some(text) = grok_extract_text(v.get("content")) else {
+                    continue;
+                };
+                if !text.is_empty() {
+                    messages.push(
+                        SessionMessage {
+                            role: "user".to_string(),
+                            content: text,
+                            timestamp: None,
+                        }
+                        .injected(),
+                    );
+                }
+            }
             Some("user") => {
                 // synthetic_reason 标记运行时注入，也保留在消息流里；标题另行优先真实输入。
                 let Some(text) = grok_extract_text(v.get("content")) else {
@@ -3086,10 +3131,15 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
                 if text.is_empty() {
                     continue;
                 }
-                messages.push(SessionMessage {
+                let message = SessionMessage {
                     role: "user".to_string(),
                     content: text,
                     timestamp: None,
+                };
+                messages.push(if v.get("synthetic_reason").is_some() {
+                    message.injected()
+                } else {
+                    message
                 });
             }
             Some("assistant") => {
@@ -3406,7 +3456,9 @@ fn pi_family_extract_text(content: &serde_json::Value) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join("\n\n"))
 }
 
-fn pi_family_format_message(message: &serde_json::Value) -> Option<(String, String, Option<i64>)> {
+fn pi_family_format_message(
+    message: &serde_json::Value,
+) -> Option<(String, String, Option<i64>, bool)> {
     let role = message.get("role").and_then(|value| value.as_str())?;
     let timestamp = message
         .get("timestamp")
@@ -3420,7 +3472,7 @@ fn pi_family_format_message(message: &serde_json::Value) -> Option<(String, Stri
     match role {
         "user" => {
             let text = pi_family_extract_text(message.get("content")?)?;
-            Some(("user".to_string(), text, timestamp))
+            Some(("user".to_string(), text, timestamp, false))
         }
         "assistant" => {
             let text = message
@@ -3430,7 +3482,7 @@ fn pi_family_format_message(message: &serde_json::Value) -> Option<(String, Stri
             if text.is_empty() {
                 return None;
             }
-            Some(("assistant".to_string(), text, timestamp))
+            Some(("assistant".to_string(), text, timestamp, false))
         }
         "toolResult" | "tool_result" | "tool" => {
             let text = message
@@ -3449,6 +3501,7 @@ fn pi_family_format_message(message: &serde_json::Value) -> Option<(String, Stri
                 "user".to_string(),
                 crate::tr!("session.tool_result_named", tool_name, text),
                 timestamp,
+                false,
             ))
         }
         "bashExecution" => {
@@ -3467,7 +3520,18 @@ fn pi_family_format_message(message: &serde_json::Value) -> Option<(String, Stri
                 "user".to_string(),
                 format!("**[Bash]**\n```\n{}\n```\n{}", command, output),
                 timestamp,
+                false,
             ))
+        }
+        "system" | "developer" => {
+            let text = message
+                .get("content")
+                .and_then(pi_family_extract_text)
+                .unwrap_or_default();
+            if text.is_empty() {
+                return None;
+            }
+            Some(("user".to_string(), text, timestamp, true))
         }
         _ => None,
     }
@@ -3855,11 +3919,16 @@ fn parse_pi_family_session_messages(content: &str) -> Result<Vec<SessionMessage>
         let Some(message) = entries.get(&id) else {
             continue;
         };
-        if let Some((role, content, timestamp)) = pi_family_format_message(message) {
-            messages.push(SessionMessage {
+        if let Some((role, content, timestamp, injected)) = pi_family_format_message(message) {
+            let message = SessionMessage {
                 role,
                 content,
                 timestamp,
+            };
+            messages.push(if injected {
+                message.injected()
+            } else {
+                message
             });
         }
     }
@@ -4062,15 +4131,27 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
         .get("time")
         .and_then(|v| v.as_i64())
         .map(|time| time / 1000);
-    let (role, content) = match event_type {
-        "user/message" => ("user", dsh_content_text(data.get("content")?)),
+    let (role, content, injected) = match event_type {
+        "user/message" => (
+            "user",
+            dsh_content_text(data.get("content")?),
+            !dsh_is_human_user(&data),
+        ),
         "assistant/message" => {
             let message = data.get("message")?;
             let content = message
                 .get("content")
                 .map(dsh_content_text)
                 .unwrap_or_default();
-            ("assistant", content)
+            ("assistant", content, false)
+        }
+        "system/message" | "developer/message" => {
+            let message = data.get("message")?;
+            let content = message
+                .get("content")
+                .map(dsh_content_text)
+                .unwrap_or_default();
+            ("user", content, true)
         }
         "tool/call" => {
             let name = data
@@ -4085,7 +4166,11 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
                         .unwrap_or_else(|| serde_json::to_string_pretty(v).unwrap_or_default())
                 })
                 .unwrap_or_else(|| "{}".to_string());
-            ("assistant", crate::tr!("session.tool_call", name, input))
+            (
+                "assistant",
+                crate::tr!("session.tool_call", name, input),
+                false,
+            )
         }
         "tool/result" => {
             let message = data.get("message")?;
@@ -4093,17 +4178,22 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
                 .get("content")
                 .map(dsh_content_text)
                 .unwrap_or_default();
-            ("user", crate::tr!("session.tool_result", content))
+            ("user", crate::tr!("session.tool_result", content), false)
         }
         _ => return None,
     };
     if content.trim().is_empty() {
         return None;
     }
-    Some(SessionMessage {
+    let message = SessionMessage {
         role: role.to_string(),
         content,
         timestamp,
+    };
+    Some(if injected {
+        message.injected()
+    } else {
+        message
     })
 }
 
@@ -5038,7 +5128,7 @@ mod dsh_session_tests {
         let synthetic = r#"{"type":"user/message","data":{"content":"skill catalog","source":{"kind":"skill"}}}"#;
         let message = dsh_event_message(synthetic).expect("injected user message");
         assert_eq!(message.role, "user");
-        assert_eq!(message.content, "skill catalog");
+        assert_eq!(message.display_content(), "skill catalog");
 
         let text = r#"{"version":4,"id":"s1","cwd":"/work"}
 {"type":"user/message","data":{"content":"skill catalog","source":{"kind":"skill"}}}
@@ -5335,7 +5425,7 @@ mod grok_session_tests {
         let messages = parse_grok_chat_history(content).expect("messages");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "user");
-        assert_eq!(messages[0].content, "skill catalog");
+        assert_eq!(messages[0].display_content(), "skill catalog");
         assert_eq!(grok_first_user_message(&dir), "real prompt");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -5353,7 +5443,7 @@ mod zcode_session_tests {
         let messages = parse_zcode_rollout(content).expect("messages");
         assert!(messages
             .iter()
-            .any(|message| message.content.starts_with("<system-reminder>")));
+            .any(|message| message.display_content().starts_with("<system-reminder>")));
         assert!(messages
             .iter()
             .any(|message| message.content == "real prompt"));
@@ -5373,7 +5463,7 @@ mod claude_session_tests {
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[1].role, "user");
-        assert!(messages[1].content.contains("env"));
+        assert!(messages[1].display_content().contains("env"));
         assert_eq!(messages[2].role, "assistant");
     }
 }

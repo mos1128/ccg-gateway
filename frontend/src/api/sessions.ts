@@ -23,6 +23,7 @@ export interface SessionMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp?: number
+  kind?: 'user' | 'assistant' | 'injected' | string
 }
 
 export interface PaginatedResponse<T> {

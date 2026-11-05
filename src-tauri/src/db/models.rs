@@ -1330,14 +1330,88 @@ pub struct PaginatedSessions {
 }
 
 // Session Message (从会话文件解析)
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct SessionMessage {
     pub role: String,
     pub content: String,
     pub timestamp: Option<i64>,
 }
 
+impl SessionMessage {
+    const INJECTED_PREFIX: &'static str = "\u{1e}CCG_INJECTED\u{1e}";
+
+    pub fn injected(mut self) -> Self {
+        if !self.is_injected() {
+            self.content = format!("{}{}", Self::INJECTED_PREFIX, self.content);
+        }
+        self
+    }
+
+    pub fn is_injected(&self) -> bool {
+        self.content.starts_with(Self::INJECTED_PREFIX)
+    }
+
+    pub fn display_content(&self) -> &str {
+        self.content
+            .strip_prefix(Self::INJECTED_PREFIX)
+            .unwrap_or(&self.content)
+    }
+
+    pub fn kind(&self) -> &str {
+        if self.is_injected() {
+            "injected"
+        } else {
+            self.role.as_str()
+        }
+    }
+}
+
+impl serde::Serialize for SessionMessage {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("SessionMessage", 4)?;
+        state.serialize_field("role", &self.role)?;
+        state.serialize_field("content", self.display_content())?;
+        state.serialize_field("timestamp", &self.timestamp)?;
+        state.serialize_field("kind", self.kind())?;
+        state.end()
+    }
+}
+
 // ==================== System Status (非数据库) ====================
+
+#[cfg(test)]
+mod session_message_tests {
+    use super::*;
+
+    #[test]
+    fn injected_message_serializes_kind_and_hides_marker() {
+        let message = SessionMessage {
+            role: "user".to_string(),
+            content: "AGENTS.md".to_string(),
+            timestamp: Some(1),
+        }
+        .injected();
+        let value = serde_json::to_value(message).unwrap();
+        assert_eq!(value["kind"], "injected");
+        assert_eq!(value["content"], "AGENTS.md");
+    }
+
+    #[test]
+    fn normal_message_keeps_role_as_kind() {
+        let message = SessionMessage {
+            role: "assistant".to_string(),
+            content: "hello".to_string(),
+            timestamp: None,
+        };
+        let value = serde_json::to_value(message).unwrap();
+        assert_eq!(value["kind"], "assistant");
+        assert_eq!(value["content"], "hello");
+    }
+}
 
 #[derive(Debug, Serialize)]
 pub struct SystemStatus {

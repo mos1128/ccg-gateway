@@ -79,17 +79,29 @@
     </template>
 
     <V2Drawer v-model="showSessionDrawer" :title="currentSessionTitle" :show-footer="false" width="80%">
+      <div class="ses-drawer-bar">
+        <label class="ses-injected-toggle">
+          <input v-model="showInjected" type="checkbox" />
+          <span>{{ t('sessions.showInjected') }}</span>
+        </label>
+      </div>
       <div v-loading="sessionStore.loading" class="ses-chat">
-        <div v-if="sessionStore.messages.length === 0" class="v2-hint" style="text-align:center;padding:40px">{{ t('sessions.emptyMessages') }}</div>
-        <div v-for="(msg, index) in sessionStore.messages" :key="index" class="ses-bubble" :class="msg.role === 'user' ? 'is-user' : 'is-bot'">
+        <div v-if="visibleMessages.length === 0" class="v2-hint" style="text-align:center;padding:40px">
+          {{ sessionStore.messages.length === 0 ? t('sessions.emptyMessages') : t('sessions.noVisibleMessages') }}
+        </div>
+        <div v-for="(msg, index) in visibleMessages" :key="index" class="ses-bubble" :class="msg.role === 'user' ? 'is-user' : 'is-bot'">
           <div class="ses-role">{{ msg.role === 'user' ? 'USER' : 'ASSISTANT' }}</div>
           <div class="ses-bubble-c">
             <el-tooltip :content="t('common.copy')" placement="top" effect="light" :show-after="250">
               <button class="ses-copy" @click="handleCopyMessage(msg.content)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
             </el-tooltip>
             <template v-for="(segment, segmentIndex) in messageSegments(msg.content, index)" :key="segmentIndex">
-              <img v-if="segment.type === 'image'" :src="segment.src || ''" :alt="segment.alt || ''" class="ses-image" loading="lazy" />
-              <span v-else>{{ segment.text }}</span>
+              <template v-if="segment.type === 'image'">
+                <div v-if="failedImages.has(imageKey(index, segmentIndex))" class="ses-image-error">{{ t('sessions.imageLoadFailed') }}</div>
+                <img v-else :src="segment.src || ''" :alt="segment.alt || ''" class="ses-image" loading="lazy" @error="failedImages.add(imageKey(index, segmentIndex))" />
+              </template>
+              <div v-else-if="segment.type === 'image_failed'" class="ses-image-error">{{ t('sessions.imageLoadFailed') }}</div>
+              <V2Markdown v-else :content="segment.text || ''" />
             </template>
             <div v-if="isLongMessage(msg.content)" class="ses-expand" @click="toggleExpand(index)">{{ expandedMessages.has(index) ? t('sessions.collapse') : t('sessions.expandAll') }}</div>
           </div>
@@ -102,6 +114,7 @@
 <script setup lang="ts">
 import { convertFileSrc } from '@tauri-apps/api/core'
 import V2Drawer from '@/components/V2Drawer.vue'
+import V2Markdown from '@/components/V2Markdown.vue'
 import V2Empty from '@/components/V2Empty.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
 import OverflowText from '@/components/OverflowText.vue'
@@ -140,6 +153,15 @@ const currentSessionTitle = computed(() => {
   return title || currentSessionId.value.slice(0, 8)
 })
 const expandedMessages = ref(new Set<number>())
+const showInjected = ref(localStorage.getItem('ccg.sessions.showInjected') === 'true')
+const failedImages = reactive(new Set<string>())
+const visibleMessages = computed(() => sessionStore.messages.filter((message) => showInjected.value || message.kind !== 'injected'))
+
+watch(showInjected, (value) => {
+  localStorage.setItem('ccg.sessions.showInjected', String(value))
+  expandedMessages.value.clear()
+  failedImages.clear()
+})
 
 function handleCliChange(cliType: CliType) {
   activeCliType.value = cliType
@@ -169,6 +191,7 @@ function handleSessionClick(session: SessionInfo) {
   currentSessionId.value = session.session_id
   showSessionDrawer.value = true
   expandedMessages.value.clear()
+  failedImages.clear()
   sessionStore.fetchMessages(sessionStore.currentProject, session.session_id)
 }
 async function handleDeleteProject(project: ProjectInfo) {
@@ -221,10 +244,28 @@ async function handleCopyMessage(content: string) {
 }
 const MAX_LINES = 10
 interface MessageSegment {
-  type: 'text' | 'image'
+  type: 'text' | 'image' | 'image_failed'
   text?: string
   src?: string
   alt?: string
+}
+function imageKey(index: number, segmentIndex: number): string {
+  return `${index}:${segmentIndex}`
+}
+function pushTextSegments(text: string, segments: MessageSegment[]) {
+  const placeholder = /\[图片\]|\[Image\]|\[image\]/g
+  let lastIndex = 0
+  for (const match of text.matchAll(placeholder)) {
+    const start = match.index ?? 0
+    if (start > lastIndex) {
+      segments.push({ type: 'text', text: text.slice(lastIndex, start) })
+    }
+    segments.push({ type: 'image_failed' })
+    lastIndex = start + match[0].length
+  }
+  if (lastIndex < text.length) {
+    segments.push({ type: 'text', text: text.slice(lastIndex) })
+  }
 }
 function normalizeContent(content: string): string {
   return content ? content.replace(/\\n/g, '\n') : ''
@@ -250,7 +291,7 @@ function messageSegments(content: string, index: number): MessageSegment[] {
   for (const match of display.matchAll(imageTag)) {
     const start = match.index ?? 0
     if (start > lastIndex) {
-      segments.push({ type: 'text', text: display.slice(lastIndex, start) })
+      pushTextSegments(display.slice(lastIndex, start), segments)
     }
     const attrs = match[1] || ''
     const pathMatch = attrs.match(/\bpath\s*=\s*(?:"([^"]+)"|'([^']+)')/i)
@@ -261,16 +302,16 @@ function messageSegments(content: string, index: number): MessageSegment[] {
       try {
         segments.push({ type: 'image', src: convertFileSrc(path.replace(/\\/g, '/')), alt })
       } catch {
-        segments.push({ type: 'text', text: match[0] })
+        segments.push({ type: 'image_failed' })
       }
     } else {
-      segments.push({ type: 'text', text: match[0] })
+      segments.push({ type: 'image_failed' })
     }
     lastIndex = start + match[0].length
   }
 
   if (lastIndex < display.length) {
-    segments.push({ type: 'text', text: display.slice(lastIndex) })
+    pushTextSegments(display.slice(lastIndex), segments)
   }
   return segments.length ? segments : [{ type: 'text', text: display }]
 }
@@ -331,16 +372,20 @@ onMounted(async () => {
 .ses-srow .v2-row-act.danger { opacity: 0; transition: opacity 0.15s; }
 .ses-srow:hover .v2-row-act.danger { opacity: 1; }
 
+.ses-drawer-bar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.ses-injected-toggle { display: flex; align-items: center; gap: 8px; color: var(--v2-text-2); font-size: var(--v2-fs-xs); cursor: pointer; }
+.ses-injected-toggle input { accent-color: var(--v2-accent); }
 .ses-chat { display: flex; flex-direction: column; gap: 20px; }
 .ses-bubble { max-width: 92%; display: flex; flex-direction: column; gap: 5px; }
 .ses-bubble.is-user { align-self: flex-end; }
 .ses-bubble.is-bot { align-self: flex-start; }
 .ses-role { font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-semibold); color: var(--v2-text-3); }
 .ses-bubble.is-user .ses-role { text-align: right; }
-.ses-bubble-c { position: relative; padding: 12px 16px; padding-right: 38px; border: 1px solid transparent; border-radius: var(--v2-r); font-size: var(--v2-fs-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.ses-bubble-c { position: relative; padding: 12px 16px; padding-right: 38px; border: 1px solid transparent; border-radius: var(--v2-r); font-size: var(--v2-fs-sm); line-height: 1.6; white-space: normal; word-break: break-word; }
 .ses-bubble.is-user .ses-bubble-c { background: var(--v2-selected-bg); color: var(--v2-text); border-bottom-right-radius: 3px; }
 .ses-bubble.is-bot .ses-bubble-c { background: var(--v2-surface-2); border-color: var(--v2-surface-3); color: var(--v2-text); border-bottom-left-radius: 3px; }
 .ses-image { display: block; max-width: 100%; max-height: 480px; margin: 8px 0; border-radius: 8px; object-fit: contain; background: var(--v2-surface-3); }
+.ses-image-error { display: inline-flex; align-items: center; margin: 8px 0; padding: 8px 10px; border: 1px dashed var(--v2-surface-3); border-radius: 6px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); }
 .ses-copy { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--v2-text-3); border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
 .ses-bubble-c:hover .ses-copy { opacity: 1; }
 .ses-copy:hover { background: var(--v2-surface-3); color: var(--v2-text); }
