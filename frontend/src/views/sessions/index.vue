@@ -80,22 +80,31 @@
 
     <V2Drawer v-model="showSessionDrawer" :title="currentSessionTitle" :show-footer="false" width="80%">
       <template #actions>
-        <button
-          class="ses-injected-toggle"
-          :class="{ active: showInjected }"
-          type="button"
-          role="switch"
-          :aria-checked="showInjected"
-          :aria-label="t('sessions.injectedContext')"
-          :title="showInjected ? t('sessions.hideInjected') : t('sessions.showInjected')"
-          @click="showInjected = !showInjected"
-        >
-          <svg v-if="showInjected" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
-          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>
-          <span class="ses-injected-label">{{ t('sessions.injectedContext') }}</span>
-          <span v-if="injectedCount" class="ses-injected-count">{{ injectedCount }}</span>
-          <span class="ses-switch" :class="{ on: showInjected }"><span class="ses-switch-knob"></span></span>
-        </button>
+        <div class="ses-injected-control">
+          <button
+            class="ses-injected-toggle"
+            :class="{ active: showInjected }"
+            type="button"
+            role="switch"
+            :aria-checked="showInjected"
+            :aria-label="t('sessions.showInjected')"
+            @click="showInjected = !showInjected"
+          >
+            <span>{{ t('sessions.showInjected') }}</span>
+            <span class="ses-switch" :class="{ on: showInjected }"><span class="ses-switch-knob"></span></span>
+          </button>
+          <el-tooltip effect="light" placement="bottom" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
+            <template #content>
+              <div class="profile-help">
+                <div class="tooltip-title">{{ t('sessions.injectedHelpTitle') }}</div>
+                <div class="tooltip-item"><span>{{ t('sessions.injectedHelpDesc') }}</span></div>
+              </div>
+            </template>
+            <button class="ses-help" type="button" :aria-label="t('sessions.injectedHelpTitle')">
+              <el-icon><InfoFilled /></el-icon>
+            </button>
+          </el-tooltip>
+        </div>
       </template>
       <div v-loading="sessionStore.loading" class="ses-chat">
         <div v-if="visibleMessages.length === 0" class="v2-hint" style="text-align:center;padding:40px">
@@ -125,6 +134,7 @@
 
 <script setup lang="ts">
 import { convertFileSrc } from '@tauri-apps/api/core'
+import { InfoFilled } from '@element-plus/icons-vue'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Markdown from '@/components/V2Markdown.vue'
 import V2Empty from '@/components/V2Empty.vue'
@@ -168,7 +178,6 @@ const expandedMessages = ref(new Set<number>())
 const showInjected = ref(localStorage.getItem('ccg.sessions.showInjected') === 'true')
 const failedImages = reactive(new Set<string>())
 const visibleMessages = computed(() => sessionStore.messages.filter((message) => showInjected.value || message.kind !== 'injected'))
-const injectedCount = computed(() => sessionStore.messages.filter((message) => message.kind === 'injected').length)
 
 watch(showInjected, (value) => {
   localStorage.setItem('ccg.sessions.showInjected', String(value))
@@ -385,13 +394,12 @@ onMounted(async () => {
 .ses-srow .v2-row-act.danger { opacity: 0; transition: opacity 0.15s; }
 .ses-srow:hover .v2-row-act.danger { opacity: 1; }
 
-.ses-injected-toggle { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border: 1px solid var(--v2-surface-3); border-radius: 999px; background: transparent; color: var(--v2-text-2); font: inherit; font-size: var(--v2-fs-xs); cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s; }
-.ses-injected-toggle:hover { background: var(--v2-surface-2); color: var(--v2-text); }
-.ses-injected-toggle.active { background: var(--v2-selected-bg); border-color: color-mix(in srgb, var(--v2-accent) 42%, transparent); color: var(--v2-accent); }
-.ses-injected-toggle svg { flex-shrink: 0; opacity: 0.9; }
-.ses-injected-label { white-space: nowrap; }
-.ses-injected-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 999px; background: var(--v2-surface-3); color: var(--v2-text-2); font-size: 10px; line-height: 1; }
-.ses-injected-toggle.active .ses-injected-count { background: color-mix(in srgb, var(--v2-accent) 18%, transparent); color: var(--v2-accent); }
+.ses-injected-control { display: flex; align-items: center; gap: 6px; }
+.ses-injected-toggle { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 4px; border: none; border-radius: 6px; background: transparent; color: var(--v2-text-2); font: inherit; font-size: var(--v2-fs-xs); cursor: pointer; transition: color 0.15s; }
+.ses-injected-toggle:hover, .ses-injected-toggle.active { color: var(--v2-text); }
+.ses-help { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: none; border-radius: 50%; background: transparent; color: var(--v2-text-3); cursor: help; }
+.ses-help:hover { color: var(--v2-text-2); }
+.ses-help .el-icon { font-size: 14px; }
 .ses-switch { position: relative; width: 28px; height: 16px; border-radius: 999px; background: var(--v2-surface-3); flex-shrink: 0; transition: background 0.15s; }
 .ses-switch.on { background: var(--v2-accent); }
 .ses-switch-knob { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--v2-text-3); transition: transform 0.15s, background 0.15s; }
@@ -412,7 +420,4 @@ onMounted(async () => {
 .ses-copy:hover { background: var(--v2-surface-3); color: var(--v2-text); }
 .ses-expand { margin: 10px -16px 0; border-top: 1px solid var(--v2-surface-3); padding: 8px 16px 0; color: var(--v2-text-3); font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-medium); text-align: center; cursor: pointer; }
 .ses-expand:hover { color: var(--v2-text); }
-@media (max-width: 720px) {
-  .ses-injected-label { display: none; }
-}
 </style>
