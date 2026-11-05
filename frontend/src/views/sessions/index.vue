@@ -78,7 +78,7 @@
       </div>
     </template>
 
-    <V2Drawer v-model="showSessionDrawer" :title="t('sessions.drawerTitle', { id: currentSessionId.slice(0, 8) })" :show-footer="false" width="80%">
+    <V2Drawer v-model="showSessionDrawer" :title="currentSessionTitle" :show-footer="false" width="80%">
       <div v-loading="sessionStore.loading" class="ses-chat">
         <div v-if="sessionStore.messages.length === 0" class="v2-hint" style="text-align:center;padding:40px">{{ t('sessions.emptyMessages') }}</div>
         <div v-for="(msg, index) in sessionStore.messages" :key="index" class="ses-bubble" :class="msg.role === 'user' ? 'is-user' : 'is-bot'">
@@ -87,7 +87,10 @@
             <el-tooltip :content="t('common.copy')" placement="top" effect="light" :show-after="250">
               <button class="ses-copy" @click="handleCopyMessage(msg.content)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
             </el-tooltip>
-            {{ getDisplayContent(msg.content, index) }}
+            <template v-for="(segment, segmentIndex) in messageSegments(msg.content, index)" :key="segmentIndex">
+              <img v-if="segment.type === 'image'" :src="segment.src || ''" :alt="segment.alt || ''" class="ses-image" loading="lazy" />
+              <span v-else>{{ segment.text }}</span>
+            </template>
             <div v-if="isLongMessage(msg.content)" class="ses-expand" @click="toggleExpand(index)">{{ expandedMessages.has(index) ? t('sessions.collapse') : t('sessions.expandAll') }}</div>
           </div>
         </div>
@@ -97,6 +100,7 @@
 </template>
 
 <script setup lang="ts">
+import { convertFileSrc } from '@tauri-apps/api/core'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Empty from '@/components/V2Empty.vue'
 import V2Tabs from '@/components/V2Tabs.vue'
@@ -130,6 +134,11 @@ const currentProject = computed(() => sessionStore.currentProject)
 const sessionSearchQuery = ref('')
 const showSessionDrawer = ref(false)
 const currentSessionId = ref('')
+const currentSessionTitle = computed(() => {
+  const session = sessionStore.sessions.find((item) => item.session_id === currentSessionId.value)
+  const title = session?.first_message?.trim()
+  return title || currentSessionId.value.slice(0, 8)
+})
 const expandedMessages = ref(new Set<number>())
 
 function handleCliChange(cliType: CliType) {
@@ -211,16 +220,59 @@ async function handleCopyMessage(content: string) {
   }
 }
 const MAX_LINES = 10
+interface MessageSegment {
+  type: 'text' | 'image'
+  text?: string
+  src?: string
+  alt?: string
+}
 function normalizeContent(content: string): string {
   return content ? content.replace(/\\n/g, '\n') : ''
 }
+function hasImageTag(content: string): boolean {
+  return /<image\b/i.test(normalizeContent(content))
+}
 function isLongMessage(content: string): boolean {
-  return content ? normalizeContent(content).split('\n').length > MAX_LINES : false
+  if (!content || hasImageTag(content)) return false
+  return normalizeContent(content).split('\n').length > MAX_LINES
 }
 function getDisplayContent(content: string, index: number): string {
   const normalized = normalizeContent(content)
   if (expandedMessages.value.has(index) || !isLongMessage(content)) return normalized
   return normalized.split('\n').slice(0, MAX_LINES).join('\n')
+}
+function messageSegments(content: string, index: number): MessageSegment[] {
+  const display = hasImageTag(content) ? normalizeContent(content) : getDisplayContent(content, index)
+  const imageTag = /<image\b([^>]*?)(?:\/>|>([\s\S]*?)<\/image>)/gi
+  const segments: MessageSegment[] = []
+  let lastIndex = 0
+
+  for (const match of display.matchAll(imageTag)) {
+    const start = match.index ?? 0
+    if (start > lastIndex) {
+      segments.push({ type: 'text', text: display.slice(lastIndex, start) })
+    }
+    const attrs = match[1] || ''
+    const pathMatch = attrs.match(/\bpath\s*=\s*(?:"([^"]+)"|'([^']+)')/i)
+    const path = pathMatch?.[1] || pathMatch?.[2] || ''
+    if (path && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(path)) {
+      const nameMatch = attrs.match(/\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/i)
+      const alt = nameMatch?.[1] || nameMatch?.[2] || nameMatch?.[3] || 'image'
+      try {
+        segments.push({ type: 'image', src: convertFileSrc(path.replace(/\\/g, '/')), alt })
+      } catch {
+        segments.push({ type: 'text', text: match[0] })
+      }
+    } else {
+      segments.push({ type: 'text', text: match[0] })
+    }
+    lastIndex = start + match[0].length
+  }
+
+  if (lastIndex < display.length) {
+    segments.push({ type: 'text', text: display.slice(lastIndex) })
+  }
+  return segments.length ? segments : [{ type: 'text', text: display }]
 }
 function toggleExpand(index: number) {
   if (expandedMessages.value.has(index)) expandedMessages.value.delete(index)
@@ -288,6 +340,7 @@ onMounted(async () => {
 .ses-bubble-c { position: relative; padding: 12px 16px; padding-right: 38px; border: 1px solid transparent; border-radius: var(--v2-r); font-size: var(--v2-fs-sm); line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 .ses-bubble.is-user .ses-bubble-c { background: var(--v2-selected-bg); color: var(--v2-text); border-bottom-right-radius: 3px; }
 .ses-bubble.is-bot .ses-bubble-c { background: var(--v2-surface-2); border-color: var(--v2-surface-3); color: var(--v2-text); border-bottom-left-radius: 3px; }
+.ses-image { display: block; max-width: 100%; max-height: 480px; margin: 8px 0; border-radius: 8px; object-fit: contain; background: var(--v2-surface-3); }
 .ses-copy { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--v2-text-3); border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
 .ses-bubble-c:hover .ses-copy { opacity: 1; }
 .ses-copy:hover { background: var(--v2-surface-3); color: var(--v2-text); }

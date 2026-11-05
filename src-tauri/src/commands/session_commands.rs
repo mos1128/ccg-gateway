@@ -616,6 +616,29 @@ fn codex_is_injected_user_text(text: &str) -> bool {
         || text.starts_with("<user_instructions>")
 }
 
+fn codex_title_text(text: &str) -> String {
+    let mut result = text.to_string();
+    loop {
+        let Some(start) = result.find("<image") else {
+            break;
+        };
+        let end = result[start..]
+            .find("</image>")
+            .map(|offset| start + offset + "</image>".len())
+            .or_else(|| result[start..].find("/>").map(|offset| start + offset + 2));
+        let Some(end) = end else {
+            break;
+        };
+        result.replace_range(start..end, "");
+    }
+    let result = result.trim();
+    if result.is_empty() {
+        crate::tr!("session.image")
+    } else {
+        result.to_string()
+    }
+}
+
 fn codex_first_user_message(path: &std::path::Path) -> String {
     use std::io::{BufRead, BufReader};
     let Ok(file) = std::fs::File::open(path) else {
@@ -644,11 +667,12 @@ fn codex_first_user_message(path: &std::path::Path) -> String {
         if text.is_empty() {
             continue;
         }
+        let title = codex_title_text(text);
         if fallback.is_empty() {
-            fallback = text.chars().take(200).collect();
+            fallback = title.chars().take(200).collect();
         }
         if !codex_is_injected_user_text(text) {
-            return text.chars().take(200).collect();
+            return title.chars().take(200).collect();
         }
     }
     fallback
@@ -965,20 +989,25 @@ async fn get_codex_messages_async(
                         let role = payload.get("role").and_then(|r| r.as_str());
                         let timestamp = data.get("timestamp").and_then(|t| t.as_i64());
 
-                        // User messages
-                        if role == Some("user") && item_type == Some("message") {
+                        // User / developer / system messages: keep injected context in the record.
+                        if matches!(role, Some("user") | Some("developer") | Some("system"))
+                            && item_type == Some("message")
+                        {
                             if let Some(content_list) =
                                 payload.get("content").and_then(|c| c.as_array())
                             {
                                 let text_parts: Vec<String> = content_list
                                     .iter()
                                     .filter_map(|item| {
-                                        if item.get("type").and_then(|t| t.as_str())
-                                            == Some("input_text")
+                                        let item_type = item.get("type").and_then(|t| t.as_str());
+                                        if item_type == Some("input_text")
+                                            || item_type == Some("text")
                                         {
                                             item.get("text")
                                                 .and_then(|t| t.as_str())
-                                                .map(|s| s.to_string())
+                                                .map(str::trim)
+                                                .filter(|text| !text.is_empty())
+                                                .map(str::to_string)
                                         } else {
                                             None
                                         }
@@ -1007,7 +1036,9 @@ async fn get_codex_messages_async(
                                         {
                                             item.get("text")
                                                 .and_then(|t| t.as_str())
-                                                .map(|s| s.to_string())
+                                                .map(str::trim)
+                                                .filter(|text| !text.is_empty())
+                                                .map(str::to_string)
                                         } else {
                                             None
                                         }
@@ -1034,7 +1065,9 @@ async fn get_codex_messages_async(
                                         {
                                             item.get("text")
                                                 .and_then(|t| t.as_str())
-                                                .map(|s| s.to_string())
+                                                .map(str::trim)
+                                                .filter(|text| !text.is_empty())
+                                                .map(str::to_string)
                                         } else {
                                             None
                                         }
@@ -1110,6 +1143,40 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
 
         if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
             let msg_type = data.get("type").and_then(|t| t.as_str());
+
+            if msg_type == Some("attachment") {
+                let content = data
+                    .get("rendered")
+                    .and_then(|rendered| rendered.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| {
+                                item.get("content").and_then(|content| content.as_str())
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                    .unwrap_or_default();
+                let content = content.trim();
+                if !content.is_empty() && content != "Warmup" {
+                    let role = data
+                        .get("renderedRole")
+                        .and_then(|role| role.as_str())
+                        .unwrap_or("user");
+                    messages.push(SessionMessage {
+                        role: if role == "assistant" {
+                            "assistant"
+                        } else {
+                            "user"
+                        }
+                        .to_string(),
+                        content: content.to_string(),
+                        timestamp: None,
+                    });
+                }
+                continue;
+            }
 
             if msg_type == Some("user") || msg_type == Some("assistant") {
                 let role = msg_type.unwrap();
@@ -5294,6 +5361,24 @@ mod zcode_session_tests {
 }
 
 #[cfg(test)]
+mod claude_session_tests {
+    use super::*;
+
+    #[test]
+    fn includes_attachment_rendered_messages() {
+        let content = r#"{"type":"user","message":{"role":"user","content":"hi"}}
+{"type":"attachment","renderedRole":"system","rendered":[{"content":"<system-reminder>env</system-reminder>"}]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}"#;
+        let messages = parse_claude_jsonl(content).expect("messages");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[1].role, "user");
+        assert!(messages[1].content.contains("env"));
+        assert_eq!(messages[2].role, "assistant");
+    }
+}
+
+#[cfg(test)]
 mod codex_session_tests {
     use super::*;
 
@@ -5305,7 +5390,7 @@ mod codex_session_tests {
         let path = dir.join("session.jsonl");
         let content = r##"{"type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<skills_instructions>skills</skills_instructions>"}]}}
 {"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n\n<INSTRUCTIONS>rules</INSTRUCTIONS>"}]}}
-{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"real prompt"}]}}"##;
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<image name=[image #1] path=\"D:\\tmp\\shot.png\">\n\n</image>\n\nreal prompt"}]}}"##;
         std::fs::write(&path, content).unwrap();
         assert_eq!(codex_first_user_message(&path), "real prompt");
 
