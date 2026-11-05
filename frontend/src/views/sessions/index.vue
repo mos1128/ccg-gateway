@@ -273,8 +273,12 @@ interface MessageSegment {
 function imageKey(index: number, segmentIndex: number): string {
   return `${index}:${segmentIndex}`
 }
-function pushTextSegments(text: string, segments: MessageSegment[]) {
-  const placeholder = /\[(?:图片|image)(?:\s*#?\s*\d+)?\]/gi
+function pushTextSegments(text: string, segments: MessageSegment[], hasRealImage = false) {
+  if (hasRealImage) {
+    if (text) segments.push({ type: 'text', text })
+    return
+  }
+  const placeholder = /(?<!!)\[(?:图片|image)(?:\s*#?\s*\d+)?\]/gi
   let lastIndex = 0
   for (const match of text.matchAll(placeholder)) {
     const start = match.index ?? 0
@@ -306,6 +310,7 @@ function getDisplayContent(content: string, index: number): string {
 }
 function messageSegments(content: string, index: number): MessageSegment[] {
   const display = hasImageTag(content) ? normalizeContent(content) : getDisplayContent(content, index)
+  const hasRealImage = hasImageTag(content)
   const imageTag = /<image\b([^>]*?)(?:\/>|>([\s\S]*?)<\/image>)/gi
   const segments: MessageSegment[] = []
   let lastIndex = 0
@@ -313,12 +318,12 @@ function messageSegments(content: string, index: number): MessageSegment[] {
   for (const match of display.matchAll(imageTag)) {
     const start = match.index ?? 0
     if (start > lastIndex) {
-      pushTextSegments(display.slice(lastIndex, start), segments)
+      pushTextSegments(display.slice(lastIndex, start), segments, hasRealImage)
     }
     const attrs = match[1] || ''
     const pathMatch = attrs.match(/\bpath\s*=\s*(?:"([^"]+)"|'([^']+)')/i)
     const path = pathMatch?.[1] || pathMatch?.[2] || ''
-    if (path && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(path)) {
+    if (path) {
       const nameMatch = attrs.match(/\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/i)
       const alt = nameMatch?.[1] || nameMatch?.[2] || nameMatch?.[3] || 'image'
       try {
@@ -333,7 +338,7 @@ function messageSegments(content: string, index: number): MessageSegment[] {
   }
 
   if (lastIndex < display.length) {
-    pushTextSegments(display.slice(lastIndex), segments)
+    pushTextSegments(display.slice(lastIndex), segments, hasRealImage)
   }
   return segments.length ? segments : [{ type: 'text', text: display }]
 }

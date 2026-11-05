@@ -1015,6 +1015,11 @@ async fn get_codex_messages_async(
                                     .collect();
                                 if !text_parts.is_empty() {
                                     let content = text_parts.join("\n\n");
+                                    let content = if content.contains("<image") {
+                                        content
+                                    } else {
+                                        strip_image_markers(&content)
+                                    };
                                     let injected = role != Some("user")
                                         || codex_is_injected_user_text(&content);
                                     let message = SessionMessage {
@@ -2459,7 +2464,12 @@ fn parse_kimi_append_message(
             String::new()
         };
         if !result_str.is_empty() {
-            parts.push(crate::tr!("session.tool_result", result_str));
+            let content = if result_str.contains("<image") {
+                crate::tr!("session.tool_result_plain", result_str)
+            } else {
+                crate::tr!("session.tool_result", result_str)
+            };
+            parts.push(content);
         }
     }
 
@@ -2657,9 +2667,14 @@ fn parse_kimi_wire_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                         };
                         let text = kimi_tool_result_text(output);
                         if !text.is_empty() {
+                            let content = if text.contains("<image") {
+                                crate::tr!("session.tool_result_plain", text)
+                            } else {
+                                crate::tr!("session.tool_result", text)
+                            };
                             messages.push(SessionMessage {
                                 role: "user".to_string(),
-                                content: crate::tr!("session.tool_result", text),
+                                content,
                                 timestamp,
                             });
                         }
@@ -4326,16 +4341,16 @@ fn dsh_attachment_image(object: &serde_json::Map<String, serde_json::Value>) -> 
     if !path.is_file() {
         return None;
     }
-    let name = attachment
-        .get("name")
-        .and_then(|name| name.as_str())
-        .unwrap_or("image")
-        .replace('"', "&quot;");
-    Some(format!(
-        "<image name=\"{}\" path=\"{}\"></image>",
-        name,
-        path.display()
-    ))
+    let bytes = std::fs::read(&path).ok()?;
+    let encoded = {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    };
+    let mime = attachment
+        .get("mediaType")
+        .and_then(|mime| mime.as_str())
+        .unwrap_or("image/png");
+    Some(image_markdown_data_url(mime, &encoded))
 }
 
 fn dsh_content_text(value: &serde_json::Value) -> String {
@@ -4477,7 +4492,7 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
                 .get("content")
                 .map(dsh_content_text)
                 .unwrap_or_default();
-            let content = if content.contains("<image") {
+            let content = if content.contains("<image") || content.contains("![image](") {
                 crate::tr!("session.tool_result_plain", content)
             } else {
                 crate::tr!("session.tool_result", content)

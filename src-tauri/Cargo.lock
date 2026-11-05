@@ -481,6 +481,7 @@ dependencies = [
  "atomic-write-file",
  "auto-launch",
  "axum",
+ "base64 0.22.1",
  "brotli",
  "bytes",
  "chrono",
