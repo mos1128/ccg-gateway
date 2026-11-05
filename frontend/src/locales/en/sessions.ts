@@ -6,7 +6,6 @@ export default {
   noMessageContent: 'No message content',
   noVisibleMessages: 'No messages match the current filter',
   showInjected: 'Show injected context',
-  injectedHelpTitle: 'Injected context',
   injectedHelpDesc: 'Runtime context injected by the Agent, such as AGENTS.md, skills, environment, and system reminders. Hidden by default.',
   imageLoadFailed: 'Failed to load image',
   searchPlaceholder: 'Search sessions…',

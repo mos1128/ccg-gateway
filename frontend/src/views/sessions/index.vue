@@ -96,11 +96,10 @@
           <el-tooltip effect="light" placement="bottom" :show-after="150" :enterable="true" popper-class="v2-profile-pop v2-scope">
             <template #content>
               <div class="profile-help">
-                <div class="tooltip-title">{{ t('sessions.injectedHelpTitle') }}</div>
                 <div class="tooltip-item"><span>{{ t('sessions.injectedHelpDesc') }}</span></div>
               </div>
             </template>
-            <button class="ses-help" type="button" :aria-label="t('sessions.injectedHelpTitle')">
+            <button class="ses-help" type="button" :aria-label="t('sessions.showInjected')">
               <el-icon><InfoFilled /></el-icon>
             </button>
           </el-tooltip>

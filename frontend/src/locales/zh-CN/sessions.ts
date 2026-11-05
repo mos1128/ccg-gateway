@@ -6,7 +6,6 @@ export default {
   noMessageContent: '无消息内容',
   noVisibleMessages: '当前筛选下没有消息',
   showInjected: '显示注入上下文',
-  injectedHelpTitle: '注入上下文',
   injectedHelpDesc: '包含 AGENTS.md、skills、environment、system reminder 等 Agent 运行时注入信息，默认隐藏。',
   imageLoadFailed: '图片加载失败',
   searchPlaceholder: '搜索会话…',
