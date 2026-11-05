@@ -9,8 +9,6 @@ export default {
   hideInjected: 'Hide injected context',
   injectedContext: 'Injected context',
   imageLoadFailed: 'Failed to load image',
-  roleUser: 'You',
-  roleAssistant: 'Assistant',
   searchPlaceholder: 'Search sessions…',
   sessionCount: '{count} sessions',
   back: 'Back',

@@ -9,8 +9,6 @@ export default {
   hideInjected: '隐藏注入上下文',
   injectedContext: '注入上下文',
   imageLoadFailed: '图片加载失败',
-  roleUser: '你',
-  roleAssistant: '助手',
   searchPlaceholder: '搜索会话…',
   sessionCount: '{count} 个会话',
   back: '返回',
