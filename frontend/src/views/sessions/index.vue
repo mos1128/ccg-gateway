@@ -292,7 +292,8 @@ function normalizeContent(content: string): string {
   return content ? content.replace(/\\n/g, '\n') : ''
 }
 function hasImageTag(content: string): boolean {
-  return /<image\b/i.test(normalizeContent(content))
+  const normalized = normalizeContent(content)
+  return /<image\b/i.test(normalized) || /!\[[^\]]*\]\(/i.test(normalized)
 }
 function isLongMessage(content: string): boolean {
   if (!content || hasImageTag(content)) return false
