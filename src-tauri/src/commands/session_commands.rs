@@ -1161,6 +1161,11 @@ fn image_markdown_url(url: &str) -> String {
     format!("![image]({})", url)
 }
 
+fn is_claude_image_source_marker(text: &str) -> bool {
+    let text = text.trim();
+    text.starts_with("[Image: source: ") && text.ends_with(']')
+}
+
 fn claude_image_markdown(item: &serde_json::Value) -> Option<String> {
     let source = item.get("source")?;
     match source.get("type").and_then(|kind| kind.as_str()) {
@@ -1273,6 +1278,9 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                                     if let Some(text) =
                                         item.get("text").and_then(|text| text.as_str())
                                     {
+                                        if is_claude_image_source_marker(text) {
+                                            continue;
+                                        }
                                         let text = if has_image {
                                             strip_image_markers(text)
                                         } else {
@@ -1352,7 +1360,10 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                         }
                         flush_session_parts(&mut messages, role, &mut parts, timestamp);
                     } else if let Some(text) = content_val.and_then(|c| c.as_str()) {
-                        if !text.is_empty() && text != "Warmup" {
+                        if !text.is_empty()
+                            && text != "Warmup"
+                            && !is_claude_image_source_marker(text)
+                        {
                             messages.push(SessionMessage {
                                 role: role.to_string(),
                                 content: text.to_string(),
@@ -5887,13 +5898,15 @@ mod claude_session_tests {
 
     #[test]
     fn renders_base64_image_and_removes_image_marker() {
-        let content = r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Image #1] now"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"abc"}}]}}"#;
+        let content = r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Image #1] now"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"abc"}}]}}
+{"type":"user","isMeta":true,"turnCompanion":true,"message":{"role":"user","content":[{"type":"text","text":"[Image: source: C:\\tmp\\x.png]"}]}}"#;
         let messages = parse_claude_jsonl(content).expect("messages");
         assert_eq!(messages.len(), 1);
         let content = messages[0].display_content();
         assert!(content.contains("![image](data:image/png;base64,abc)"));
         assert!(content.contains("now"));
         assert!(!content.contains("[Image #1]"));
+        assert!(!content.contains("[Image: source:"));
     }
 }
 
