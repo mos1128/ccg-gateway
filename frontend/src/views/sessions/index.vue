@@ -274,7 +274,7 @@ function imageKey(index: number, segmentIndex: number): string {
   return `${index}:${segmentIndex}`
 }
 function pushTextSegments(text: string, segments: MessageSegment[]) {
-  const placeholder = /\[(?:图片|image)(?:\s*#\s*\d+)?\]/gi
+  const placeholder = /\[(?:图片|image)(?:\s*#?\s*\d+)?\]/gi
   let lastIndex = 0
   for (const match of text.matchAll(placeholder)) {
     const start = match.index ?? 0

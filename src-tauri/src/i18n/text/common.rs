@@ -299,6 +299,10 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "**[工具结果]**\n```\n{}\n```",
             Lang::En => "**[Tool Result]**\n```\n{}\n```",
         },
+        "session.tool_result_plain" => match lang {
+            Lang::Zh => "**[工具结果]**\n\n{}",
+            Lang::En => "**[Tool Result]**\n\n{}",
+        },
         "session.tool_result_named" => match lang {
             Lang::Zh => "**[工具结果: {}]**\n```\n{}\n```",
             Lang::En => "**[Tool Result: {}]**\n```\n{}\n```",

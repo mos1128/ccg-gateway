@@ -1138,6 +1138,63 @@ async fn get_codex_messages_async(
 }
 
 // Parse Claude Code messages from JSONL content
+fn strip_image_markers(text: &str) -> String {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"(?i)\[image(?:\s*#?\s*\d+)?\]").unwrap());
+    re.replace_all(text, "").trim().to_string()
+}
+
+fn image_markdown_data_url(mime: &str, data: &str) -> String {
+    if data.starts_with("data:") {
+        format!("![image]({})", data)
+    } else {
+        format!("![image](data:{};base64,{})", mime, data)
+    }
+}
+
+fn image_markdown_url(url: &str) -> String {
+    format!("![image]({})", url)
+}
+
+fn claude_image_markdown(item: &serde_json::Value) -> Option<String> {
+    let source = item.get("source")?;
+    match source.get("type").and_then(|kind| kind.as_str()) {
+        Some("base64") => {
+            let data = source.get("data").and_then(|data| data.as_str())?;
+            let mime = source
+                .get("media_type")
+                .and_then(|mime| mime.as_str())
+                .unwrap_or("image/png");
+            Some(image_markdown_data_url(mime, data))
+        }
+        Some("url") => source
+            .get("url")
+            .and_then(|url| url.as_str())
+            .map(image_markdown_url),
+        _ => None,
+    }
+}
+
+fn flush_session_parts(
+    messages: &mut Vec<SessionMessage>,
+    role: &str,
+    parts: &mut Vec<String>,
+    timestamp: Option<i64>,
+) {
+    if parts.is_empty() {
+        return;
+    }
+    let content = parts.join("\n\n");
+    parts.clear();
+    if !content.trim().is_empty() {
+        messages.push(SessionMessage {
+            role: role.to_string(),
+            content,
+            timestamp,
+        });
+    }
+}
+
 fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
     use std::io::{BufRead, BufReader};
 
@@ -1196,88 +1253,107 @@ fn parse_claude_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                 if let Some(message) = data.get("message") {
                     let content_val = message.get("content");
 
-                    let content = if let Some(arr) = content_val.and_then(|c| c.as_array()) {
-                        let mut text_parts = Vec::new();
+                    if let Some(arr) = content_val.and_then(|c| c.as_array()) {
+                        let has_image = arr.iter().any(|item| {
+                            item.get("type").and_then(|kind| kind.as_str()) == Some("image")
+                        });
+                        let mut parts: Vec<String> = Vec::new();
                         for item in arr {
-                            if let Some(item_type) = item.get("type").and_then(|t| t.as_str()) {
-                                match item_type {
-                                    "text" => {
-                                        if let Some(text) =
-                                            item.get("text").and_then(|t| t.as_str())
-                                        {
-                                            text_parts.push(text.to_string());
+                            let Some(item_type) = item.get("type").and_then(|kind| kind.as_str())
+                            else {
+                                continue;
+                            };
+                            match item_type {
+                                "text" => {
+                                    if let Some(text) =
+                                        item.get("text").and_then(|text| text.as_str())
+                                    {
+                                        let text = if has_image {
+                                            strip_image_markers(text)
+                                        } else {
+                                            text.to_string()
+                                        };
+                                        if !text.is_empty() {
+                                            parts.push(text);
                                         }
                                     }
-                                    "tool_use" if role == "assistant" => {
-                                        // Tool call from assistant
-                                        let tool_name = item
-                                            .get("name")
-                                            .and_then(|n| n.as_str())
-                                            .unwrap_or("unknown");
-                                        let tool_input = item.get("input");
-                                        let input_str = if let Some(input) = tool_input {
+                                }
+                                "tool_use" if role == "assistant" => {
+                                    flush_session_parts(&mut messages, role, &mut parts, timestamp);
+                                    let tool_name = item
+                                        .get("name")
+                                        .and_then(|name| name.as_str())
+                                        .unwrap_or("unknown");
+                                    let input_str = item
+                                        .get("input")
+                                        .map(|input| {
                                             serde_json::to_string_pretty(input)
                                                 .unwrap_or_else(|_| "{}".to_string())
-                                        } else {
-                                            "{}".to_string()
-                                        };
-                                        text_parts.push(crate::tr!(
+                                        })
+                                        .unwrap_or_else(|| "{}".to_string());
+                                    messages.push(SessionMessage {
+                                        role: "assistant".to_string(),
+                                        content: crate::tr!(
                                             "session.tool_call",
                                             tool_name,
                                             input_str
-                                        ));
-                                    }
-                                    "tool_result" if role == "user" => {
-                                        // Tool result from user
-                                        let result_content = item.get("content");
-                                        let result_str = if let Some(content) = result_content {
-                                            if let Some(s) = content.as_str() {
-                                                s.to_string()
-                                            } else {
-                                                serde_json::to_string_pretty(content)
-                                                    .unwrap_or_else(|_| "".to_string())
-                                            }
-                                        } else {
-                                            String::new()
-                                        };
-                                        if !result_str.is_empty() {
-                                            text_parts.push(crate::tr!(
-                                                "session.tool_result",
-                                                result_str
-                                            ));
-                                        }
-                                    }
-                                    "thinking" if role == "assistant" => {
-                                        // Thinking from assistant
-                                        if let Some(thinking) =
-                                            item.get("thinking").and_then(|t| t.as_str())
-                                        {
-                                            if !thinking.is_empty() {
-                                                text_parts
-                                                    .push(crate::tr!("session.thinking", thinking));
-                                            }
-                                        }
-                                    }
-                                    "image" => {
-                                        text_parts.push(crate::tr!("session.image"));
-                                    }
-                                    _ => {}
+                                        ),
+                                        timestamp,
+                                    });
                                 }
+                                "tool_result" if role == "user" => {
+                                    flush_session_parts(&mut messages, role, &mut parts, timestamp);
+                                    let result_str = item
+                                        .get("content")
+                                        .map(|content| {
+                                            content.as_str().map(str::to_string).unwrap_or_else(
+                                                || {
+                                                    serde_json::to_string_pretty(content)
+                                                        .unwrap_or_default()
+                                                },
+                                            )
+                                        })
+                                        .unwrap_or_default();
+                                    if !result_str.is_empty() {
+                                        messages.push(SessionMessage {
+                                            role: "user".to_string(),
+                                            content: crate::tr!("session.tool_result", result_str),
+                                            timestamp,
+                                        });
+                                    }
+                                }
+                                "thinking" if role == "assistant" => {
+                                    flush_session_parts(&mut messages, role, &mut parts, timestamp);
+                                    if let Some(thinking) =
+                                        item.get("thinking").and_then(|text| text.as_str())
+                                    {
+                                        if !thinking.is_empty() {
+                                            messages.push(SessionMessage {
+                                                role: "assistant".to_string(),
+                                                content: crate::tr!("session.thinking", thinking),
+                                                timestamp,
+                                            });
+                                        }
+                                    }
+                                }
+                                "image" => {
+                                    parts.push(
+                                        claude_image_markdown(item)
+                                            .unwrap_or_else(|| crate::tr!("session.image")),
+                                    );
+                                }
+                                _ => {}
                             }
                         }
-                        text_parts.join("\n\n")
+                        flush_session_parts(&mut messages, role, &mut parts, timestamp);
                     } else if let Some(text) = content_val.and_then(|c| c.as_str()) {
-                        text.to_string()
-                    } else {
-                        continue;
-                    };
-
-                    if !content.is_empty() && content != "Warmup" {
-                        messages.push(SessionMessage {
-                            role: role.to_string(),
-                            content,
-                            timestamp,
-                        });
+                        if !text.is_empty() && text != "Warmup" {
+                            messages.push(SessionMessage {
+                                role: role.to_string(),
+                                content: text.to_string(),
+                                timestamp,
+                            });
+                        }
                     }
                 }
             }
@@ -1624,7 +1700,50 @@ fn opencode_text_from_content(value: &serde_json::Value) -> String {
             }
         }
     }
-    parts.join("\n")
+    strip_image_markers(&parts.join("\n"))
+}
+
+fn opencode_user_content(value: &serde_json::Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(text) = value.get("text").and_then(|text| text.as_str()) {
+        let text = strip_image_markers(text);
+        if !text.is_empty() {
+            parts.push(text);
+        }
+    }
+    if let Some(files) = value.get("files").and_then(|files| files.as_array()) {
+        for file in files {
+            let Some(mime) = file.get("mime").and_then(|mime| mime.as_str()) else {
+                continue;
+            };
+            if !mime.starts_with("image/") {
+                continue;
+            }
+            if let Some(data) = file.get("data").and_then(|data| data.as_str()) {
+                parts.push(image_markdown_data_url(mime, data));
+            }
+        }
+    }
+    if parts.is_empty() {
+        opencode_text_from_content(value)
+    } else {
+        parts.join("\n\n")
+    }
+}
+
+fn opencode_image_part(part: &serde_json::Value) -> Option<String> {
+    if let Some(url) = part.get("url").and_then(|url| url.as_str()) {
+        return Some(image_markdown_url(url));
+    }
+    if let Some(data) = part.get("data").and_then(|data| data.as_str()) {
+        let mime = part
+            .get("mime")
+            .or_else(|| part.get("mediaType"))
+            .and_then(|mime| mime.as_str())
+            .unwrap_or("image/png");
+        return Some(image_markdown_data_url(mime, data));
+    }
+    Some("[image]".to_string())
 }
 
 fn opencode_preview(text: String) -> String {
@@ -1790,7 +1909,7 @@ fn opencode_part_text(part: &serde_json::Value) -> Option<String> {
             }
             Some(output)
         }
-        Some("file") | Some("image") => Some("[image]".to_string()),
+        Some("file") | Some("image") => opencode_image_part(part),
         _ => None,
     }
 }
@@ -1827,36 +1946,52 @@ async fn query_opencode_messages(
             continue;
         };
 
-        let content = if role == "user" {
-            opencode_text_from_content(&data)
-        } else {
-            let text_parts: Vec<String> = data
-                .get("content")
-                .and_then(serde_json::Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(opencode_part_text)
-                .collect();
-            if text_parts.is_empty() {
-                opencode_text_from_content(&data)
-            } else {
-                text_parts.join("\n\n")
+        let timestamp = Some(time_created / 1000);
+        if role == "user" {
+            let content = opencode_user_content(&data);
+            if content.trim().is_empty() {
+                continue;
             }
-        };
-        if content.trim().is_empty() {
+            let message = SessionMessage {
+                role: "user".to_string(),
+                content,
+                timestamp,
+            };
+            messages.push(if injected {
+                message.injected()
+            } else {
+                message
+            });
             continue;
         }
 
-        let message = SessionMessage {
-            role: role.to_string(),
-            content,
-            timestamp: Some(time_created / 1000),
-        };
-        messages.push(if injected {
-            message.injected()
-        } else {
-            message
-        });
+        let mut pushed = false;
+        if let Some(parts) = data.get("content").and_then(|content| content.as_array()) {
+            for part in parts {
+                let Some(content) = opencode_part_text(part) else {
+                    continue;
+                };
+                if content.trim().is_empty() {
+                    continue;
+                }
+                messages.push(SessionMessage {
+                    role: "assistant".to_string(),
+                    content,
+                    timestamp,
+                });
+                pushed = true;
+            }
+        }
+        if !pushed {
+            let content = opencode_text_from_content(&data);
+            if !content.trim().is_empty() {
+                messages.push(SessionMessage {
+                    role: "assistant".to_string(),
+                    content,
+                    timestamp,
+                });
+            }
+        }
     }
 
     Ok(messages)
@@ -2308,15 +2443,18 @@ fn parse_kimi_append_message(
     if role == "tool" {
         let content_val = message.get("content");
         let result_str = if let Some(s) = content_val.and_then(|c| c.as_str()) {
-            s.to_string()
+            s.trim().to_string()
         } else if let Some(arr) = content_val.and_then(|c| c.as_array()) {
             let mut text_parts = Vec::new();
             for item in arr {
                 if let Some(text) = render_kimi_content_part(item) {
-                    text_parts.push(text);
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        text_parts.push(text.to_string());
+                    }
                 }
             }
-            text_parts.join("\n")
+            text_parts.join("\n").trim().to_string()
         } else {
             String::new()
         };
@@ -2398,14 +2536,16 @@ fn kimi_tool_arguments(value: Option<&serde_json::Value>) -> String {
 
 fn kimi_tool_result_text(value: &serde_json::Value) -> String {
     if let Some(text) = value.as_str() {
-        return text.to_string();
+        return text.trim().to_string();
     }
     if let Some(parts) = value.as_array() {
         return parts
             .iter()
             .filter_map(render_kimi_content_part)
             .collect::<Vec<_>>()
-            .join("\n");
+            .join("\n")
+            .trim()
+            .to_string();
     }
     String::new()
 }
@@ -2475,6 +2615,22 @@ fn parse_kimi_wire_jsonl(content: &str) -> Result<Vec<SessionMessage>> {
                         let Some(part) = event.get("part") else {
                             continue;
                         };
+                        if part.get("type").and_then(|kind| kind.as_str()) == Some("think") {
+                            let thinking = part
+                                .get("think")
+                                .and_then(|text| text.as_str())
+                                .unwrap_or("")
+                                .trim();
+                            if !thinking.is_empty() {
+                                flush_kimi_assistant(&mut messages, &mut assistant);
+                                messages.push(SessionMessage {
+                                    role: "assistant".to_string(),
+                                    content: crate::tr!("session.thinking", thinking),
+                                    timestamp,
+                                });
+                            }
+                            continue;
+                        }
                         let Some(text) = render_kimi_content_part(part) else {
                             continue;
                         };
@@ -3033,7 +3189,28 @@ fn grok_extract_text(content: Option<&serde_json::Value>) -> Option<String> {
                         parts.push(t.to_string());
                     }
                 }
-                Some("image") | Some("image_url") => parts.push(crate::tr!("session.image")),
+                Some("image") | Some("image_url") => {
+                    let url = item.get("url").and_then(|url| url.as_str()).or_else(|| {
+                        item.get("image_url").and_then(|image| {
+                            image
+                                .get("url")
+                                .and_then(|url| url.as_str())
+                                .or_else(|| image.as_str())
+                        })
+                    });
+                    if let Some(url) = url {
+                        parts.push(image_markdown_url(url));
+                    } else if let Some(data) = item.get("data").and_then(|data| data.as_str()) {
+                        let mime = item
+                            .get("mime")
+                            .or_else(|| item.get("mediaType"))
+                            .and_then(|mime| mime.as_str())
+                            .unwrap_or("image/png");
+                        parts.push(image_markdown_data_url(mime, data));
+                    } else {
+                        parts.push(crate::tr!("session.image"));
+                    }
+                }
                 _ => {}
             }
         }
@@ -3139,10 +3316,39 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
             (Some("assistant"), _) | (None, Some("assistant")) => Some("assistant"),
             (Some("tool_result"), _) | (None, Some("tool")) => Some("tool_result"),
             (Some("system"), _) | (None, Some("system")) => Some("system"),
-            // reasoning / backend_tool_call 等不展示
+            (Some("reasoning"), _) | (None, Some("reasoning")) => Some("reasoning"),
+            // backend_tool_call 等不展示
             _ => continue,
         };
         match role {
+            Some("reasoning") => {
+                let mut parts = Vec::new();
+                if let Some(summary) = v.get("summary").and_then(|value| value.as_array()) {
+                    for item in summary {
+                        if let Some(text) = item
+                            .get("text")
+                            .and_then(|text| text.as_str())
+                            .filter(|text| !text.trim().is_empty())
+                        {
+                            parts.push(text.to_string());
+                        }
+                    }
+                }
+                if parts.is_empty() {
+                    if let Some(text) = grok_extract_text(v.get("content")) {
+                        if !text.trim().is_empty() {
+                            parts.push(text);
+                        }
+                    }
+                }
+                if !parts.is_empty() {
+                    messages.push(SessionMessage {
+                        role: "assistant".to_string(),
+                        content: crate::tr!("session.thinking", parts.join("\n")),
+                        timestamp: None,
+                    });
+                }
+            }
             Some("system") => {
                 let Some(text) = grok_extract_text(v.get("content")) else {
                     continue;
@@ -3217,15 +3423,34 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
                 let text = v
                     .get("content")
                     .and_then(|c| c.as_str())
-                    .map(|s| s.to_string())
+                    .map(|s| s.trim().to_string())
                     .or_else(|| grok_extract_text(v.get("content")))
                     .unwrap_or_default();
-                if text.is_empty() {
+                let mut parts = Vec::new();
+                if !text.is_empty() {
+                    parts.push(crate::tr!("session.tool_result", text));
+                }
+                if let Some(images) = v.get("images").and_then(|images| images.as_array()) {
+                    for image in images {
+                        if let Some(url) = image.get("url").and_then(|url| url.as_str()) {
+                            parts.push(image_markdown_url(url));
+                        } else if let Some(data) = image.get("data").and_then(|data| data.as_str())
+                        {
+                            let mime = image
+                                .get("mime")
+                                .or_else(|| image.get("mediaType"))
+                                .and_then(|mime| mime.as_str())
+                                .unwrap_or("image/png");
+                            parts.push(image_markdown_data_url(mime, data));
+                        }
+                    }
+                }
+                if parts.is_empty() {
                     continue;
                 }
                 messages.push(SessionMessage {
                     role: "user".to_string(),
-                    content: crate::tr!("session.tool_result", text),
+                    content: parts.join("\n\n"),
                     timestamp: None,
                 });
             }
@@ -4084,6 +4309,35 @@ fn dsh_header(text: &str) -> Option<serde_json::Value> {
     }
 }
 
+fn dsh_attachment_image(object: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    let attachment = object.get("attachment")?;
+    let id = attachment.get("attachmentId").and_then(|id| id.as_str())?;
+    let hash = id.strip_prefix("sha256:")?;
+    if hash.len() < 2 {
+        return None;
+    }
+    let path = dirs::home_dir()?
+        .join(".dsh")
+        .join("attachments")
+        .join("v1")
+        .join("objects")
+        .join(&hash[..2])
+        .join(hash);
+    if !path.is_file() {
+        return None;
+    }
+    let name = attachment
+        .get("name")
+        .and_then(|name| name.as_str())
+        .unwrap_or("image")
+        .replace('"', "&quot;");
+    Some(format!(
+        "<image name=\"{}\" path=\"{}\"></image>",
+        name,
+        path.display()
+    ))
+}
+
 fn dsh_content_text(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(text) => text.clone(),
@@ -4138,7 +4392,10 @@ fn dsh_content_text(value: &serde_json::Value) -> String {
                             return crate::tr!("session.tool_result", result);
                         }
                     }
-                    "image" | "image_url" => return crate::tr!("session.image"),
+                    "image" | "image_url" => {
+                        return dsh_attachment_image(object)
+                            .unwrap_or_else(|| crate::tr!("session.image"));
+                    }
                     _ => {}
                 }
             }
@@ -4220,7 +4477,12 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
                 .get("content")
                 .map(dsh_content_text)
                 .unwrap_or_default();
-            ("user", crate::tr!("session.tool_result", content), false)
+            let content = if content.contains("<image") {
+                crate::tr!("session.tool_result_plain", content)
+            } else {
+                crate::tr!("session.tool_result", content)
+            };
+            ("user", content, false)
         }
         _ => return None,
     };
@@ -4237,6 +4499,53 @@ fn dsh_event_message(line: &str) -> Option<SessionMessage> {
     } else {
         message
     })
+}
+
+fn dsh_event_messages(line: &str) -> Vec<SessionMessage> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return Vec::new();
+    };
+    if value.get("type").and_then(|kind| kind.as_str()) != Some("assistant/message") {
+        return dsh_event_message(line).into_iter().collect();
+    }
+    let data = value.get("data").cloned().unwrap_or_default();
+    let timestamp = value
+        .get("time")
+        .and_then(|time| time.as_i64())
+        .map(|time| time / 1000);
+    let Some(content) = data
+        .get("message")
+        .and_then(|message| message.get("content"))
+        .and_then(|content| content.as_array())
+    else {
+        return dsh_event_message(line).into_iter().collect();
+    };
+
+    let mut messages = Vec::new();
+    for item in content {
+        let kind = item
+            .get("type")
+            .and_then(|kind| kind.as_str())
+            .unwrap_or("");
+        if matches!(kind, "tool-call" | "tool_use" | "tool_call") {
+            continue;
+        }
+        if !matches!(
+            kind,
+            "reasoning" | "thinking" | "text" | "image" | "image_url"
+        ) {
+            continue;
+        }
+        let text = dsh_content_text(item);
+        if !text.trim().is_empty() {
+            messages.push(SessionMessage {
+                role: "assistant".to_string(),
+                content: text,
+                timestamp,
+            });
+        }
+    }
+    messages
 }
 
 fn dsh_first_user_message(text: &str) -> String {
@@ -4491,9 +4800,7 @@ fn get_dsh_messages(
     let text = dsh_read_session_text(&file)?;
     let mut messages = Vec::new();
     for line in text.lines() {
-        if let Some(message) = dsh_event_message(line) {
-            messages.push(message);
-        }
+        messages.extend(dsh_event_messages(line));
     }
     Ok(messages)
 }
@@ -5143,6 +5450,15 @@ mod dsh_session_tests {
     }
 
     #[test]
+    fn splits_assistant_reasoning_and_text() {
+        let line = r#"{"type":"assistant/message","time":1700000001000,"data":{"message":{"role":"assistant","content":[{"type":"reasoning","text":"plan"},{"type":"text","text":"hi"},{"type":"tool-call","name":"read_file","arguments":"{}"}]}}}"#;
+        let messages = dsh_event_messages(line);
+        assert_eq!(messages.len(), 2);
+        assert!(messages[0].content.contains("plan"));
+        assert_eq!(messages[1].content, "hi");
+    }
+
+    #[test]
     fn parses_tool_events() {
         let call =
             r#"{"type":"tool/call","data":{"name":"read_file","arguments":"{\"path\":\"a\"}"}}"#;
@@ -5345,7 +5661,9 @@ mod dsh_session_tests {
         sqlx::query(
             "INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES ('m1', 's1', 'user', 1, 1700000000000, 1700000000000, ?)",
         )
-        .bind(r#"{"time":{"created":1700000000000},"text":"hello v2"}"#)
+        .bind(
+            r#"{"time":{"created":1700000000000},"text":"[Image 1] hello v2","files":[{"mime":"image/png","data":"abc","name":"x.png"}]}"#,
+        )
         .execute(&mut connection)
         .await
         .unwrap();
@@ -5376,14 +5694,19 @@ mod dsh_session_tests {
         let messages = query_opencode_messages(&mut connection, "p1", "s1")
             .await
             .expect("messages");
-        assert_eq!(messages.len(), 2);
+        assert_eq!(messages.len(), 4);
         assert_eq!(messages[0].role, "user");
-        assert_eq!(messages[0].content, "hello v2");
+        assert!(messages[0].content.contains("hello v2"));
+        assert!(messages[0]
+            .content
+            .contains("![image](data:image/png;base64,abc)"));
         assert_eq!(messages[1].role, "assistant");
         assert!(messages[1].content.contains("think"));
-        assert!(messages[1].content.contains("hi"));
-        assert!(messages[1].content.contains("shell"));
-        assert!(messages[1].content.contains("file.txt"));
+        assert_eq!(messages[2].role, "assistant");
+        assert_eq!(messages[2].content, "hi");
+        assert_eq!(messages[3].role, "assistant");
+        assert!(messages[3].content.contains("shell"));
+        assert!(messages[3].content.contains("file.txt"));
     }
 }
 
@@ -5403,17 +5726,18 @@ mod kimi_session_tests {
 {"type":"context.append_loop_event","event":{"type":"tool.result","toolCallId":"call-1","result":{"output":[{"type":"text","text":"a.txt"},{"type":"text","text":"b.txt"}]}},"time":1008}"#;
 
         let messages = parse_kimi_wire_jsonl(wire).expect("messages");
-        assert_eq!(messages.len(), 3);
+        assert_eq!(messages.len(), 4);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[0].content, "check the repo");
         assert_eq!(messages[1].role, "assistant");
         assert!(messages[1].content.contains("look around"));
-        assert!(messages[1].content.contains("I will inspect it."));
-        assert!(messages[1].content.contains("Bash"));
-        assert!(messages[1].content.contains("\"command\": \"ls\""));
-        assert_eq!(messages[2].role, "user");
-        assert!(messages[2].content.contains("a.txt"));
-        assert!(messages[2].content.contains("b.txt"));
+        assert_eq!(messages[2].role, "assistant");
+        assert!(messages[2].content.contains("I will inspect it."));
+        assert!(messages[2].content.contains("Bash"));
+        assert!(messages[2].content.contains("\"command\": \"ls\""));
+        assert_eq!(messages[3].role, "user");
+        assert!(messages[3].content.contains("a.txt"));
+        assert!(messages[3].content.contains("b.txt"));
     }
 
     #[test]
@@ -5494,6 +5818,21 @@ mod grok_session_tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn parses_reasoning_and_tool_result_images() {
+        let content = r#"{"type":"reasoning","summary":[{"type":"summary_text","text":"think"}]}
+{"type":"tool_result","tool_call_id":"call-1","content":"read","images":[{"type":"image","url":"data:image/png;base64,abc"}]}"#;
+        let messages = parse_grok_chat_history(content).expect("messages");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "assistant");
+        assert!(messages[0].content.contains("think"));
+        assert_eq!(messages[1].role, "user");
+        assert!(messages[1].content.contains("read"));
+        assert!(messages[1]
+            .content
+            .contains("![image](data:image/png;base64,abc)"));
+    }
 }
 
 #[cfg(test)]
@@ -5529,6 +5868,17 @@ mod claude_session_tests {
         assert_eq!(messages[1].role, "user");
         assert!(messages[1].display_content().contains("env"));
         assert_eq!(messages[2].role, "assistant");
+    }
+
+    #[test]
+    fn renders_base64_image_and_removes_image_marker() {
+        let content = r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Image #1] now"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"abc"}}]}}"#;
+        let messages = parse_claude_jsonl(content).expect("messages");
+        assert_eq!(messages.len(), 1);
+        let content = messages[0].display_content();
+        assert!(content.contains("![image](data:image/png;base64,abc)"));
+        assert!(content.contains("now"));
+        assert!(!content.contains("[Image #1]"));
     }
 }
 
