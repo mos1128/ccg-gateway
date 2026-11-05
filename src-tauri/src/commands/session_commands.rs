@@ -593,6 +593,67 @@ fn get_gemini_projects(
     })
 }
 
+fn codex_payload_text(value: Option<&serde_json::Value>) -> Option<String> {
+    let value = value?;
+    if let Some(text) = value.as_str() {
+        let text = text.trim();
+        return (!text.is_empty()).then(|| text.to_string());
+    }
+    let text = value
+        .as_array()?
+        .iter()
+        .filter_map(|item| item.get("text").and_then(|text| text.as_str()))
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!text.is_empty()).then_some(text)
+}
+
+fn codex_is_injected_user_text(text: &str) -> bool {
+    text.starts_with("# AGENTS.md instructions")
+        || text.starts_with("<environment_context>")
+        || text.starts_with("<user_instructions>")
+}
+
+fn codex_first_user_message(path: &std::path::Path) -> String {
+    use std::io::{BufRead, BufReader};
+    let Ok(file) = std::fs::File::open(path) else {
+        return String::new();
+    };
+    let mut fallback = String::new();
+    for line in BufReader::new(file).lines().flatten().take(500) {
+        let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let Some(payload) = data.get("payload") else {
+            continue;
+        };
+        let record_type = data.get("type").and_then(|value| value.as_str());
+        let payload_type = payload.get("type").and_then(|value| value.as_str());
+        if record_type != Some("response_item")
+            || payload_type != Some("message")
+            || payload.get("role").and_then(|value| value.as_str()) != Some("user")
+        {
+            continue;
+        }
+        let Some(text) = codex_payload_text(payload.get("content")) else {
+            continue;
+        };
+        let text = text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        if fallback.is_empty() {
+            fallback = text.chars().take(200).collect();
+        }
+        if !codex_is_injected_user_text(text) {
+            return text.chars().take(200).collect();
+        }
+    }
+    fallback
+}
+
 // Handle Codex sessions (find by cwd)
 fn get_codex_sessions(
     sessions_dir: std::path::PathBuf,
@@ -600,7 +661,6 @@ fn get_codex_sessions(
     page: i64,
     page_size: i64,
 ) -> Result<PaginatedSessions> {
-    use std::io::{BufRead, BufReader};
     use walkdir::WalkDir;
 
     if !sessions_dir.exists() {
@@ -679,42 +739,7 @@ fn get_codex_sessions(
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
 
-        // Try to extract first message
-        let mut first_message = String::new();
-        if let Ok(file) = std::fs::File::open(&path) {
-            let reader = BufReader::new(file);
-            for line in reader.lines().flatten().take(200) {
-                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&line) {
-                    if data.get("type").and_then(|t| t.as_str()) == Some("event_msg") {
-                        if let Some(payload) = data.get("payload") {
-                            if payload.get("type").and_then(|t| t.as_str()) == Some("user_message")
-                            {
-                                if let Some(msg) = payload.get("message").and_then(|m| m.as_str()) {
-                                    first_message = msg.chars().take(200).collect();
-                                    break;
-                                } else if let Some(arr) =
-                                    payload.get("message").and_then(|m| m.as_array())
-                                {
-                                    let mut text_parts = Vec::new();
-                                    for item in arr {
-                                        if let Some(text) =
-                                            item.get("text").and_then(|t| t.as_str())
-                                        {
-                                            text_parts.push(text);
-                                        }
-                                    }
-                                    let joined = text_parts.join("\n");
-                                    if !joined.is_empty() {
-                                        first_message = joined.chars().take(200).collect();
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let first_message = codex_first_user_message(&path);
 
         sessions.push(SessionInfo {
             session_id,
@@ -5265,5 +5290,29 @@ mod zcode_session_tests {
         assert!(messages
             .iter()
             .any(|message| message.content == "real prompt"));
+    }
+}
+
+#[cfg(test)]
+mod codex_session_tests {
+    use super::*;
+
+    #[test]
+    fn first_message_prefers_real_prompt_over_injected_context() {
+        let dir = std::env::temp_dir().join(format!("ccg-codex-title-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.jsonl");
+        let content = r##"{"type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"<skills_instructions>skills</skills_instructions>"}]}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n\n<INSTRUCTIONS>rules</INSTRUCTIONS>"}]}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"real prompt"}]}}"##;
+        std::fs::write(&path, content).unwrap();
+        assert_eq!(codex_first_user_message(&path), "real prompt");
+
+        let only_injected = r##"{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n\n<INSTRUCTIONS>rules</INSTRUCTIONS>"}]}}"##;
+        std::fs::write(&path, only_injected).unwrap();
+        assert!(codex_first_user_message(&path).starts_with("# AGENTS.md instructions"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

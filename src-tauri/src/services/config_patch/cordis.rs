@@ -51,9 +51,7 @@ pub(super) fn configs(content: &str) -> Result<Value, String> {
                 .get("config")
                 .filter(|value| value.is_object())
                 .ok_or_else(|| crate::tr!("err.cordis.block_invalid"))?;
-            if row.as_object().is_none_or(|row| row.len() != 2)
-                || configs.insert(id.to_string(), config.clone()).is_some()
-            {
+            if configs.insert(id.to_string(), config.clone()).is_some() {
                 return Err(crate::tr!("err.cordis.block_invalid"));
             }
         }
@@ -61,9 +59,42 @@ pub(super) fn configs(content: &str) -> Result<Value, String> {
     Ok(Value::Object(configs))
 }
 
+fn row_extras(content: &str) -> Result<Map<String, Value>, String> {
+    let Some((_, body)) = block(content)? else {
+        return Ok(Map::new());
+    };
+    let rows = match serde_yaml::from_str::<Value>(body)
+        .map_err(|_| crate::tr!("err.cordis.block_invalid"))?
+    {
+        Value::Null => Vec::new(),
+        Value::Array(rows) => rows,
+        _ => return Err(crate::tr!("err.cordis.block_invalid")),
+    };
+    let mut extras = Map::new();
+    for row in rows {
+        let Some(object) = row.as_object() else {
+            continue;
+        };
+        let Some(id) = object.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let mut extra = Map::new();
+        for (key, value) in object {
+            if key != "id" && key != "config" {
+                extra.insert(key.clone(), value.clone());
+            }
+        }
+        if !extra.is_empty() {
+            extras.insert(id.to_string(), Value::Object(extra));
+        }
+    }
+    Ok(extras)
+}
+
 fn write(content: &str, configs: &Value) -> Result<String, String> {
     let root = document(content)?;
     let existing = block(content)?;
+    let extras = row_extras(content)?;
     let newline = if content.contains("\r\n") {
         "\r\n"
     } else {
@@ -74,7 +105,17 @@ fn write(content: &str, configs: &Value) -> Result<String, String> {
         .expect("config mapping")
         .iter()
         .filter(|(_, config)| !config.as_object().is_some_and(Map::is_empty))
-        .map(|(id, config)| serde_json::json!({ "id": id, "config": config }))
+        .map(|(id, config)| {
+            let mut row = Map::new();
+            row.insert("id".to_string(), Value::String(id.clone()));
+            if let Some(Value::Object(extra)) = extras.get(id) {
+                for (key, value) in extra {
+                    row.insert(key.clone(), value.clone());
+                }
+            }
+            row.insert("config".to_string(), config.clone());
+            Value::Object(row)
+        })
         .collect();
     let rendered = if rows.is_empty() {
         String::new()
@@ -222,6 +263,17 @@ mod tests {
     fn empty_managed_block_reads_as_empty_configs() {
         let content = "# >>> CCG Gateway Cordis Config >>>\n# <<< CCG Gateway Cordis Config <<<\n";
         assert_eq!(configs(content).unwrap(), serde_json::json!({}));
+    }
+
+    #[test]
+    fn managed_block_preserves_row_metadata() {
+        let content = "# >>> CCG Gateway Cordis Config >>>\n- id: ui-chat\n  name: \"@deepseek-ai/dsh-client-ui-chat\"\n  config:\n    transcriptView: standard\n# <<< CCG Gateway Cordis Config <<<\n";
+        let parsed = configs(content).unwrap();
+        assert_eq!(parsed["ui-chat"]["transcriptView"], "standard");
+
+        let written = write(content, &parsed).unwrap();
+        assert!(written.contains("name:"));
+        assert_eq!(configs(&written).unwrap(), parsed);
     }
 
     #[test]
