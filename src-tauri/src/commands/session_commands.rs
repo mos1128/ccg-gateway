@@ -2161,8 +2161,12 @@ fn kimi_first_user_message(session_dir: &std::path::Path) -> String {
     };
     messages
         .iter()
-        .find(|message| message.role == "user" && !message.content.trim().is_empty())
-        .map(|message| message.content.chars().take(200).collect())
+        .find(|message| {
+            message.role == "user"
+                && !message.is_injected()
+                && !message.display_content().trim().is_empty()
+        })
+        .map(|message| message.display_content().chars().take(200).collect())
         .unwrap_or_default()
 }
 
@@ -2258,6 +2262,10 @@ fn parse_kimi_append_message(
 ) -> Option<SessionMessage> {
     let message = record.get("message")?;
     let role = message.get("role").and_then(|r| r.as_str())?;
+    let origin_kind = message
+        .get("origin")
+        .and_then(|origin| origin.get("kind"))
+        .and_then(|kind| kind.as_str());
     let mut parts: Vec<String> = Vec::new();
 
     if let Some(content_arr) = message.get("content").and_then(|c| c.as_array()) {
@@ -2325,12 +2333,20 @@ fn parse_kimi_append_message(
     } else {
         role
     };
+    let content = parts.join("\n\n");
+    let content_start = content.trim_start();
+    let injected = role == "system"
+        || (role == "user"
+            && (matches!(origin_kind, Some(kind) if kind != "user")
+                || content_start.starts_with("<system-reminder>")
+                || content_start.starts_with("<user_info>")
+                || content_start.starts_with("<rules>")));
     let message = SessionMessage {
         role: display_role.to_string(),
-        content: parts.join("\n\n"),
+        content,
         timestamp,
     };
-    Some(if role == "system" {
+    Some(if injected {
         message.injected()
     } else {
         message
@@ -3046,6 +3062,18 @@ fn grok_extract_tool_call(call: &serde_json::Value) -> Option<(String, String)> 
     Some((name.to_string(), args.to_string()))
 }
 
+fn grok_is_injected_user_text(text: &str) -> bool {
+    let text = text.trim_start();
+    text.starts_with("<user_info>") || text.starts_with("<rules>")
+}
+
+fn grok_clean_user_text(text: &str) -> String {
+    let text = text.trim();
+    let text = text.strip_prefix("<user_query>").unwrap_or(text);
+    let text = text.strip_suffix("</user_query>").unwrap_or(text);
+    text.trim().to_string()
+}
+
 /// 从 chat_history.jsonl 提取第一条真实用户输入作为标题回退。
 fn grok_first_user_message(session_dir: &std::path::Path) -> String {
     use std::io::{BufRead, BufReader};
@@ -3066,7 +3094,14 @@ fn grok_first_user_message(session_dir: &std::path::Path) -> String {
         }
         if let Some(text) = grok_extract_text(v.get("content")) {
             if !text.is_empty() {
-                if v.get("synthetic_reason").is_none() {
+                let injected =
+                    v.get("synthetic_reason").is_some() || grok_is_injected_user_text(&text);
+                let text = if injected {
+                    text
+                } else {
+                    grok_clean_user_text(&text)
+                };
+                if !injected {
                     return text;
                 }
                 fallback.get_or_insert(text);
@@ -3131,12 +3166,19 @@ fn parse_grok_chat_history(content: &str) -> Result<Vec<SessionMessage>> {
                 if text.is_empty() {
                     continue;
                 }
+                let injected =
+                    v.get("synthetic_reason").is_some() || grok_is_injected_user_text(&text);
+                let content = if injected {
+                    text
+                } else {
+                    grok_clean_user_text(&text)
+                };
                 let message = SessionMessage {
                     role: "user".to_string(),
-                    content: text,
+                    content,
                     timestamp: None,
                 };
-                messages.push(if v.get("synthetic_reason").is_some() {
+                messages.push(if injected {
                     message.injected()
                 } else {
                     message
@@ -5406,6 +5448,25 @@ mod kimi_session_tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn marks_injected_origin_and_skips_it_for_title() {
+        let dir =
+            std::env::temp_dir().join(format!("ccg-kimi-injected-origin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("agents").join("main")).unwrap();
+        let wire = r#"{"type":"context.append_message","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>noise</system-reminder>"}],"origin":{"kind":"injection"}},"time":1000}
+{"type":"turn.prompt","input":[{"type":"text","text":"real prompt"}],"time":2000}"#;
+        std::fs::write(dir.join("agents").join("main").join("wire.jsonl"), wire).unwrap();
+
+        let messages = parse_kimi_wire_jsonl(wire).expect("messages");
+        assert_eq!(messages.len(), 2);
+        assert!(messages[0].is_injected());
+        assert_eq!(messages[1].content, "real prompt");
+        assert_eq!(kimi_first_user_message(&dir), "real prompt");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]
@@ -5419,13 +5480,16 @@ mod grok_session_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let content = r#"{"type":"user","content":[{"type":"text","text":"skill catalog"}],"synthetic_reason":"skill"}
-{"type":"user","content":[{"type":"text","text":"real prompt"}]}"#;
+{"type":"user","content":[{"type":"text","text":"<user_info>\nenv\n</user_info>\n<rules>\nrules\n</rules>"}]}
+{"type":"user","content":[{"type":"text","text":"<user_query>\nreal prompt\n</user_query>"}]}"#;
         std::fs::write(dir.join("chat_history.jsonl"), content).unwrap();
 
         let messages = parse_grok_chat_history(content).expect("messages");
-        assert_eq!(messages.len(), 2);
+        assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].role, "user");
         assert_eq!(messages[0].display_content(), "skill catalog");
+        assert!(messages[1].is_injected());
+        assert_eq!(messages[2].display_content(), "real prompt");
         assert_eq!(grok_first_user_message(&dir), "real prompt");
 
         let _ = std::fs::remove_dir_all(&dir);
