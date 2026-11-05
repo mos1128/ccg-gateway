@@ -79,18 +79,33 @@
     </template>
 
     <V2Drawer v-model="showSessionDrawer" :title="currentSessionTitle" :show-footer="false" width="80%">
-      <div class="ses-drawer-bar">
-        <label class="ses-injected-toggle">
-          <input v-model="showInjected" type="checkbox" />
-          <span>{{ t('sessions.showInjected') }}</span>
-        </label>
-      </div>
+      <template #actions>
+        <button
+          class="ses-injected-toggle"
+          :class="{ active: showInjected }"
+          type="button"
+          role="switch"
+          :aria-checked="showInjected"
+          :aria-label="t('sessions.injectedContext')"
+          :title="showInjected ? t('sessions.hideInjected') : t('sessions.showInjected')"
+          @click="showInjected = !showInjected"
+        >
+          <svg v-if="showInjected" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>
+          <span class="ses-injected-label">{{ t('sessions.injectedContext') }}</span>
+          <span v-if="injectedCount" class="ses-injected-count">{{ injectedCount }}</span>
+          <span class="ses-switch" :class="{ on: showInjected }"><span class="ses-switch-knob"></span></span>
+        </button>
+      </template>
       <div v-loading="sessionStore.loading" class="ses-chat">
         <div v-if="visibleMessages.length === 0" class="v2-hint" style="text-align:center;padding:40px">
           {{ sessionStore.messages.length === 0 ? t('sessions.emptyMessages') : t('sessions.noVisibleMessages') }}
         </div>
         <div v-for="(msg, index) in visibleMessages" :key="index" class="ses-bubble" :class="msg.role === 'user' ? 'is-user' : 'is-bot'">
-          <div class="ses-role">{{ msg.role === 'user' ? 'USER' : 'ASSISTANT' }}</div>
+          <div class="ses-role">
+            <span class="ses-avatar">{{ msg.role === 'user' ? 'U' : 'AI' }}</span>
+            <span>{{ msg.role === 'user' ? t('sessions.roleUser') : t('sessions.roleAssistant') }}</span>
+          </div>
           <div class="ses-bubble-c">
             <el-tooltip :content="t('common.copy')" placement="top" effect="light" :show-after="250">
               <button class="ses-copy" @click="handleCopyMessage(msg.content)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
@@ -156,6 +171,7 @@ const expandedMessages = ref(new Set<number>())
 const showInjected = ref(localStorage.getItem('ccg.sessions.showInjected') === 'true')
 const failedImages = reactive(new Set<string>())
 const visibleMessages = computed(() => sessionStore.messages.filter((message) => showInjected.value || message.kind !== 'injected'))
+const injectedCount = computed(() => sessionStore.messages.filter((message) => message.kind === 'injected').length)
 
 watch(showInjected, (value) => {
   localStorage.setItem('ccg.sessions.showInjected', String(value))
@@ -372,23 +388,36 @@ onMounted(async () => {
 .ses-srow .v2-row-act.danger { opacity: 0; transition: opacity 0.15s; }
 .ses-srow:hover .v2-row-act.danger { opacity: 1; }
 
-.ses-drawer-bar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
-.ses-injected-toggle { display: flex; align-items: center; gap: 8px; color: var(--v2-text-2); font-size: var(--v2-fs-xs); cursor: pointer; }
-.ses-injected-toggle input { accent-color: var(--v2-accent); }
-.ses-chat { display: flex; flex-direction: column; gap: 20px; }
-.ses-bubble { max-width: 92%; display: flex; flex-direction: column; gap: 5px; }
+.ses-injected-toggle { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border: 1px solid var(--v2-surface-3); border-radius: 999px; background: transparent; color: var(--v2-text-2); font: inherit; font-size: var(--v2-fs-xs); cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s; }
+.ses-injected-toggle:hover { background: var(--v2-surface-2); color: var(--v2-text); }
+.ses-injected-toggle.active { background: var(--v2-selected-bg); border-color: color-mix(in srgb, var(--v2-accent) 42%, transparent); color: var(--v2-accent); }
+.ses-injected-toggle svg { flex-shrink: 0; opacity: 0.9; }
+.ses-injected-label { white-space: nowrap; }
+.ses-injected-count { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 999px; background: var(--v2-surface-3); color: var(--v2-text-2); font-size: 10px; line-height: 1; }
+.ses-injected-toggle.active .ses-injected-count { background: color-mix(in srgb, var(--v2-accent) 18%, transparent); color: var(--v2-accent); }
+.ses-switch { position: relative; width: 28px; height: 16px; border-radius: 999px; background: var(--v2-surface-3); flex-shrink: 0; transition: background 0.15s; }
+.ses-switch.on { background: var(--v2-accent); }
+.ses-switch-knob { position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--v2-text-3); transition: transform 0.15s, background 0.15s; }
+.ses-switch.on .ses-switch-knob { transform: translateX(12px); background: #fff; }
+.ses-chat { display: flex; flex-direction: column; gap: 24px; padding-bottom: 24px; }
+.ses-bubble { max-width: min(780px, 88%); display: flex; flex-direction: column; gap: 7px; }
 .ses-bubble.is-user { align-self: flex-end; }
 .ses-bubble.is-bot { align-self: flex-start; }
-.ses-role { font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-semibold); color: var(--v2-text-3); }
-.ses-bubble.is-user .ses-role { text-align: right; }
-.ses-bubble-c { position: relative; padding: 12px 16px; padding-right: 38px; border: 1px solid transparent; border-radius: var(--v2-r); font-size: var(--v2-fs-sm); line-height: 1.6; white-space: normal; word-break: break-word; }
-.ses-bubble.is-user .ses-bubble-c { background: var(--v2-selected-bg); color: var(--v2-text); border-bottom-right-radius: 3px; }
-.ses-bubble.is-bot .ses-bubble-c { background: var(--v2-surface-2); border-color: var(--v2-surface-3); color: var(--v2-text); border-bottom-left-radius: 3px; }
+.ses-role { display: flex; align-items: center; gap: 7px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-medium); }
+.ses-bubble.is-user .ses-role { flex-direction: row-reverse; }
+.ses-avatar { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1px solid var(--v2-surface-3); border-radius: 50%; background: var(--v2-surface-2); color: var(--v2-text-2); font-size: 9px; font-weight: 700; line-height: 1; flex-shrink: 0; }
+.ses-bubble.is-user .ses-avatar { background: var(--v2-selected-bg); border-color: color-mix(in srgb, var(--v2-accent) 35%, transparent); color: var(--v2-accent); }
+.ses-bubble-c { position: relative; padding: 13px 17px; padding-right: 40px; border: 1px solid transparent; border-radius: 14px; font-size: var(--v2-fs-sm); line-height: 1.6; white-space: normal; word-break: break-word; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }
+.ses-bubble.is-user .ses-bubble-c { background: var(--v2-selected-bg); color: var(--v2-text); border-color: color-mix(in srgb, var(--v2-accent) 16%, var(--v2-surface-3)); border-bottom-right-radius: 4px; }
+.ses-bubble.is-bot .ses-bubble-c { background: var(--v2-surface-2); border-color: var(--v2-surface-3); color: var(--v2-text); border-bottom-left-radius: 4px; }
 .ses-image { display: block; max-width: 100%; max-height: 480px; margin: 8px 0; border-radius: 8px; object-fit: contain; background: var(--v2-surface-3); }
 .ses-image-error { display: inline-flex; align-items: center; margin: 8px 0; padding: 8px 10px; border: 1px dashed var(--v2-surface-3); border-radius: 6px; color: var(--v2-text-3); font-size: var(--v2-fs-xs); }
-.ses-copy { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--v2-text-3); border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+.ses-copy { position: absolute; top: 9px; right: 9px; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--v2-text-3); border-radius: 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
 .ses-bubble-c:hover .ses-copy { opacity: 1; }
 .ses-copy:hover { background: var(--v2-surface-3); color: var(--v2-text); }
-.ses-expand { margin: 10px -16px 0; border-top: 1px solid var(--v2-surface-3); padding: 8px 16px 0; color: var(--v2-text-3); font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-medium); text-align: center; cursor: pointer; }
+.ses-expand { margin: 10px -17px 0; border-top: 1px solid var(--v2-surface-3); padding: 8px 17px 0; color: var(--v2-text-3); font-size: var(--v2-fs-xs); font-weight: var(--v2-fw-medium); text-align: center; cursor: pointer; }
 .ses-expand:hover { color: var(--v2-text); }
+@media (max-width: 720px) {
+  .ses-injected-label { display: none; }
+}
 </style>

@@ -11,9 +11,12 @@
         <div class="v2dr" :style="{ width: props.width }" role="dialog">
           <div class="v2dr-head">
             <div class="v2dr-title">{{ title }}</div>
-            <button class="v2dr-close" type="button" :aria-label="t('common.close')" :disabled="!closable" @click="close">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-            </button>
+            <div class="v2dr-actions">
+              <slot name="actions" />
+              <button class="v2dr-close" type="button" :aria-label="t('common.close')" :disabled="!closable" @click="close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            </div>
           </div>
           <div class="v2dr-body"><slot /></div>
           <div v-if="showFooter" class="v2dr-foot">
@@ -121,6 +124,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   border-bottom: 1px solid var(--v2-surface-3);
 }
 .v2dr-title { flex: 1; min-width: 0; padding-right: 12px; font-size: var(--v2-fs-md); font-weight: var(--v2-fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2dr-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .v2dr-close {
   width: 32px;
   height: 32px;
