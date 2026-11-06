@@ -133,7 +133,7 @@ CCG Gateway 是一款面向 Claude Code、Codex、OpenCode、Kimi Code、ZCode�
 
 - 主题切换：支持全局浅色 / 暗色主题一键切换。
 - 自动记忆窗口尺寸，下次启动自动恢复。
-- 内置更新检查：从 GitHub Releases 检查新版本。
+- 应用内更新：检查、下载、安装一步完成，Windows 便携版和 Linux AppImage 可自动替换并重启；支持 GitHub 下载加速（默认 gh-proxy，可自定义或关闭）。
 
 ---
 

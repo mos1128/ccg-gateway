@@ -82,25 +82,27 @@
         <!-- 请求超时 -->
         <div class="v2-card v2-card-pad">
           <div class="cfg-head">{{ t('config.timeout.title') }}</div>
-          <div class="cfg-trow">
-            <span class="cfg-trow-l">{{ t('config.timeout.streamFirstByte') }}</span>
-            <div class="cfg-input-wrapper">
-              <input v-model.number="timeoutForm.stream_first_byte_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
-              <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
+          <div class="cfg-timeout-grid">
+            <div class="cfg-timeout-item">
+              <label class="cfg-timeout-label">{{ t('config.timeout.streamFirstByte') }}</label>
+              <div class="cfg-input-wrapper">
+                <input v-model.number="timeoutForm.stream_first_byte_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
+                <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
+              </div>
             </div>
-          </div>
-          <div class="cfg-trow">
-            <span class="cfg-trow-l">{{ t('config.timeout.streamIdle') }}</span>
-            <div class="cfg-input-wrapper">
-              <input v-model.number="timeoutForm.stream_idle_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
-              <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
+            <div class="cfg-timeout-item">
+              <label class="cfg-timeout-label">{{ t('config.timeout.streamIdle') }}</label>
+              <div class="cfg-input-wrapper">
+                <input v-model.number="timeoutForm.stream_idle_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
+                <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
+              </div>
             </div>
-          </div>
-          <div class="cfg-trow">
-            <span class="cfg-trow-l">{{ t('config.timeout.nonStream') }}</span>
-            <div class="cfg-input-wrapper">
-              <input v-model.number="timeoutForm.non_stream_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
-              <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
+            <div class="cfg-timeout-item">
+              <label class="cfg-timeout-label">{{ t('config.timeout.nonStream') }}</label>
+              <div class="cfg-input-wrapper">
+                <input v-model.number="timeoutForm.non_stream_timeout" type="number" class="v2-input cfg-tnum" @change="saveTimeouts">
+                <span class="cfg-input-unit">{{ t('config.timeout.unitSeconds') }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -120,6 +122,51 @@
             <span class="cfg-toggle-c"><span class="cfg-toggle-t">{{ t('config.basic.minimizeToTray') }}</span><span class="cfg-toggle-d">{{ t('config.basic.minimizeToTrayDesc') }}</span></span>
             <el-switch v-model="gatewayForm.minimize_to_tray_on_close" :loading="gatewaySaving" @change="saveGateway" />
           </label>
+          <div class="cfg-toggle cfg-gateway-row">
+            <span class="cfg-toggle-c">
+              <span class="cfg-toggle-t">{{ t('config.gateway.title') }}</span>
+              <span class="cfg-toggle-d">{{ t('config.gateway.desc') }}</span>
+            </span>
+            <el-tooltip :content="t('config.gateway.open')" placement="top" effect="light" :show-after="250">
+              <button class="cfg-gateway-open" type="button" :aria-label="t('config.gateway.open')" @click="openGatewaySettings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            </el-tooltip>
+          </div>
+          <label class="cfg-toggle cfg-accel-row">
+            <span class="cfg-toggle-c">
+              <span class="cfg-toggle-t">{{ t('config.update.accelEnabled') }}</span>
+            </span>
+            <el-switch
+              :model-value="updaterStore.settings?.accel_enabled ?? false"
+              :disabled="!updaterStore.settings || updaterSaving"
+              @change="toggleUpdateAccel"
+            />
+          </label>
+          <div v-if="updaterStore.settings?.accel_enabled" class="cfg-update-prefix">
+            <div class="cfg-update-prefix-row">
+              <input
+                v-model="accelPrefixDraft"
+                class="v2-input mono"
+                :disabled="updaterSaving"
+                :placeholder="DEFAULT_ACCEL_PREFIX"
+                @blur="saveAccelPrefix"
+                @keydown.enter.prevent="saveAccelPrefix"
+              >
+              <el-tooltip :content="t('config.update.resetDefault')" placement="top" effect="light" :show-after="250">
+                <button
+                  class="v2-row-act"
+                  :class="{ off: updaterSaving }"
+                  type="button"
+                  :aria-label="t('config.update.resetDefault')"
+                  @mousedown.prevent
+                  @click="resetAccelPrefix"
+                >
+                  <svg :class="{ 'spin-once': accelResetting }" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+              </el-tooltip>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -277,7 +324,9 @@ import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import { useUpdaterStore } from '@/stores/updater'
 import { useAgentStore } from '@/stores/agents'
+import type { UpdateSettingsPatch } from '@/api/updater'
 import { agentsApi } from '@/api/agents'
 import { validateJson, formatJson as formatJsonUtil } from '@/utils/json'
 import { InfoFilled } from '@element-plus/icons-vue'
@@ -287,6 +336,7 @@ import type { CliType } from '@/types/models'
 
 const settingsStore = useSettingsStore()
 const uiStore = useUiStore()
+const updaterStore = useUpdaterStore()
 const agentStore = useAgentStore()
 const { t } = useI18n()
 const cliTabs = computed(() => agentStore.tabs)
@@ -345,8 +395,8 @@ function getPresetPreviewText(config: string): string {
   }
 
   const lines = formatted.split('\n')
-  if (lines.length > 5) {
-    return lines.slice(0, 4).join('\n') + '\n...'
+  if (lines.length > 8) {
+    return lines.slice(0, 7).join('\n') + '\n...'
   }
   return lines.join('\n')
 }
@@ -477,6 +527,70 @@ async function saveGateway() {
     notify(getErrorMessage(e, t('config.msg.saveFailed')), 'error')
   } finally {
     gatewaySaving.value = false
+  }
+}
+
+// ===== 软件更新 =====
+const DEFAULT_ACCEL_PREFIX = 'https://gh-proxy.com/'
+const accelPrefixDraft = ref('')
+const updaterSaving = ref(false)
+const accelResetting = ref(false)
+
+watch(() => updaterStore.settings?.accel_prefix, (value) => {
+  accelPrefixDraft.value = value ?? ''
+}, { immediate: true })
+
+function openGatewaySettings() {
+  uiStore.requestGatewaySettings()
+}
+
+async function saveUpdateSettings(patch: UpdateSettingsPatch) {
+  updaterSaving.value = true
+  try {
+    await updaterStore.saveSettings(patch)
+    notify(t('config.msg.updateSaved'))
+  } catch {
+    // updater store 已提示错误
+  } finally {
+    updaterSaving.value = false
+  }
+}
+
+async function toggleUpdateAccel(value: string | number | boolean) {
+  const enabled = Boolean(value)
+  if (enabled && !accelPrefixDraft.value.trim()) {
+    accelPrefixDraft.value = DEFAULT_ACCEL_PREFIX
+    await saveUpdateSettings({ accel_enabled: true, accel_prefix: DEFAULT_ACCEL_PREFIX })
+    return
+  }
+  await saveUpdateSettings({ accel_enabled: enabled })
+}
+
+async function saveAccelPrefix() {
+  if (!updaterStore.settings || updaterSaving.value) return
+  const value = accelPrefixDraft.value.trim()
+  if (value === updaterStore.settings.accel_prefix) return
+  updaterSaving.value = true
+  try {
+    await updaterStore.saveSettings({ accel_prefix: value })
+    notify(t('config.msg.updateSaved'))
+  } catch {
+    accelPrefixDraft.value = updaterStore.settings.accel_prefix
+  } finally {
+    updaterSaving.value = false
+  }
+}
+
+async function resetAccelPrefix() {
+  if (accelResetting.value) return
+  accelResetting.value = true
+  accelPrefixDraft.value = DEFAULT_ACCEL_PREFIX
+  try {
+    await saveAccelPrefix()
+  } finally {
+    setTimeout(() => {
+      accelResetting.value = false
+    }, 600)
   }
 }
 
@@ -622,6 +736,7 @@ onMounted(async () => {
   if (!agentStore.isVisible(activeCliTab.value) && agentStore.visibleAgents.length) {
     activeCliTab.value = agentStore.visibleAgents[0].id
   }
+  if (!updaterStore.settings) void updaterStore.loadSettings()
   loadWebdavSettings()
 })
 </script>
@@ -668,7 +783,7 @@ onMounted(async () => {
 }
 .cfg-preset-code {
   margin: 0;
-  height: 90px;
+  height: 144px;
   font-size: 12px;
   line-height: 18px;
   white-space: pre;
@@ -760,9 +875,32 @@ onMounted(async () => {
 .cfg-toggle-t { display: block; font-size: var(--v2-fs-sm); font-weight: var(--v2-fw-medium); color: var(--v2-text); }
 .cfg-toggle-d { display: block; margin-top: 3px; font-size: var(--v2-fs-xs); line-height: 1.4; color: var(--v2-text-3); }
 
-.cfg-trow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--v2-surface-2); }
-.cfg-trow:last-child { border-bottom: none; }
-.cfg-trow-l { font-size: var(--v2-fs-sm); color: var(--v2-text); }
+.cfg-timeout-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.cfg-timeout-item {
+  min-width: 0;
+}
+.cfg-timeout-label {
+  display: block;
+  min-height: 34px;
+  margin-bottom: 7px;
+  font-size: var(--v2-fs-xs);
+  line-height: 1.4;
+  color: var(--v2-text-2);
+}
+.cfg-timeout-item .cfg-input-wrapper {
+  display: flex;
+  width: 100%;
+}
+.cfg-timeout-item .cfg-tnum {
+  width: 100%;
+}
+@media (max-width: 560px) {
+  .cfg-timeout-grid { grid-template-columns: 1fr; }
+}
 
 .cfg-input-wrapper {
   position: relative;
@@ -780,6 +918,56 @@ onMounted(async () => {
   width: 100px;
   text-align: left;
   padding-right: 32px;
+}
+
+.cfg-gateway-open {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--v2-text-3);
+  border-radius: var(--v2-r-sm);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.cfg-gateway-open:hover {
+  background: var(--v2-surface-2);
+  color: var(--v2-text);
+}
+
+.cfg-accel-row {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.cfg-update-prefix {
+  padding-top: 10px;
+}
+.cfg-update-prefix-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.cfg-update-prefix-row .v2-input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 36px;
+}
+.cfg-update-prefix-row .v2-row-act {
+  position: absolute;
+  right: 4px;
+  border: none;
+  flex-shrink: 0;
+}
+.cfg-update-prefix-row .v2-row-act svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .cfg-link { color: var(--v2-accent); cursor: pointer; margin-left: 12px; font-size: var(--v2-fs-sm); }

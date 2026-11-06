@@ -428,6 +428,9 @@ export interface GatewaySettings {
   minimize_to_tray_on_close: boolean
   gateway_host: string
   gateway_port: number
+  update_auto_check: boolean
+  update_accel_enabled: boolean
+  update_accel_prefix: string
 }
 
 export interface GatewaySettingsRaw {
@@ -438,6 +441,9 @@ export interface GatewaySettingsRaw {
   minimize_to_tray_on_close: number
   gateway_host: string
   gateway_port: number
+  update_auto_check: number
+  update_accel_enabled: number
+  update_accel_prefix: string
 }
 
 export interface TimeoutSettings {
@@ -481,6 +487,64 @@ export interface GatewaySettingsUpdate {
   minimize_to_tray_on_close?: boolean
   gateway_host?: string
   gateway_port?: number
+  update_auto_check?: boolean
+  update_accel_enabled?: boolean
+  update_accel_prefix?: string
+}
+
+export interface UpdateAsset {
+  name: string
+  size: number
+  sha256: string | null
+}
+
+export interface UpdateRelease {
+  version: string
+  tag: string
+  notes: string
+  published_at: string | null
+  html_url: string
+  asset_key: string | null
+  asset: UpdateAsset | null
+}
+
+export interface UpdateCheckResult {
+  current_version: string
+  latest: UpdateRelease | null
+  has_update: boolean
+  source: string
+}
+
+export interface UpdateSettingsResponse {
+  auto_check: boolean
+  accel_enabled: boolean
+  accel_prefix: string
+  current_version: string
+  platform: 'windows' | 'macos' | 'linux'
+}
+
+export interface UpdateDownloadResult {
+  path: string
+  version: string
+  size: number
+}
+
+export interface UpdateInstallOutcome {
+  kind: 'restart_scheduled' | 'opened_installer' | 'manual'
+  path: string
+  message: string | null
+}
+
+export interface UpdateApplyResult {
+  version: string
+  ok: boolean
+  message: string | null
+}
+
+export interface UpdateProgressPayload {
+  downloaded: number
+  total: number | null
+  version: string
 }
 
 export interface BootstrapSettingsUpdate {

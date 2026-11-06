@@ -132,7 +132,7 @@ This project was initiated based on the author's actual needs to solve various p
 
 - Theme Switching: Supports one-click switching between global light / dark themes.
 - The window size is remembered automatically and restored on the next launch.
-- Built-in update check: checks GitHub Releases for new versions.
+- In-app updates: check, download, and install without leaving the app. Windows portable builds and Linux AppImages replace themselves and restart; GitHub download acceleration is configurable (gh-proxy by default).
 
 ---
 

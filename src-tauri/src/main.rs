@@ -3,6 +3,10 @@
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 fn main() {
+    if let Some(exit_code) = ccg_gateway_lib::services::update_helper::run_from_args() {
+        std::process::exit(exit_code);
+    }
+
     // Register panic hook early to capture crash info before anything else.
     // This is critical because:
     // - `windows_subsystem = "windows"` suppresses stderr in release builds

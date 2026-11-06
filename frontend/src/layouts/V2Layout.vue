@@ -78,9 +78,10 @@
               </button>
             </el-tooltip>
             <el-tooltip :content="t('layout.checkUpdate')" placement="bottom" effect="light" :show-after="250">
-              <button class="v2-version mono" :disabled="checkingUpdate" @click="handleCheckUpdate">
+              <button class="v2-version mono" :class="{ 'has-update': updaterStore.phase === 'available' }" @click="handleCheckUpdate">
                 <svg v-if="checkingUpdate" class="spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                 v{{ appVersion }}
+                <span v-if="updaterStore.phase === 'downloading' && updaterStore.progress !== null" class="v2-version-progress">{{ updaterStore.progress }}%</span>
               </button>
             </el-tooltip>
           </div>
@@ -254,6 +255,8 @@
         >{{ gatewayEndpointSaving ? t('layout.gateway.processing') : gatewayEndpointActionText }}</button>
       </template>
     </V2Drawer>
+
+    <AppUpdateDialog />
   </div>
 </template>
 
@@ -262,18 +265,20 @@ import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-shell'
 import { useWindowSize } from '@vueuse/core'
-import { checkForUpdates } from '@/utils/updater'
 import { translate } from '@/locales'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
 import { useSettingsStore } from '@/stores/settings'
 import { useAgentStore } from '@/stores/agents'
 import { useLocaleStore } from '@/stores/locale'
+import { useUpdaterStore } from '@/stores/updater'
+import { useUiStore } from '@/stores/ui'
 import { settingsApi } from '@/api/settings'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
 import AppTitleBar from '@/components/AppTitleBar.vue'
+import AppUpdateDialog from '@/components/AppUpdateDialog.vue'
 import V2Drawer from '@/components/V2Drawer.vue'
 import { CircleCheckFilled, CircleCloseFilled, Loading, WarningFilled } from '@element-plus/icons-vue'
 import type { ComponentPublicInstance } from 'vue'
@@ -284,6 +289,8 @@ const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 const agentStore = useAgentStore()
 const localeStore = useLocaleStore()
+const updaterStore = useUpdaterStore()
+const uiStore = useUiStore()
 const { t } = useI18n()
 
 function handleLanguageCommand(command: string | number | object) {
@@ -365,7 +372,7 @@ function go(path: string) {
 }
 
 const appVersion = ref('0.0.0')
-const checkingUpdate = ref(false)
+const checkingUpdate = computed(() => updaterStore.phase === 'checking')
 const gatewayDialogVisible = ref(false)
 const GATEWAY_DIALOG_SEEN_KEY = 'ccg-gateway-endpoint-dialog-seen'
 
@@ -515,6 +522,12 @@ async function openGatewayDialog() {
   }
 }
 
+watch(() => uiStore.gatewaySettingsRequested, (requested) => {
+  if (!requested) return
+  uiStore.consumeGatewaySettingsRequest()
+  void openGatewayDialog()
+})
+
 function resetGatewayDataDir() {
   if (gatewayDataDirResetting.value) return
   const defaultDataDir = gatewayStatus.value?.default_data_dir
@@ -614,12 +627,7 @@ async function saveGatewayEndpoint() {
 }
 
 async function handleCheckUpdate() {
-  checkingUpdate.value = true
-  try {
-    await checkForUpdates(false)
-  } finally {
-    checkingUpdate.value = false
-  }
+  updaterStore.openWithCheck()
 }
 async function openGithubRepo() {
   await open('https://github.com/mos1128/ccg-gateway')
@@ -649,7 +657,8 @@ onMounted(async () => {
     agentStore.agents.length ? Promise.resolve() : agentStore.fetchAgents(),
     settingsStore.settings ? Promise.resolve() : settingsStore.fetchSettings(),
   ])
-  checkForUpdates(true)
+  await updaterStore.init()
+  if (updaterStore.currentVersion) appVersion.value = updaterStore.currentVersion
 })
 
 onUnmounted(() => {
@@ -1105,6 +1114,14 @@ html.dark {
 .v2-version:disabled {
   cursor: not-allowed;
   opacity: 0.7;
+}
+.v2-version-progress {
+  margin-left: 4px;
+  color: var(--v2-accent);
+}
+.v2-version.has-update {
+  color: var(--v2-accent);
+  font-weight: var(--v2-fw-semibold);
 }
 .v2-shell button:focus,
 .v2-scope button:focus {

@@ -219,8 +219,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(WindowBehaviorState::default())
         .manage(GatewayRuntimeState::default())
+        .manage(services::updater::UpdateDownloadState::default())
         .setup(move |app| {
             let base_config = config.clone();
+            services::updater::cleanup_update_cache();
 
             // Initialize database
             let db_path = base_config.database.path.clone();
@@ -264,7 +266,7 @@ pub fn run() {
                 crate::i18n::init_from_db(&db).await;
 
                 let startup_settings = sqlx::query_as::<_, db::models::GatewaySettings>(
-                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, gateway_host, gateway_port, window_width, window_height FROM gateway_settings WHERE id = 1",
+                    "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, gateway_host, gateway_port, window_width, window_height, update_auto_check, update_accel_enabled, update_accel_prefix FROM gateway_settings WHERE id = 1",
                 )
                 .fetch_one(&db)
                 .await
@@ -278,6 +280,9 @@ pub fn run() {
                     gateway_port: 7788,
                     window_width: None,
                     window_height: None,
+                    update_auto_check: 1,
+                    update_accel_enabled: 1,
+                    update_accel_prefix: "https://gh-proxy.com/".to_string(),
                 });
 
                 let config = base_config.clone().with_stored_server(
@@ -568,7 +573,13 @@ pub fn run() {
             commands::backup_commands::list_webdav_backups,
             commands::backup_commands::import_from_webdav,
             commands::backup_commands::delete_webdav_backup,
+            commands::update_commands::get_update_settings,
+            commands::update_commands::update_update_settings,
             commands::update_commands::check_for_updates,
+            commands::update_commands::download_update,
+            commands::update_commands::cancel_update_download,
+            commands::update_commands::install_update,
+            commands::update_commands::take_update_result,
             commands::credential_commands::get_credentials,
             commands::credential_commands::get_credential,
             commands::credential_commands::create_credential,

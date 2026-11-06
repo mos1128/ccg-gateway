@@ -39,6 +39,9 @@ export const settingsApi = {
           minimize_to_tray_on_close: !!gateway.minimize_to_tray_on_close,
           gateway_host: gateway.gateway_host,
           gateway_port: gateway.gateway_port,
+          update_auto_check: !!gateway.update_auto_check,
+          update_accel_enabled: !!gateway.update_accel_enabled,
+          update_accel_prefix: gateway.update_accel_prefix,
         },
         timeouts,
         cli_settings: cliSettings,
@@ -55,6 +58,9 @@ export const settingsApi = {
       minimizeToTrayOnClose: data.minimize_to_tray_on_close,
       gatewayHost: data.gateway_host,
       gatewayPort: data.gateway_port,
+      updateAutoCheck: data.update_auto_check,
+      updateAccelEnabled: data.update_accel_enabled,
+      updateAccelPrefix: data.update_accel_prefix,
     })
     return { data: null }
   },

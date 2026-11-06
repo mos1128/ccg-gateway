@@ -18,3 +18,5 @@ pub mod scheduler;
 pub mod skill;
 pub mod stats;
 pub mod translate;
+pub mod update_helper;
+pub mod updater;

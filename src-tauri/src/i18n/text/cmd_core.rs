@@ -426,6 +426,70 @@ pub fn text(lang: Lang, key: &str) -> Option<&'static str> {
             Lang::Zh => "解析响应失败: {}",
             Lang::En => "Failed to parse response: {}",
         },
+        "err.update.accel_prefix_invalid" => match lang {
+            Lang::Zh => "加速地址必须是有效的 http:// 或 https:// 地址",
+            Lang::En => "The acceleration URL must be a valid http:// or https:// address",
+        },
+        "err.update.asset_missing" => match lang {
+            Lang::Zh => "当前平台没有可用的更新文件",
+            Lang::En => "No update asset is available for this platform",
+        },
+        "err.update.download_busy" => match lang {
+            Lang::Zh => "已有更新正在下载，请稍候",
+            Lang::En => "An update download is already in progress",
+        },
+        "err.update.version_changed" => match lang {
+            Lang::Zh => "最新版本已变化，请重新检查更新",
+            Lang::En => "The latest version has changed; check for updates again",
+        },
+        "err.update.no_download_source" => match lang {
+            Lang::Zh => "没有可用的下载地址",
+            Lang::En => "No download source is available",
+        },
+        "err.update.download_failed" => match lang {
+            Lang::Zh => "下载更新失败: {}",
+            Lang::En => "Failed to download the update: {}",
+        },
+        "err.update.download_incomplete" => match lang {
+            Lang::Zh => "下载不完整（{} / {} 字节）",
+            Lang::En => "The download is incomplete ({} / {} bytes)",
+        },
+        "err.update.checksum_failed" => match lang {
+            Lang::Zh => "更新文件校验失败: {}",
+            Lang::En => "Update file verification failed: {}",
+        },
+        "err.update.invalid_file" => match lang {
+            Lang::Zh => "下载到的文件不是有效的安装包",
+            Lang::En => "The downloaded file is not a valid package",
+        },
+        "err.update.file_not_found" => match lang {
+            Lang::Zh => "更新文件不存在，请重新下载",
+            Lang::En => "The update file is missing; download it again",
+        },
+        "err.update.install_not_writable" => match lang {
+            Lang::Zh => "无法写入 {}，请把应用放到有写权限的目录，或手动下载更新",
+            Lang::En => "Cannot write to {}. Move the app to a writable directory or update manually",
+        },
+        "err.update.install_unsupported" => match lang {
+            Lang::Zh => "当前安装方式不支持自动更新: {}",
+            Lang::En => "This installation type does not support automatic updates: {}",
+        },
+        "err.update.dev_build" => match lang {
+            Lang::Zh => "开发构建不会自动替换可执行文件，请手动使用下载好的文件。",
+            Lang::En => "Development builds do not replace the executable automatically; use the downloaded file manually.",
+        },
+        "err.update.not_appimage" => match lang {
+            Lang::Zh => "当前运行的不是 AppImage，无法自动替换，请手动使用下载好的文件。",
+            Lang::En => "This build is not running from an AppImage, so it cannot replace itself; use the downloaded file manually.",
+        },
+        "err.update.spawn_failed" => match lang {
+            Lang::Zh => "启动更新程序失败: {}",
+            Lang::En => "Failed to start the updater: {}",
+        },
+        "err.update.manifest_parse_failed" => match lang {
+            Lang::Zh => "更新信息解析失败",
+            Lang::En => "Failed to parse update information",
+        },
         // agent_commands.rs
         "err.agent_cmd.json_format_invalid" => match lang {
             Lang::Zh => "JSON 格式错误: {}",

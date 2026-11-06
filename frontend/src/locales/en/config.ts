@@ -55,8 +55,8 @@ export default {
   },
   timeout: {
     title: 'Request Timeouts',
-    streamFirstByte: 'Streaming first byte timeout',
-    streamIdle: 'Streaming idle timeout',
+    streamFirstByte: 'First byte timeout',
+    streamIdle: 'Response gap timeout',
     nonStream: 'Non-streaming timeout',
     unitSeconds: 's'
   },
@@ -69,6 +69,15 @@ export default {
     minimizeToTray: 'Minimize to Tray on Close',
     minimizeToTrayDesc: 'Hide the window when the close button is clicked, keeping the app running in the background'
   },
+  gateway: {
+    title: 'Gateway Settings',
+    desc: 'Listen address, port, data directory and log level',
+    open: 'Open'
+  },
+  update: {
+    accelEnabled: 'Use GitHub acceleration',
+    resetDefault: 'Reset to default'
+  },
   msg: {
     presetInvalid: 'Invalid configuration format. Fix it before saving.',
     presetSaved: 'Preset configuration saved',
@@ -77,6 +86,7 @@ export default {
     configDirUpdated: 'Agent directory updated',
     timeoutsSaved: 'Request timeouts saved',
     basicSaved: 'Basic settings saved',
+    updateSaved: 'Update settings saved',
     webdavSaved: 'WebDAV configuration saved',
     exportSuccess: 'Exported',
     exportFailed: 'Failed to export',

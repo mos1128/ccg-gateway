@@ -5,7 +5,7 @@ use crate::services::provider_profile::list_provider_profile_names;
 #[tauri::command]
 pub async fn get_gateway_settings(db: State<'_, SqlitePool>) -> Result<GatewaySettings> {
     sqlx::query_as::<_, GatewaySettings>(
-        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, gateway_host, gateway_port, window_width, window_height FROM gateway_settings WHERE id = 1",
+        "SELECT debug_log, log_detail_mode, launch_on_startup, silent_startup, minimize_to_tray_on_close, gateway_host, gateway_port, window_width, window_height, update_auto_check, update_accel_enabled, update_accel_prefix FROM gateway_settings WHERE id = 1",
     )
     .fetch_one(db.inner())
     .await
@@ -25,6 +25,9 @@ pub async fn update_gateway_settings(
     minimize_to_tray_on_close: Option<bool>,
     gateway_host: Option<String>,
     gateway_port: Option<i64>,
+    update_auto_check: Option<bool>,
+    update_accel_enabled: Option<bool>,
+    update_accel_prefix: Option<String>,
 ) -> Result<()> {
     let now = now_timestamp();
     let current = get_gateway_settings(db.clone()).await?;
@@ -38,6 +41,10 @@ pub async fn update_gateway_settings(
         Some(_) => return Err(crate::tr!("err.settings.port_invalid")),
         None => None,
     };
+    let normalized_update_accel_prefix = update_accel_prefix
+        .as_deref()
+        .map(crate::services::updater::normalize_accel_prefix)
+        .transpose()?;
     let next_host = normalized_host
         .clone()
         .unwrap_or_else(|| current.gateway_host.clone());
@@ -73,6 +80,15 @@ pub async fn update_gateway_settings(
     if normalized_port.is_some() {
         updates.push("gateway_port = ?");
     }
+    if update_auto_check.is_some() {
+        updates.push("update_auto_check = ?");
+    }
+    if update_accel_enabled.is_some() {
+        updates.push("update_accel_enabled = ?");
+    }
+    if normalized_update_accel_prefix.is_some() {
+        updates.push("update_accel_prefix = ?");
+    }
     updates.push("updated_at = ?");
 
     let sql = format!(
@@ -107,6 +123,15 @@ pub async fn update_gateway_settings(
     }
     if let Some(port) = normalized_port {
         query = query.bind(port);
+    }
+    if let Some(auto_check) = update_auto_check {
+        query = query.bind(if auto_check { 1i64 } else { 0 });
+    }
+    if let Some(accel_enabled) = update_accel_enabled {
+        query = query.bind(if accel_enabled { 1i64 } else { 0 });
+    }
+    if let Some(accel_prefix) = normalized_update_accel_prefix {
+        query = query.bind(accel_prefix);
     }
 
     query

@@ -55,8 +55,8 @@ export default {
   },
   timeout: {
     title: '请求超时',
-    streamFirstByte: '流式首字节超时',
-    streamIdle: '流式空闲超时',
+    streamFirstByte: '首字节超时',
+    streamIdle: '响应间隔超时',
     nonStream: '非流式超时',
     unitSeconds: '秒'
   },
@@ -69,6 +69,15 @@ export default {
     minimizeToTray: '关闭时最小化到托盘',
     minimizeToTrayDesc: '点关闭按钮时隐藏窗口，应用继续后台运行'
   },
+  gateway: {
+    title: '网关设置',
+    desc: '监听地址、端口、数据目录与日志级别',
+    open: '打开'
+  },
+  update: {
+    accelEnabled: '使用 GitHub 加速',
+    resetDefault: '恢复默认'
+  },
   msg: {
     presetInvalid: '配置格式错误，请修正后再保存',
     presetSaved: '预设配置已保存',
@@ -77,6 +86,7 @@ export default {
     configDirUpdated: 'Agent 目录已更新',
     timeoutsSaved: '请求超时已保存',
     basicSaved: '基础配置已保存',
+    updateSaved: '更新设置已保存',
     webdavSaved: 'WebDAV 配置已保存',
     exportSuccess: '导出成功',
     exportFailed: '导出失败',

@@ -22,6 +22,17 @@ export const useUiStore = defineStore('ui', () => {
   const configActiveCliTab = ref<CliType>('claude_code')
   const configActiveBackupTab = ref<'local' | 'webdav'>('local')
 
+  // 全局设置页请求打开网关设置弹窗
+  const gatewaySettingsRequested = ref(false)
+
+  function requestGatewaySettings() {
+    gatewaySettingsRequested.value = true
+  }
+
+  function consumeGatewaySettingsRequest() {
+    gatewaySettingsRequested.value = false
+  }
+
   function setProvidersActiveCliType(cliType: CliType) {
     providersActiveCliType.value = cliType
   }
@@ -57,6 +68,7 @@ export const useUiStore = defineStore('ui', () => {
     logsActiveTab,
     configActiveCliTab,
     configActiveBackupTab,
+    gatewaySettingsRequested,
     setProvidersActiveCliType,
     getProvidersActiveProfile,
     setProvidersActiveProfile,
@@ -64,5 +76,7 @@ export const useUiStore = defineStore('ui', () => {
     setLogsActiveTab,
     setConfigActiveCliTab,
     setConfigActiveBackupTab,
+    requestGatewaySettings,
+    consumeGatewaySettingsRequest,
   }
 })

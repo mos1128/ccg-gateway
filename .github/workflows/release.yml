@@ -151,6 +151,63 @@ jobs:
             echo "$EOF" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Normalize release artifacts
+        run: |
+          mkdir -p release-assets
+          cp artifacts/windows-x64/ccg-gateway.exe release-assets/ccg-gateway.exe
+          cp artifacts/macos-universal/*.dmg release-assets/ccg-gateway-macos-universal.dmg
+          cp artifacts/linux-x64/*.AppImage release-assets/ccg-gateway-linux-x86_64.AppImage
+          ls -l release-assets
+
+      - name: Generate latest.json
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          TAG_MESSAGE: ${{ steps.tag.outputs.message }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path("release-assets")
+          assets = {}
+
+          def sha256(path: Path) -> str:
+              digest = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              return digest.hexdigest()
+
+          def add(key: str, name: str) -> None:
+              path = root / name
+              assets[key] = {
+                  "name": name,
+                  "size": path.stat().st_size,
+                  "sha256": sha256(path),
+              }
+
+          add("windows-x86_64", "ccg-gateway.exe")
+          add("macos-universal", "ccg-gateway-macos-universal.dmg")
+          add("linux-x86_64", "ccg-gateway-linux-x86_64.AppImage")
+
+          tag = os.environ["TAG_NAME"]
+          manifest = {
+              "version": tag.removeprefix("v"),
+              "tag": tag,
+              "notes": os.environ.get("TAG_MESSAGE", ""),
+              "pub_date": datetime.now(timezone.utc).isoformat(),
+              "assets": assets,
+          }
+          (root / "latest.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          cat release-assets/latest.json
+
       # 升级至 v3 版本，全面兼容 Node 24 架构，避免在 2026 年中旬被 GitHub 强制下线
       - name: Create Release (with tag message)
         if: steps.tag.outputs.has_message == 'true'
@@ -160,9 +217,7 @@ jobs:
           prerelease: false
           body: ${{ steps.tag.outputs.message }}
           files: |
-            artifacts/windows-x64/*
-            artifacts/macos-universal/*
-            artifacts/linux-x64/*
+            release-assets/*
 
       - name: Create Release (auto-generate)
         if: steps.tag.outputs.has_message == 'false'
@@ -172,6 +227,4 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
-            artifacts/windows-x64/*
-            artifacts/macos-universal/*
-            artifacts/linux-x64/*
+            release-assets/*

@@ -97,7 +97,7 @@ impl DatabaseSchema {
     /// 获取当前主数据库 Schema
     pub fn current() -> Self {
         Self {
-            version: 43,
+            version: 44,
             tables: Self::define_main_tables(),
             indexes: Vec::new(),
         }
@@ -816,6 +816,25 @@ impl DatabaseSchema {
                         data_type: "TEXT".to_string(),
                         nullable: false,
                         default_value: Some("'auto'".to_string()),
+                    },
+                    // 应用内更新设置：启动自动检查、GitHub 加速开关与加速前缀。
+                    ColumnDefinition {
+                        name: "update_auto_check".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("1".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "update_accel_enabled".to_string(),
+                        data_type: "INTEGER".to_string(),
+                        nullable: false,
+                        default_value: Some("1".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "update_accel_prefix".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: false,
+                        default_value: Some("'https://gh-proxy.com/'".to_string()),
                     },
                 ],
                 primary_key: vec!["id".to_string()],

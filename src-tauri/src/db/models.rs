@@ -788,6 +788,9 @@ pub struct GatewaySettings {
     pub gateway_port: i64,
     pub window_width: Option<f64>,
     pub window_height: Option<f64>,
+    pub update_auto_check: i64,
+    pub update_accel_enabled: i64,
+    pub update_accel_prefix: String,
 }
 
 // Timeout Settings (简化版 - 用于API响应)
