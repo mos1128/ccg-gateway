@@ -1,10 +1,13 @@
 <template>
   <div class="ses-page">
-    <V2Tabs class="ses-tabs">
-      <div v-for="cli in sessionTabs" :key="cli.id" class="v2-tab" :class="{ active: activeCliType === cli.id }" @click="handleCliChange(cli.id)">
-        <span class="tab-label-text">{{ cli.label }}</span>
-      </div>
-    </V2Tabs>
+    <V2CliChips
+      class="ses-tabs"
+      mode="select"
+      scrollable
+      feature="sessions"
+      :model-value="activeCliType"
+      @update:model-value="handleCliChange"
+    />
 
     <!-- 项目列表 -->
     <template v-if="!currentProject">
@@ -137,7 +140,7 @@ import { InfoFilled } from '@element-plus/icons-vue'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2Markdown from '@/components/V2Markdown.vue'
 import V2Empty from '@/components/V2Empty.vue'
-import V2Tabs from '@/components/V2Tabs.vue'
+import V2CliChips from '@/components/V2CliChips.vue'
 import OverflowText from '@/components/OverflowText.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'

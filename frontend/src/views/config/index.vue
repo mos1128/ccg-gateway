@@ -6,11 +6,7 @@
         <!-- CLI 运行配置 -->
         <div class="v2-card v2-card-pad cfg-cli">
           <div class="cfg-head">{{ t('config.cli.title') }}</div>
-          <V2Tabs class="cfg-tabs">
-            <div v-for="cli in cliTabs" :key="cli.id" class="v2-tab" :class="{ active: activeCliTab === cli.id }" @click="activeCliTab = cli.id">
-              <span class="tab-label-text">{{ cli.label }}</span>
-            </div>
-          </V2Tabs>
+          <V2CliChips v-model="activeCliTab" class="cfg-tabs" mode="select" scrollable />
 
           <div class="v2-field">
             <label class="v2-label">{{ t('config.cli.configDir') }}</label>
@@ -317,7 +313,7 @@
 import { useI18n } from 'vue-i18n'
 import V2Drawer from '@/components/V2Drawer.vue'
 import V2CodeEditor from '@/components/V2CodeEditor.vue'
-import V2Tabs from '@/components/V2Tabs.vue'
+import V2CliChips from '@/components/V2CliChips.vue'
 import OverflowText from '@/components/OverflowText.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
@@ -339,7 +335,6 @@ const uiStore = useUiStore()
 const updaterStore = useUpdaterStore()
 const agentStore = useAgentStore()
 const { t } = useI18n()
-const cliTabs = computed(() => agentStore.tabs)
 
 const activeCliTab = computed<CliType>({
   get: () => uiStore.configActiveCliTab,

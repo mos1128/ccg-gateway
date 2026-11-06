@@ -17,11 +17,7 @@
       </defs>
     </svg>
 
-    <V2Tabs class="prov-clitabs">
-      <div v-for="c in cliTabs" :key="c.id" class="v2-tab" :class="{ active: activeCliType === c.id }" @click="activeCliType = c.id">
-        <span class="tab-label-text">{{ c.label }}</span>
-      </div>
-    </V2Tabs>
+    <V2CliChips v-model="activeCliType" class="prov-clitabs" mode="select" scrollable feature="provider_config" />
 
     <div class="v2-card prov-shell">
     <div class="prov-toolbar">
@@ -273,7 +269,7 @@ import CredentialDrawer from './components/CredentialDrawer.vue'
 import ModelDetectionModal from './components/ModelDetectionModal.vue'
 import ModelPriceModal from './components/ModelPriceModal.vue'
 import V2Empty from '@/components/V2Empty.vue'
-import V2Tabs from '@/components/V2Tabs.vue'
+import V2CliChips from '@/components/V2CliChips.vue'
 import { confirm } from '@/utils/confirm'
 import { notify } from '@/utils/notification'
 import { getErrorMessage } from '@/utils/error'
