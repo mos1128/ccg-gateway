@@ -78,10 +78,11 @@
               </button>
             </el-tooltip>
             <el-tooltip :content="t('layout.checkUpdate')" placement="bottom" effect="light" :show-after="250">
-              <button class="v2-version mono" :class="{ 'has-update': updaterStore.phase === 'available' }" @click="handleCheckUpdate">
+              <button class="v2-version mono" :class="{ 'has-update': updaterStore.hasUpdate }" @click="handleCheckUpdate">
                 <svg v-if="checkingUpdate" class="spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
                 v{{ appVersion }}
                 <span v-if="updaterStore.phase === 'downloading' && updaterStore.progress !== null" class="v2-version-progress">{{ updaterStore.progress }}%</span>
+                <span v-if="updaterStore.hasUpdate" class="v2-version-dot" aria-hidden="true"></span>
               </button>
             </el-tooltip>
           </div>
@@ -1095,6 +1096,7 @@ html.dark {
   cursor: not-allowed;
 }
 .v2-version {
+  position: relative;
   margin-left: 4px;
   font-size: var(--v2-fs-xs);
   color: var(--v2-text-3);
@@ -1122,6 +1124,16 @@ html.dark {
 .v2-version.has-update {
   color: var(--v2-accent);
   font-weight: var(--v2-fw-semibold);
+}
+.v2-version-dot {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v2-danger);
+  box-shadow: 0 0 0 2px var(--v2-surface);
 }
 .v2-shell button:focus,
 .v2-scope button:focus {

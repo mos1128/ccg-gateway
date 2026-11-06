@@ -9,8 +9,6 @@ export default {
     'Unable to fetch update information, possibly due to a network issue. You can visit the releases page to check the latest version manually.',
   checkUpdate: 'Check for Updates',
   releasePage: 'Open Releases Page',
-  foundTitle: 'New Version Available',
-  foundMessage: 'Version {version} has been released. Click to view the update.',
   title: 'Software Update',
   currentVersion: 'Current version v{version}',
   checking: 'Checking for updates…',

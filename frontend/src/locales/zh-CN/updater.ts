@@ -8,8 +8,6 @@ export default {
   fetchFailed: '无法获取更新信息，可能是网络问题。您可以手动访问发布页面查看最新版本。',
   checkUpdate: '检查更新',
   releasePage: '前往发布页面',
-  foundTitle: '发现新版本',
-  foundMessage: '新版本 {version} 已发布，点击查看更新',
   title: '软件更新',
   currentVersion: '当前版本 v{version}',
   checking: '正在检查更新…',

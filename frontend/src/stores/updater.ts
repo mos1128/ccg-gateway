@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { ElNotification } from 'element-plus'
 import { translate } from '@/locales'
 import { updaterApi, type UpdateSettingsPatch } from '@/api/updater'
 import { getErrorMessage } from '@/utils/error'
@@ -21,6 +20,8 @@ export type UpdatePhase =
   | 'ready'
   | 'installing'
   | 'error'
+
+const AUTO_CHECK_INTERVAL_MS = 8 * 60 * 60 * 1000
 
 export const useUpdaterStore = defineStore('updater', () => {
   const visible = ref(false)
@@ -44,7 +45,8 @@ export const useUpdaterStore = defineStore('updater', () => {
 
   let unlistenProgress: (() => void) | null = null
   let initPromise: Promise<void> | null = null
-  let notifiedVersion = ''
+  let autoCheckTimer: ReturnType<typeof setInterval> | null = null
+  let promptedVersion = ''
   let installFailure = false
 
   function handleProgress(payload: UpdateProgressPayload) {
@@ -97,6 +99,13 @@ export const useUpdaterStore = defineStore('updater', () => {
     }
   }
 
+  function startAutoCheck() {
+    if (autoCheckTimer) return
+    autoCheckTimer = setInterval(() => {
+      if (settings.value?.auto_check) void check(true)
+    }, AUTO_CHECK_INTERVAL_MS)
+  }
+
   async function init() {
     if (initPromise) return initPromise
     initPromise = (async () => {
@@ -110,20 +119,9 @@ export const useUpdaterStore = defineStore('updater', () => {
       if (!installFailure && settings.value?.auto_check) {
         await check(true)
       }
+      startAutoCheck()
     })()
     return initPromise
-  }
-
-  function showFoundNotification(version: string) {
-    if (notifiedVersion === version) return
-    notifiedVersion = version
-    ElNotification({
-      title: translate('updater.foundTitle'),
-      message: translate('updater.foundMessage', { version }),
-      type: 'info',
-      duration: 0,
-      onClick: () => open(),
-    })
   }
 
   async function check(silent = false) {
@@ -139,9 +137,10 @@ export const useUpdaterStore = defineStore('updater', () => {
       result.value = response
       if (response.has_update) {
         phase.value = 'available'
-        if (silent && !visible.value) {
-          showFoundNotification(`v${response.latest?.version ?? ''}`)
-        }
+        const version = `v${response.latest?.version ?? ''}`
+        const shouldPrompt = silent && !visible.value && promptedVersion !== version
+        promptedVersion = version
+        if (shouldPrompt) visible.value = true
       } else {
         phase.value = 'latest'
       }
@@ -226,13 +225,6 @@ export const useUpdaterStore = defineStore('updater', () => {
     }
   }
 
-  function open() {
-    visible.value = true
-    if (!result.value && !['checking', 'downloading', 'installing'].includes(phase.value)) {
-      void check(false)
-    }
-  }
-
   function openWithCheck() {
     visible.value = true
     void check(false)
@@ -244,6 +236,10 @@ export const useUpdaterStore = defineStore('updater', () => {
   }
 
   function dispose() {
+    if (autoCheckTimer) {
+      clearInterval(autoCheckTimer)
+      autoCheckTimer = null
+    }
     unlistenProgress?.()
     unlistenProgress = null
   }
@@ -271,7 +267,6 @@ export const useUpdaterStore = defineStore('updater', () => {
     install,
     startUpdate,
     cancelDownload,
-    open,
     openWithCheck,
     close,
     dispose,
